@@ -25,7 +25,8 @@ const { formatQuestionnaireContext } = require('./questionnaires');
 // physical capsules — so it runs here too, and a violation refuses the submission outright.
 const { validateAgFormulation, canonicalizeCapsules } = require('../lib/agFormulation');
 const { fetchFormulationOrders, submitFastTrackFormulation,
-        fetchFormulationCodes, redeemFormulationCode } = require('../lib/gcnClient');
+        fetchFormulationCodes, redeemFormulationCode,
+        fetchFormulationTiers } = require('../lib/gcnClient');
 const { generateLabelCode } = require('../lib/labelCode');
 
 // Where the aeviva sector's public pages live. The formulation label QR is a GCN aeviva link
@@ -991,6 +992,14 @@ function _packageRow({ order, plan, stage }) {
                 { dots: plan.proposed_recipe.morning || {}, weeks: plan.proposed_recipe.weeks || undefined },
                 { dots: plan.proposed_recipe.evening || {}, weeks: plan.proposed_recipe.weeks || undefined })
             : null,
+        // The widths this proposal was laddered for (_buildTierLadder), narrowest first — the
+        // client uses it to tell the user WHICH of their formulas a code will compound instead of
+        // warning them the code is too narrow. `distinct_dots` above is the base, so for a
+        // laddered proposal the over-tier warning can no longer fire; it stays correct, and still
+        // fires, for a proposal made before the ladder existed.
+        tier_widths: (plan && plan.status === 'proposed' && Array.isArray(plan.proposed_recipe?.tiers))
+            ? plan.proposed_recipe.tiers.map(t => Number(t.max_distinct_dots)).filter(w => Number.isFinite(w))
+            : null,
         // Filled in by the caller for can_submit rows only: the proposal this package could be
         // filled with, which is a different plan from `plan_id` (nothing is bound until submit).
         submit_plan_id: null,
@@ -1438,6 +1447,15 @@ async function handlePostFormulationSubmit(body) {
         if (!order) return { success: false, reason: 'order_not_available' };
         if (order.fulfillment !== 'fast_track') return { success: false, reason: 'order_requires_expert_review' };
 
+        // Which formula of the ladder this package bought. A single-recipe proposal returns its
+        // own recipe here, so everything below is unchanged for one.
+        const selected = _selectTierVariant(plan.proposed_recipe, order.max_distinct_dots);
+        if (selected.variant) {
+            console.log(JSON.stringify({ level: 'INFO', msg: 'formulation tier variant selected',
+                user_id: user.user_id, plan_id: planId,
+                variant_width: selected.variant.max_distinct_dots, order_max: order.max_distinct_dots }));
+        }
+
         // The purchased tier binds here too, not only at proposal time. A plan proposed BEFORE the
         // package was bought was capped by nothing (there was no order to read a tier from), and
         // it is still a 'proposed' plan this endpoint would happily submit. Refused rather than
@@ -1445,9 +1463,7 @@ async function handlePostFormulationSubmit(body) {
         // reason — a formula the user never saw is one nobody authored. Re-running 营养定制 now
         // produces one built for the tier, which is a better formula than this one minus a dot.
         if (order.max_distinct_dots) {
-            const distinct = _countDistinctDots(
-                { dots: plan.proposed_recipe.morning || {}, weeks: plan.proposed_recipe.weeks || undefined },
-                { dots: plan.proposed_recipe.evening || {}, weeks: plan.proposed_recipe.weeks || undefined });
+            const distinct = _countDistinctDots(selected.morning, selected.evening);
             if (distinct > order.max_distinct_dots) {
                 return { success: false, reason: 'formulation_exceeds_package',
                     distinct_dots: distinct, max_distinct_dots: order.max_distinct_dots,
@@ -1460,11 +1476,7 @@ async function handlePostFormulationSubmit(body) {
         const { rows: formulary } = await pool.query(
             `SELECT key_name, timing, timing_flexible, target_dots_min, target_dots_max,
                     dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots`);
-        const capsules = _expandProposalToCapsules(
-            { dots: plan.proposed_recipe.morning || {}, weeks: plan.proposed_recipe.weeks || undefined },
-            { dots: plan.proposed_recipe.evening || {}, weeks: plan.proposed_recipe.weeks || undefined },
-            formulary,
-        );
+        const capsules = _expandProposalToCapsules(selected.morning, selected.evening, formulary);
         const check = validateAgFormulation({ capsules }, formulary);
         if (!check.valid) {
             console.error(JSON.stringify({ level: 'ERROR', msg: 'fasttrack_formulation_invalid',
@@ -1500,9 +1512,23 @@ async function handlePostFormulationSubmit(body) {
         }
         if (!result || !result.order_id) return { success: false, reason: result?.reason || 'no_awaiting_order' };
 
+        // Collapsed back to a single recipe in the same write that binds it to the order: from
+        // here the plan means "these capsules are being compounded", and the box scan, the printed
+        // label and the checkout snapshot must all read the variant that was actually submitted
+        // rather than the base the ladder was stored around.
+        const collapsed = selected.variant
+            ? JSON.stringify({
+                morning: selected.morning.dots || {},
+                evening: selected.evening.dots || {},
+                ...(selected.morning.weeks ? { weeks: selected.morning.weeks } : {}),
+            })
+            : null;
         await pool.query(
-            `UPDATE nutrition_plans SET gcn_order_id = $2, submitted_to_gcn_at = NOW() WHERE id = $1`,
-            [planId, String(result.order_id)]);
+            `UPDATE nutrition_plans
+                SET gcn_order_id = $2, submitted_to_gcn_at = NOW(),
+                    proposed_recipe = COALESCE($3::jsonb, proposed_recipe)
+              WHERE id = $1`,
+            [planId, String(result.order_id), collapsed]);
         console.log(JSON.stringify({ level: 'INFO', msg: 'fasttrack formulation submitted',
             user_id: user.user_id, plan_id: planId, order_id: result.order_id }));
         return { success: true, order_id: result.order_id };
@@ -1906,6 +1932,39 @@ function _formatDayRanges(days) {
     return parts.join(',');
 }
 
+// A rung's pitch is one line under a two-dot list in a chat bubble, not a paragraph. Capped
+// server-side rather than only asked for in the prompt, because a model that ignores the word
+// limit would otherwise push the card's CTA off the screen.
+const RUNG_PITCH_MAX = 90;
+
+// Sanitises a rung's model-authored pitch, and DROPS it outright if it names a dot that is not in
+// that rung.
+//
+// The model writes the copy but the server decides membership, from the tier tags — and live dev
+// testing (2026-09-07) caught the two disagreeing on the first real run: a pitch reading "加配肠道
+// 焕新与脉络畅流" sat above a rung holding 脉络畅流 and 心血管信号, while the rung below it named
+// 抗氧化盾, a dot the formulation did not contain at all. The model had narrated the split it meant
+// and then tagged a different one.
+//
+// The prompt now asks for benefit-framed copy that names no dots (the card lists them on the very
+// next line, so naming them was redundant even when it was right). This is the backstop, and it
+// drops rather than repairs: an unlabelled rung is a rung, but a rung promising a dot the user will
+// not receive is the one thing on this card the server would otherwise have let the model assert.
+function _rungPitch(rung, dotsFormulary) {
+    const pitch = String(rung.pitch || '').replace(/\|/g, '/').replace(/[\r\n]+/g, ' ').trim().slice(0, RUNG_PITCH_MAX);
+    if (!pitch) return '';
+    const mine = new Set((rung.added || []).map(a => a.key));
+    for (const dot of dotsFormulary || []) {
+        if (mine.has(dot.key_name)) continue;
+        // Both display names and the conversational key ("原粒13号"), which is how the prompt tells
+        // the model to refer to a dot in prose.
+        for (const alias of [dot.name_zh, dot.name, dot.key_name_zh]) {
+            if (alias && String(alias).length >= 2 && pitch.includes(alias)) return '';
+        }
+    }
+    return pitch;
+}
+
 // Renders the :::formula card for a validated allocation.
 //
 // The SERVER writes every row, from the recipe it just validated — the model never authors this
@@ -1924,6 +1983,11 @@ function _formatDayRanges(days) {
 //   #label|<url>               the formulation's QR/label page — the same GCN aeviva link that
 //                              gets printed on the box and scanned to activate it
 //   #day|<ranges>|<kind>       starts a group; every row after it belongs to that group
+//   #rung|<label>|<width>|<pitch>
+//                              an UPGRADE rung: the rows after it are the dots a wider package
+//                              would add on top of everything above. Only ever present in 'buy'
+//                              mode (see below) — a user who already paid holds a fixed tier and
+//                              cannot upgrade that order.
 //
 // A custom-dots order can be placed in either sequence, and the card is where the difference
 // shows. `#order` is the mode:
@@ -1962,6 +2026,32 @@ function _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, la
         lines.push(...rows);
     }
     if (!anyRow) return '';
+
+    // The upgrade ladder, appended after the day groups it builds on. Rows reuse the same
+    // key|name|color|am|pm shape, so the renderer's swatch/name/number code is shared and a rung
+    // cannot drift from the chart above it. The pitch is the one model-authored string on this
+    // card and is sanitised exactly like _buildProductCardBlock's reason: pipes would break the
+    // row split and a newline would break the line split.
+    for (const rung of (opts && opts.rungs) || []) {
+        const rows = [];
+        for (const add of rung.added || []) {
+            const dot = (dotsFormulary || []).find(d => d.key_name === add.key);
+            if (!dot) continue;
+            const name = (isZh ? (dot.name_zh || dot.name) : (dot.name || dot.name_zh)) || dot.key_name;
+            // A 6th field, only when the dot does NOT run all four weeks: a width caps a week, so
+            // an upgrade can be two extra dots every week or the same dot for two more weeks, and
+            // the user is paying for the difference. Absent means all four, which is what every
+            // row written before rotation reached the rungs contains.
+            const weeks = Array.isArray(add.weeks) && add.weeks.length && add.weeks.length < PLAN_WEEKS
+                ? `|${add.weeks.join(',')}` : '';
+            rows.push(`${dot.key_name}|${String(name).replace(/\|/g, '/')}|${dot.color_hex || ''}|${add.am || 0}|${add.pm || 0}${weeks}`);
+        }
+        if (!rows.length) continue;
+        const label = String(rung.tier_label || '').replace(/\|/g, '/').replace(/[\r\n]+/g, ' ').trim();
+        const pitch = _rungPitch(rung, dotsFormulary);
+        lines.push(`#rung|${label}|${rung.max_distinct_dots}|${pitch}`);
+        lines.push(...rows);
+    }
     return `\n\n:::formula\n${lines.join('\n')}\n:::`;
 }
 
@@ -2206,7 +2296,7 @@ function _emphasisPosition(dot, requestedTotal) {
 // total and then the key name, so the outcome is deterministic. (_fitRecipeToDailyBudget breaks
 // ties on the larger floor because there a drop has to free capsule capacity; here every drop
 // relieves the constraint by exactly one dot, so floor size is irrelevant.)
-function _capDistinctDots(morningRecipe, eveningRecipe, dotsFormulary, maxDistinctDots) {
+function _capDistinctDots(morningRecipe, eveningRecipe, dotsFormulary, maxDistinctDots, tierByKey) {
     const morning = { ...(morningRecipe?.dots || {}) };
     const evening = { ...(eveningRecipe?.dots || {}) };
     const membership = _weekMembership(morningRecipe, eveningRecipe);
@@ -2229,8 +2319,18 @@ function _capDistinctDots(morningRecipe, eveningRecipe, dotsFormulary, maxDistin
     }
     if (totals.size === 0) return asRecipes(null);
 
+    // `tierByKey`, when present, is the formulator's own statement of which dots are core and
+    // which are optional additions (the ladder — see _buildTierLadder). It outranks emphasis
+    // because it is a clinical judgement about necessity, where emphasis is only a dose position;
+    // an untagged dot sorts as the most optional thing there is. Absent, this is exactly the
+    // emphasis-only ordering it always was.
+    const tagOf = k => {
+        const t = tierByKey ? Math.round(Number(tierByKey.get(k))) : NaN;
+        return Number.isFinite(t) && t >= 1 ? t : 99;
+    };
     const rank = (a, b) =>
-        (_emphasisPosition(byKey.get(a), totals.get(a)) - _emphasisPosition(byKey.get(b), totals.get(b)))
+        (tagOf(b) - tagOf(a))
+        || (_emphasisPosition(byKey.get(a), totals.get(a)) - _emphasisPosition(byKey.get(b), totals.get(b)))
         || (totals.get(a) - totals.get(b))
         || (a < b ? -1 : 1);
 
@@ -2279,6 +2379,294 @@ function _countDistinctDots(morningRecipe, eveningRecipe) {
         widest = Math.max(widest, _keysInWeek(morningRecipe, eveningRecipe, membership, week).size);
     }
     return widest;
+}
+
+// ── The tier ladder ────────────────────────────────────────────────────────────────────────────
+//
+// A user with nothing waiting is choosing between three purchasable widths (6 / 8 / 10 种原粒),
+// and before this they never met that choice: the tool formulated against no ceiling at all and
+// offered one undifferentiated "order this", which routinely produced a proposal wider than any
+// package sold — unpurchasable the moment a code was spent on it.
+//
+// So one allocation becomes three NESTED formulas: the essential core, then +2, then +2. The
+// narrowest is what gets stored as the plan's base (see _commitProposedPlan), which is why a
+// proposal can no longer be born unpurchasable — every existing reader of proposed_recipe
+// (the box scan, the printed label, the checkout snapshot, the fast-track submit) sees a recipe
+// that fits ANY tier. The wider ones ride alongside in `tiers` and are selected at submission,
+// once the redeemed code says which one the user actually bought.
+//
+// A WIDTH IS PER WEEK, NOT PER CYCLE. A 6种 formula may run six dots this week and a partly
+// different six next week, so its four weeks together can contain well more than six distinct
+// dots — that is the product, and it is why every variant carries its own `weeks` rotation rather
+// than being a flat set. Each variant is produced by _capDistinctDots, the same cap that already
+// binds a purchased package, so a width means exactly the same thing here as it does at
+// submission, and _countDistinctDots (the widest week) is what either is compared against.
+//
+// NESTING FOLLOWS FROM THAT, not from a separate mechanism: _capDistinctDots ranks the SAME full
+// allocation on every call and keeps the top `width` of each week, and a week's top 6 are always
+// inside its top 8. Do not "optimise" this into per-variant re-ranking — ranking each variant's
+// own set independently can drop from the wide variant a dot the narrow one kept, i.e. an upgrade
+// that silently takes something away.
+//
+// Ranking is the model's own `tier` tag first — which dot is the better next addition is a
+// clinical judgement, and the model is the one holding the biomarkers — then emphasis. Untagged
+// dots sort as the most optional, so a completion from a stale cached prompt (no tags at all)
+// still ladders, purely on emphasis, and so does a server-padded dot.
+//
+// Returns null when there is no ladder to build — no tiers from GCN, or nothing allocated — and
+// every caller then behaves exactly as it did before this existed.
+function _buildTierLadder({ morningRecipe, eveningRecipe, dotsFormulary, tiers, tierByKey, padCandidates }) {
+    const widths = [...new Set((tiers || [])
+        .map(t => Math.round(Number(t?.max_distinct_dots)))
+        .filter(w => Number.isFinite(w) && w > 0))].sort((a, b) => a - b);
+    if (widths.length === 0) return null;
+    const labelByWidth = new Map();
+    for (const t of tiers || []) {
+        const w = Math.round(Number(t?.max_distinct_dots));
+        if (Number.isFinite(w) && !labelByWidth.has(w)) labelByWidth.set(w, t.tier_label || t.package_name || null);
+    }
+
+    const byKey = new Map((dotsFormulary || []).map(d => [d.key_name, d]));
+    const morning = { ...(morningRecipe?.dots || {}) };
+    const evening = { ...(eveningRecipe?.dots || {}) };
+    const distinct = new Set([...Object.keys(morning), ...Object.keys(evening)]
+        .filter(k => k !== N7_KEY && ((morning[k] || 0) + (evening[k] || 0)) > 0));
+    if (distinct.size === 0) return null;
+
+    // Fill the upgrade slots the formulation itself did not.
+    //
+    // GENERATE reliably doses the whole formulary when asked in isolation, but inside the agentic
+    // loop it curates — live dev runs (2026-09-07) came back with six dots where a single-shot
+    // completion of the same prompt gave seventeen. Six is the narrowest tier, so without this the
+    // wider variants are identical to the base, collapse as duplicates, and the ladder the user was
+    // supposed to be choosing from never appears at all.
+    //
+    // Padding is legitimate here precisely because of what a rung IS: the prompt defines a tier-2/3
+    // dot as one that makes the formula more complete rather than one it cannot do without. It is
+    // never allowed to reach the CORE, though — padding runs only once the model has filled the
+    // narrowest tier itself, and a padded dot is untagged, so the tier-aware ranking below sorts it
+    // behind every dot the model actually chose.
+    const widest = widths[widths.length - 1];
+    if (distinct.size >= widths[0] && distinct.size < widest) {
+        for (const cand of padCandidates || []) {
+            if (distinct.size >= widest) break;
+            const dot = byKey.get(cand?.key_name);
+            const count = Math.round(Number(cand?.count));
+            // N7 is never a candidate: it belongs to every tier already and is counted toward
+            // none, so padding a slot with it would silently cost the buyer one of the dots they
+            // are choosing between.
+            if (!dot || dot.key_name === N7_KEY || distinct.has(dot.key_name) || !(count > 0)) continue;
+            const split = _splitDotTiming(dot, count);
+            if (split.morning > 0) morning[dot.key_name] = split.morning;
+            if (split.evening > 0) evening[dot.key_name] = split.evening;
+            distinct.add(dot.key_name);
+        }
+    }
+
+    // One variant per purchasable width, each produced by the SAME cap that already binds a
+    // purchased package — which is what makes the widths mean the same thing here as they do at
+    // submission, and what gives the ladder rotation for free.
+    const full = {
+        morning: { dots: morning, weeks: morningRecipe?.weeks || undefined },
+        evening: { dots: evening, weeks: eveningRecipe?.weeks || undefined },
+    };
+    const variants = [];
+    let previous = null;
+    for (const width of widths) {
+        const capped = _capDistinctDots(full.morning, full.evening, dotsFormulary, width, tierByKey);
+        // NESTING comes from _capDistinctDots ranking the SAME full allocation every time and
+        // keeping the top `width` of each week: the top 6 of a week are always inside its top 8.
+        // A width the formula cannot fill adds nothing over the one below it, and an "upgrade"
+        // that changes nothing reads as a broken promise — so it is not a rung.
+        const added = previous ? _ladderAdditions(previous, capped, dotsFormulary) : [];
+        if (previous && added.length === 0) continue;
+        variants.push({
+            max_distinct_dots: width,
+            tier_label: labelByWidth.get(width) || null,
+            morning: capped.morning,
+            evening: capped.evening,
+            added,
+        });
+        previous = capped;
+    }
+    if (variants.length === 0) return null;
+    return { base: variants[0], variants };
+}
+
+// The distinct non-N7 dots a variant contains anywhere in the cycle — the union across weeks, not
+// the widest week. A dot that runs only in weeks 3-4 is still part of the formula, and is still
+// something a wider tier can be said to have added.
+function _ladderKeys(morningRecipe, eveningRecipe) {
+    const keys = new Set();
+    for (const recipe of [morningRecipe, eveningRecipe]) {
+        for (const [key, count] of Object.entries(recipe?.dots || {})) {
+            if (key !== N7_KEY && count > 0) keys.add(key);
+        }
+    }
+    return keys;
+}
+
+// What a wider tier adds over the one below it, WEEK BY WEEK.
+//
+// Under rotation this is not simply "dots the narrow formula does not contain": a dot can be in
+// both formulas and still run in more weeks on the wider one, which is a real upgrade and the
+// reason the comparison is per week rather than cycle-wide. The result is one entry per dot that
+// gains any week, carrying the weeks it gains.
+//
+// The dose is read out of a real day's expansion rather than the requested totals — a wider week
+// has less capsule room and _fitRecipeToDailyBudget may have trimmed it. The day chosen is the
+// first day of the first week the dot actually gains, because day 0 is week 1 and a dot rotated
+// into weeks 3-4 would read there as absent.
+function _ladderAdditions(narrow, wide, dotsFormulary) {
+    const activeIn = (recipes, week) => {
+        const membership = _weekMembership(recipes.morning, recipes.evening);
+        const out = new Set();
+        for (const key of _ladderKeys(recipes.morning, recipes.evening)) {
+            const weeks = membership.get(key);
+            if (!weeks || weeks.includes(week)) out.add(key);
+        }
+        return out;
+    };
+    const gained = new Map();
+    for (let week = 1; week <= PLAN_WEEKS; week++) {
+        const before = activeIn(narrow, week);
+        for (const key of activeIn(wide, week)) {
+            if (before.has(key)) continue;
+            if (!gained.has(key)) gained.set(key, []);
+            gained.get(key).push(week);
+        }
+    }
+    if (gained.size === 0) return [];
+    const ctx = _planExpansionContext(wide.morning, wide.evening, dotsFormulary);
+    const byWeek = new Map();
+    const out = [];
+    for (const [key, weeks] of gained) {
+        const week = weeks[0];
+        if (!byWeek.has(week)) byWeek.set(week, _expandPlanDay((week - 1) * DAYS_PER_WEEK, ctx, null));
+        const day = byWeek.get(week);
+        const am = day.morning.dots[key] || 0;
+        const pm = day.evening.dots[key] || 0;
+        if (am === 0 && pm === 0) continue; // squeezed out by the daily budget — not an upgrade
+        out.push({ key, am, pm, weeks });
+    }
+    return out;
+}
+
+
+// Which of a laddered proposal's formulas the user actually bought.
+//
+// The stored `morning`/`evening` are the NARROWEST variant, so this is only ever an upgrade away
+// from what every other reader sees — which is what makes `tiers` safe to ignore everywhere else.
+// The widest variant that fits wins; a package with no tier at all takes the base, because an
+// unstated limit is not a purchase of the widest thing on the menu.
+//
+// Falls back to the base for a plan with no `tiers` (proposed before the ladder existed, or with
+// a package already waiting, where there was one tier to aim at and no choice to offer). Those
+// still meet the over-tier refusal at the call site, which is the right answer for a formula the
+// user was never shown at that width.
+// The one place a finished allocation is narrowed before it is stored, for BOTH paths that store
+// one (the agentic delivery and the deterministic fallback). Two mutually exclusive narrowings,
+// and which applies is decided by whether the user has already bought a package:
+//
+//   ladder   nothing waiting — the allocation becomes the nested 6 / +2 / +2 formulas, and the
+//            plan is stored around the narrowest so it fits whatever code eventually pays for it.
+//   cap      a package waiting — there is one tier to hit and no choice to offer, so the existing
+//            _capDistinctDots trim to that tier is exactly right, unchanged.
+//
+// With no ladder from GCN and no package waiting, both are no-ops and the result is byte-for-byte
+// what this produced before tiers existed.
+// SubAges key (bioage_profile) -> the dots.sub_age_target string. CLAUDE.md §11 lists both halves
+// as canonical and cross-cutting; this is the join between them.
+const SUB_AGE_TARGET_BY_KEY = {
+    CellularAge: 'Cellular Age',
+    MetabolicAge: 'Metabolic Age',
+    MicroVascularAge: 'Micro-Vascular Age',
+    ResilienceAge: 'Resilience Age',
+};
+
+// The dots offered for the upgrade slots a formulation left unfilled, best first.
+//
+// Only ever consulted for slots ABOVE the narrowest tier (see _buildTierLadder), so this never
+// decides what is in someone's core formula — it decides what a wider package would add on top of
+// it, which is the question the rungs exist to answer.
+//
+// Ordered by how defensible the addition is: a dot targeting one of this user's own elevated
+// dimensions first, then one their active health-plan focus recommends, then by key so the result
+// is deterministic. The dose is the same per-dot fallback every other server-side allocation uses,
+// with the same focus bias — never a flat number, since the ranges differ by two orders of
+// magnitude across the formulary.
+function _padCandidatesFor({ dotsFormulary, bioage, recommendedKeySet }) {
+    const chrono = Number(bioage?.ChronoAge);
+    const elevated = new Set(Object.entries(bioage?.SubAges || {})
+        .filter(([, age]) => Number.isFinite(chrono) && Number(age) > chrono)
+        .map(([key]) => SUB_AGE_TARGET_BY_KEY[key])
+        .filter(Boolean));
+    const score = (dot) => {
+        const isRecommended = recommendedKeySet ? recommendedKeySet.has(dot.key_name) : false;
+        return (elevated.has(dot.sub_age_target) ? 0 : 2) + (isRecommended ? 0 : 1);
+    };
+    return (dotsFormulary || [])
+        .filter(d => d.key_name !== N7_KEY)
+        .map(d => ({ dot: d, rank: score(d) }))
+        .sort((a, b) => (a.rank - b.rank) || (a.dot.key_name < b.dot.key_name ? -1 : 1))
+        .map(({ dot }) => ({
+            key_name: dot.key_name,
+            count: _fallbackCountForDot(dot, recommendedKeySet ? recommendedKeySet.has(dot.key_name) : undefined),
+        }));
+}
+
+function _applyTierLadder({ morningRecipe, eveningRecipe, dotsFormulary, orderContext, tiers, tierByKey, pitchByTier, padCandidates }) {
+    const ladder = orderContext.mode === 'buy'
+        ? _buildTierLadder({ morningRecipe, eveningRecipe, dotsFormulary, tiers, tierByKey, padCandidates })
+        : null;
+    if (!ladder) {
+        const capped = _capDistinctDots(morningRecipe, eveningRecipe, dotsFormulary, orderContext.maxDistinctDots);
+        return { morningRecipe: capped.morning, eveningRecipe: capped.evening, tierVariants: null, rungs: [] };
+    }
+    return {
+        morningRecipe: ladder.base.morning,
+        eveningRecipe: ladder.base.evening,
+        tierVariants: ladder.variants,
+        // Rungs are the variants ABOVE the base — the base is the chart itself. The pitch is
+        // keyed on the rung's position (1 for the first upgrade, 2 for the second), not on the
+        // width, because the model is asked about "the next two dots" and never told which widths
+        // GCN happens to be selling today.
+        rungs: ladder.variants.slice(1).map((v, i) => ({
+            tier_label: v.tier_label,
+            max_distinct_dots: v.max_distinct_dots,
+            pitch: (pitchByTier && pitchByTier.get(i + 2)) || '',
+            added: v.added,
+        })),
+    };
+}
+
+function _selectTierVariant(proposedRecipe, maxDistinctDots) {
+    const recipe = proposedRecipe || {};
+    const base = {
+        morning: { dots: recipe.morning || {}, weeks: recipe.weeks || undefined },
+        evening: { dots: recipe.evening || {}, weeks: recipe.weeks || undefined },
+        variant: null,
+    };
+    const tiers = Array.isArray(recipe.tiers) ? recipe.tiers : null;
+    if (!tiers || tiers.length === 0) return base;
+    const max = Number(maxDistinctDots);
+    if (!Number.isFinite(max) || max <= 0) return base;
+    let chosen = null;
+    for (const t of tiers) {
+        const w = Number(t?.max_distinct_dots);
+        if (!Number.isFinite(w) || w > max) continue;
+        if (!chosen || w > Number(chosen.max_distinct_dots)) chosen = t;
+    }
+    if (!chosen) return base;
+    // The chosen tier's OWN rotation, not the base's: each width caps a week independently, so the
+    // 8-dot formula's weeks are not the 6-dot formula's. A variant stored before per-tier weeks
+    // existed simply has none and falls back to the base's, which is what it was written with.
+    const weeks = chosen.weeks || recipe.weeks || undefined;
+    return {
+        morning: { dots: chosen.morning || {}, weeks },
+        evening: { dots: chosen.evening || {}, weeks },
+        variant: chosen,
+    };
 }
 
 // Fits a requested daily allocation into the two capsules a day physically holds.
@@ -2626,6 +3014,16 @@ async function _writeExpandedSchedules(client, { planId, userId, startDateObj, m
 // write their schedules through _writeExpandedSchedules, which is what _commitNutritionPlan's day
 // expansion was factored into.
 
+// The rotation a tier variant actually has, or nothing at all when it runs every dot every week.
+function _tierWeeks(variant) {
+    const merged = { ...(variant?.evening?.weeks || {}), ...(variant?.morning?.weeks || {}) };
+    const weeks = {};
+    for (const [key, list] of Object.entries(merged)) {
+        if (Array.isArray(list) && list.length > 0 && list.length < PLAN_WEEKS) weeks[key] = list;
+    }
+    return Object.keys(weeks).length ? { weeks } : {};
+}
+
 // Records what the Formulate-Dots chat tool just worked out as a 'proposed' plan.
 //
 // A proposal is a real, purchasable 28-day recipe that the user does not yet physically have, so
@@ -2639,7 +3037,7 @@ async function _writeExpandedSchedules(client, { planId, userId, startDateObj, m
 //     previous proposal is superseded, so there is at most one live proposal to price.
 //
 // Returns the new plan id.
-async function _commitProposedPlan(client, { userId, analysis, morningRecipe, eveningRecipe, activeHealthPlans }) {
+async function _commitProposedPlan(client, { userId, analysis, morningRecipe, eveningRecipe, activeHealthPlans, tierVariants }) {
     const primaryHealthPlanId = (activeHealthPlans || []).find(p => p.plan_type === 'primary')?.id ?? null;
     const secondaryHealthPlanId = (activeHealthPlans || []).find(p => p.plan_type === 'secondary')?.id ?? null;
 
@@ -2665,6 +3063,30 @@ async function _commitProposedPlan(client, { userId, analysis, morningRecipe, ev
              evening: eveningRecipe?.dots || {},
              ...(morningRecipe?.weeks || eveningRecipe?.weeks
                  ? { weeks: { ...(eveningRecipe?.weeks || {}), ...(morningRecipe?.weeks || {}) } }
+                 : {}),
+             // The wider tiers of the same formula, when the user was offered a ladder
+             // (_buildTierLadder). `morning`/`evening` above are the NARROWEST of them, so every
+             // reader that predates this key — the box scan, the printed label, the checkout
+             // snapshot — keeps working untouched and sees a recipe that fits any package sold.
+             // handlePostFormulationSubmit picks the widest that fits the code actually redeemed
+             // and collapses the row back to a single recipe.
+             ...(Array.isArray(tierVariants) && tierVariants.length > 1
+                 ? { tiers: tierVariants.map(v => ({
+                     max_distinct_dots: v.max_distinct_dots,
+                     tier_label: v.tier_label || null,
+                     morning: v.morning?.dots || {},
+                     evening: v.evening?.dots || {},
+                     // Each tier has its OWN rotation: a width caps a week, so a wider tier both
+                     // runs more dots per week and generally rotates differently. Reusing the
+                     // top-level `weeks` for all of them would describe a schedule none of them
+                     // actually has.
+                     //
+                     // Entries naming all four weeks are dropped: _capDistinctDots materialises
+                     // the full membership whenever it trims anything, and "every week" already
+                     // means the same as absent — storing it makes a steady formula read as a
+                     // rotating one to anything inspecting the row.
+                     ..._tierWeeks(v),
+                 })) }
                  : {}),
          }),
          labelCode, primaryHealthPlanId, secondaryHealthPlanId]
@@ -2894,9 +3316,17 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         ),
     ]);
 
-    // Never throws (see fetchFormulationOrders): not knowing whether a package is waiting
-    // costs the prompt a hint, never the user their formulation.
-    const orderContext = await _resolveOrderContext(user.user_id);
+    // Never throws (see fetchFormulationOrders): not knowing whether a package is waiting, or
+    // what the ladder looks like, costs the prompt a hint — never the user their formulation.
+    // Fetched together because the ladder is only used when nothing is waiting, and which of the
+    // two applies is not known until the order lookup answers.
+    const [orderContext, formulationTiers] = await Promise.all([
+        _resolveOrderContext(user.user_id),
+        fetchFormulationTiers(),
+    ]);
+    // Mutually exclusive by design: formulation_package is the tier already bought,
+    // formulation_tiers the menu of tiers on offer. A user holding a package is not shopping.
+    const tierLadder = orderContext.mode === 'buy' ? formulationTiers : [];
 
     const llmContext = {
         user_profile: { nickname: user.nickname, gender: user.gender, age, bmi, language: lang },
@@ -2928,11 +3358,17 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         //
         // Best-effort only, and deliberately not the enforcement point: this turn runs
         // asynchronously and may be delivered minutes later, by which time a checkout could have
-        // completed. finalizeFormulaDotsGenerate re-resolves the tier at delivery and applies
-        // _capDistinctDots there, which is what actually binds.
+        // completed. finalizeFormulaDotsGenerate re-resolves the order at delivery and narrows the
+        // recipe there (_applyTierLadder), which is what actually binds.
         formulation_package: orderContext.maxDistinctDots
             ? { max_distinct_dots: orderContext.maxDistinctDots, name: orderContext.packageName }
             : null,
+        // The purchasable widths, narrowest first, when the user has bought nothing yet. Carried
+        // in llmContext rather than re-fetched at delivery — unlike the order lookup, which IS
+        // re-resolved there for freshness — because the variants have to be built against the same
+        // ladder the model was told to aim at. A catalog that changed mid-turn would otherwise
+        // produce rungs the prose beside them never describes.
+        formulation_tiers: tierLadder.length > 0 ? tierLadder : null,
     };
     const formulaGenerateTemplate = personaType === 'viva' ? vivaSystemFormulaGenerateTemplate : systemFormulaGenerateTemplate;
     const systemPrompt = formulaGenerateTemplate(llmContext);
@@ -2956,18 +3392,24 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
             activeHealthPlans: llmContext.active_health_plans,
         });
         const { analysis, finalContent } = deterministic;
-        // Trimmed to the purchased tier before it is stored, so the card, the box scan and the
-        // fast-track submission all expand the same recipe. A no-op when nothing is waiting.
-        const capped = _capDistinctDots(deterministic.morningRecipe, deterministic.eveningRecipe,
-            dotsFormulary, orderContext.maxDistinctDots);
-        const morningRecipe = capped.morning;
-        const eveningRecipe = capped.evening;
+        // Narrowed before it is stored, so the card, the box scan and the fast-track submission
+        // all expand the same recipe. The fallback has no model output to read tier tags or a
+        // pitch from, so its rungs are ranked on emphasis alone and carry no copy — but it must
+        // still ladder: a proposal with no `tiers` and no cap is one a wider code cannot be spent
+        // on, which is the exact failure this whole change exists to remove.
+        const { morningRecipe, eveningRecipe, tierVariants, rungs } = _applyTierLadder({
+            morningRecipe: deterministic.morningRecipe,
+            eveningRecipe: deterministic.eveningRecipe,
+            dotsFormulary, orderContext, tiers: tierLadder,
+            padCandidates: _padCandidatesFor({ dotsFormulary, bioage: bioageProfile,
+                recommendedKeySet: _resolveCandidateDotKeys(llmContext.active_health_plans, dotsFormulary) }),
+        });
         const client = await pool.connect();
         let planId = null;
         try {
             await client.query('BEGIN');
             planId = await _commitProposedPlan(client, {
-                userId: user.user_id, analysis, morningRecipe, eveningRecipe,
+                userId: user.user_id, analysis, morningRecipe, eveningRecipe, tierVariants,
                 activeHealthPlans: llmContext.active_health_plans,
             });
             await client.query('COMMIT');
@@ -2980,7 +3422,7 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
             client.release();
         }
         const labelCode = planId ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [planId])).rows[0]?.label_code : null;
-        const message = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang, { planId, orderMode: orderContext.mode, labelCode });
+        const message = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang, { planId, orderMode: orderContext.mode, labelCode, rungs });
         await pool.query(
             'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
             [user.user_id, 'formulation_proposal', message, 'pending']
@@ -3085,6 +3527,12 @@ module.exports = {
     _awaitingOrders,
     _capDistinctDots,
     _countDistinctDots,
+    _weekMembership,
+    _tierWeeks,
+    _buildTierLadder,
+    _selectTierVariant,
+    _applyTierLadder,
+    _padCandidatesFor,
     _formulationLabelUrl,
     _expandProposalToCapsules,
     _formatDayRanges,
@@ -3092,6 +3540,7 @@ module.exports = {
     _planExpansionContext,
     _fitRecipeToDailyBudget,
     _buildFormulaChartBlock,
+    _rungPitch,
     _buildProductCardBlock,
     _isPulseActiveDate,
     _applyPulseSchedule,

@@ -43,7 +43,7 @@ const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { resolveEffectivePersona, hasActiveVivaAccess } = require('../lib/persona');
 const { grantSignupTrial } = require('../lib/personaOverride');
-const { _runDeterministicFormulation, _buildFormulaChartBlock, _commitProposedPlan, _resolveOrderContext, _capDistinctDots, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _buildProductCardBlock } = require('./dots');
+const { _runDeterministicFormulation, _buildFormulaChartBlock, _commitProposedPlan, _resolveOrderContext, _applyTierLadder, _padCandidatesFor, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _buildProductCardBlock } = require('./dots');
 const { fetchAiCatalog } = require('../lib/gcnClient');
 const { PLAN_WEEKS, N7_KEY } = require('../lib/dotsProductModel');
 const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock');
@@ -1856,11 +1856,11 @@ function _extractTrailingJson(text, marker) {
 // transaction. Returns the plan id, or null if the write failed — a proposal is what makes the
 // allocation orderable, but it is not what makes the reply useful, so a failure here degrades to
 // a card without a store CTA rather than costing the user the whole turn.
-async function _commitProposal(userId, { analysis, morningRecipe, eveningRecipe, activeHealthPlans }) {
+async function _commitProposal(userId, { analysis, morningRecipe, eveningRecipe, activeHealthPlans, tierVariants }) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const planId = await _commitProposedPlan(client, { userId, analysis, morningRecipe, eveningRecipe, activeHealthPlans });
+        const planId = await _commitProposedPlan(client, { userId, analysis, morningRecipe, eveningRecipe, activeHealthPlans, tierVariants });
         await client.query('COMMIT');
         return planId;
     } catch (err) {
@@ -1902,6 +1902,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     const dotsByKey = new Map((llmContext.dots || []).map(d => [d.key_name.replace(/^DOT/, 'D'), d]));
     const extracted = _extractTrailingJson(rawReply, '{"action":"formulate_dots"');
     let entries = null;
+    const pitchByTier = new Map();
     if (extracted && extracted.parsed?.action === 'formulate_dots' && Array.isArray(extracted.parsed.formulation)) {
         entries = new Map();
         for (const item of extracted.parsed.formulation) {
@@ -1936,9 +1937,29 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
                 ? [...new Set(item.weeks.map(w => Math.round(Number(w)))
                     .filter(w => Number.isFinite(w) && w >= 1 && w <= PLAN_WEEKS))].sort((a, b) => a - b)
                 : [];
-            entries.set(item.dot_key, { count, dot, weeks });
+            // Which rung of the purchasable ladder first includes this dot (1 = the essential
+            // six, 2 = the first +2, 3 = the second +2). Only asked for when the user has bought
+            // nothing yet; absent everywhere else, and absent from any completion produced before
+            // the ladder existed, in which case _buildTierLadder ranks on emphasis alone.
+            //
+            // Never trusted as a count: it only ORDERS the dots, and the prefix taken from that
+            // order is what enforces each width — so a model that tags seven dots at tier 1 is
+            // corrected by construction rather than by a check that could be forgotten.
+            const tierTag = Number.isFinite(Number(item.tier)) ? Math.round(Number(item.tier)) : null;
+            entries.set(item.dot_key, { count, dot, weeks, tierTag });
         }
         if (entries.size === 0) entries = null;
+        // One line of upgrade copy per rung. Model-authored, and the only model-authored string
+        // that reaches the card — sanitised and length-capped server-side by
+        // _buildFormulaChartBlock, and dropped entirely if the rung it names does not exist.
+        if (Array.isArray(extracted.parsed.upgrades)) {
+            for (const up of extracted.parsed.upgrades) {
+                const tier = Math.round(Number(up?.tier));
+                if (!Number.isFinite(tier) || tier < 2) continue;
+                if (typeof up.pitch !== 'string' || !up.pitch.trim()) continue;
+                pitchByTier.set(tier, up.pitch.trim());
+            }
+        }
     }
 
     let finalContent, morningRecipe, eveningRecipe;
@@ -2031,10 +2052,29 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     // enough for a checkout to have completed in between. llmContext.formulation_package told the
     // model what to aim for; this is what actually binds the recipe that gets stored.
     const orderContext = await _resolveOrderContext(user_id);
-    // Trimmed to the purchased tier BEFORE the proposal is written, so the card, the box scan and
-    // the fast-track submission all expand one recipe. A no-op when no package is waiting.
-    ({ morning: morningRecipe, evening: eveningRecipe } =
-        _capDistinctDots(morningRecipe, eveningRecipe, llmContext.dots, orderContext.maxDistinctDots));
+    // Narrowed BEFORE the proposal is written, so the card, the box scan and the fast-track
+    // submission all expand one recipe. With a package waiting this is the same trim to the
+    // purchased tier it always was; with nothing waiting it builds the nested 6 / +2 / +2 ladder
+    // and stores the plan around the narrowest of them. A no-op in neither case only when GCN
+    // gave us no ladder and no package is waiting.
+    //
+    // The ladder comes from llmContext, not a fresh fetch: the variants must be built against the
+    // same widths the model was told to aim at (see _handleFormulaDotsAgentic).
+    let tierVariants = null, rungs = [];
+    ({ morningRecipe, eveningRecipe, tierVariants, rungs } = _applyTierLadder({
+        morningRecipe, eveningRecipe, dotsFormulary: llmContext.dots, orderContext,
+        tiers: llmContext.formulation_tiers,
+        tierByKey: entries
+            ? new Map([...entries.values()].filter(v => v.tierTag && v.count > 0)
+                .map(v => [v.dot.key_name, v.tierTag]))
+            : null,
+        pitchByTier,
+        // Only ever used for slots above the narrowest tier, so the core formula stays the
+        // model's own — see _buildTierLadder.
+        padCandidates: _padCandidatesFor({
+            dotsFormulary: llmContext.dots, bioage: llmContext.bioage, recommendedKeySet,
+        }),
+    }));
 
     // The allocation is recorded as a 'proposed' plan — a real 28-day recipe the user does not
     // physically have yet, which is exactly what GCN's custom-formulation checkout needs in order
@@ -2042,7 +2082,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     // both of those happen when the delivered box is scanned (_activateProposedPlan). If the
     // write fails the numbers still reach the user, just without a way to order them.
     const planId = await _commitProposal(user_id, {
-        analysis: finalContent, morningRecipe, eveningRecipe,
+        analysis: finalContent, morningRecipe, eveningRecipe, tierVariants,
         activeHealthPlans: llmContext.active_health_plans,
     });
     // The label code is minted with the plan, and the QR built from it is part of what the user
@@ -2057,7 +2097,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     // The CTA depends on whether the user already paid for a package (the two orderings of the
     // same purchase — see _buildFormulaChartBlock's `#order` note), which orderContext above
     // already answered.
-    const chatMessage = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, llmContext.dots, lang, { planId, orderMode: orderContext.mode, labelCode });
+    const chatMessage = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, llmContext.dots, lang, { planId, orderMode: orderContext.mode, labelCode, rungs });
 
     await saveChatMessage(user_id, 'ai', chatMessage, null, personaType);
     await pool.query(
@@ -2213,19 +2253,27 @@ async function handleChatGenerateEvent(payload) {
                         activeHealthPlans: llmContext.active_health_plans,
                     });
                     const fbOrder = await _resolveOrderContext(user_id);
-                    const fbCapped = _capDistinctDots(fallback.morningRecipe, fallback.eveningRecipe,
-                        llmContext.dots, fbOrder.maxDistinctDots);
+                    // Ladders too, on emphasis alone and with no upgrade copy: a proposal stored
+                    // without `tiers` is one a wider code cannot be spent on, which is the failure
+                    // this whole change exists to remove — a degraded card is fine, an
+                    // unpurchasable formula is not.
+                    const fb = _applyTierLadder({
+                        morningRecipe: fallback.morningRecipe, eveningRecipe: fallback.eveningRecipe,
+                        dotsFormulary: llmContext.dots, orderContext: fbOrder,
+                        tiers: llmContext.formulation_tiers,
+                    });
                     const fbPlanId = await _commitProposal(user_id, {
                         analysis: fallback.finalContent,
-                        morningRecipe: fbCapped.morning,
-                        eveningRecipe: fbCapped.evening,
+                        morningRecipe: fb.morningRecipe,
+                        eveningRecipe: fb.eveningRecipe,
+                        tierVariants: fb.tierVariants,
                         activeHealthPlans: llmContext.active_health_plans,
                     });
                     const fbLabelCode = fbPlanId
                         ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [fbPlanId])).rows[0]?.label_code
                         : null;
                     const fbMessage = fallback.finalContent
-                        + _buildFormulaChartBlock(fbCapped.morning, fbCapped.evening, llmContext.dots, language, { planId: fbPlanId, orderMode: fbOrder.mode, labelCode: fbLabelCode });
+                        + _buildFormulaChartBlock(fb.morningRecipe, fb.eveningRecipe, llmContext.dots, language, { planId: fbPlanId, orderMode: fbOrder.mode, labelCode: fbLabelCode, rungs: fb.rungs });
                     await saveChatMessage(user_id, 'ai', fbMessage, null, personaType);
                     await pool.query(
                         'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',

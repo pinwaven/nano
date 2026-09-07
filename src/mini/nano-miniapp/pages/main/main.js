@@ -207,6 +207,7 @@ const T = {
     // wider than it covers means re-running 营养定制 before it can be compounded.
     codeOverTier: (have, max) => `当前配方含 ${have} 种原粒，此兑换码为 ${max} 种。仍可使用，但需重新生成配方后才能定制。是否继续？`,
     codeConfirm: '确认使用这张兑换码？兑换码为一次性使用。',
+    codeTierMatch: (w, max) => `此兑换码为 ${max} 种原粒，将按你配方中的 ${w} 种版本配制。兑换码为一次性使用，是否继续？`,
     codeErr_code_required: '请输入兑换码',
     codeErr_code_not_found: '未找到该兑换码，请核对后重试。',
     codeErr_code_ambiguous: '该兑换码无法确认对应套餐，请联系您的门店。',
@@ -302,6 +303,14 @@ const T = {
     formulaDaysUnit: '天',
     formulaCapsulesUnit: '粒胶囊',
     formulaOrderCta: '使用兑换码开始配制 →',
+    // The upgrade ladder on a 'buy'-mode formula card (:::formula's #rung lines). The hint is
+    // load-bearing, not decoration: a wider tier cannot be bought in the app, so telling the user
+    // where the code comes from is the only actionable thing on the whole section.
+    formulaUpgradeTitle: '再往上一档',
+    // A tier caps dots PER WEEK, so an upgrade can also be the same dot running more weeks.
+    formulaWeekPrefix: '第',
+    formulaWeekSuffix: '周',
+    formulaUpgradeHint: '更宽的一档由门店提供对应的兑换码，兑换后即按该档配方配制。',
     formulaLabelCta: '查看配方标签与二维码',
     formulaSubmitCta: '确认此方案，开始配制 →',
     formulaSubmitConfirmTitle: '确认配制方案',
@@ -541,6 +550,7 @@ const T = {
     codePending: 'Redeemed. The order is still confirming; check back on this page shortly.',
     codeOverTier: (have, max) => `Your formula uses ${have} dots and this code covers ${max}. You can still use it, but you'll need to run Formulate Dots again before it can be compounded. Continue?`,
     codeConfirm: 'Use this redeem code? A code can only be used once.',
+    codeTierMatch: (w, max) => `This code covers ${max} dots, so your formula's ${w}-dot version will be compounded. A code can only be used once. Continue?`,
     codeErr_code_required: 'Enter your code',
     codeErr_code_not_found: "We couldn't find that code. Check it and try again.",
     codeErr_code_ambiguous: "That code doesn't resolve to one package. Please contact your store.",
@@ -629,6 +639,10 @@ const T = {
     formulaDaysUnit: ' days',
     formulaCapsulesUnit: ' capsules',
     formulaOrderCta: 'Redeem a code to start →',
+    formulaUpgradeTitle: 'One tier up',
+    formulaWeekPrefix: 'wk ',
+    formulaWeekSuffix: '',
+    formulaUpgradeHint: "A wider tier comes as its own redeem code from your store — redeeming one formulates at that tier.",
     formulaLabelCta: 'View formulation label & QR',
     formulaSubmitCta: 'Confirm and start compounding →',
     formulaSubmitConfirmTitle: 'Confirm this formulation',
@@ -1220,6 +1234,10 @@ Page({
     codes: [],
     // The pending proposal's weekly width, used only to warn before a narrower code is spent.
     proposedDistinctDots: null,
+    // The widths this user's live proposal was laddered for, narrowest first (_buildTierLadder).
+    // Null for a proposal made before the ladder existed, which is what keeps the old over-tier
+    // warning reachable.
+    proposedTierWidths: null,
     codeSheetOpen: false,
     codeSheetManual: false,   // typed code (store handed it over) vs a row tapped in the list
     codeSheetCode: '',
@@ -1678,7 +1696,7 @@ Page({
   handleCodeWxAddress() { this.fetchWechatAddress('codeShip') },
 
   async submitFormulationRedeem() {
-    const { t, user, codeSheetBusy, codeSheetMax, proposedDistinctDots } = this.data
+    const { t, user, codeSheetBusy, codeSheetMax, proposedDistinctDots, proposedTierWidths } = this.data
     if (codeSheetBusy || !user?.user_id) return
 
     const code = (this.data.codeSheetCode || '').trim()
@@ -1689,14 +1707,21 @@ Page({
     const address = (this.data.codeShipAddress || '').trim()
     if (!name || !phone || !address) { this.setData({ codeSheetError: t.codeShippingRequired }); return }
 
-    // A code is single-use, so spending one on a formula wider than it covers is worth stopping
-    // for — not to refuse it (the package is worth having either way, and re-running 营养定制 with
-    // the order in hand produces one built for the tier) but so nobody spends it unaware.
-    // Only knowable for a listed code; a typed one carries no tier until GCN answers.
+    // A code is single-use, so what it will actually compound is worth saying before it is spent.
+    // Only knowable for a LISTED code; a typed one carries no tier until GCN answers, and falls
+    // through to the plain confirmation.
+    //
+    // A laddered proposal (6 / +2 / +2) has a version for every tier sold, so the honest message
+    // is WHICH version this code compounds, not a warning. The old warning is still right — and
+    // still reachable — for a proposal made before the ladder existed, which was capped by
+    // nothing and can genuinely be wider than any code.
+    const fits = (proposedTierWidths || []).filter(w => codeSheetMax && w <= codeSheetMax)
     const overTier = codeSheetMax && proposedDistinctDots && proposedDistinctDots > codeSheetMax
-    const confirmText = overTier
-      ? t.codeOverTier(proposedDistinctDots, codeSheetMax)
-      : t.codeConfirm
+    const confirmText = fits.length
+      ? t.codeTierMatch(Math.max(...fits), codeSheetMax)
+      : overTier
+        ? t.codeOverTier(proposedDistinctDots, codeSheetMax)
+        : t.codeConfirm
     const ok = await new Promise(resolve => wx.showModal({
       title: t.codeSheetTitle, content: confirmText,
       confirmText: t.codeSubmitBtn, cancelText: t.codeCancel,
@@ -3706,6 +3731,7 @@ Page({
         hasProposedFormula: packages.some(p => p.stage === 'proposed'),
         codes,
         proposedDistinctDots: proposed ? proposed.distinct_dots : null,
+        proposedTierWidths: (proposed && proposed.tier_widths) || null,
         dispenseSlot,
         dispenseSlotDots,
         dispenseDate: localISODate(new Date()),
@@ -3714,7 +3740,7 @@ Page({
       })
       this._applyDotsWeek(0)
     } catch (e) {
-      this.setData({ dotsLoading: false, hasPlan: false, packages: [], hasPackageInFlight: false, hasProposedFormula: false, codes: [], proposedDistinctDots: null })
+      this.setData({ dotsLoading: false, hasPlan: false, packages: [], hasPackageInFlight: false, hasProposedFormula: false, codes: [], proposedDistinctDots: null, proposedTierWidths: null })
     }
   },
 

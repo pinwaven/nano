@@ -19,7 +19,7 @@ const { PLAN_WEEKS } = require('../../lib/dotsProductModel');
 const { getVivaLabels } = require('./subAgeLabels');
 
 module.exports = (ctx) => {
-    const { user_profile, biomarkers, bioage, dots, health_twin, questionnaire_context, active_health_plans, current_solar_term, sub_age_display_names , formulation_package } = ctx;
+    const { user_profile, biomarkers, bioage, dots, health_twin, questionnaire_context, active_health_plans, current_solar_term, sub_age_display_names , formulation_package, formulation_tiers } = ctx;
     const labels = getVivaLabels(sub_age_display_names);
 
     const formularyLines = (dots || []).length > 0
@@ -103,10 +103,57 @@ module.exports = (ctx) => {
 请**主动挑选**每周最关键的 ${formulation_package.max_distinct_dots} 种并把剂量给足，不要先铺开再删减——超出的部分会被系统按重要性裁掉。`
         : '';
 
+    // The purchasable ladder, for a user who has bought NOTHING yet — the mirror image of
+    // packageSection above and never rendered with it. There the tier is settled and the job is to
+    // hit it; here the tier is the thing being chosen, and the user has never been shown what it
+    // costs them to choose the narrow one.
+    //
+    // The ask is one nested set of formulas, not three: the essential core, then +2, then +2. The
+    // server takes prefixes of the model's own tier ordering (_buildTierLadder), so the widths
+    // hold whatever the model tags — the tag decides only WHICH dot is the better next addition,
+    // which is the clinical judgement it is here to make.
+    //
+    // Widths come from GCN's catalog, never hardcoded: a tier repriced, added or retired in the
+    // admin panel has to reach this prompt with no deploy.
+    const tierRungs = (formulation_tiers || [])
+        .map(t => ({ label: t.tier_label || t.package_name || '', max: Number(t.max_distinct_dots) }))
+        .filter(t => Number.isFinite(t.max) && t.max > 0)
+        .sort((a, b) => a.max - b.max);
+    const tierLadderSection = (!packageSection && tierRungs.length > 1)
+        ? `用户尚未购买套餐。可购买的28天套餐共 ${tierRungs.length} 档，区别只在于**每周**可同时服用的原粒种类数（DOT-N7 为系统固定的重置原粒，任何一档都不计入）：
+${tierRungs.map((t, i) => `· ${t.label || t.max + '种'}：任意一周最多 ${t.max} 种${i === 0 ? '（核心档）' : `（比上一档多 ${t.max - tierRungs[i - 1].max} 种）`}`).join('\n')}
+
+请按“先给出最核心的一档，再逐档加码”的方式来配，并在每个 count 大于 0 的条目上加 "tier" 字段标注它属于哪一档：
+${tierRungs.map((t, i) => i === 0
+        ? `· tier 1：最关键的 ${t.max} 种——这一档必须自成一套完整、说得通的方案，因为多数用户只会拿到它`
+        : `· tier ${i + 1}：在上一档基础上再加 ${t.max - tierRungs[i - 1].max} 种（合计 ${t.max} 种），选那些“有了会更完整、没有也不致命”的原粒`).join('\n')}
+**剂量照常给全**：下面的配方规则不变——配方库中每一个短代码都要给出数值，与用户异常指标无关的取各自范围的下限附近，相关的按严重程度取中段或上限。"tier" 只是在这份完整配比之上再叠加一层**优先级排序**，不是"只选这几种、其余归零"；不要因为要分档就把其他原粒改成 0。
+DOT-N7 不加 tier。
+**每一档限定的是「每周」可同时服用的原粒种类数，不是整个周期的总数**：四周可以彼此不同——某个原粒只出现在其中一两周、把名额让给另一个原粒，完全可以，只要**每一周**都不超过该档的上限。因此一份 6种原粒 的方案，四周加起来用到 6 种以上是正常的。需要连续服用才有意义的原粒（如睡眠、情绪支持）应四周都保留；只有适合阶段性或轮换的原粒才安排在部分周。
+如需让某个原粒只在部分周出现，在该条目上加 "weeks" 字段列出周次（1-4）；省略即表示四周都有。例如：{"dot_key":"D-N1","count":3,"tier":1,"weeks":[1,2]}
+每档的名额数是固定的产品规格，请按上面写明的数量标满；若你标注的不足，系统会按剂量强度自动补齐后面的名额。
+
+同时在 JSON 末尾附一个 "upgrades" 数组，为第 2 档起的每一档写一句升级文案：
+{"upgrades":[${tierRungs.slice(1).map((t, i) => `{"tier":${i + 2},"pitch":"..."}`).join(',')}]}
+文案规则：
+· 一句话，30字以内，直接写给用户看，说明多出的这几种原粒把这套方案补全在哪里；
+· **不要在文案里点名任何具体原粒**——卡片会在这句话正上方列出它们的名称，重复一遍只会在你写的名字和系统实际排进这一档的原粒不一致时误导用户；只描述这一档补上了什么；
+· 语气可以是向往式、有画面感的产品介绍，不必逐字挂靠某项指标；
+· 但绝不可写出起效时间、改善幅度、任何数值预测或效果承诺，也不得编造成分、机制或功效；
+· 提到原粒时使用配方库里的“对话中称呼”或名称，不要写短代码，也不要写价格。
+正文分析请围绕第 1 档这套核心配方来写；升级内容只放在 upgrades 里，不要在正文里重复一遍。`
+        : '';
+
+    // The action tail grows two optional fields in ladder mode. Both are optional on the parsing
+    // side too, so a completion from a stale cached prompt still lands as an ordinary formulation.
+    const formatLine = tierLadderSection
+        ? `{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0,"tier":1}, ...每个配方库短代码一条],"upgrades":[${tierRungs.slice(1).map((t, i) => `{"tier":${i + 2},"pitch":"..."}`).join(',')}]}`
+        : '{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...每个配方库短代码一条]}';
+
     // Only mentioned when a package is in play, because packageSection is the only place the
     // "weeks" field is actually specified — naming it otherwise invites a field the model was
     // never taught the shape of.
-    const weeksNote = packageSection
+    const weeksNote = (packageSection || tierLadderSection)
         ? '；若你用 "weeks" 字段限定某个原粒只在部分周出现，则该原粒只安排在这些周'
         : '';
 
@@ -129,7 +176,7 @@ ${getTwinVocabBlock()}
 用户：${user_profile.nickname || '用户'}，${user_profile.age ? user_profile.age + ' 岁' : '年龄未知'}${user_profile.bmi ? '，BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
-${focusWeightingSection ? focusWeightingSection + '\n' : ''}${packageSection ? packageSection + '\n' : ''}
+${focusWeightingSection ? focusWeightingSection + '\n' : ''}${packageSection ? packageSection + '\n' : (tierLadderSection ? tierLadderSection + '\n' : '')}
 ${twinSection}
 
 ${seasonSection}
@@ -155,7 +202,7 @@ ${formularyLines}
 - 系统对早/晚每颗胶囊的原粒总粒数设有物理上限（每颗胶囊最多72粒，超出部分系统会按比例自动缩减），所以不要为了覆盖面而习惯性把每个原粒都推向范围上限——现实目标是胶囊仍可一次吞服；若多个原粒同时判断为高优先级，考虑其中1-2个取上限、其余取中段，而不是全部拉满。
 
 输出格式（严格遵守，回复正文照常撰写，然后在最后另起一行附上下方 JSON，短代码必须与配方库完全一致）：
-{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...每个配方库短代码一条]}
+${formatLine}
 
 回复规则：
 - 先给出对话式分析（不使用标题、不使用列表，2-3句话），再附上 JSON 行。

@@ -809,6 +809,75 @@ page {
   color: var(--text-sub);
   letter-spacing: 0.5rpx;
 }
+/* The upgrade ladder. Visually SUBORDINATE to the chart above it — a lighter inset panel rather
+   than a second card — because the chart is the formula the user is getting and the rungs are
+   what they could add. Given equal weight they read as three competing options, which is the one
+   thing this layout was chosen to avoid. */
+.fcard-upgrades {
+  margin-top: 22rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid rgba(var(--blue-rgb), 0.26);
+}
+.fcard-uphead {
+  display: block;
+  font-size: var(--fs-21, 21rpx);
+  font-weight: 600;
+  color: var(--chat-accent);
+  letter-spacing: 1rpx;
+  margin-bottom: 14rpx;
+}
+.fcard-rung {
+  padding: 16rpx 18rpx;
+  border-radius: 14rpx;
+  background: rgba(127, 127, 127, 0.10);
+}
+.fcard-rung + .fcard-rung {
+  margin-top: 12rpx;
+}
+.fcard-rung-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+}
+.fcard-rung-label {
+  font-size: var(--fs-22, 22rpx);
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.5rpx;
+}
+.fcard-rung-add {
+  font-size: var(--fs-19, 19rpx);
+  color: var(--chat-accent);
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  background: rgba(var(--blue-rgb), 0.18);
+}
+/* Overrides .fcard-legend's own top margin: inside a rung the dots sit directly under the label,
+   not below a bar chart. */
+.fcard-rung-dots {
+  margin-top: 12rpx;
+}
+.fcard-leg-weeks {
+  font-size: var(--fs-19, 19rpx);
+  color: var(--text-sub);
+  padding: 0 8rpx;
+  border-radius: 999rpx;
+  background: rgba(127, 127, 127, 0.14);
+}
+.fcard-rung-pitch {
+  display: block;
+  margin-top: 12rpx;
+  font-size: var(--fs-21, 21rpx);
+  line-height: 1.55;
+  color: var(--text-sub);
+}
+.fcard-rung-hint {
+  display: block;
+  margin-top: 14rpx;
+  font-size: var(--fs-19, 19rpx);
+  line-height: 1.5;
+  color: var(--text-sub);
+}
 .fcard-cta {
   margin-top: 18rpx;
   padding: 18rpx 24rpx;

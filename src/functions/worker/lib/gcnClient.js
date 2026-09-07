@@ -118,6 +118,41 @@ async function fetchFormulationCodes(nanoUserId) {
     }
 }
 
+// The purchasable tier ladder — one rung per 28-day package width (6 / 8 / 10 种原粒), narrowest
+// first. Read only when the user has NOTHING waiting: with a package already paid for the tier is
+// settled and comes off the order itself, and a ladder would be an upsell for something they
+// cannot upgrade.
+//
+// NEVER THROWS, same 4s budget and same reason as its neighbours above: no ladder means the tool
+// formulates exactly as it did before this existed, which is a worse card but a complete one.
+async function fetchFormulationTiers() {
+    if (!BASE_URL || !TOKEN) return [];
+    const timer = AbortSignal.timeout ? AbortSignal.timeout(ORDER_STATUS_TIMEOUT_MS) : undefined;
+    try {
+        const res = await fetch(
+            `${BASE_URL}/api/mall/nano/formulation-packages`,
+            { headers: { authorization: `Bearer ${TOKEN}` }, signal: timer }
+        );
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (!Array.isArray(data?.packages)) return [];
+        // Narrowest first, and only rungs carrying a real width — the ladder's whole meaning is
+        // that number, and GCN sorts on it too, but a client that depends on an ordering should
+        // establish it rather than inherit it.
+        return data.packages
+            .filter(p => p && Number.isFinite(Number(p.max_distinct_dots)) && Number(p.max_distinct_dots) > 0)
+            .map(p => ({
+                tier_label: p.tier_label || null,
+                package_name: p.package_name || null,
+                max_distinct_dots: Number(p.max_distinct_dots),
+            }))
+            .sort((a, b) => a.max_distinct_dots - b.max_distinct_dots);
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'gcn_formulation_tiers_failed', error: err.message }));
+        return [];
+    }
+}
+
 // Spends one of those codes on the package it stands for. MAY THROW, like the fast-track submit
 // below and for the same reason: the entire point of the tap was the call, and a silent no-op
 // would leave the user believing a code they still hold has been spent — or that one already
@@ -144,5 +179,5 @@ async function submitFastTrackFormulation(payload) {
 
 module.exports = {
     gcnFetch, fetchAiCatalog, fetchFormulationOrders, submitFastTrackFormulation,
-    fetchFormulationCodes, redeemFormulationCode,
+    fetchFormulationCodes, redeemFormulationCode, fetchFormulationTiers,
 };

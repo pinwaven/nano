@@ -70,6 +70,9 @@ If answering fully requires data NOT already in context above — e.g. comparing
 Do NOT list a user's own self-reported personal fact (diet, allergy, preference, goal — anything they just stated about themselves in USER MESSAGE above) as a claim needing evidence-level backing or knowledge-base grounding. Acknowledging what the user just told you is not a scientific claim; it doesn't need a citation or evidence-level phrase, and a lack of a matching knowledge-base entry is not a gap to flag.
 Likewise, suggesting a product from the "recommendable products" list supplied in the system prompt is a merchandising choice, not a scientific claim: it needs no evidence-level backing or knowledge-base entry of its own. Any HEALTH claim made ABOUT that product is still a normal claim and must be planned as one.
 
+Choosing which dots make up a formulation tier — the "tier" tags and the "upgrades" copy in a {"action":"formulate_dots",...} tail — is a formulation and merchandising decision over the formulary supplied above, not a scientific claim: it needs no evidence-level backing or knowledge-base entry of its own, and the fact that a wider package exists is not a claim to ground. A health claim made ABOUT a dot is still a normal claim and must be planned as one.
+On a formulation turn, do NOT plan a claim that the user should receive every clinically indicated dot. The formulation is capped at the number of distinct dots their package allows, so listing more than that as intended claims sets up an expectation the reply is required to break.
+
 Do NOT list a proposed follow-up questionnaire (an {"action":"ask_questions",...} tail you intend to append, and the question text within it) as a claim needing evidence-level backing. A question is not an assertion — it needs no citation, ground-truth match, or knowledge-base entry.
 
 RESPOND WITH ONLY VALID JSON, NO OTHER TEXT:

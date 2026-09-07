@@ -24,7 +24,7 @@ const DIM_LABELS = {
 };
 
 module.exports = (ctx) => {
-    const { user_profile, biomarkers, bioage, dots, health_twin, questionnaire_context, active_health_plans, current_solar_term , formulation_package } = ctx;
+    const { user_profile, biomarkers, bioage, dots, health_twin, questionnaire_context, active_health_plans, current_solar_term , formulation_package, formulation_tiers } = ctx;
     const isZh = user_profile?.language === 'zh';
 
     const formularyLines = (dots || []).length > 0
@@ -133,10 +133,70 @@ To put a dot in only some weeks, add a "weeks" field to its entry listing the we
 CHOOSE the ${formulation_package.max_distinct_dots} that matter most in each week and dose them properly. Do not spread thin and then trim — anything over the limit is cut by the system, by importance.`)
         : '';
 
+    // The purchasable ladder, for a user who has bought NOTHING yet — the mirror image of
+    // packageSection above and never rendered with it. There the tier is settled and the job is to
+    // hit it; here the tier is the thing being chosen, and the user has never been shown what it
+    // costs them to choose the narrow one.
+    //
+    // So the ask is one nested set of formulas, not three: the essential core, then +2, then +2.
+    // The server takes prefixes of the model's own tier ordering (_buildTierLadder), which is what
+    // makes the widths hold whatever the model tags — the tag decides WHICH dot is the better next
+    // addition, a clinical judgement, and nothing else.
+    //
+    // Widths come from GCN's catalog, never hardcoded: a tier repriced, added or retired in the
+    // admin panel has to reach this prompt with no deploy, the same rule the checkout follows.
+    const tierRungs = (formulation_tiers || [])
+        .map(t => ({ label: t.tier_label || t.package_name || '', max: Number(t.max_distinct_dots) }))
+        .filter(t => Number.isFinite(t.max) && t.max > 0)
+        .sort((a, b) => a.max - b.max);
+    const tierLadderSection = (!packageSection && tierRungs.length > 1)
+        ? (isZh
+            ? `用户尚未购买套餐。可购买的28天套餐共 ${tierRungs.length} 档，区别只在于**每周**可同时服用的原粒种类数（DOT-N7 为系统固定的重置原粒，任何一档都不计入）：
+${tierRungs.map((t, i) => `· ${t.label || t.max + '种'}：任意一周最多 ${t.max} 种${i === 0 ? '（核心档）' : `（比上一档多 ${t.max - tierRungs[i - 1].max} 种）`}`).join('\n')}
+
+请按"先给出最核心的一档，再逐档加码"的方式来配，并在每个 count 大于 0 的条目上加 "tier" 字段标注它属于哪一档：
+${tierRungs.map((t, i) => `· tier ${i + 1}：${i === 0 ? `最关键的 ${t.max} 种——这一档必须自成一套完整、说得通的方案，因为多数用户只会拿到它` : `在上一档基础上再加 ${t.max - tierRungs[i - 1].max} 种（合计 ${t.max} 种），选那些"有了会更完整、没有也不致命"的原粒`}`).join('\n')}
+**剂量照常给全**：下面的配方规则不变——配方库中每一个短代码都要给出数值，与用户异常指标无关的取各自范围的下限附近，相关的按严重程度取中段或上限。"tier" 只是在这份完整配比之上再叠加一层**优先级排序**，不是"只选这几种、其余归零"；不要因为要分档就把其他原粒改成 0。
+DOT-N7 不加 tier。
+**每一档限定的是「每周」可同时服用的原粒种类数，不是整个周期的总数**：四周可以彼此不同——某个原粒只出现在其中一两周、把名额让给另一个原粒，完全可以，只要**每一周**都不超过该档的上限。因此一份 6种原粒 的方案，四周加起来用到 6 种以上是正常的。需要连续服用才有意义的原粒（如睡眠、情绪支持）应四周都保留；只有适合阶段性或轮换的原粒才安排在部分周。
+如需让某个原粒只在部分周出现，在该条目上加 "weeks" 字段列出周次（1-4）；省略即表示四周都有。例如：{"dot_key":"D-N1","count":3,"tier":1,"weeks":[1,2]}
+每档的名额数是固定的产品规格，请按上面写明的数量标满；若你标注的不足，系统会按剂量强度自动补齐后面的名额。
+
+同时在 JSON 末尾附一个 "upgrades" 数组，为第 2 档起的每一档写一句升级文案：
+{"upgrades":[${tierRungs.slice(1).map((t, i) => `{"tier":${i + 2},"pitch":"..."}`).join(',')}]}
+文案规则：
+· 一句话，30字以内，直接写给用户看，说明多出的这几种原粒把这套方案补全在哪里；
+· **不要在文案里点名任何具体原粒**——卡片会在这句话正上方列出它们的名称，重复一遍只会在你写的名字和系统实际排进这一档的原粒不一致时误导用户；只描述这一档补上了什么；
+· 语气可以是向往式、有画面感的产品介绍，不必逐字挂靠某项指标；
+· 但绝不可写出起效时间、改善幅度、任何数值预测或效果承诺，也不得编造成分、机制或功效；
+· 提到原粒时使用配方库里的"对话中称呼"或名称，不要写短代码，也不要写价格。
+正文分析请围绕第 1 档这套核心配方来写；升级内容只放在 upgrades 里，不要在正文里重复一遍。`
+            : `The user has not bought a package yet. The 28-day packages come in ${tierRungs.length} tiers, differing in exactly one thing — how many distinct dots may run in ANY ONE WEEK (DOT-N7 is the system's fixed reset dot and counts toward none of them):
+${tierRungs.map((t, i) => `· ${t.label || t.max + ' dots'}: at most ${t.max} in any one week${i === 0 ? ' (the core tier)' : ` (${t.max - tierRungs[i - 1].max} more than the tier below)`}`).join('\n')}
+
+Formulate as a core set plus increments, and tag every entry with a count above 0 with a "tier" field saying which tier first includes it:
+${tierRungs.map((t, i) => `· tier ${i + 1}: the ${t.max} that matter most — this tier must stand on its own as a complete, coherent formula, because most users will only ever receive it`).slice(0, 1).concat(tierRungs.slice(1).map((t, i) => `· tier ${i + 2}: ${t.max - tierRungs[i].max} more on top of the tier below (${t.max} total) — choose the ones that make the formula more complete rather than ones it cannot do without`)).join('\n')}
+**Still dose everything**: the formulation rules below are unchanged — every short-key in the formulary gets a value, with dots unrelated to this user's abnormal markers near the LOW end of their own range and related ones mid-range or high. "tier" is only a PRIORITY RANKING layered on top of that complete allocation; it does not mean "pick these and zero the rest". Do not set other dots to 0 just because you are assigning tiers.
+DOT-N7 gets no tier.
+**Each tier caps how many distinct dots may run in ANY ONE WEEK, not across the cycle**: the four weeks may differ — giving a dot only one or two weeks and handing the slot to another is fine, as long as no single week exceeds that tier's limit. So a 6-dot package's formula may well use more than six distinct dots across the four weeks. A dot that only works taken continuously (sleep or mood support) should stay in all four weeks; only dots that make sense in phases or rotation belong in a subset.
+To put a dot in only some weeks, add a "weeks" field to its entry listing the week numbers (1-4); omit it for all four. For example: {"dot_key":"D-N1","count":3,"tier":1,"weeks":[1,2]}
+The slot count per tier is a fixed product spec, so tag exactly the numbers written above; if you tag fewer, the system fills the remaining slots by dose intensity.
+
+Also append an "upgrades" array with one line of upgrade copy per tier above the first:
+{"upgrades":[${tierRungs.slice(1).map((t, i) => `{"tier":${i + 2},"pitch":"..."}`).join(',')}]}
+Copy rules:
+· one sentence, under 25 words, written for the user, saying what the extra dots complete about the formula;
+· **do not name any specific dot in the copy** — the card lists them on the line directly above it, and repeating them only misleads when the names you write and the dots the system actually places in this tier disagree; describe what the tier completes instead;
+· the tone may be aspirational and evocative product writing — it does not have to cite a specific marker line by line;
+· but never state an onset window, an improvement magnitude, any numeric forecast, or a guarantee of results, and never invent an ingredient, mechanism or effect;
+· name dots by their formulary name, never by short key, and never mention a price.
+Write the prose analysis about the FIRST tier's core formula; keep the upgrade content in "upgrades" and don't restate it in the prose.`)
+        : '';
+
     // Only mentioned when a package is in play, because packageSection is the only place the
     // "weeks" field is actually specified — naming it otherwise invites a field the model was
     // never taught the shape of.
-    const weeksNote = !packageSection ? ''
+    const weeksNote = (!packageSection && !tierLadderSection) ? ''
         : (isZh
             ? '；若你用 "weeks" 字段限定某个原粒只在部分周出现，则该原粒只安排在这些周'
             : ' — and except any dot you restrict to certain weeks with a "weeks" field, which then runs only in those weeks');
@@ -149,6 +209,15 @@ CHOOSE the ${formulation_package.max_distinct_dots} that matter most in each wee
 
     const NOTE_ZH_DIALOGUE_LABEL = '提及原粒时对用户使用配方库中标注的"对话中称呼"（如"原粒1号"）或原粒名称，**不要**说出内部短代码（如"D-N1"）——那是给系统解析用的，不是给用户看的。';
 
+    // The action tail grows two optional fields in ladder mode. Both are optional on the parsing
+    // side too, so a completion from a stale cached prompt still lands as an ordinary formulation.
+    const formatLineZh = tierLadderSection
+        ? `{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0,"tier":1}, ...每个配方库短代码一条],"upgrades":[${tierRungs.slice(1).map((t, i) => `{"tier":${i + 2},"pitch":"..."}`).join(',')}]}`
+        : '{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...每个配方库短代码一条]}';
+    const formatLineEn = tierLadderSection
+        ? `{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0,"tier":1}, ...one entry per formulary short-key],"upgrades":[${tierRungs.slice(1).map((t, i) => `{"tier":${i + 2},"pitch":"..."}`).join(',')}]}`
+        : '{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...one entry per formulary short-key]}';
+
 const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的任务是：为用户配置接下来28天（4周）的 Waven Dots 方案——这是一次真实的配方决策，不是解释一个已有方案。系统会将你给出的每日总量重复安排到这28天内（DOT-N7 除外，见下方配方库中的专项说明${weeksNote}）。
 
 生物标志物的状态（正常/偏高/高）已在下方直接标注，请严格使用该标注。
@@ -156,7 +225,7 @@ const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的�
 用户：${user_profile.nickname || '用户'}，${user_profile.age ? user_profile.age + ' 岁' : '年龄未知'}${user_profile.bmi ? '，BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
-${focusWeightingSection ? focusWeightingSection + '\n' : ''}${packageSection ? packageSection + '\n' : ''}
+${focusWeightingSection ? focusWeightingSection + '\n' : ''}${packageSection ? packageSection + '\n' : (tierLadderSection ? tierLadderSection + '\n' : '')}
 ${twinSection}
 
 ${seasonSection}
@@ -182,7 +251,7 @@ ${formularyLines}
 - 系统对早/晚每颗胶囊的 Dot 总粒数设有物理上限（每颗胶囊最多72粒，超出部分系统会按比例自动缩减），所以不要为了覆盖面而习惯性把每个 Dot 都推向范围上限——现实目标是胶囊仍可一次吞服；若多个 Dot 同时判断为高优先级，考虑其中1-2个取上限、其余取中段，而不是全部拉满。
 
 输出格式（严格遵守，回复正文照常撰写，然后在最后另起一行附上下方 JSON，短代码必须与配方库完全一致）：
-{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...每个配方库短代码一条]}
+${formatLineZh}
 
 回复规则：
 - 先给出对话式分析（不使用标题、不使用列表，2-3句话），再附上 JSON 行。
@@ -196,7 +265,7 @@ Biomarker status (normal/elevated/high) is already labeled directly below — us
 User: ${user_profile.nickname || 'the user'}${user_profile.age ? ', ' + user_profile.age + ' years old' : ' (age unknown)'}${user_profile.bmi ? ', BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
-${focusWeightingSection ? focusWeightingSection + '\n' : ''}${packageSection ? packageSection + '\n' : ''}
+${focusWeightingSection ? focusWeightingSection + '\n' : ''}${packageSection ? packageSection + '\n' : (tierLadderSection ? tierLadderSection + '\n' : '')}
 ${twinSection}
 
 ${seasonSection}
@@ -222,7 +291,7 @@ Formulation rules (must follow):
 - The system enforces a physical ceiling on each morning/evening capsule (max 72 Dots per capsule — anything over gets scaled down proportionally by the system), so don't reflexively push every Dot to the top of its range just for coverage — the real-world goal is a capsule someone can still swallow in one go. If several Dots are all high-priority, consider taking 1-2 to their max and keeping the rest mid-range rather than maxing all of them.
 
 Output format (follow strictly — write your reply normally, then append the JSON below on a new final line, short-keys must exactly match the formulary):
-{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...one entry per formulary short-key]}
+${formatLineEn}
 
 Reply rules:
 - Give the conversational analysis first (no headers, no lists, 2-3 sentences), then append the JSON line.

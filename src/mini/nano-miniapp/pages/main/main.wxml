@@ -301,6 +301,34 @@
                         <text class="fcard-foot">{{t.formulaTotalLabel}} {{fg.total}}</text>
                       </view>
                       <text wx:if="{{seg.cycleDays}}" class="fcard-cycle">{{seg.cycleDays}}{{t.formulaDaysUnit}} · {{seg.cycleCapsules}}{{t.formulaCapsulesUnit}}</text>
+                      <!-- The upgrade ladder: what a wider package would ADD on top of the
+                           chart above, never a second formula competing with it. Rungs only
+                           exist when the user has bought nothing yet (the server omits them
+                           otherwise), so no extra gate is needed here.
+
+                           Deliberately no per-rung button: which tier a user gets is decided by
+                           whichever redeem code they hold, not by what they tap, and a code
+                           cannot be bought in-app — so a button here would offer a choice that
+                           does not exist. The single CTA below serves every rung. -->
+                      <view wx:if="{{seg.rungs.length}}" class="fcard-upgrades">
+                        <text class="fcard-uphead">{{t.formulaUpgradeTitle}}</text>
+                        <view wx:for="{{seg.rungs}}" wx:for-item="fr" wx:for-index="fri" wx:key="width" class="fcard-rung">
+                          <view class="fcard-rung-head">
+                            <text class="fcard-rung-label">{{fr.label}}</text>
+                            <text class="fcard-rung-add">+{{fr.items.length}}</text>
+                          </view>
+                          <view class="fcard-legend fcard-rung-dots">
+                            <view wx:for="{{fr.items}}" wx:for-item="ri" wx:for-index="rk" wx:key="key" class="fcard-leg">
+                              <view class="fcard-swatch" style="background:{{ri.color}}"></view>
+                              <text class="fcard-leg-name">{{ri.name}}</text>
+                              <text class="fcard-leg-num">{{ri.am}}·{{ri.pm}}</text>
+                              <text wx:if="{{ri.weeks}}" class="fcard-leg-weeks">{{t.formulaWeekPrefix}}{{ri.weeks}}{{t.formulaWeekSuffix}}</text>
+                            </view>
+                          </view>
+                          <text wx:if="{{fr.pitch}}" class="fcard-rung-pitch">{{fr.pitch}}</text>
+                        </view>
+                        <text class="fcard-rung-hint">{{t.formulaUpgradeHint}}</text>
+                      </view>
                       <view
                         wx:if="{{seg.labelUrl}}"
                         class="fcard-label"

@@ -73,10 +73,24 @@ test('hasProposedFormula is set from the packages list and cleared on failure', 
     assert.ok(/hasProposedFormula: false/.test(failure[0]), 'the failure path leaves hasProposedFormula stale');
 });
 
+test('the redeem confirmation names the tier a laddered proposal will compound', () => {
+    // A code is single-use and its width is known before it is spent, so the sheet says WHICH of
+    // the user's formulas it compounds rather than warning that it is too narrow — the warning is
+    // unreachable for a laddered proposal, whose base fits every tier sold.
+    for (const lang of ['zh', 'en']) {
+        assert.strictEqual(typeof T[lang].codeTierMatch, 'function', `${lang}.codeTierMatch`);
+        const text = T[lang].codeTierMatch(8, 8);
+        assert.ok(text.includes('8'), `${lang}.codeTierMatch should name the width it compounds`);
+        // The old warning stays, for a proposal written before the ladder existed.
+        assert.strictEqual(typeof T[lang].codeOverTier, 'function', `${lang}.codeOverTier`);
+    }
+});
+
 test('both languages resolve every string the card binds', () => {
     // A missing key renders empty, so the card would ship with a blank button.
     for (const lang of ['zh', 'en']) {
-        for (const key of ['formulateFirstTitle', 'formulateFirstDetail', 'formulateFirstBtn']) {
+        for (const key of ['formulateFirstTitle', 'formulateFirstDetail', 'formulateFirstBtn',
+                           'formulaUpgradeTitle', 'formulaUpgradeHint', 'formulaWeekPrefix']) {
             assert.strictEqual(typeof T[lang][key], 'string', `${lang}.${key}`);
             assert.ok(T[lang][key].length > 0, `${lang}.${key} is empty`);
         }
