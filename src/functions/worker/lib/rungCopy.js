@@ -23,6 +23,7 @@
  */
 
 const { getFactConstraintBlock } = require('../prompts/chat/factConstraint');
+const { humanizeDotCodes } = require('./dotNames');
 
 const MAX_PITCH_CHARS = 60;      // the card's own cap is 90; leave room for the guardrail's own trim
 const CALL_TIMEOUT_MS = 25_000;
@@ -122,7 +123,13 @@ async function attachRungCopy({ client, model, rungs, dotsFormulary, lang, essen
         console.log(JSON.stringify({ level: 'WARN', msg: 'rung_copy_parse_failed', context: logContext, raw: raw.slice(0, 200) }));
         return list;
     }
-    return list.map((r, i) => ({ ...r, pitch: (pitches[i] || '').slice(0, MAX_PITCH_CHARS) }));
+    // A pitch is rendered INSIDE the :::formula fence (`#rung|label|width|pitch`), which the
+    // fence-aware pass in the delivery path deliberately skips — so a code has to be rewritten
+    // here, on the bare string, before it is ever placed in the card.
+    return list.map((r, i) => ({
+        ...r,
+        pitch: humanizeDotCodes((pitches[i] || '').slice(0, MAX_PITCH_CHARS), dotsFormulary, lang),
+    }));
 }
 
 module.exports = { attachRungCopy, buildRungCopyPrompt, _parsePitches, MAX_PITCH_CHARS };

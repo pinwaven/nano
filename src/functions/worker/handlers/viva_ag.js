@@ -30,6 +30,7 @@
 
 const crypto = require('crypto');
 const { pool } = require('../lib/db');
+const { humanizeDotCodes } = require('../lib/dotNames');
 const ossLib = require('../lib/oss');
 const { requireVivaAgAccess } = require('../lib/vivaAgAccess');
 const { buildTwinBundle, presignDocuments, fetchHealthDocuments, BUNDLE_VERSION, DEFAULT_DOC_URL_TTL_SECONDS, clampInt } = require('../lib/twinBundle');
@@ -228,10 +229,20 @@ async function _deliverFailure(job, reason) {
 // when rich_format is on the miniapp renderer interprets ::: display-card fences
 // (prompts/chat/outputFormat.js). An external system writing raw ::: into a bubble is therefore
 // a render-injection surface, so the fences are stripped rather than trusted.
-function _sanitizeSummary(raw) {
+async function _sanitizeSummary(raw, lang = 'zh') {
     let text = String(raw || '').trim();
     text = text.replace(/^:::.*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
     if (text.length > MAX_SUMMARY_LENGTH) text = text.slice(0, MAX_SUMMARY_LENGTH).trim();
+    // An internal dot code is no more readable coming from the external agent than from Viva —
+    // prod has 4 AG summaries carrying one. The formulary is fetched here rather than threaded in
+    // because this runs once per completed job, not per turn; a failed lookup leaves the text
+    // exactly as the agent wrote it.
+    try {
+        const { rows } = await pool.query('SELECT key_name, key_name_zh, name, name_zh FROM dots');
+        text = humanizeDotCodes(text, rows, lang);
+    } catch (err) {
+        _logError('dot code rewrite skipped', err, {});
+    }
     return text;
 }
 
@@ -1151,7 +1162,7 @@ async function handlePostVivaAgResult(body) {
             return { success: true, already_completed: true, job_uid: job.job_uid, notification_id: job.notification_id };
         }
 
-        const summary = _sanitizeSummary(body?.summary);
+        const summary = await _sanitizeSummary(body?.summary);
         if (!summary) return _fail(REASONS.MISSING_PARAMS, 'summary is required');
 
         const result = body?.result ?? null;

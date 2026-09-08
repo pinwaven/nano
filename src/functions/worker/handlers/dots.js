@@ -1,6 +1,7 @@
 'use strict';
 
 const { pool } = require('../lib/db');
+const { humanizeDotCodes } = require('../lib/dotNames');
 // Physical product-model constants (cycle length, capsule fill limit, DOT-N7 isolation) —
 // shared with lib/agFormulation.js so nano's own formulator and the validator for an
 // externally-authored Viva AG formula can never disagree about what is manufacturable.
@@ -3754,7 +3755,9 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
             client.release();
         }
         const labelCode = planId ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [planId])).rows[0]?.label_code : null;
-        const message = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang, { planId, orderMode: orderContext.mode, labelCode, rungs });
+        const message = humanizeDotCodes(
+            finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang, { planId, orderMode: orderContext.mode, labelCode, rungs }),
+            dotsFormulary, lang);
         await pool.query(
             'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
             [user.user_id, 'formulation_proposal', message, 'pending']

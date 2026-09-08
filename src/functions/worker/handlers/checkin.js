@@ -1,6 +1,7 @@
 'use strict';
 
 const { pool } = require('../lib/db');
+const { humanizeDotCodes } = require('../lib/dotNames');
 const { getNowShanghai } = require('../lib/time-utils');
 const { getCurrentSolarTerm } = require('../lib/solarTerms');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
@@ -75,7 +76,7 @@ async function handleDailyCheckinEvent({ user_id, period, persona_type }) {
                  ORDER BY tested_at DESC LIMIT 1`,
                 [user_id]
             ),
-            pool.query('SELECT key_name, name, name_zh FROM dots'),
+            pool.query('SELECT key_name, key_name_zh, name, name_zh FROM dots'),
             // Scoped to the currently ACTIVE plan only — a user can accumulate schedule rows
             // for the same scheduled_date across superseded/pending plans (re-formulation),
             // and reading unscoped could surface a stale plan's dots instead of the real one.
@@ -184,8 +185,11 @@ async function handleDailyCheckinEvent({ user_id, period, persona_type }) {
             temperature: 0.8,
         });
 
-        const message = completion.choices[0]?.message?.content?.trim();
-        if (!message) throw new Error('LLM returned empty response');
+        const rawMessage = completion.choices[0]?.message?.content?.trim();
+        if (!rawMessage) throw new Error('LLM returned empty response');
+        // Same rule as every other user-facing reply: a user is never shown an internal
+        // dot code. Both writes below take this one string.
+        const message = humanizeDotCodes(rawMessage, dotsResult.rows, lang);
 
         await saveChatMessage(user_id, 'ai', message, null, personaType);
         // Flip the claimed row to 'pending' only now that real content exists — this is

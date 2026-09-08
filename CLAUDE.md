@@ -708,6 +708,28 @@ that the 28-day formula a user receives comes from Viva AG's `dots_formulation` 
 left it with no route to the store: GCN's custom-formulation checkout prices a recipe out of a
 `nutrition_plans` row, and there was no longer a row to price. It now proposes.
 
+### A user never sees an internal dot code (2026-09-08)
+
+`D-N9` is how the prompt addresses a dot; `DOT-N9` is its `dots.key_name` and the key of a
+`:::formula` row. Both prompts forbid writing either in prose, and prod had the model doing it in
+13 of 4394 AI replies over 30 days anyway. `lib/dotNames.js`'s `humanizeDotCodes()` rewrites them
+to the 对话中称呼 (`key_name_zh`) in zh and the dot name in en, deterministically — there is one
+correct rendering, read from the same row the card is drawn from, so there is nothing to judge and
+no retry.
+
+Two rules make it safe, and both are load-bearing:
+
+- **It never rewrites inside a `::: ... :::` block.** A `:::formula` row is keyed on the code and
+  `utils/markdown.js` parses that key. Which is also why **rung pitches are rewritten in
+  `lib/rungCopy.js` instead** — they end up inside the fence as `#rung|label|width|pitch`.
+- **It runs once per delivery, on the assembled string**, never inside `saveChatMessage` or the
+  notification insert. A chat row and its notification row differing by a token defeat the client's
+  text-keyed de-dup (`_aiKey`) and render the bubble twice.
+
+An unmapped code (`D-N77`) is left exactly as written — that is a fabricated dot for
+`factCheck.js` to flag, and renaming it would hide it. Viva AG summaries go through it too, in
+`_sanitizeSummary`, the ingest point that already strips `:::`.
+
 ### A BioAge is a precondition, not an input (2026-09-08)
 
 `handlePostFormulaDots` **refuses to formulate at all** when `data.bioage_profile.BioAge` is null,
