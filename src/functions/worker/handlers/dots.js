@@ -3543,6 +3543,38 @@ async function handlePostFormulaDots(body) {
         });
 
         const lang = user.language || 'zh';
+
+        // NO KINO SCAN, NO FORMULATION. Every dose this tool assigns is scaled by how far a
+        // sub-age sits above the user's chronological age (_doseFromRanking, _fallbackCountForDot,
+        // the severity ranking the prompt asks the model to produce) — with no BioAge there is
+        // nothing to scale against, and what the user got instead was a formula built on age and
+        // BMI alone, narrated by a model that had been handed no biology to explain it with.
+        //
+        // Found live on prod 2026-09-08: the guardrail block tells the model to say so plainly
+        // when the data doesn't support a judgment, so the narrative above a real 28-day card
+        // came back as nothing but "目前没有足够信息支持这个判断。" — a card the user is invited to
+        // order, under a sentence saying it could not be reasoned about. Users whose only
+        // biomarker rows are `lab_import` land here too: the query above is `kino_chip`-only,
+        // which is the product's definition of a Kino test across all 13 of its call sites.
+        //
+        // Delivered as a normal AI chat message rather than an error, because the client shows a
+        // canned "配方已生成" for any non-`processing` success and has no branch for a refusal —
+        // and because this IS the answer to what the user asked, not a failure.
+        if (bioageProfile?.BioAge == null) {
+            const message = lang === 'en'
+                ? 'To build your dots formulation I need your BioAge first. It comes from a Kino chip scan, and it is what decides how much of each dot you take — without it I would be guessing rather than formulating, so I am stopping here. Complete a Kino scan, then tap Formulate Dots again and I will build the plan around your four sub-ages.'
+                : '要为你配这份原粒方案，我需要先拿到你的生理年龄（BioAge）——它由 Kino 芯片检测算出，也是决定每个原粒用量的依据。你目前还没有完成过 Kino 检测，缺了它我只能靠猜，所以这一步先停在这里。完成一次 Kino 芯片检测后，再回到这里点「原粒定制」，我就能按你的四项子年龄来配了。';
+            await pool.query(
+                'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
+                [user.user_id, 'formulation_proposal', message, 'pending']
+            );
+            await _saveChatMessage(user.user_id, 'ai', message, null, personaType);
+            console.log(JSON.stringify({ level: 'INFO', msg: 'formula_dots_blocked_no_bioage', user_id: user.user_id }));
+            // `processing: true` keeps the client's waiting UI alive for the one poll it takes to
+            // deliver the message above; `{success:true}` alone would print "配方已生成" beside it.
+            return { success: true, processing: true, reason: 'no_bioage', message };
+        }
+
         const currentSolarTerm = getCurrentSolarTerm(getNowShanghai().toJSDate());
         const essentialKnowledge = await getEssentialBlock(personaType);
         const userFactsResult = await pool.query(

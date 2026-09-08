@@ -708,6 +708,40 @@ that the 28-day formula a user receives comes from Viva AG's `dots_formulation` 
 left it with no route to the store: GCN's custom-formulation checkout prices a recipe out of a
 `nutrition_plans` row, and there was no longer a row to price. It now proposes.
 
+### A BioAge is a precondition, not an input (2026-09-08)
+
+`handlePostFormulaDots` **refuses to formulate at all** when `data.bioage_profile.BioAge` is null,
+and asks the user for a Kino scan instead. No plan row, no LLM call, no card. The gate sits before
+`getEssentialBlock`/`getCurrentSolarTerm` so it short-circuits the work, and a test pins that it
+precedes `_handleFormulaDotsAgentic`.
+
+Every dose here is scaled by how far a sub-age sits above chronological age — `_doseFromRanking`,
+`_fallbackCountForDot`, and the severity ranking the prompt asks the model to produce. With no
+BioAge there is nothing to scale against, so what shipped instead was a formula derived from age
+and BMI alone, narrated by a model that had been handed no biology to explain it with. Prod,
+2026-09-08: a full 28-day card with the entire narrative above it replaced by
+**目前没有足够信息支持这个判断。** — a card the user is invited to order, under a sentence saying it
+could not be reasoned about.
+
+**A `lab_import` panel does not qualify.** The biomarker query is `kino_chip`-only, as it is at all
+13 of its call sites, so a user with 21 lab rows and no scan lands here too. Widening that is a
+product decision about whether an imported panel is a Kino test, and it is not made here.
+
+The refusal is delivered as a normal AI bubble on **both** channels (`chat_messages` plus a
+`formulation_proposal` notification — a type already in the client's `AI_ECHO_TYPES`) and the
+handler returns `processing: true`. **Deliberately no client change:** `runFormulaDs` prints its
+canned 配方已生成 for any non-`processing` success, so a plain `{success:true}` would put "generated"
+beside the refusal, and `{success:false}` would show a generic error rather than the explanation.
+
+The other half of that prod bug was the guardrail itself, and it is **not** specific to
+formulation — see §26's note on the essential block. It used to hand the model a quoted,
+ready-made refusal (`直接说："目前没有足够信息支持这个判断。"`), which is the cheapest thing in a
+prompt to emit: 25 replies in 30 days reached for it, either as the whole reply or as a refusal
+followed by paragraphs of the advice it had just declined. The clause now says to name the missing
+data and continue with what the available data supports, and bans both shapes outright.
+`migration_knowledge_refusal_wording.sql` plus the three hardcoded copies — **change all four
+together**, per §26/§37.
+
 ### `'proposed'` is a fourth status, and none of the other three would do
 
 `migration_nutrition_plans_proposed.sql`. `'pending'` means an async formulation is mid-flight and
