@@ -846,6 +846,16 @@ module.exports.c = function (hex, theme) {
         <text wx:else class="health-empty">{{t.noFactsSelf}}</text>
       </view>
 
+      <!-- Twin layer: Medical Records — the user's own uploaded records (clinic notes, 体检
+           reports, photos of paper printouts). Shares one component with the Viva AG subtab, so
+           there is a single upload path against a single backend. A coach reads a client's
+           records but never adds to or removes from them; the server re-checks that through
+           coach-id. Guest accounts don't exist server-side, hence !isGuest — belt-and-braces,
+           since the guest lock already replaces this whole body. -->
+      <health-documents wx:if="{{!isGuest}}"
+                        user-id="{{userId}}" lang="{{lang}}" theme="{{theme}}"
+                        can-upload="{{mode === 'self'}}" coach-id="{{coachId}}" />
+
       <view style="height: 32px;"></view>
     </block>
 

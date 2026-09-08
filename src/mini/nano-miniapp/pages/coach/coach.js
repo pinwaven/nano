@@ -455,6 +455,10 @@ Page({
     planCustomGoal: '',
     planCustomDuration: 4,
     planActionBusy: false,
+    // A mirror of this._coachId, which lives outside data and so is unreachable from WXML.
+    // <user-health> forwards it to <health-documents>, whose read is scoped by it server-side.
+    // Kept in step at both places _coachId is assigned — see _repairCoachSession.
+    coachId: null,
   },
 
   _coachId: null,
@@ -495,7 +499,7 @@ Page({
     const sandboxMode = !!app.globalData.sandboxMode
     const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', nickname || '—') : ''
     const factCategoryLabels = ['dietary_restriction', 'allergy', 'preference', 'goal', 'other'].map(c => t.factCategories[c])
-    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, textScale, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText, factCategoryLabels })
+    this.setData({ statusBarHeight, capsuleRightPad, menuTop, channelName, channelLogo, nickname, isAdmin, isSuperadmin, theme, textScale, lang, t, reminderDate: todayStr(), chatToolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText, factCategoryLabels, coachId: this._coachId })
     this._applyNavBarColor(theme)
     this._loaded = true
     this._loadAll()
@@ -616,6 +620,7 @@ Page({
       app.globalData.coach = coach
       wx.setStorageSync('nano_coach', coach)
       this._coachId = coach.id
+      this.setData({ coachId: coach.id })
       this._coachChannelId = coach.channel_id
       return true
     } catch (e) {

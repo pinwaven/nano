@@ -454,6 +454,7 @@
           user="{{detailClient}}"
           lang="{{lang}}"
           mode="coach"
+          coach-id="{{coachId}}"
           theme="{{theme}}"
           text-scale="{{textScale}}"
           bind:textscalestep="onTextScaleStep"

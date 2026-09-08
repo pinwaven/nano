@@ -1,0 +1,35 @@
+<!-- 健康文档 — twin layer 3, Medical Records. Hosted by BOTH the 数字孪生 subtab and the
+     Viva AG subtab, which is why it lives here rather than inside either one. -->
+<view class="hd-root {{theme === 'light' ? 'theme-light' : ''}}">
+  <view class="hd-section">
+    <view class="hd-section-head">
+      <text class="hd-section-title">{{t.documents}}</text>
+      <text class="hd-section-count">{{documents.length}}</text>
+    </view>
+
+    <view wx:if="{{canUpload}}" class="hd-upload-btn {{uploading ? 'hd-btn-busy' : ''}}" bindtap="chooseDocument">
+      <text wx:if="{{!uploading}}">{{t.uploadBtn}}</text>
+      <text wx:else>{{uploadStatus}}</text>
+    </view>
+
+    <view wx:if="{{docsLoading}}" class="hd-muted">{{t.loading}}</view>
+    <view wx:elif="{{documents.length === 0}}" class="hd-empty">
+      <text class="hd-empty-title">{{canUpload ? t.noDocsTitle : t.noDocsOther}}</text>
+      <text wx:if="{{canUpload}}" class="hd-empty-hint">{{t.noDocsHint}}</text>
+    </view>
+    <view wx:else>
+      <view wx:for="{{documents}}" wx:key="id" class="hd-doc">
+        <view class="hd-doc-main" bindtap="openDocument" data-id="{{item.id}}">
+          <text class="hd-doc-name">{{item.filename}}</text>
+          <view class="hd-doc-meta">
+            <text class="hd-doc-badge">{{item.typeLabel}}</text>
+            <text wx:if="{{item.doc_date}}" class="hd-doc-sub">{{item.doc_date}}</text>
+            <text class="hd-doc-sub">{{item.sizeLabel}}</text>
+          </view>
+        </view>
+        <text wx:if="{{canUpload}}" class="hd-doc-del" catchtap="deleteDocument" data-id="{{item.id}}" data-name="{{item.filename}}">{{t.delete}}</text>
+      </view>
+      <text wx:if="{{canUpload}}" class="hd-footnote">{{t.footnote}}</text>
+    </view>
+  </view>
+</view>

@@ -1,6 +1,7 @@
 {
   "component": true,
   "usingComponents": {
-    "mp-html": "/components/mp-html/index"
+    "mp-html": "/components/mp-html/index",
+    "health-documents": "/components/health-documents/health-documents"
   }
 }

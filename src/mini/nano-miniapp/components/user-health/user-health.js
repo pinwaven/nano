@@ -1101,6 +1101,10 @@ Component({
     // subtab strip renders; every AG endpoint re-checks entitlement server-side. Never passed
     // by pages/coach/coach.wxml, so a coach viewing a client defaults to false.
     vivaAgEnabled: { type: Boolean, value: false },
+    // Set only by pages/coach/coach.wxml. Forwarded to <health-documents> so the server can
+    // verify the client really belongs to this coach; empty in the user's own view, where the
+    // ownership check is skipped and they simply address themselves.
+    coachId: { type: String, value: '' },
   },
 
   data: {

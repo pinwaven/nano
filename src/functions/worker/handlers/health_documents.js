@@ -2,7 +2,10 @@
 
 /**
  * User-uploaded health record documents (PDFs of hospital records, discharge summaries,
- * imaging reports, ...). Backs the Viva AG subtab's document manager.
+ * imaging reports, ...). This is twin layer 3, Medical Records (CLAUDE.md §34) — part of the
+ * digital twin, not part of Viva AG. Two surfaces host the same manager: the 数字孪生 subtab
+ * (every user) and the Viva AG subtab (add-on holders), both via the shared
+ * components/health-documents/ miniapp component.
  *
  * SECURITY NOTE — read before adding an endpoint here.
  *
@@ -18,14 +21,18 @@
  *      could register someone else's object into their own list.
  *   3. oss_key is never returned to the client. Documents are referenced by id only.
  *   4. User-facing GET URLs expire in 300s, not the 10-year links /oss/presign mints for images.
- *   5. Every endpoint re-checks the Viva AG entitlement server-side; the miniapp's subtab
- *      gating is cosmetic.
+ *
+ * These endpoints used to additionally require the Viva AG entitlement. As of 2026-09-08 they do
+ * not, so every user can build an archive. Be clear-eyed about what that changed: the AG check
+ * was an ENTITLEMENT gate, never an access-control one — it never stopped one AG user from
+ * passing another user's openid. What is left is exactly the authorization strength of every
+ * other end-user endpoint here (/api/biomarkers?openid= and the rest) plus items 1-4 above,
+ * which are the parts that actually protect the object.
  */
 
 const crypto = require('crypto');
 const { pool } = require('../lib/db');
 const ossLib = require('../lib/oss');
-const { requireVivaAgAccess } = require('../lib/vivaAgAccess');
 
 const VALID_DOC_TYPES = new Set([
     'hospital_record', 'lab_report', 'imaging', 'discharge_summary', 'prescription', 'other',
@@ -67,6 +74,40 @@ const ALLOWED_EXTENSIONS = new Set(Object.keys(CONTENT_TYPE_BY_EXT));
 // wx.openDocument can render these; anything else the miniapp previews as an image instead.
 const OFFICE_EXTENSIONS = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']);
 
+// Resolves the document owner from ?openid=, and — when the caller supplies its own coach_id
+// — checks that the target really is one of that coach's clients. Same coarse ownership pattern
+// as handleGetUserFacts / handleGetCoachUserChat: the check only runs when coach_id is present,
+// so the admin panel and the user's own miniapp omit it and address themselves.
+async function _resolveOwner(openid, coachId) {
+    if (!openid) {
+        return { ok: false, error: { success: false, reason: 'missing_openid', error: 'openid is required', statusCode: 400 } };
+    }
+    const { rows } = await pool.query(
+        'SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]
+    );
+    const userId = rows[0]?.user_id;
+    if (!userId) {
+        return { ok: false, error: { success: false, reason: 'user_not_found', error: 'User not found', statusCode: 404 } };
+    }
+    if (coachId) {
+        const check = await pool.query('SELECT 1 FROM users WHERE user_id = $1 AND coach_id = $2', [userId, coachId]);
+        if (check.rows.length === 0) {
+            return { ok: false, error: { success: false, reason: 'access_denied', error: 'Access denied', statusCode: 403 } };
+        }
+    }
+    return { ok: true, userId };
+}
+
+// Upload, register and delete are the owner's alone — a coach reads a client's records, it never
+// adds to or removes from them. This refusal is a statement of intent, not enforcement: a caller
+// can always omit coach_id and send a bare openid, the same as any caller of any endpoint here.
+// "A coach cannot upload" actually lives in the UI, as can-upload="{{mode === 'self'}}" on
+// <health-documents> in user-health.wxml.
+function _refuseCoach(coachId) {
+    if (!coachId) return null;
+    return { success: false, reason: 'coach_cannot_write', error: 'A coach cannot upload or delete a client\'s records', statusCode: 403 };
+}
+
 function _keyPrefix(userId) {
     return `health-documents/${userId}/`;
 }
@@ -98,8 +139,10 @@ function _publicRow(row) {
 // from the client, so it always lands under the caller's own prefix.
 async function handleGetHealthDocumentPresign(query) {
     try {
-        const gate = await requireVivaAgAccess(query?.openid);
-        if (!gate.ok) return gate.error;
+        const refusal = _refuseCoach(query?.coach_id);
+        if (refusal) return refusal;
+        const owner = await _resolveOwner(query?.openid, null);
+        if (!owner.ok) return owner.error;
 
         const filename = String(query?.filename || '').trim();
         if (!filename) return { success: false, error: 'filename is required', statusCode: 400 };
@@ -112,7 +155,7 @@ async function handleGetHealthDocumentPresign(query) {
             return { success: false, error: 'File exceeds the 20 MB limit', statusCode: 400 };
         }
 
-        const key = `${_keyPrefix(gate.user.user_id)}${crypto.randomBytes(12).toString('hex')}.${ext}`;
+        const key = `${_keyPrefix(owner.userId)}${crypto.randomBytes(12).toString('hex')}.${ext}`;
         // Sign the REAL content type, not octet-stream. This bucket refuses a
         // response-content-type override at download time, so upload is the only chance to get
         // it right — otherwise every PDF is served as an opaque binary and neither a browser
@@ -139,9 +182,11 @@ async function handleGetHealthDocumentPresign(query) {
 // actually in the bucket.
 async function handlePostHealthDocument(body) {
     try {
-        const gate = await requireVivaAgAccess(body?.openid);
-        if (!gate.ok) return gate.error;
-        const userId = gate.user.user_id;
+        const refusal = _refuseCoach(body?.coach_id);
+        if (refusal) return refusal;
+        const owner = await _resolveOwner(body?.openid, null);
+        if (!owner.ok) return owner.error;
+        const userId = owner.userId;
 
         const ossKey = String(body?.oss_key || '').trim();
         const filename = String(body?.filename || '').trim();
@@ -188,8 +233,8 @@ async function handlePostHealthDocument(body) {
 
 async function handleGetHealthDocuments(query) {
     try {
-        const gate = await requireVivaAgAccess(query?.openid);
-        if (!gate.ok) return gate.error;
+        const owner = await _resolveOwner(query?.openid, query?.coach_id);
+        if (!owner.ok) return owner.error;
         const { rows } = await pool.query(
             // doc_date::text, not the raw DATE: node-postgres turns a DATE into a JS Date at
             // local midnight, which serializes to a UTC instant and can read as the previous
@@ -197,7 +242,7 @@ async function handleGetHealthDocuments(query) {
             `SELECT *, doc_date::text AS doc_date FROM health_documents
              WHERE user_id = $1 AND status = 'active'
              ORDER BY COALESCE(doc_date, created_at::date) DESC, id DESC LIMIT 200`,
-            [gate.user.user_id]
+            [owner.userId]
         );
         return { success: true, documents: rows.map(_publicRow) };
     } catch (err) {
@@ -210,12 +255,12 @@ async function handleGetHealthDocuments(query) {
 // rather than trusting a client-supplied key (which is what /oss/presign does).
 async function handleGetHealthDocumentUrl(documentId, query) {
     try {
-        const gate = await requireVivaAgAccess(query?.openid);
-        if (!gate.ok) return gate.error;
+        const owner = await _resolveOwner(query?.openid, query?.coach_id);
+        if (!owner.ok) return owner.error;
         const { rows: [doc] } = await pool.query(
             `SELECT *, doc_date::text AS doc_date FROM health_documents
              WHERE id = $1 AND user_id = $2 AND status = 'active'`,
-            [documentId, gate.user.user_id]
+            [documentId, owner.userId]
         );
         if (!doc) return { success: false, error: 'Document not found', statusCode: 404 };
         return {
@@ -239,12 +284,14 @@ async function handleGetHealthDocumentUrl(documentId, query) {
 // disappears from every user-facing list immediately; the object is left for a future purge.
 async function handleDeleteHealthDocument(documentId, query) {
     try {
-        const gate = await requireVivaAgAccess(query?.openid);
-        if (!gate.ok) return gate.error;
+        const refusal = _refuseCoach(query?.coach_id);
+        if (refusal) return refusal;
+        const owner = await _resolveOwner(query?.openid, null);
+        if (!owner.ok) return owner.error;
         const { rowCount } = await pool.query(
             `UPDATE health_documents SET status = 'deleted', deleted_at = NOW()
              WHERE id = $1 AND user_id = $2 AND status = 'active'`,
-            [documentId, gate.user.user_id]
+            [documentId, owner.userId]
         );
         if (rowCount === 0) return { success: false, error: 'Document not found', statusCode: 404 };
         return { success: true };
