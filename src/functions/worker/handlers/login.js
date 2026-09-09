@@ -6,16 +6,39 @@ const { normalizeCnPhone } = require('../lib/phone');
 const { grantSignupTrial } = require('../lib/personaOverride');
 const { syncPartnerPhoneFromUser } = require('./partners');
 
-// A referral code belongs to a user, not a coach — but when that user IS a coach, sharing their
-// personal referral_code instead of their coaches invitation code should still land the new signup
-// in their client list. Without this the referral path sets referred_by_user_id and inherits the
-// channel but leaves coach_id NULL, so the coach never sees them (prod incident 2026-08-29: a coach
-// shared her referral code at an event and all 36 signups were invisible to her).
+// A referral code belongs to a user, not a coach. Two things follow from that, and both are wanted:
+//
+//   1. When the referrer IS a coach, sharing their personal referral_code instead of their coach
+//      invitation code must still land the signup in their client list. Without this the referral
+//      path sets referred_by_user_id and inherits the channel but leaves coach_id NULL, so the coach
+//      never sees them (prod incident 2026-08-29: a coach shared her referral code at an event and
+//      all 36 signups were invisible to her).
+//   2. When the referrer is an ordinary user, the signup inherits THEIR coach — the same coach
+//      already serving the person who made the introduction. The channel already propagates exactly
+//      this way one line up at every call site, so the two now agree; a coached user's friend
+//      landing coachless inside a coached channel is the gap this closes.
+//
+// The referrer's OWN coach identity wins over the coach they are assigned to, and the order is
+// load-bearing: a coach who is themselves coached by someone else must collect their own clients
+// rather than hand them upward. Both halves are gated on status = 'active', so a superseded coaches
+// row can never pick up new clients.
+//
+// Inheritance is transitive by construction — B inherits C from A, then D inherits C from B — which
+// is the intended reading of "the inviter's coach" and mirrors how channel already flows down a
+// referral chain. Assignment still only ever fills a NULL: no existing coach_id is reassigned, and
+// an explicit coach_id on the request continues to win over both.
 async function coachIdForReferrer(referrerUserId) {
     if (!referrerUserId) return null;
     try {
         const res = await pool.query(
-            "SELECT id FROM coaches WHERE user_id = $1 AND status = 'active' LIMIT 1",
+            `SELECT c.id
+               FROM users u
+               JOIN coaches c ON c.id = COALESCE(
+                     (SELECT own.id FROM coaches own
+                       WHERE own.user_id = u.user_id AND own.status = 'active' LIMIT 1),
+                     u.coach_id)
+              WHERE u.user_id = $1 AND c.status = 'active'
+              LIMIT 1`,
             [referrerUserId]
         );
         return res.rows[0]?.id || null;
@@ -420,6 +443,16 @@ async function handleWxLogin(body) {
         }
     }
 
+    // A `ref=<user_id>` deep link is the same invitation act as sharing a referral code
+    // (pages/login/login.js reads options.ref and persists it), so it must resolve a coach the same
+    // way — otherwise one invitation inherits a coach and the other does not purely on link shape.
+    // Deliberately AFTER the invite_code block: a coach's explicit invitation code must still win
+    // over a ref that may have been sitting in wx storage for weeks. No-ops when the referral-code
+    // branch above already resolved one.
+    if (!resolvedCoachId && referralUserId) {
+        resolvedCoachId = await coachIdForReferrer(referralUserId);
+    }
+
     if (!channelId && resolvedCoachId) {
         const coachRes = await pool.query('SELECT u.channel_id FROM coaches c JOIN users u ON c.user_id = u.user_id WHERE c.id = $1', [resolvedCoachId]);
         if (coachRes.rows.length > 0) channelId = coachRes.rows[0].channel_id;
@@ -594,6 +627,16 @@ async function handleWxAppLogin(body) {
                 return { success: false, invalid_code: true, error: 'Invalid or expired invitation code' };
             }
         }
+    }
+
+    // A `ref=<user_id>` deep link is the same invitation act as sharing a referral code
+    // (pages/login/login.js reads options.ref and persists it), so it must resolve a coach the same
+    // way — otherwise one invitation inherits a coach and the other does not purely on link shape.
+    // Deliberately AFTER the invite_code block: a coach's explicit invitation code must still win
+    // over a ref that may have been sitting in wx storage for weeks. No-ops when the referral-code
+    // branch above already resolved one.
+    if (!resolvedCoachId && referralUserId) {
+        resolvedCoachId = await coachIdForReferrer(referralUserId);
     }
 
     if (!channelId && resolvedCoachId) {
