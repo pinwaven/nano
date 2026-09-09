@@ -19,7 +19,7 @@ const { PLAN_WEEKS } = require('../../lib/dotsProductModel');
 const { getVivaLabels } = require('./subAgeLabels');
 
 module.exports = (ctx) => {
-    const { user_profile, biomarkers, bioage, dots, health_twin, questionnaire_context, active_health_plans, current_solar_term, sub_age_display_names , formulation_package, formulation_tiers } = ctx;
+    const { user_profile, biomarkers, bioage, dots, health_twin, questionnaire_context, active_health_plans, recommended_dot_keys, current_solar_term, sub_age_display_names , formulation_package, formulation_tiers } = ctx;
     const labels = getVivaLabels(sub_age_display_names);
 
     const formularyLines = (dots || []).length > 0
@@ -75,16 +75,27 @@ module.exports = (ctx) => {
         : '';
 
     // Soft, non-exclusionary weighting hint derived from the union of the user's active
-    // health_plans' recommended_dot_ids — recommended dots should skew toward the higher end
+    // health_plans' recommended dots — recommended dots should skew toward the higher end
     // of their own range, but every other dot is still decided normally by biomarker severity
-    // (never forced to 0 just for being off the focus list). See §1 of the focus-formulation
-    // plan for why this stays soft rather than a hard filter.
+    // (never forced to 0 just for being off the focus list). The weighting is purely additive on
+    // the server side too: _fallbackCountForDot promotes a listed dot and leaves everything else
+    // at the midpoint it would get with no focus at all.
+    //
+    // `recommended_dot_keys` is resolved once by the caller (handlers/dots.js) and carried on the
+    // context. The inline derivation below is a FALLBACK ONLY, for a context built before that
+    // field existed — an event published by an older worker can still be in flight. Do not make
+    // it the primary path: the stored shape changed from dots.id to key_name
+    // (migration_health_plan_recommended_dot_keys.sql) and a second copy of that logic is how one
+    // of them gets missed next time.
     const recommendedDotShortKeys = (() => {
-        const ids = new Set();
-        for (const p of active_health_plans || []) for (const id of (p.recommended_dot_ids || [])) ids.add(id);
-        if (ids.size === 0) return [];
+        const toShort = (keys) => keys.filter(Boolean).map(k => k.replace(/^DOT/, 'D'));
+        if (Array.isArray(recommended_dot_keys)) return toShort(recommended_dot_keys);
+        const entries = new Set();
+        for (const p of active_health_plans || []) for (const e of (p.recommended_dot_ids || [])) entries.add(e);
+        if (entries.size === 0) return [];
         const byId = new Map((dots || []).map(d => [d.id, d]));
-        return [...ids].map(id => byId.get(id)?.key_name).filter(Boolean).map(k => k.replace(/^DOT/, 'D'));
+        const byKey = new Set((dots || []).map(d => d.key_name));
+        return toShort([...entries].map(e => (typeof e === 'string' ? (byKey.has(e) ? e : null) : byId.get(e)?.key_name)));
     })();
     const focusWeightingSection = recommendedDotShortKeys.length > 0
         ? `本轮聚焦方案重点推荐原粒：${recommendedDotShortKeys.join('、')}（配方决策时可适当偏向这些原粒范围的较高值；但其余原粒仍需按生物标志物正常判断决定数值，不得因未被推荐而强行归零——若某项生物标志物明显异常但对应原粒不在此列表中，仍应给出合理剂量）`

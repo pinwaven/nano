@@ -281,6 +281,18 @@ const T = {
     hrSavedBioage: '您的生物年龄也已更新。',
     hrSaveError: '保存失败，请重试。',
     toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
+    // Focus sheet (see _startFormulaDots). Deliberately says what the direction DOES rather than
+    // just naming it — the point of asking is that the user knows the choice is theirs.
+    pkgPayBtn: '去支付',
+    focusTitle: '定制方向',
+    focusHasIntro: '将按你当前的健康方案方向定制：',
+    focusHasHint: '方案方向会影响配方偏重哪些原粒，其余仍按你的检测指标决定。',
+    focusNoneIntro: '你还没有选择健康方案。',
+    focusNoneHint: '健康方案会为配方定一个方向，比如深度睡眠或代谢健康。也可以先不设方向，只按检测指标定制。',
+    focusGo: '按此方向定制',
+    focusGoNoPlan: '直接定制',
+    focusChoose: '去选择方案',
+    focusSkip: '不设方向',
     toolTestChipMsg: '我想使用 Kino 芯片',
     toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
     healthAdviceGenerating: '正在分析您的健康数据，请稍候…',
@@ -621,6 +633,16 @@ const T = {
     hrSavedBioage: 'Your BioAge has been updated too.',
     hrSaveError: 'Save failed. Please try again.',
     toolFormulaDotMsg: 'Please formulate my Dots plan',
+    pkgPayBtn: 'Pay now',
+    focusTitle: 'Formulation focus',
+    focusHasIntro: 'This will be formulated around your current focus:',
+    focusHasHint: 'A focus shifts which dots the formula emphasises; everything else is still decided by your biomarkers.',
+    focusNoneIntro: "You haven't chosen a health plan yet.",
+    focusNoneHint: 'A plan gives the formula a direction — better sleep, or metabolic health, for example. You can also skip it and formulate from your biomarkers alone.',
+    focusGo: 'Formulate with this focus',
+    focusGoNoPlan: 'Formulate anyway',
+    focusChoose: 'Choose a plan',
+    focusSkip: 'No focus',
     toolTestChipMsg: 'I want to use a Kino chip',
     toolHealthAdviceMsg: 'Please analyze my current health status and give me personalized health advice.',
     healthAdviceGenerating: 'Analyzing your health data, please wait…',
@@ -788,6 +810,7 @@ const AI_ECHO_TYPES = new Set([
   'formulation_order_paid', 'biological_report',
   'coach_message', 'morning_checkin', 'midday_checkin', 'evening_checkin',
   'viva_ag_result', 'viva_ag_failed', 'viva_ag_questionnaire',
+  'doc_extraction_result',
 ])
 
 // Notification types delivered by the external Viva AG agent rather than by Viva itself. Drives
@@ -996,6 +1019,23 @@ function _joinAddress(addr) {
   }, '')
 }
 
+// The full name of a dots package: the product plus the tier it was bought at, as one title —
+// 原粒 · 定制营养素 · 28天 · 臻选套装.
+//
+// Two rows of the same product differ ONLY in their tier, so a title that stops at the product
+// reads as a duplicate and the buyer has to hunt for the difference in secondary text. The tier
+// therefore leads with the name rather than sitting under it.
+//
+// One definition, used by the package rows, the code rows and the submit picker, because those
+// three name the same purchase and a user comparing them must not see three spellings of it.
+// GCN gives `tier_label` as the bare tier ("臻选套装") on all four of its endpoints, which is what
+// makes this a plain join — a label carrying the product name inside it would repeat it here.
+function pkgTitle(p, fallback) {
+  const name = (p && p.package_name) || ''
+  const tier = (p && p.tier_label) || ''
+  return [name, tier].filter(Boolean).join(' · ') || fallback
+}
+
 // One row per unredeemed code the user owns, for the 兑换码 section of Plans ▸ Dots. The codes
 // live entirely on GCN (§28e) and reach us through handleGetNutritionPlan's `codes` sibling; this
 // only turns them into strings.
@@ -1011,7 +1051,7 @@ function mapCodes(rawCodes, t, lang) {
     return {
       key: `${c.code}-${i}`,
       code: c.code,
-      name: c.package_name || c.tier_label || t.codeUnnamed,
+      name: pkgTitle(c, t.codeUnnamed),
       meta: bits.join(' · '),
       max_distinct_dots: c.max_distinct_dots || null,
       // An expert-review package is Viva AG's to formulate; the user does nothing after redeeming
@@ -1031,14 +1071,15 @@ function mapCodes(rawCodes, t, lang) {
 function mapPackages(rawPackages, t, lang) {
   if (!Array.isArray(rawPackages) || !t) return []
   return rawPackages.map((p, i) => {
-    const name = p.package_name || t.pkgUnnamed
+    const name = pkgTitle(p, t.pkgUnnamed)
     const bits = []
-    // What the row says under its title, most specific fact first.
+    // What the row says under its title, most specific fact first. The tier NAME is in the title
+    // now, so this line carries the width instead — which is the thing the name stopped saying
+    // when the tiers were renamed off their dot counts (GCN migration_0107).
     if (p.stage === 'active' && p.day_index) {
       bits.push(t.pkgDay(p.day_index, p.total_days))
     } else {
-      if (p.tier_label) bits.push(p.tier_label)
-      else if (p.max_distinct_dots) bits.push(t.pkgTierUpTo(p.max_distinct_dots))
+      if (p.max_distinct_dots) bits.push(t.pkgTierUpTo(p.max_distinct_dots))
       if (p.ordered_at) bits.push(t.pkgOrderedOn(fmtDate(p.ordered_at, lang)))
     }
     return {
@@ -1061,6 +1102,7 @@ function mapPackages(rawPackages, t, lang) {
       can_submit: !!p.can_submit,
       can_scan: !!p.can_scan,
       can_order: !!p.can_order,
+      can_pay: !!p.can_pay,
       tracking_number: p.tracking_number || null,
       // The courier's own status line when Kuaidi100 has pushed one, otherwise just the number.
       trackingLabel: [p.shipping_carrier, p.tracking_number, p.tracking_status_desc]
@@ -1325,6 +1367,11 @@ Page({
     planDetailData: null,
     planSubTab: 'overview',
     plansDotsSubTab: 'dots',
+    // Focus sheet, shown before 营养定制 runs. See _startFormulaDots.
+    formulaFocusOpen: false,
+    formulaFocusPlans: [],
+    formulaFocusOpts: null,
+    formulaFocusLoading: false,
     neoBound: false,
     // Kill switch for the whole Neo dispenser entry point — the hardware is not shipping yet, so
     // the bind card would offer something nobody can act on. Flip to true to bring it back.
@@ -1638,8 +1685,7 @@ Page({
     // second one on top of it would interleave two sets of bubbles. Landing on the tab still
     // helps — whatever is running is what the user wanted to see.
     if (typing || obStep !== 'done') return
-    toolActions.runFormulaDs(user.user_id, t, this._toolCtx())
-    this._scrollBottom()
+    this._startFormulaDots()
   },
 
   // ── 兑换码 sheet (Plans ▸ Dots) ───────────────────────────────────────────────
@@ -1891,6 +1937,19 @@ Page({
   // pick — tapping the row IS the choice, which is what makes selection work when more than one
   // package is waiting. Reports through a toast rather than a chat bubble; the user is not in the
   // chat tab, and dropping a message into a conversation they are not looking at reads as noise.
+  // 待付款 → the GCN order, with its payment QR already open. Payment is a manual scan-and-upload
+  // flow on GCN's side (the seller confirms receipt out of band), so there is nothing nano can
+  // settle itself — the whole job is landing the user on the right screen.
+  //
+  // The intent is routed by GCN's dashboard.html, which deploys independently of this miniapp: an
+  // older dashboard does not recognise 'pay_order' and falls through to its normal mall load, so
+  // the tap lands in the store rather than failing. Deploy GCN first.
+  handlePackagePay(e) {
+    const orderId = e.currentTarget.dataset.order
+    if (!orderId || !this.data.isAeviva) return
+    this._openAevivaStoreGated({ intent: 'pay_order', order_id: orderId })
+  },
+
   async handlePackageSubmit(e) {
     const { plan: planId, order: orderId } = e.currentTarget.dataset
     const { user, t } = this.data
@@ -1932,8 +1991,10 @@ Page({
     }
     if (packages.length <= 1) return packages.length === 1 ? packages[0].order_id : null
     const labels = packages.map(p => {
-      const tier = p.tier_label || (p.max_distinct_dots ? t.pkgTierUpTo(p.max_distinct_dots) : '')
-      return [p.package_name || t.pkgUnnamed, tier].filter(Boolean).join(' · ')
+      // Same title the Dots subtab shows, plus the width — the picker is where two packages are
+      // hardest to tell apart, so it is the one place worth spelling out both.
+      const width = p.max_distinct_dots ? t.pkgTierUpTo(p.max_distinct_dots) : ''
+      return [pkgTitle(p, t.pkgUnnamed), width].filter(Boolean).join(' · ')
     })
     return await new Promise(resolve => wx.showActionSheet({
       itemList: labels,
@@ -2049,6 +2110,78 @@ Page({
       if (learnSubTab === 'academy' && this.data.trainingCourses.length === 0) this._loadAcademy()
       if (learnSubTab === 'wellness' && this.data.wellnessAssets.length === 0) this._loadWellness()
     }
+  },
+
+  // ── 营养定制 focus confirmation ───────────────────────────────────────────────
+  //
+  // A health-plan focus is not a hint: _rankDotsBySeverity's +0.15 decides which dots survive the
+  // weekly tier cap, and _fallbackCountForDot doses a listed dot toward the top of its range. On
+  // a 6种 package that effectively chooses the six dots the user receives. Until now the tool
+  // read the focus and never said so — a user with a plan was silently steered, one without was
+  // silently not, and neither was told which had happened.
+  //
+  // So it asks first. Deliberately NOT a gate like the BioAge one (which refuses because there is
+  // genuinely nothing to dose against): formulating from biomarkers alone is a correct result,
+  // and ~83% of users hold no focus at all. 不设方向 is always available.
+  //
+  // Every entry point routes through here — the toolbox button, the action chip, and the chat
+  // classifier's launch_tool — so there is one place the question is asked and one place it can
+  // be skipped.
+  async _startFormulaDots(opts = {}) {
+    const { user } = this.data
+    if (!user) return
+    this.setData({ formulaFocusLoading: true })
+    let plans = []
+    try {
+      // Fetched here rather than reused from `activePlans`: that is loaded by the Plans tab, and
+      // this runs in the chat tab, which the user may have opened without ever visiting it.
+      const res = await this._req(`${BASE}/api/health-plans?openid=${encodeURIComponent(user.user_id)}`)
+      plans = (res.data?.plans || []).map(p => ({
+        id: p.id,
+        plan_type: p.plan_type,
+        name: this.data.lang === 'zh' ? (p.name_zh || p.custom_name_zh || '') : (p.name_en || p.custom_name_en || ''),
+        goal: this.data.lang === 'zh' ? (p.goal_zh || p.custom_goal_zh || '') : (p.goal_en || p.custom_goal_en || ''),
+      }))
+    } catch {
+      // A focus we cannot read is not a reason to refuse the tool. Fall through with none, which
+      // shows the "pick a direction" sheet — the user can still choose 直接定制.
+    }
+    this.setData({ formulaFocusOpen: true, formulaFocusPlans: plans, formulaFocusOpts: opts, formulaFocusLoading: false })
+  },
+
+  // Proceed with whatever focus the user holds — the behaviour that has always applied, now
+  // stated rather than assumed. Also the path taken when they have none and choose 直接定制.
+  handleFormulaFocusGo() {
+    const opts = this.data.formulaFocusOpts || {}
+    this.setData({ formulaFocusOpen: false, formulaFocusOpts: null })
+    this._runFormulaDots(opts)
+  },
+
+  // 不设方向: formulate from biomarkers alone despite holding a focus. Only offered when there is
+  // a focus to ignore — with none, handleFormulaFocusGo already means exactly this.
+  handleFormulaFocusSkip() {
+    const opts = this.data.formulaFocusOpts || {}
+    this.setData({ formulaFocusOpen: false, formulaFocusOpts: null })
+    this._runFormulaDots({ ...opts, ignoreFocus: true })
+  },
+
+  // The Plans tab is `tab` state on this same page, not a separate route, so "go choose one" is a
+  // local switch. Routed through switchTab with a synthetic event so the staleness reloads it
+  // owns still run — duplicating them here is how the two drift.
+  handleFormulaFocusChoose() {
+    this.setData({ formulaFocusOpen: false, formulaFocusOpts: null })
+    this.switchTab({ currentTarget: { dataset: { tab: 'plans' } } })
+    this.setData({ plansDotsSubTab: 'plans' })
+  },
+
+  closeFormulaFocus() {
+    this.setData({ formulaFocusOpen: false, formulaFocusOpts: null })
+  },
+
+  _runFormulaDots(opts) {
+    const { user, t } = this.data
+    toolActions.runFormulaDs(user.user_id, t, this._toolCtx(), opts)
+    this._scrollBottom()
   },
 
   switchPlansDotsSubTab(e) {
@@ -3214,7 +3347,7 @@ Page({
       this._addMsg('ai', t.kinoScanPrompt)
       this.setData({ kinoScanPending: true })
     } else if (action === 'formula_dots') {
-      toolActions.runFormulaDs(user.user_id, t, ctx)
+      this._startFormulaDots()
     } else if (action === 'health_advice') {
       toolActions.runHealthAdvice(user.user_id, t, ctx, { async: true })
     } else if (action === 'upload_image') {
@@ -3380,7 +3513,7 @@ Page({
       // The user's own message already stands in the chat and was persisted server-side, hence
       // skipUserMsg — the tool must not append its own canned trigger line on top of it.
       if (res.data?.launch_tool === 'formula_dots') {
-        toolActions.runFormulaDs(user.user_id, t, this._toolCtx(), { skipUserMsg: true })
+        this._startFormulaDots({ skipUserMsg: true })
         return
       }
       if (res.data?.processing) {
@@ -4243,7 +4376,11 @@ Page({
         return { ...r, timeDisplay: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
       })
       const formulation = res.data?.formulation || null
-      this.setData({ planDetailData: { ...plan, ...detail, reminders, formulation } })
+      // Server-resolved names for the focus's recommended dots. The guidance tab used to render
+      // plan.recommended_dot_ids directly as "DOT7" — an internal id, in a format matching no
+      // current dot key. Defaults to [] so an older server response just hides the section.
+      const recommendedDots = res.data?.recommended_dots || []
+      this.setData({ planDetailData: { ...plan, ...detail, reminders, formulation, recommendedDots } })
     } catch { /* keep existing plan data if fetch fails */ }
   },
 

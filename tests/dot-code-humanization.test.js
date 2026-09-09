@@ -39,7 +39,7 @@ test('a :::formula card is left byte-identical — its rows are KEYED on the cod
         '',
         ':::formula',
         '#cycle|28|56',
-        '#rung|8种原粒|8|一句话',
+        '#rung|臻选套装|8|一句话',
         'DOT-N6|线粒体焕新|#8A9AAB|17|0',
         'DOT-N9|NAD焕新|#7FA99B|0|12',
         ':::',

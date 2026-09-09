@@ -24,6 +24,7 @@ const agWxml = fs.readFileSync(
     path.join(MINI, 'components', 'viva-ag-panel', 'viva-ag-panel.wxml'), 'utf8');
 const coachJs = fs.readFileSync(path.join(MINI, 'pages', 'coach', 'coach.js'), 'utf8');
 const coachWxml = fs.readFileSync(path.join(MINI, 'pages', 'coach', 'coach.wxml'), 'utf8');
+const hdWxss = fs.readFileSync(path.join(HD, 'health-documents.wxss'), 'utf8');
 
 // Runs the shipping T block rather than a copy of it.
 function loadT(src) {
@@ -113,15 +114,28 @@ test('canUpload gates the destructive controls, not just the button', () => {
         'deleteDocument does not re-check canUpload');
 });
 
-test('coach_id reaches the server on read, and never on delete', () => {
+test('coach_id reaches the server on read, and never on a write', () => {
     const scoped = hdJs.match(/`\$\{BASE\}\/api\/health-documents[^`]*`/g) || [];
-    const list = scoped.find(u => u.includes('?openid=') && !u.includes('/presign') && !u.includes('/url'));
+    // Matched precisely rather than by "the one that isn't presign or url": the component has
+    // grown write endpoints that also carry ?openid=, and a loose heuristic silently starts
+    // asserting against the wrong one.
+    const list = scoped.find(u => /health-documents\?openid=/.test(u));
     const url = scoped.find(u => u.includes('/url?openid='));
+    assert.ok(list && url, 'the list or document-url request could not be found');
     assert.match(list, /_scope\(\)/, 'the list request drops coach_id');
     assert.match(url, /_scope\(\)/, 'the document-url request drops coach_id');
-    const del = hdJs.slice(hdJs.indexOf('deleteDocument(e)'));
-    assert.ok(!/_scope\(\)/.test(del.slice(0, del.indexOf('},\n  },'))),
-        'delete sends a coach_id, which the server refuses outright');
+
+    // Every write is the owner's alone. A coach_id on one of these is refused outright by the
+    // server (_refuseCoach), so sending one would break the coach view rather than protect it.
+    for (const [label, marker] of [['delete', 'deleteDocument(e)'], ['re-run', 'rerunExtraction(e)'],
+        ['reject extraction', 'rejectExtraction(e)']]) {
+        const at = hdJs.indexOf(marker);
+        if (at === -1) continue;   // the action does not exist in this build
+        const body = hdJs.slice(at, at + 900);
+        assert.ok(!/_scope\(\)/.test(body), `${label} sends a coach_id, which the server refuses`);
+        assert.match(body, /if \(!this\.properties\.canUpload\) return/,
+            `${label} is not re-checked against canUpload in JS`);
+    }
 });
 
 test('the coach page can actually supply a coach id', () => {
@@ -158,4 +172,36 @@ test('every t. key resolves in both languages', () => {
         assert.deepEqual(Object.keys(T.zh).sort(), Object.keys(T.en).sort(),
             `${label}'s zh and en blocks have diverged`);
     }
+});
+
+// The upload is presign -> readFile -> PUT -> register, and only the last two steps used to be
+// distinguishable: 'uploading' covered ~95% of the wait and never moved while it did, which on a
+// large scan over a slow uplink is indistinguishable from a hang.
+test('the upload reports three phases, in the order they happen', () => {
+    const body = hdJs.slice(hdJs.indexOf('async _uploadDocument('));
+    const seen = [...body.matchAll(/uploadStatus: t\.(\w+)/g)].map(m => m[1]);
+    assert.deepEqual(seen, ['preparing', 'uploading', 'registering'],
+        'the phases are missing, reordered, or one of them stopped being announced');
+
+    // readFile pulls the whole file into the JS heap and reports nothing, so it belongs to
+    // 'preparing' — announcing 'uploading' before it means the label lies for its slowest step.
+    const readAt = body.indexOf('readFile');
+    assert.ok(readAt > -1 && readAt < body.indexOf('uploadStatus: t.uploading'),
+        'the transfer label now precedes readFile, so it covers work that is not the transfer');
+});
+
+test('the progress bar is indeterminate, and actually moves', () => {
+    assert.match(hdWxml, /wx:if="\{\{canUpload && uploading\}\}"[\s\S]{0,80}hd-progress/,
+        'the bar renders outside an upload, or where there is no upload button to sit under');
+
+    // An "indeterminate bar" with no animation is a static line: the motion IS the signal.
+    assert.match(hdWxss, /@keyframes hd-indeterminate/, 'the bar has no keyframes to move it');
+    assert.match(hdWxss, /\.hd-progress-bar[\s\S]*?animation: hd-indeterminate/,
+        'the bar never references its own animation');
+
+    // wx.request exposes no upload progress events, so any percentage here would be invented.
+    // Matched as CALLS — both names are discussed in this component's own comments, which is
+    // where the reasoning for the indeterminate bar lives and should stay.
+    assert.ok(!/onProgressUpdate\(|wx\.uploadFile\(/.test(hdJs),
+        'a real progress source appeared — the bar should stop being indeterminate too');
 });

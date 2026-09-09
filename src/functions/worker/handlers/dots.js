@@ -897,8 +897,21 @@ function _planDayIndex(plan) {
 
 // PURE — no DB, no network. Takes GCN's orders and nano's own non-superseded plans and returns one
 // row per journey. Kept pure so every stage mapping is testable without either system.
+// A cancelled order is not a journey the user is on, and listing it under 我的原粒套餐 asks them
+// to read a dead row every time they open the tab. Dropped here rather than at the end of the
+// merge, which matters: an order can hold a plan (gcn_order_id), so removing the finished row
+// would take the formula with it. Filtered before the loop, that plan is simply never claimed and
+// re-emerges on its own row at its real status — a proposal whose order was cancelled becomes
+// orderable again, which is the same release §28d already gives it by keeping 'cancelled' out of
+// AWAITING_FORMULA_STAGES.
+//
+// 'refunded' is deliberately still shown: money moved, and a user looking for where their refund
+// came from should find the order it belongs to.
+const _HIDDEN_ORDER_STATUSES = new Set(['cancelled']);
+
 function _mergeFormulationPackages(orders, plans) {
-    const orderList = Array.isArray(orders) ? orders : [];
+    const orderList = (Array.isArray(orders) ? orders : [])
+        .filter(o => !_HIDDEN_ORDER_STATUSES.has(_stageFromOrderStatus(o)));
     const planList = Array.isArray(plans) ? plans : [];
     const claimed = new Set();
     const packages = [];
@@ -984,6 +997,9 @@ function _packageRow({ order, plan, stage }) {
         can_submit: stage === 'awaiting_formulation',
         can_scan: stage === 'shipped' || stage === 'delivered',
         can_order: stage === 'proposed',
+        // An unpaid order blocks everything behind it, and until now the row said 待付款 and
+        // offered nothing. Requires an order: a plan-only row has nothing to pay for.
+        can_pay: stage === 'pending_payment' && !!order,
         // How wide this proposal actually is, so the client can warn before a code narrower than
         // it is spent. The WEEKLY width _countDistinctDots measures — the same number
         // handlePostFormulationSubmit compares against the purchased tier, so a warning shown
@@ -1699,16 +1715,23 @@ async function handleGetFormulationReviewSnapshot(planId, openid) {
 // e.g. 1-2 for DOT-N1 vs 56-100 for DOT-N15, so a flat constant made no sense). Falls back to
 // 4 only if a dot has no min/max configured.
 // `isRecommended` biases the fallback toward the high end of the dot's own range when it's one
-// of the user's active focus's recommended_dot_ids (true), toward the low end when a focus is
-// active but this dot isn't on its list (false), or the plain midpoint when no focus is active
-// at all (undefined/omitted) — the existing, unbiased default. Never zeroes a non-recommended
-// dot out entirely: soft weighting only, per the confirmed product decision (a real biomarker
-// need outside the chosen focus must still be able to surface).
+// of the user's active focus's recommended dots. A focus is PURELY ADDITIVE: it only ever
+// promotes. Anything not on the list sits at the same midpoint it gets when no focus is active
+// at all, so `false` and `undefined` are deliberately the same answer.
+//
+// It used to demote instead — off-list dots dropped to 25% of their range, i.e. BELOW the
+// no-focus baseline, so joining a plan actively suppressed every dot the plan didn't name. On
+// DOT-N15 (range 37-67) that was 45 against a 52 baseline. Two problems with it: it made list
+// accuracy load-bearing (an omission is a demotion, and the seeded lists had been silently
+// repointed by the lineup change — migration_health_plan_recommended_dot_keys.sql), and it
+// contradicted the promise docs/architecture/health-plan-system.md already made, that every dot
+// "remains primarily governed by biomarker severity". Restore the 25% branch and you restore
+// both. Never zeroes a dot out either way: a real biomarker need outside the chosen focus must
+// still be able to surface.
 function _fallbackCountForDot(dot, isRecommended) {
     if (dot.target_dots_min != null && dot.target_dots_max != null) {
         const { target_dots_min: min, target_dots_max: max } = dot;
         if (isRecommended === true) return Math.round(min + (max - min) * 0.75);
-        if (isRecommended === false) return Math.round(min + (max - min) * 0.25);
         return Math.round((min + max) / 2);
     }
     return 4;
@@ -1719,14 +1742,27 @@ function _fallbackCountForDot(dot, isRecommended) {
 // both the deterministic and agentic formulation paths use. Returns null when no active focus
 // has any recommended dots, meaning "no narrowing" (today's default full-18-dot behavior) rather
 // than an empty set (which would read as "recommend nothing").
+//
+// TWO SHAPES, and both must keep working. The column now stores key_names ("DOT-N11") — see
+// migration_health_plan_recommended_dot_keys.sql for why a dots.id was the wrong identity to
+// persist — but the worker, the miniapp and the admin panel deploy separately, so a template
+// written by an older admin build can still hold integers. A string is taken as a key_name and
+// validated against the formulary; a number falls back to the legacy id lookup.
+//
+// An entry matching neither is DROPPED, not guessed. That is the loud failure the key format
+// buys: an id silently resolved to whatever dot now occupies that row, which is exactly how six
+// seeded lists came to recommend macular and skin dots for a weight-loss plan.
 function _resolveCandidateDotKeys(activeHealthPlans, dotsFormulary) {
-    const ids = new Set();
+    const entries = new Set();
     for (const p of activeHealthPlans || []) {
-        for (const id of (p.recommended_dot_ids || [])) ids.add(id);
+        for (const e of (p.recommended_dot_ids || [])) entries.add(e);
     }
-    if (ids.size === 0) return null;
+    if (entries.size === 0) return null;
     const byId = new Map((dotsFormulary || []).map(d => [d.id, d]));
-    const keys = new Set([...ids].map(id => byId.get(id)?.key_name).filter(Boolean));
+    const byKey = new Set((dotsFormulary || []).map(d => d.key_name));
+    const keys = new Set([...entries]
+        .map(e => (typeof e === 'string' ? (byKey.has(e) ? e : null) : byId.get(e)?.key_name))
+        .filter(Boolean));
     return keys.size > 0 ? keys : null;
 }
 
@@ -3508,7 +3544,13 @@ async function _commitAgFormulation(client, { userId, planId, capsules, analysis
 // (worker/index.js), so nothing creates a nutrition plan except a box scan.
 
 async function handlePostFormulaDots(body) {
-    const { openid } = body;
+    // `ignore_focus` is the user answering "不设方向" in the client's focus sheet: formulate from
+    // biomarkers alone even though an active health_plans focus exists. Not the same as having no
+    // focus by accident — it is a deliberate choice, and it is honoured by zeroing the plans out
+    // entirely rather than only skipping the dose bias, so this path is byte-identical to a user
+    // who never joined a plan. That also means the resulting nutrition_plans row records no
+    // primary/secondary link, which is correct: no focus shaped it.
+    const { openid, ignore_focus: ignoreFocus = false } = body;
     if (!openid) return { success: false, error: 'openid is required' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -3590,7 +3632,7 @@ async function handlePostFormulaDots(body) {
         // entry point for either persona, but stays as the deterministic fallback used on
         // agentic failure (handleChatGenerateEvent's catch block) and EventBridge publish
         // failure (this function's own fail-open path, below).
-        return await _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dotsFormulary: dotsResult.rows, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts: userFactsResult.rows, personaType });
+        return await _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dotsFormulary: dotsResult.rows, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts: userFactsResult.rows, personaType, ignoreFocus });
     } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostFormulaDots failed', error: err.message }));
         return { success: false, error: err.message };
@@ -3611,7 +3653,7 @@ async function handlePostFormulaDots(body) {
 // carrying a :::formula chart of the whole 28-day cycle. That row is what GCN's checkout prices,
 // and it becomes the user's live plan only when the delivered box is scanned. No 'pending' row is
 // inserted here — the write happens in the finalizer, once there is a validated recipe to write.
-async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dotsFormulary, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts, personaType }) {
+async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dotsFormulary, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts, personaType, ignoreFocus = false }) {
     const age = calculateAge(user.birth_date);
     const heightCm = user.bio_data?.height;
     const weightKg = user.bio_data?.weight;
@@ -3661,6 +3703,18 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
     // formulation_tiers the menu of tiers on offer. A user holding a package is not shopping.
     const tierLadder = orderContext.mode === 'buy' ? formulationTiers : [];
 
+    // The user's answer to the focus sheet is applied HERE, once, by dropping the rows — so
+    // every consumer below (the prompt's focus section, the dose bias, the rung padding, and the
+    // primary/secondary link written at commit) sees the same thing, and "I chose not to use my
+    // focus" is indistinguishable from "I have no focus". Skipping only the bias would leave the
+    // plan's goal text steering the model anyway, which is not what 不设方向 means.
+    const activePlanRows = ignoreFocus ? [] : activePlansResult.rows;
+
+    // Resolved once, here, and then carried on llmContext — the prompts and the pad-candidate
+    // ranking below all read this one Set rather than each deriving their own from
+    // recommended_dot_ids. See the field's comment on llmContext.
+    const recommendedKeySet = _resolveCandidateDotKeys(activePlanRows, dotsFormulary);
+
     const llmContext = {
         user_profile: { nickname: user.nickname, gender: user.gender, age, bmi, language: lang },
         biomarkers,
@@ -3671,7 +3725,7 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         health_twin: healthTwinResult.rows[0] || null,
         now_iso: getNowShanghai().toISO(),
         questionnaire_context: formatQuestionnaireContext(questionnaireResult.rows, lang),
-        active_health_plans: activePlansResult.rows.map(p => ({
+        active_health_plans: activePlanRows.map(p => ({
             id: p.id,
             plan_type: p.plan_type,
             name: lang === 'zh' ? p.name_zh : p.name_en,
@@ -3682,6 +3736,13 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
             total_weeks: p.duration_weeks,
         })),
         sub_age_display_names: null,
+        // The focus's recommended dots, resolved ONCE here to key_names. Both
+        // systemFormulaGenerate.js prompts read this rather than re-deriving it from
+        // active_health_plans + dots — three copies of that resolution is how one of them gets
+        // missed when the stored shape changes, which it just did
+        // (migration_health_plan_recommended_dot_keys.sql). Mirrors the field
+        // _runDeterministicFormulation already puts on its own context.
+        recommended_dot_keys: recommendedKeySet ? [...recommendedKeySet] : null,
         current_solar_term: currentSolarTerm,
         essential_knowledge: essentialKnowledge,
         user_facts: userFacts,
@@ -3734,8 +3795,7 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
             morningRecipe: deterministic.morningRecipe,
             eveningRecipe: deterministic.eveningRecipe,
             dotsFormulary, orderContext, tiers: tierLadder,
-            padCandidates: _padCandidatesFor({ dotsFormulary, bioage: bioageProfile,
-                recommendedKeySet: _resolveCandidateDotKeys(llmContext.active_health_plans, dotsFormulary) }),
+            padCandidates: _padCandidatesFor({ dotsFormulary, bioage: bioageProfile, recommendedKeySet }),
         });
         const client = await pool.connect();
         let planId = null;

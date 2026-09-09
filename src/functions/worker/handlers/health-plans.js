@@ -3,6 +3,34 @@ const { getNowShanghai } = require('../lib/time-utils');
 
 // ── Health Plan System ────────────────────────────────────────────────────────
 
+// A template's recommended dots are stored as key_names ("DOT-N11"), never as dots.id — see
+// migration_health_plan_recommended_dot_keys.sql for the incident that established this. Reject a
+// key naming no dot at save time: a bad entry is otherwise dropped in silence by
+// _resolveCandidateDotKeys, so a typo becomes a focus list one dot shorter than its author
+// believes, with no error anywhere.
+//
+// Integers are still ACCEPTED, not rejected — the admin panel deploys separately from the worker,
+// and refusing the legacy shape would make an older panel unable to save any template at all.
+// They are validated the same way, just against ids.
+async function _validateRecommendedDots(list) {
+    if (!Array.isArray(list) || list.length === 0) return { ok: true };
+    const keys = list.filter(e => typeof e === 'string');
+    const ids = list.filter(e => typeof e === 'number');
+    if (keys.length + ids.length !== list.length) {
+        return { ok: false, error: 'recommended_dot_ids entries must be dot key_names or ids' };
+    }
+    const res = await pool.query(
+        'SELECT id, key_name FROM dots WHERE key_name = ANY($1) OR id = ANY($2)', [keys, ids]
+    );
+    const knownKeys = new Set(res.rows.map(r => r.key_name));
+    const knownIds = new Set(res.rows.map(r => r.id));
+    const unknown = list.filter(e => (typeof e === 'string' ? !knownKeys.has(e) : !knownIds.has(e)));
+    if (unknown.length > 0) {
+        return { ok: false, error: `unknown dot(s) in recommended_dot_ids: ${unknown.join(', ')}` };
+    }
+    return { ok: true };
+}
+
 async function handleGetHealthPlanTemplates(query) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -35,6 +63,8 @@ async function handlePostHealthPlanTemplate(body) {
     if (!key_name || !name_zh || !name_en) return { statusCode: 400, success: false, error: 'key_name, name_zh, name_en required' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const dotsCheck = await _validateRecommendedDots(recommended_dot_ids);
+        if (!dotsCheck.ok) return { statusCode: 400, success: false, error: dotsCheck.error };
         const result = await pool.query(
             `INSERT INTO health_plan_templates
              (key_name, name_zh, name_en, desc_zh, desc_en, goal_zh, goal_en,
@@ -65,6 +95,8 @@ async function handlePutHealthPlanTemplate(id, body) {
             milestones, reminders, daily_tasks, sort_order, is_active } = body || {};
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const dotsCheck = await _validateRecommendedDots(recommended_dot_ids);
+        if (!dotsCheck.ok) return { statusCode: 400, success: false, error: dotsCheck.error };
         const result = await pool.query(
             `UPDATE health_plan_templates
              SET name_zh=$1, name_en=$2, desc_zh=$3, desc_en=$4, goal_zh=$5, goal_en=$6,
@@ -293,12 +325,43 @@ async function handleGetHealthPlanDetail(id, openid) {
             }
         }
 
+        // The focus's recommended dots, resolved to names. Clients used to render the raw
+        // recommended_dot_ids array as "DOT7" — an internal identifier, in a format matching no
+        // current key, and after the lineup change not even the dot it named. Same leak class as
+        // CLAUDE.md §28b's dot-code fix, same remedy: resolve here, render a name there.
+        //
+        // Handles both stored shapes for the same reason _resolveCandidateDotKeys does — the
+        // admin panel deploys separately, so a template can still hold integers. The raw field
+        // stays on `plan` untouched; the admin panel reads it.
+        const recommendedRaw = planRes.rows[0].recommended_dot_ids || [];
+        let recommended_dots = [];
+        if (Array.isArray(recommendedRaw) && recommendedRaw.length > 0) {
+            const keys = recommendedRaw.filter(e => typeof e === 'string');
+            const ids = recommendedRaw.filter(e => typeof e === 'number');
+            const dotsRes = await pool.query(
+                `SELECT id, key_name, key_name_zh, name, name_zh, color_hex FROM dots
+                 WHERE key_name = ANY($1) OR id = ANY($2)`,
+                [keys, ids]
+            );
+            // Ordered as the template authored them — the list is a priority statement, not a set.
+            const byKey = new Map(dotsRes.rows.map(d => [d.key_name, d]));
+            const byId = new Map(dotsRes.rows.map(d => [d.id, d]));
+            recommended_dots = recommendedRaw
+                .map(e => (typeof e === 'string' ? byKey.get(e) : byId.get(e)))
+                .filter(Boolean)
+                .map(d => ({
+                    key_name: d.key_name, key_name_zh: d.key_name_zh,
+                    name: d.name, name_zh: d.name_zh, color_hex: d.color_hex,
+                }));
+        }
+
         return {
             success: true,
             plan: planRes.rows[0],
             checkins: checkinsRes.rows,
             milestones: milestonesRes.rows,
             reminders: remindersRes.rows,
+            recommended_dots,
             formulation,
         };
     } catch (err) {
@@ -484,9 +547,51 @@ async function handleGetHealthReport(reportId, query) {
     }
 }
 
+/**
+ * DELETE /health-reports/:id — remove a report and the observations that hung off it.
+ *
+ * Added for document extraction, which auto-writes with no confirm step: a user who can see an
+ * extracted panel must be able to throw it away, or auto-write is not shippable. It applies to
+ * any report, not just extracted ones — a chat-photo report saved by mistake had no way back
+ * either.
+ *
+ * The health_events children are deleted EXPLICITLY. health_events.report_id is
+ * ON DELETE SET NULL, so removing the parent alone would leave every observation orphaned and
+ * still feeding health_twin.latest_lab_data, with nothing left to trace it back to.
+ *
+ * Then the twin is recomputed, because latest_lab_data / latest_lab_date are derived from exactly
+ * the rows just deleted.
+ */
+async function handleDeleteHealthReport(reportId, query) {
+    try {
+        const openid = query?.openid;
+        if (!openid) return { statusCode: 400, success: false, error: 'openid required' };
+        const userRes = await pool.query(
+            'SELECT user_id FROM users WHERE external_id = $1 OR user_id = $1 LIMIT 1', [openid]);
+        if (userRes.rows.length === 0) return { statusCode: 404, success: false, error: 'User not found' };
+        const uid = userRes.rows[0].user_id;
+
+        // Ownership is enforced in the predicate, not by trusting the id the caller supplied.
+        const owned = await pool.query(
+            'SELECT id FROM health_reports WHERE id = $1 AND user_id = $2', [reportId, uid]);
+        if (owned.rows.length === 0) return { statusCode: 404, success: false, error: 'Report not found' };
+
+        await pool.query('DELETE FROM health_events WHERE report_id = $1', [reportId]);
+        await pool.query('DELETE FROM health_reports WHERE id = $1', [reportId]);
+
+        const { updateHealthTwin } = require('../lib/healthTwinUpdater');
+        await updateHealthTwin(uid, pool);
+
+        return { success: true };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleDeleteHealthReport', error: err.message }));
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
+
 async function handlePostHealthReport(body, deps = {}) {
     try {
-        const { user_id, openid, report_date, source = 'manual_upload', institution, report_type = 'lab_panel', observations = [], fhir_bundle, oss_key = null, get_url = null, compute_bioage = false } = body || {};
+        const { user_id, openid, report_date, source = 'manual_upload', institution, report_type = 'lab_panel', observations = [], fhir_bundle, oss_key = null, get_url = null, compute_bioage = false, source_document_id = null } = body || {};
         if (!user_id && !openid) return { statusCode: 400, success: false, error: 'user_id or openid required' };
 
         let uid = user_id;
@@ -519,19 +624,20 @@ async function handlePostHealthReport(body, deps = {}) {
         const date = report_date || obs[0]?.data_date?.split('T')[0] || new Date().toISOString().split('T')[0];
 
         const reportRes = await pool.query(
-            `INSERT INTO health_reports (user_id, report_date, source, institution, report_type, status, oss_key, raw_data)
-             VALUES ($1, $2, $3, $4, $5, 'parsed', $6, $7) RETURNING id`,
-            [uid, date, source, institution || null, report_type, oss_key, JSON.stringify({ observations: obs, image_url: get_url || null })]
+            `INSERT INTO health_reports (user_id, report_date, source, institution, report_type, status, oss_key, raw_data, source_document_id)
+             VALUES ($1, $2, $3, $4, $5, 'parsed', $6, $7, $8) RETURNING id`,
+            [uid, date, source, institution || null, report_type, oss_key, JSON.stringify({ observations: obs, image_url: get_url || null }), source_document_id]
         );
         const reportId = reportRes.rows[0].id;
 
         let hasKinoCore = false;
+        let written = 0;
         for (const o of obs) {
             const catalog = o.loinc_code ? loincMap[o.loinc_code] : keyNameMap[o.key_name];
             if (!catalog) continue;
             const dataDate = (o.data_date || date).split('T')[0];
             const externalId = `${catalog.key_name}::${dataDate}`;
-            await pool.query(
+            const ins = await pool.query(
                 `INSERT INTO health_events (user_id, source, category, data_date, recorded_at, data, report_id, external_id)
                  VALUES ($1, $2, 'lab_result', $3, NOW(), $4, $5, $6)
                  ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING`,
@@ -548,6 +654,7 @@ async function handlePostHealthReport(body, deps = {}) {
                     reportId, externalId,
                 ]
             );
+            if (ins.rowCount > 0) written++;
             if (catalog.is_kino_core) hasKinoCore = true;
         }
 
@@ -563,7 +670,10 @@ async function handlePostHealthReport(body, deps = {}) {
             }
         }
 
-        return { success: true, report_id: reportId, has_kino_core: hasKinoCore, bioage_updated: bioageUpdated };
+        // observations_written is deliberately distinct from obs.length: a marker already recorded
+        // for the same day and source is a no-op, so a caller that reports "N recorded" must use
+        // this rather than what it submitted.
+        return { success: true, report_id: reportId, observations_written: written, has_kino_core: hasKinoCore, bioage_updated: bioageUpdated };
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'handlePostHealthReport', error: err.message }));
         return { statusCode: 500, success: false, error: err.message };
@@ -605,4 +715,5 @@ module.exports = {
     handleGetHealthReports,
     handleGetHealthReport,
     handlePostHealthReport,
+    handleDeleteHealthReport,
 };

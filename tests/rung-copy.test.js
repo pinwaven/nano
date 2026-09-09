@@ -20,8 +20,8 @@ const FORMULARY = [
     { key_name: 'DOT-N13', name: 'Gut Renew', name_zh: '肠道焕新', sub_age_target: 'Resilience Age' },
 ];
 const RUNGS = [
-    { tier_label: '8种原粒', max_distinct_dots: 8, pitch: '', added: [{ key: 'DOT-N9', am: 9, pm: 0 }] },
-    { tier_label: '10种原粒', max_distinct_dots: 10, pitch: '', added: [{ key: 'DOT-N14', am: 0, pm: 7 }, { key: 'DOT-N13', am: 0, pm: 2 }] },
+    { tier_label: '臻选套装', max_distinct_dots: 8, pitch: '', added: [{ key: 'DOT-N9', am: 9, pm: 0 }] },
+    { tier_label: '尊享套装', max_distinct_dots: 10, pitch: '', added: [{ key: 'DOT-N14', am: 0, pm: 7 }, { key: 'DOT-N13', am: 0, pm: 2 }] },
 ];
 
 const stubClient = (content) => ({
@@ -91,7 +91,7 @@ test('no rungs, or rungs the daily budget emptied, make no call at all', async (
     let called = false;
     const spy = { chat: { completions: { create: async () => { called = true; return { choices: [{ message: { content: '{"pitches":["x"]}' } }] }; } } } };
     assert.deepStrictEqual(await attachRungCopy({ client: spy, model: 'stub', rungs: [], dotsFormulary: FORMULARY, lang: 'zh' }), []);
-    const empty = [{ tier_label: '8种原粒', max_distinct_dots: 8, pitch: '', added: [] }];
+    const empty = [{ tier_label: '臻选套装', max_distinct_dots: 8, pitch: '', added: [] }];
     assert.deepStrictEqual(await attachRungCopy({ client: spy, model: 'stub', rungs: empty, dotsFormulary: FORMULARY, lang: 'zh' }), empty);
     assert.strictEqual(called, false, 'nothing to describe must not cost an LLM call');
 });

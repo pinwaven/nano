@@ -762,7 +762,12 @@
               <text class="pkg-track-text">{{item.trackingLabel}}</text>
               <text class="pkg-track-copy">{{t.copy}}</text>
             </view>
-            <view wx:if="{{item.can_submit && item.submit_plan_id}}" class="pkg-cta" catchtap="handlePackageSubmit" data-order="{{item.order_id}}" data-plan="{{item.submit_plan_id}}">
+            <!-- First in the chain: an unpaid order blocks every later step, so paying it is the
+                 only thing worth offering on that row. -->
+            <view wx:if="{{item.can_pay}}" class="pkg-cta" catchtap="handlePackagePay" data-order="{{item.order_id}}">
+              <text class="pkg-cta-text">{{t.pkgPayBtn}}</text>
+            </view>
+            <view wx:elif="{{item.can_submit && item.submit_plan_id}}" class="pkg-cta" catchtap="handlePackageSubmit" data-order="{{item.order_id}}" data-plan="{{item.submit_plan_id}}">
               <text class="pkg-cta-text">{{t.pkgUseFormulaBtn}}</text>
             </view>
             <text wx:elif="{{item.can_submit}}" class="pkg-hint">{{t.pkgNeedsFormulaHint}}</text>
@@ -1108,11 +1113,11 @@
           <view class="plan-detail-section">
             <text class="plan-detail-value">{{lang === 'zh' ? (planDetailData.desc_zh || planDetailData.goal_zh) : (planDetailData.desc_en || planDetailData.goal_en)}}</text>
           </view>
-          <view wx:if="{{planDetailData.recommended_dot_ids && planDetailData.recommended_dot_ids.length > 0}}" class="plan-detail-section">
+          <view wx:if="{{planDetailData.recommendedDots && planDetailData.recommendedDots.length > 0}}" class="plan-detail-section">
             <text class="plan-detail-label">{{t.plansRecommendedDots}}</text>
             <view class="plan-chips-row">
-              <view wx:for="{{planDetailData.recommended_dot_ids}}" wx:key="*this" class="plan-chip plan-chip-dot">
-                <text class="plan-chip-text">DOT{{item}}</text>
+              <view wx:for="{{planDetailData.recommendedDots}}" wx:key="key_name" class="plan-chip plan-chip-dot">
+                <text class="plan-chip-text">{{lang === 'zh' ? (item.key_name_zh || item.name_zh) : item.name}}</text>
               </view>
             </view>
           </view>
@@ -1149,6 +1154,55 @@
           </view>
           <view style="height: 48rpx;"></view>
         </scroll-view>
+      </view>
+    </view>
+
+    <!-- ════ 营养定制 focus sheet ════
+         Asked before the tool runs, because a focus is not a hint: it decides which dots survive
+         the weekly tier cap and doses the listed ones toward the top of their range. Never a
+         gate — 不设方向 / Formulate anyway is always present. See main.js _startFormulaDots. -->
+    <view wx:if="{{formulaFocusOpen}}" class="overlay-mask" catchtouchmove="noop" bindtap="closeFormulaFocus">
+      <view class="focus-sheet" catchtap="noop">
+        <view class="overlay-header">
+          <text class="overlay-title">{{t.focusTitle}}</text>
+          <view class="overlay-close" bindtap="closeFormulaFocus"><text class="close-x">✕</text></view>
+        </view>
+
+        <block wx:if="{{formulaFocusPlans.length > 0}}">
+          <text class="focus-intro">{{t.focusHasIntro}}</text>
+          <view wx:for="{{formulaFocusPlans}}" wx:key="id" class="focus-plan-row">
+            <view class="plan-type-badge plan-type-{{item.plan_type}}">
+              <text class="plan-type-text">{{item.plan_type === 'primary' ? t.plansPrimary : t.plansSecondary}}</text>
+            </view>
+            <view class="focus-plan-body">
+              <text class="focus-plan-name">{{item.name}}</text>
+              <text wx:if="{{item.goal}}" class="focus-plan-goal">{{item.goal}}</text>
+            </view>
+          </view>
+          <text class="focus-hint">{{t.focusHasHint}}</text>
+          <view class="focus-btn focus-btn-primary" bindtap="handleFormulaFocusGo">
+            <text>{{t.focusGo}}</text>
+          </view>
+          <view class="focus-btn-row">
+            <view class="focus-btn focus-btn-ghost" bindtap="handleFormulaFocusChoose">
+              <text>{{t.focusChoose}}</text>
+            </view>
+            <view class="focus-btn focus-btn-ghost" bindtap="handleFormulaFocusSkip">
+              <text>{{t.focusSkip}}</text>
+            </view>
+          </view>
+        </block>
+
+        <block wx:else>
+          <text class="focus-intro">{{t.focusNoneIntro}}</text>
+          <text class="focus-hint">{{t.focusNoneHint}}</text>
+          <view class="focus-btn focus-btn-primary" bindtap="handleFormulaFocusChoose">
+            <text>{{t.focusChoose}}</text>
+          </view>
+          <view class="focus-btn focus-btn-ghost" bindtap="handleFormulaFocusGo">
+            <text>{{t.focusGoNoPlan}}</text>
+          </view>
+        </block>
       </view>
     </view>
 

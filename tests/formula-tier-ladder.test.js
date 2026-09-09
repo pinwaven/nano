@@ -36,9 +36,9 @@ FORMULARY.push({
 });
 
 const TIERS = [
-    { tier_label: '6种原粒', max_distinct_dots: 6 },
-    { tier_label: '8种原粒', max_distinct_dots: 8 },
-    { tier_label: '10种原粒', max_distinct_dots: 10 },
+    { tier_label: '轻享套装', max_distinct_dots: 6 },
+    { tier_label: '臻选套装', max_distinct_dots: 8 },
+    { tier_label: '尊享套装', max_distinct_dots: 10 },
 ];
 
 // Descending emphasis: DOT-N1 is the most emphasised, DOT-N12 the least. N7 is present so the
@@ -65,7 +65,7 @@ test('_buildTierLadder produces one variant per purchasable width, narrowest fir
     });
     assert.ok(ladder, 'a full allocation and three tiers must produce a ladder');
     assert.deepStrictEqual(ladder.variants.map(v => v.max_distinct_dots), [6, 8, 10]);
-    assert.deepStrictEqual(ladder.variants.map(v => v.tier_label), ['6种原粒', '8种原粒', '10种原粒']);
+    assert.deepStrictEqual(ladder.variants.map(v => v.tier_label), ['轻享套装', '臻选套装', '尊享套装']);
     assert.strictEqual(ladder.base, ladder.variants[0], 'the base is the NARROWEST variant');
 });
 
@@ -340,7 +340,7 @@ test('the card carries a #rung block per upgrade, and the client reads back what
     });
     const seg = mdToSegments(block.trim()).find(s => s.t === 'formula');
     assert.strictEqual(seg.rungs.length, 2);
-    assert.deepStrictEqual(seg.rungs.map(r => r.label), ['8种原粒', '10种原粒']);
+    assert.deepStrictEqual(seg.rungs.map(r => r.label), ['臻选套装', '尊享套装']);
     assert.deepStrictEqual(seg.rungs.map(r => r.width), [8, 10]);
     assert.deepStrictEqual(seg.rungs.map(r => r.pitch), ['把抗炎这一环补全', '接上最后两条通路']);
     assert.deepStrictEqual(seg.rungs.map(r => r.items.length), [2, 2]);
@@ -396,7 +396,7 @@ test('a pitch is sanitised and length-capped before it reaches the card', () => 
     const block = D._buildFormulaChartBlock(out.morningRecipe, out.eveningRecipe, FORMULARY, 'zh', {
         planId: 1, orderMode: 'buy', rungs: out.rungs,
     });
-    const line = block.split('\n').find(l => l.startsWith('#rung|8种原粒'));
+    const line = block.split('\n').find(l => l.startsWith('#rung|臻选套装'));
     assert.ok(!/\r|\n/.test(line));
     const seg = mdToSegments(block.trim()).find(s => s.t === 'formula');
     assert.ok(seg.rungs[0].pitch.length <= 90, 'a pitch long enough to push the CTA off screen is cut');
@@ -408,7 +408,7 @@ test('a pitch naming a dot outside its own rung is dropped, not shipped', () => 
     // 畅流") and tagged a different one, so the copy promised dots the rung did not hold and one
     // the formulation did not contain at all. The server owns membership; the model only owns the
     // reasoning, so a pitch that contradicts membership is dropped rather than repaired.
-    const rung = { tier_label: '8种原粒', max_distinct_dots: 8, added: [{ key: 'DOT-N9', am: 2, pm: 0 }] };
+    const rung = { tier_label: '臻选套装', max_distinct_dots: 8, added: [{ key: 'DOT-N9', am: 2, pm: 0 }] };
     assert.strictEqual(D._rungPitch({ ...rung, pitch: '再添原粒12号，补上最后一环' }, FORMULARY), '',
         'a display name from another rung drops the pitch');
     assert.strictEqual(D._rungPitch({ ...rung, pitch: '加配12号原粒，从两路强化' }, FORMULARY), '',

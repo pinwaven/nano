@@ -11,6 +11,9 @@
       <text wx:if="{{!uploading}}">{{t.uploadBtn}}</text>
       <text wx:else>{{uploadStatus}}</text>
     </view>
+    <view wx:if="{{canUpload && uploading}}" class="hd-progress">
+      <view class="hd-progress-bar"></view>
+    </view>
 
     <view wx:if="{{docsLoading}}" class="hd-muted">{{t.loading}}</view>
     <view wx:elif="{{documents.length === 0}}" class="hd-empty">
@@ -18,16 +21,24 @@
       <text wx:if="{{canUpload}}" class="hd-empty-hint">{{t.noDocsHint}}</text>
     </view>
     <view wx:else>
-      <view wx:for="{{documents}}" wx:key="id" class="hd-doc">
-        <view class="hd-doc-main" bindtap="openDocument" data-id="{{item.id}}">
-          <text class="hd-doc-name">{{item.filename}}</text>
-          <view class="hd-doc-meta">
-            <text class="hd-doc-badge">{{item.typeLabel}}</text>
-            <text wx:if="{{item.doc_date}}" class="hd-doc-sub">{{item.doc_date}}</text>
-            <text class="hd-doc-sub">{{item.sizeLabel}}</text>
+      <view wx:for="{{documents}}" wx:key="id" class="hd-doc-wrap">
+        <view class="hd-doc">
+          <view class="hd-doc-main" bindtap="openDocument" data-id="{{item.id}}">
+            <text class="hd-doc-name">{{item.filename}}</text>
+            <view class="hd-doc-meta">
+              <text class="hd-doc-badge">{{item.typeLabel}}</text>
+              <text wx:if="{{item.doc_date}}" class="hd-doc-sub">{{item.doc_date}}</text>
+              <text class="hd-doc-sub">{{item.sizeLabel}}</text>
+            </view>
+            <text wx:if="{{item.extLabel}}" class="hd-doc-ext {{item.extBusy ? 'hd-doc-ext-busy' : ''}}">{{item.extLabel}}</text>
+            <text wx:if="{{item.summary}}" class="hd-doc-summary">{{item.summary}}</text>
           </view>
+          <text wx:if="{{canUpload}}" class="hd-doc-del" catchtap="deleteDocument" data-id="{{item.id}}" data-name="{{item.filename}}">{{t.delete}}</text>
         </view>
-        <text wx:if="{{canUpload}}" class="hd-doc-del" catchtap="deleteDocument" data-id="{{item.id}}" data-name="{{item.filename}}">{{t.delete}}</text>
+        <view wx:if="{{canUpload && item.extDone}}" class="hd-doc-actions">
+          <text class="hd-doc-action" catchtap="rerunExtraction" data-id="{{item.id}}">{{t.extRerun}}</text>
+          <text class="hd-doc-action hd-doc-action-warn" catchtap="rejectExtraction" data-id="{{item.id}}">{{t.extWrong}}</text>
+        </view>
       </view>
       <text wx:if="{{canUpload}}" class="hd-footnote">{{t.footnote}}</text>
     </view>

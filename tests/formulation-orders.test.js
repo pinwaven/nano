@@ -23,7 +23,7 @@ const daysAgo = (n) => DateTime.now().setZone('Asia/Shanghai').minus({ days: n }
 const order = (over = {}) => ({
     order_id: 'ord-1', status: 'awaiting_formulation', created_at: '2026-08-20T02:00:00.000Z',
     paid_at: null, shipped_at: null, fulfillment: 'fast_track', is_bundle: true,
-    package_name: '原粒 · 定制营养素 · 28天', tier_label: '8种原粒', max_distinct_dots: 8,
+    package_name: '原粒 · 定制营养素 · 28天', tier_label: '臻选套装', max_distinct_dots: 8,
     nano_nutrition_plan_id: null, intended_nano_plan_id: null, nano_ag_formulation_id: null,
     tracking_number: null, shipping_carrier: null, tracking_status_desc: null, ...over,
 });
@@ -66,7 +66,7 @@ test('an order with no formula yet is a package too, and asks the user to act', 
     assert.strictEqual(p.can_submit, true);
     assert.strictEqual(p.plan_id, null);
     assert.strictEqual(p.max_distinct_dots, 8);
-    assert.strictEqual(p.tier_label, '8种原粒');
+    assert.strictEqual(p.tier_label, '臻选套装');
 });
 
 test('the premium package never asks the user to do anything — Viva AG owns it', () => {
@@ -156,11 +156,15 @@ test('every GCN order status maps to a stage a user can read', () => {
         // For a physical box the journey is not over until the user scans it, and that scan is a
         // nano-side event GCN never hears about.
         completed: 'delivered',
-        cancelled: 'cancelled', refunded: 'refunded',
+        refunded: 'refunded',
     };
     for (const [status, stage] of Object.entries(expected)) {
         assert.strictEqual(only([order({ status })], []).stage, stage, status);
     }
+    // 'cancelled' still maps to a stage internally — _STAGE_RANK and the client's copy both know
+    // it — but the merge drops those orders, so it is not a row a user can read. See the
+    // cancelled-order tests at the bottom of this file.
+    assert.deepStrictEqual(D._mergeFormulationPackages([order({ status: 'cancelled' })], []), []);
     // An unknown status must not produce an unlabelled row — the client keys its copy off these.
     assert.strictEqual(only([order({ status: 'some_future_status' })], []).stage, 'compounding');
 });
@@ -269,6 +273,9 @@ const client = (() => {
     vm.runInContext(
         mainJs.slice(tStart, mainJs.indexOf('\n}\n', tStart) + 3) + '\n'
         + cut('function fmtDate(', '\nfunction localISODate') + '\n'
+        // pkgTitle is a separate declaration above mapCodes, and mapPackages calls it — pulling
+        // only mapPackages leaves a ReferenceError rather than a missing-field failure.
+        + cut('function pkgTitle(', '\n// One row per unredeemed code') + '\n'
         + cut('function mapPackages(', '\n// Constrains <img>')
         // top-level `const` lives in the script's lexical scope, not on the context object
         + '\nglobalThis.T = T; globalThis.mapPackages = mapPackages;', ctx);
@@ -296,6 +303,25 @@ test('mapPackages carries every field the package markup binds', () => {
     for (const field of bound) {
         assert.ok(field in mapped, `main.wxml binds item.${field}, which mapPackages never sets`);
     }
+});
+
+test('the title carries the tier, and the line under it carries the width', () => {
+    // Two packages of one product differ ONLY in their tier, so a title that stops at the product
+    // reads as a duplicate — which is exactly how this was reported. The width moves down to the
+    // meta line, because renaming the tiers off their dot counts (GCN migration_0107) took the
+    // number out of the name and nothing else on the row was saying it.
+    const row = client.mapPackages(
+        D._mergeFormulationPackages([order({ status: 'awaiting_formulation' })], []),
+        client.T.zh, 'zh')[0];
+    assert.strictEqual(row.name, '原粒 · 定制营养素 · 28天 · 臻选套装');
+    assert.ok(row.meta.includes('最多 8 种原粒'), row.meta);
+    assert.ok(!row.meta.startsWith('臻选套装'), 'the tier must not be repeated under its own title');
+
+    // A package GCN could not name a tier for still renders — the join drops the empty half
+    // rather than trailing a separator.
+    const bare = client.mapPackages(
+        D._mergeFormulationPackages([order({ tier_label: null })], []), client.T.zh, 'zh')[0];
+    assert.strictEqual(bare.name, '原粒 · 定制营养素 · 28天');
 });
 
 test('both languages resolve every stage label and every CTA', () => {
@@ -346,9 +372,8 @@ test('inFlight is what hides the buy-another card, and only for a package still 
     };
     assert.strictEqual(inFlight('proposed', [], [plan()]), false);
     assert.strictEqual(inFlight('active', [], [plan({ status: 'active' })]), false);
-    for (const status of ['cancelled', 'refunded']) {
-        assert.strictEqual(inFlight(status, [order({ status })], []), false, status);
-    }
+    // 'cancelled' is not listed at all any more, so there is no row to ask about.
+    assert.strictEqual(inFlight('refunded', [order({ status: 'refunded' })], []), false);
     for (const status of ['pending_payment', 'awaiting_formulation', 'expert_review', 'compounding', 'shipped']) {
         const stage = status === 'awaiting_formulation' ? 'awaiting_formulation' : status;
         assert.strictEqual(inFlight(stage, [order({ status })], []), true, status);
@@ -392,9 +417,12 @@ test('a proposal made after an order already has its recipe stays orderable', ()
 
 test('a cancelled or refunded order releases the proposal again', () => {
     // Nothing is going to consume that formula any more, so the user must be able to order it.
-    for (const status of ['cancelled', 'refunded']) {
+    // The two release it differently: a refunded order stays on the list beside the freed
+    // proposal, a cancelled one is not listed at all — so what is asserted for both is that the
+    // proposal comes back orderable, not how many rows sit next to it.
+    for (const [status, rows] of [['cancelled', 1], ['refunded', 2]]) {
         const out = D._mergeFormulationPackages([order({ status })], [plan()]);
-        assert.strictEqual(out.length, 2, status);
+        assert.strictEqual(out.length, rows, status);
         assert.ok(out.some(p => p.stage === 'proposed' && p.can_order), `${status}: proposal lost`);
     }
 });
@@ -410,4 +438,70 @@ test('suppression applies to proposals only, never to a plan the user is taking'
     assert.ok(active, 'the active plan was suppressed');
     assert.strictEqual(active.plan_id, 7);
     assert.strictEqual(active.day_index, 4);
+});
+
+// ── cancelled orders are not journeys ────────────────────────────────────────
+
+test('a cancelled order is not listed', () => {
+    // 我的原粒套餐 is what the user is currently on. A cancelled order is a dead row they have to
+    // read past every time they open the tab.
+    const out = D._mergeFormulationPackages([order({ order_id: 'dead', status: 'cancelled' })], []);
+    assert.deepStrictEqual(out, []);
+});
+
+test('cancelling an order releases the formula rather than burying it', () => {
+    // The reason the filter sits BEFORE the merge loop instead of at the end: an order can hold a
+    // plan through gcn_order_id, so dropping the finished row afterwards would take the user's
+    // formula with it. Filtered first, the plan is never claimed and comes back on its own row —
+    // orderable again, which is the same release §28d gives it by keeping 'cancelled' out of
+    // AWAITING_FORMULA_STAGES.
+    const p = only(
+        [order({ order_id: 'dead', status: 'cancelled' })],
+        [plan({ id: 77, status: 'proposed', gcn_order_id: 'dead' })],
+    );
+    assert.strictEqual(p.stage, 'proposed');
+    assert.strictEqual(p.plan_id, 77);
+    assert.strictEqual(p.order_id, null, 'the cancelled order came back attached to the formula');
+});
+
+test('a cancelled order whose plan is active still shows — the user has the capsules', () => {
+    // An active plan means the box was scanned. That is a truer statement about the user than the
+    // commerce side having closed the order out, so it must survive the filter.
+    const p = only(
+        [order({ order_id: 'dead', status: 'cancelled' })],
+        [plan({ id: 78, status: 'active', gcn_order_id: 'dead' })],
+    );
+    assert.strictEqual(p.stage, 'active');
+    assert.strictEqual(p.plan_id, 78);
+});
+
+test('a refunded order is still listed', () => {
+    // Deliberately not filtered with 'cancelled': money moved, and someone looking for where a
+    // refund came from should be able to find the order it belongs to.
+    const p = only([order({ order_id: 'back', status: 'refunded' })], []);
+    assert.strictEqual(p.stage, 'refunded');
+});
+
+// ── an unpaid order can be paid ──────────────────────────────────────────────
+
+test('an unpaid order offers payment, and nothing else does', () => {
+    // 待付款 used to be a status with no action behind it, while the order it named blocked every
+    // later step. can_pay is what puts a CTA on that row.
+    assert.strictEqual(only([order({ status: 'pending_payment' })], []).can_pay, true);
+    for (const status of ['paid', 'awaiting_formulation', 'expert_review', 'compounding', 'shipped', 'completed', 'refunded']) {
+        assert.strictEqual(only([order({ status })], []).can_pay, false, status);
+    }
+});
+
+test('a formula with no order behind it is never payable', () => {
+    // There is nothing to pay for: the proposal exists only in nano, and its route to capsules is
+    // a redeem code, not a checkout.
+    for (const status of ['proposed', 'active']) {
+        assert.strictEqual(only([], [plan({ status })]).can_pay, false, status);
+    }
+});
+
+test('the pay CTA carries the order id it needs', () => {
+    const p = only([order({ order_id: 'ord-pay', status: 'pending_payment' })], []);
+    assert.strictEqual(p.order_id, 'ord-pay', 'the CTA has no order to open');
 });

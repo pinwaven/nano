@@ -52,13 +52,21 @@ async function runTestChip(openid, t, ctx) {
 // ("我要定制营养素") instead of the toolbox button, so that message already stands in the chat and
 // was persisted server-side. Adding the canned trigger line on top of it would read as the user
 // asking twice.
+//
+// opts.ignoreFocus — the user picked 不设方向 in the focus sheet (main.js's _startFormulaDots),
+// so formulate from biomarkers alone even though they hold an active health-plan focus. The
+// server zeroes the plans out entirely on this flag, which is why it is a deliberate answer and
+// not a default: omitting it means "use whatever focus I have", the behaviour that has always
+// applied.
 async function runFormulaDs(openid, t, ctx, opts = {}) {
   const { addMsg, addActionMsg, req, setTyping } = ctx
   if (!opts.skipUserMsg) addMsg('user', t.toolFormulaDotMsg, true)
   addMsg('ai', t.formulaGenerating, true)
   setTyping(true)
   try {
-    const res = await req(`${BASE}/api/formula-dots`, 'POST', { openid })
+    const body = { openid }
+    if (opts.ignoreFocus) body.ignore_focus = true
+    const res = await req(`${BASE}/api/formula-dots`, 'POST', body)
     if (res.data?.processing) {
       // The dot-count decision runs through the full agentic loop asynchronously (can
       // take up to ~180s) — nothing is written yet at this point, so showing

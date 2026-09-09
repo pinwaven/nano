@@ -18,7 +18,10 @@ export default function PlanDetailSheet({ plan, user, lang, onClose, onChanged }
     axios.get(`${API}/health-plans/${plan.id}?openid=${encodeURIComponent(user.user_id)}`)
       .then(r => {
         if (r.data.success) {
-          setDetail({ ...plan, ...r.data.plan });
+          // recommended_dots is a SIBLING of `plan` in the response, not a field on it — the
+          // server resolves the focus's dot key_names to names so this renders 静心夜 rather
+          // than the raw "DOT9" it used to print. [] when the server predates that field.
+          setDetail({ ...plan, ...r.data.plan, recommended_dots: r.data.recommended_dots || [] });
           setReminders(r.data.reminders || []);
         }
       })
@@ -162,11 +165,11 @@ export default function PlanDetailSheet({ plan, user, lang, onClose, onChanged }
                 <div className="plan-detail-section">
                   <span className="plan-detail-value">{lang === 'zh' ? (detail.desc_zh || detail.goal_zh) : (detail.desc_en || detail.goal_en)}</span>
                 </div>
-                {detail.recommended_dot_ids?.length > 0 && (
+                {detail.recommended_dots?.length > 0 && (
                   <div className="plan-detail-section">
                     <span className="plan-detail-label">{t.plRecommendedDots}</span>
                     <div className="plan-chips-row">
-                      {detail.recommended_dot_ids.map((id, i) => <span key={i} className="plan-chip plan-chip-dot">DOT{id}</span>)}
+                      {detail.recommended_dots.map((d) => <span key={d.key_name} className="plan-chip plan-chip-dot">{lang === 'zh' ? (d.key_name_zh || d.name_zh) : d.name}</span>)}
                     </div>
                   </div>
                 )}

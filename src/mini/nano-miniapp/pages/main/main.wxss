@@ -5304,3 +5304,67 @@ button.consent-row::after { border: none; }
   color: var(--text-sub);
   line-height: 1;
 }
+
+/* ── 营养定制 focus sheet ─────────────────────────────────────────────────────
+   Auto-height rather than .overlay-panel's fixed 82vh: this asks one short question and a
+   half-empty screen would read as a page that failed to load. Shares .overlay-mask, the
+   .overlay-header/.overlay-title chrome and .plan-type-badge with the sheets around it, so it
+   needs no colours of its own beyond the buttons. */
+.focus-sheet {
+  width: 100%;
+  background: #0F2540;
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 0 36rpx calc(40rpx + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+}
+.focus-intro {
+  display: block;
+  font-size: var(--fs-body);
+  color: #E8EEF7;
+  line-height: 1.6;
+  margin-bottom: 20rpx;
+}
+.focus-plan-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+  padding: 22rpx 24rpx;
+  background: rgba(99,117,236,0.10);
+  border-radius: 20rpx;
+  margin-bottom: 14rpx;
+}
+.focus-plan-body { flex: 1; display: flex; flex-direction: column; gap: 6rpx; }
+.focus-plan-name { font-size: var(--fs-body); color: #FFFFFF; font-weight: 600; }
+.focus-plan-goal { font-size: var(--fs-small); color: #8FA3BF; line-height: 1.5; }
+.focus-hint {
+  display: block;
+  font-size: var(--fs-small);
+  color: #8FA3BF;
+  line-height: 1.6;
+  margin: 16rpx 0 28rpx;
+}
+.focus-btn {
+  flex: 1;
+  text-align: center;
+  padding: 26rpx 0;
+  border-radius: 999rpx;
+  font-size: var(--fs-body);
+}
+.focus-btn-primary { background: #6375EC; color: #FFFFFF; font-weight: 600; }
+.focus-btn-ghost {
+  background: transparent;
+  color: #8FA3BF;
+  border: 1rpx solid rgba(143,163,191,0.35);
+  margin-top: 16rpx;
+}
+.focus-btn-row { display: flex; gap: 16rpx; }
+
+.theme-light .focus-sheet { background: #ffffff; }
+.theme-light .focus-intro { color: #1a2744; }
+.theme-light .focus-plan-row { background: rgba(41,66,229,0.07); }
+.theme-light .focus-plan-name { color: #14243D; }
+.theme-light .focus-plan-goal,
+.theme-light .focus-hint { color: #607090; }
+.theme-light .focus-btn-primary { background: #2942E5; }
+.theme-light .focus-btn-ghost { color: #607090; border-color: rgba(96,112,144,0.3); }

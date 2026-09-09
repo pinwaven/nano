@@ -212,6 +212,22 @@ Kino chip scan
 
 `MetabolicAge` is the only dimension with cross-dimension coupling: when `ResilienceAge` score < 4 (severe inflammation), Metabolic scoring takes a 10% penalty. This reflects the biological reality that chronic inflammation accelerates metabolic dysfunction.
 
+### A dot is referenced by `key_name`, never by `dots.id`
+
+Same class of coupling rule as the sub-age keys above, and it has already been violated once.
+`dots.id` is a row number. `migration_dots_new_lineup.sql` (2026-07-25) replaced the whole
+formulary and **reused the ids**, so anything persisting an id silently began pointing at a
+different dot — no error, no filter-out, every lookup succeeding.
+
+`health_plan_templates.recommended_dot_ids` was the casualty
+(`migration_health_plan_recommended_dot_keys.sql`): six seeded focus lists spent six weeks
+recommending macular and skin dots for a weight-loss plan, and omitting the only sleep dot from
+the sleep plan. That column now stores `key_name` strings; its name is historical.
+
+**Any new column, JSONB field, event payload or API response that names a dot uses `key_name`.**
+Integers may be read for backward compatibility, and an entry that resolves to nothing must be
+**dropped, not guessed** — a loud, countable gap is the entire point of the stable identity.
+
 ## 12. Aliyun Function Compute 3.0 (FC 3.0) Runtime Behavior
 
 FC 3.0's HTTP-trigger handler invocation model, event object shape, and response format differ from Express/Lambda conventions in ways that are easy to get wrong. Full reference (confirmed by live debugging): `fc3-handler-reference` skill — load it before writing or modifying an FC handler.
@@ -1082,14 +1098,22 @@ no-expert-review, buy-first package; this product just *is* one, at a real price
 
 ### The tier is a WEEKLY width, and that is why a recipe has weeks at all
 
-`skus.metadata.max_distinct_dots` (6 / 8 / 10 种原粒) is the only difference between the three
-prices, so honouring it is not optional. GCN **reports** it on the waiting order
-(`handleNanoFormulationOrderStatus`) and enforces nothing: the rule needs the dots formulary and a
-product judgement about what a tier counts, and neither belongs on the far side of the wire.
+`skus.metadata.max_distinct_dots` (6 / 8 / 10, merchandised as 轻享套装 / 臻选套装 / 尊享套装) is
+the only difference between the three prices, so honouring it is not optional. GCN **reports** it
+on the waiting order (`handleNanoFormulationOrderStatus`) and enforces nothing: the rule needs the
+dots formulary and a product judgement about what a tier counts, and neither belongs on the far
+side of the wire.
 
-**It caps one week, not the cycle.** A 6种 buyer may take six dots this week and a partly different
-six next week; what they bought is the width of any single week. So a 28-day formula can genuinely
-use more than six dots — it just may never run more than six at once.
+**The name is merchandising; the number is the contract.** GCN's `migration_0107` renamed the three
+tiers off their widths — a shopper read 6种原粒 as the whole 28-day box — but `max_distinct_dots` is
+untouched and is what every side enforces and reports. Never parse a width out of `tier_label`, and
+never stop showing the width beside the name: nano's package row renders 最多 6 种原粒 next to it and
+`systemFormulaGenerate` states 轻享套装：任意一周最多 6 种 for every rung, which is the only place the
+buyer learns what a tier costs them.
+
+**It caps one week, not the cycle.** A 轻享套装 buyer may take six dots this week and a partly
+different six next week; what they bought is the width of any single week. So a 28-day formula can
+genuinely use more than six dots — it just may never run more than six at once.
 
 That is the whole reason `_expandPlanDay` is week-aware. A recipe may carry an **optional** `weeks`
 map alongside its `dots` counts:
@@ -1251,6 +1275,23 @@ compile-time key checking and a missing key renders empty.
 - `day_index` is null for anything but `active`. A proposal's `start_date` is a placeholder and an
   approved plan's is provisional until the box is scanned, so counting from either would claim the
   user is taking capsules that do not exist.
+
+### The row title carries the tier — `pkgTitle`
+
+A package row's bold line is `原粒 · 定制营养素 · 28天 · 臻选套装`, composed in the client from
+`package_name` + `tier_label`. Two packages of one product differ in **nothing but** their tier, so
+a title stopping at the product reads as a duplicate and the buyer has to hunt for the difference
+in grey secondary text — which is how this was reported.
+
+`pkgTitle` is one definition, shared by the package rows, the 兑换码 rows and the submit picker,
+because those three name the same purchase and a user comparing them must not see three spellings
+of it. **It is a plain join, and that only holds while every GCN endpoint returns a BARE tier**
+(`臻选套装`, never a full sentence) — `handleNanoFormulationCodes` used to return the code sku's own
+name here, which contains the product name, and composing with that printed it twice.
+
+The width moved down to the meta line (`最多 8 种原粒`) and is now shown **unconditionally**, not as
+a fallback for a missing tier: renaming the tiers off their dot counts (GCN `migration_0107`) took
+the number out of the name, and nothing else on the row was saying it.
 
 ### Offered, not matched
 
@@ -2361,3 +2402,135 @@ Modified: `worker/handlers/health_documents.js` (`_resolveOwner`/`_refuseCoach` 
 `DOC_EXTENSIONS` kept, the job/report viewer still needs them), `components/user-health/*`
 (`coachId` property + the section, last in the twin body), `pages/coach/{coach.js,coach.wxml}`,
 `utils/config.js` (VERSION).
+
+## 39. Document Extraction — a Second External-Agent Queue (2026-09-08)
+
+An uploaded 健康文档 is now read by an external agent and turned into twin data. Same platform runs
+this and Viva AG (§35); they are **separate services with separate tokens and separate queues**.
+
+```
+upload → doc_extraction_jobs 'queued'
+agent   POST /doc-extract/jobs/claim   → document URL + the biomarker catalog + {age, gender, language}
+agent   POST /doc-extract/jobs/result  → validated, then written
+nano    health_documents metadata · health_reports + health_events · user_memory_facts
+        → updateHealthTwin → one chat bubble
+```
+
+### Why not a `job_type` on `viva_ag_jobs`
+
+| | Viva AG | Extraction |
+|---|---|---|
+| Entitlement | paid add-on (`requireVivaAgAccess`, 3 composed checks) | none — documents are twin data for everyone (§38) |
+| Backpressure | `uniq_viva_ag_jobs_active`: one job per **user** | `uniq_doc_extraction_active`: one per **document** |
+| Cost | minutes to hours | seconds |
+
+Ten uploads should extract concurrently; what must not run twice is the same document, because
+both runs race to write the same `health_events` rows. One queue would force splitting the
+per-user cap by type and let a cheap backlog starve a paid run. Everything *structural* is
+mirrored from `handlers/viva_ag.js` — read it before changing anything here: the
+`FOR UPDATE SKIP LOCKED` claim (**never** a SELECT then an UPDATE), `result_token` rotated on every
+claim as both credential and idempotency key, checked **before** status, the lazy lease sweep, and
+no EventBridge or cron because the slow work is entirely inside the agent.
+
+`DOC_EXTRACT_API_TOKEN` (`dex_` + 32 hex, distinct per environment) sits **above the `ch.` branch**
+in `index.js` — that one matches on prefix. Exact-path allowlist only; the fencing token rides in
+`X-Doc-Extract-Job-Token` on GET and the body on POST, never a query string.
+
+**The pseudonymity claim in §35 is overstated, and this inherited it** (found live on dev,
+2026-09-09). A presigned document URL's path is `health-documents/<user_id>/<hex>.<ext>`, so the
+internal `user_id` is visible to the external agent — on `/doc-extract/jobs/claim` and, because
+`presignDocuments()` is shared, on `/viva-ag/twin-bundle` and `/viva-ag/document-url` too. It is
+not an openid, phone or name, but it defeats **cross-job unlinkability**: an agent can tell two
+documents belong to the same person. `twinBundle.js`'s "cannot be tied back to a person from its
+own contents" carries the same overstatement.
+
+Fixing it means minting **opaque** keys for new uploads — which also means replacing
+`handlePostHealthDocument`'s prefix-confinement check, the control that stops a caller registering
+someone else's object, since it works precisely by requiring the user_id to be *in* the key. A
+real change, not a one-liner; not attempted with this pass.
+
+### The pipeline already existed
+
+`handlePostHealthReport` → `biomarker_catalog` whitelist → `health_events(lab_result)` →
+`handleLabImportEvent` has been there all along. Extraction adds only the step that turns a
+document into the payload it accepts, and calls it in-process with `source: 'document_extraction'`.
+
+**Then it calls `updateHealthTwin` itself, awaited.** `handlePostHealthReport` refreshes the twin
+only via its `compute_bioage` branch, which is off here — so without that call the panel never
+reaches `health_twin.latest_lab_data` and the whole feature does nothing visible.
+
+**`compute_bioage: false` is deliberate and load-bearing.** `updateHealthTwin` reads BioAge only
+from `test_type='kino_chip'` (`healthTwinUpdater.js:89`), so a `lab_import` row could never reach
+the displayed BioAge — but it would create a biomarkers row stamped `NOW()` rather than the report
+date, with the absent Kino markers **fabricated** by `BiomarkerEstimator` (which range-checks only
+hsCRP; the other five are accepted on presence alone). An OCR'd document must not manufacture a
+BioAge. §28b already holds that line for formulation; a test pins it here.
+
+### `lib/docExtraction.js` — reject, never repair
+
+Pure, no DB, so the whole rule set is testable offline — and the same function backs
+`POST /doc-extract/validate`. Four of its six observation rules exist because **the path it feeds
+does not check them**:
+
+| Rule | What it prevents |
+|---|---|
+| finite value | `handlePostHealthReport` does a bare `parseFloat`, no NaN check |
+| unit matches the catalog, or a hand-authored conversion | the model's `unit` currently **overrides** the catalog's with no conversion — an mg/dL value lands in an mmol/L column reading ~18x low |
+| order-of-magnitude plausibility | `biomarker_catalog.ref_low`/`ref_high` exist and nothing has ever read them |
+| the date parses | `report_date` silently backfills to **today**, so a 2019 paper report enters the twin as current |
+
+With no readable date, metadata and the summary are written and **no observations are**. The
+plausibility band is 0.1x–100x, loose on purpose: several `ref_high` values are risk thresholds
+rather than physiological ceilings (hsCRP's is 1.0 mg/L and real acute inflammation runs far past
+it), so a tight band would refuse exactly the abnormal values that matter.
+
+**Findings go to `user_memory_facts`, never `users.bio_data`** — those writes are a shallow `||`
+merge, so `health_conditions` would be replaced wholesale by OCR output. New `'condition'` category
+and `'document_extracted'` source. Held to a **higher** confidence floor than observations, and
+refused outright without one: an `allergy` row filters store recommendations (§37) and reaches dot
+formulation, so a misread is sharper than a wrong lab value.
+
+### Auto-write, therefore correction
+
+There was **no `DELETE /health-reports`** before this — only GET and POST. There is now, and it
+deletes the `health_events` children **explicitly**: `report_id` is `ON DELETE SET NULL`, so
+removing the parent alone orphans every observation into the twin's lab panel with nothing to trace
+it back to.
+
+**A re-run clears the previous extraction first.** Mandatory, not tidy: `health_events` dedupes on
+`(user_id, source, external_id)` with `DO NOTHING`, so a corrected value for the same marker and
+date would otherwise be a silent no-op and the user's correction would appear to do nothing.
+
+`'rejected'` is a distinct terminal status from `'failed'` — a failure may be retried, but a result
+the user has thrown away must never be silently recreated.
+
+### The contract documents itself, and is meant to be implemented from alone
+
+`GET /doc-extract/docs` + `/openapi.json`, read at module load from `worker/docs/`, which ships
+inside the function (`code: ./src/functions/worker`) so it cannot drift. Behind the token, not
+public. Plus two endpoints that exist purely for implementability:
+
+- **`GET /doc-extract/catalog`** — the extraction vocabulary, generated from the live table. The
+  existing vision prompt hardcodes the same 25 keys as a literal that drifts by hand; anything
+  outside the list belongs in `unmapped`, never mapped onto a neighbour.
+- **`POST /doc-extract/validate`** — the real validator against a candidate payload, with no job,
+  no claim and no write.
+
+`tests/doc-extraction-contract.test.js` asserts the spec's paths and the allowlist agree **in both
+directions**, that the worked example in the Markdown validates against the real catalog, and that
+the documented units, limits and reason codes match the code. **Change an endpoint, a limit or a
+reason code and you change those two files in the same commit** — the test will say so.
+
+### Files
+
+New: `migration_doc_extraction_jobs.sql`, `migration_health_reports_source_document.sql`,
+`migration_health_documents_summary.sql`, `migration_user_memory_facts_document_source.sql`;
+`worker/handlers/doc_extraction.js` + `doc_extraction_docs.js`; `worker/lib/docExtraction.js`;
+`worker/docs/doc-extract-api.md` + `doc-extract-openapi.json`; three `tests/doc-extraction-*`.
+Modified: `worker/index.js`, `worker/handlers/{health_documents,health-plans}.js`,
+`s.yaml`/`s-prod.yaml`, `components/health-documents/*`, `pages/main/main.js` (`AI_ECHO_TYPES` —
+a type missing there renders the bubble twice), `utils/config.js`.
+
+**Deploy order: migrate, then the worker.** The document list degrades to no extraction state if
+`doc_extraction_jobs` is missing, so the wrong order is survivable rather than breaking a user's
+only view of their own records.

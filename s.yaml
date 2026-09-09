@@ -95,6 +95,13 @@ resources:
         # by the channel-admin JWT branch in worker/index.js and would 401. Issue as
         # "vag_" + 32 hex.
         VIVA_AG_API_TOKEN: ${env(VIVA_AG_API_TOKEN)}
+        # Scoped external credential for the document-extraction agent. A SEPARATE service from
+        # viva-ag even though the same platform runs both, so it gets its own token: extraction is
+        # available to every user while AG is a paid add-on, and one credential covering both would
+        # mean a compromise of the cheap, widely-used service also opened the queue of paid deep
+        # analyses. Same per-environment split and same "ch." prohibition as above. Issue as
+        # "dex_" + 32 hex.
+        DOC_EXTRACT_API_TOKEN: ${env(DOC_EXTRACT_API_TOKEN)}
         # Generous on dev: the code default (3/day, handlers/viva_ag.js) makes the feature
         # untestable after three runs — hit live during dev testing. Prod sets its own value
         # (10) in s-prod.yaml.

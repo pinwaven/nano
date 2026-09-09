@@ -53,7 +53,37 @@
   margin-bottom: 22rpx;
 }
 
-.hd-btn-busy { opacity: 0.55; }
+/* The button keeps its own margin when idle; while busy the bar below carries it, so the two
+ * sit as one unit rather than 22rpx apart. */
+.hd-btn-busy { opacity: 0.55; margin-bottom: 10rpx; }
+
+/* INDETERMINATE on purpose, and not for lack of trying: wx.request exposes no upload progress
+ * events, and wx.uploadFile — the only Mini Program API that does — sends multipart/form-data,
+ * which breaks the OSS presigned PUT's signature (it signs the raw body plus Content-Type). A
+ * true percentage needs an OSS POST-policy upload and a different presign shape server-side.
+ * Until then: motion says "still working" without claiming a number nothing can measure. */
+.hd-progress {
+  height: 4rpx;
+  border-radius: 4rpx;
+  background: rgba(var(--blue-rgb), 0.12);
+  overflow: hidden;
+  margin-bottom: 22rpx;
+}
+
+.hd-progress-bar {
+  width: 40%;
+  height: 100%;
+  border-radius: 4rpx;
+  background: linear-gradient(90deg, rgba(var(--blue-rgb), 0.15), #A0B4FF, rgba(var(--blue-rgb), 0.15));
+  animation: hd-indeterminate 1.15s ease-in-out infinite;
+}
+
+/* translateX is a share of the BAR's own width, so -100% parks it fully off the left edge and
+ * 250% (2.5 x 40% = 100% of the track) carries it fully off the right. */
+@keyframes hd-indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
 
 .hd-empty { padding: 20rpx 4rpx; }
 
@@ -71,14 +101,50 @@
   color: rgba(var(--wave-rgb), 0.45);
 }
 
+/* The wrapper owns the row separator, because a document now spans two rows: the file itself and
+ * an optional actions strip. Putting the border on .hd-doc would draw a line between them. */
+.hd-doc-wrap {
+  border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.06);
+}
+
+.hd-doc-wrap:last-child { border-bottom: none; }
+
 .hd-doc {
   display: flex;
   align-items: center;
   padding: 20rpx 0;
-  border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.06);
 }
 
-.hd-doc:last-child { border-bottom: none; }
+/* What the extraction found, in one line. */
+.hd-doc-ext {
+  display: block;
+  margin-top: 8rpx;
+  font-size: var(--fs-22, 22rpx);
+  color: #7FBF9F;
+}
+
+.hd-doc-ext-busy { color: rgba(var(--wave-rgb), 0.45); }
+
+.hd-doc-summary {
+  display: block;
+  margin-top: 8rpx;
+  font-size: var(--fs-22, 22rpx);
+  line-height: 1.55;
+  color: rgba(var(--wave-rgb), 0.5);
+}
+
+.hd-doc-actions {
+  display: flex;
+  gap: 28rpx;
+  padding: 0 0 18rpx;
+}
+
+.hd-doc-action {
+  font-size: var(--fs-22, 22rpx);
+  color: #A0B4FF;
+}
+
+.hd-doc-action-warn { color: #E05C5C; }
 
 .hd-doc-main { flex: 1; min-width: 0; }
 
@@ -130,5 +196,12 @@
 
 .theme-light .hd-doc-badge,
 .theme-light .hd-upload-btn { color: #2942E5; }
+.theme-light .hd-progress { background: rgba(41, 66, 229, 0.10); }
+.theme-light .hd-progress-bar {
+  background: linear-gradient(90deg, rgba(41, 66, 229, 0.12), #2942E5, rgba(41, 66, 229, 0.12));
+}
 .theme-light .hd-empty-title { color: #607090; }
 .theme-light .hd-doc-name { color: #14243D; }
+.theme-light .hd-doc-ext { color: #2E8B57; }
+.theme-light .hd-doc-summary { color: #607090; }
+.theme-light .hd-doc-action { color: #2942E5; }

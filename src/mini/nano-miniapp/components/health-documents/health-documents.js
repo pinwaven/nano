@@ -29,6 +29,7 @@ const T = {
     errGeneric: '操作失败，请重试',
     okDeleted: '已删除',
     opening: '打开中…',
+    preparing: '准备中…',
     uploading: '上传中…',
     registering: '保存中…',
     loading: '加载中…',
@@ -37,6 +38,18 @@ const T = {
     noDocsHint: '支持 PDF、Word、Excel、PPT 和图片。可以直接拍照上传纸质报告；文件请先发送到「文件传输助手」或任意聊天，再回来选择。',
     footnote: '文档保存在你的数字孪生「医疗记录」层，健康分析时会作为参考。',
     delete: '删除',
+    extPending: '正在解析…',
+    extFailed: '解析未完成',
+    extRejected: '已标记为解析有误',
+    extNone: '',
+    extRerun: '重新解析',
+    extWrong: '解析有误',
+    extRerunOk: '已重新排队',
+    extRerunBusy: '正在解析中',
+    extClearedTitle: '清除这次解析？',
+    extClearedBody: '会删除本次从这份文档读取的指标和健康信息，文档本身保留。',
+    extCleared: '已清除',
+    summaryLabel: '摘要',
     deleteConfirm: '删除后不可恢复，确定删除吗？',
     typeHospital: '就医记录', typeLab: '检验报告', typeImaging: '影像报告',
     typeDischarge: '出院小结', typePrescription: '处方', typeOther: '文档',
@@ -59,6 +72,7 @@ const T = {
     errGeneric: "That didn't work, please try again",
     okDeleted: 'Deleted',
     opening: 'Opening…',
+    preparing: 'Preparing…',
     uploading: 'Uploading…',
     registering: 'Saving…',
     loading: 'Loading…',
@@ -67,6 +81,18 @@ const T = {
     noDocsHint: 'PDF, Word, Excel, PowerPoint and images are supported. Photograph a paper report directly, or send the file to File Transfer (文件传输助手) or any conversation first, then come back and pick it.',
     footnote: "Records are kept in your digital twin's Medical Records layer and drawn on for health analysis.",
     delete: 'Delete',
+    extPending: 'Reading…',
+    extFailed: "Couldn't read this one",
+    extRejected: 'Marked as misread',
+    extNone: '',
+    extRerun: 'Read again',
+    extWrong: 'Misread',
+    extRerunOk: 'Queued again',
+    extRerunBusy: 'Already reading',
+    extClearedTitle: 'Clear this reading?',
+    extClearedBody: 'Removes the markers and health details read from this document. The document itself is kept.',
+    extCleared: 'Cleared',
+    summaryLabel: 'Summary',
     deleteConfirm: 'This cannot be undone. Delete this record?',
     typeHospital: 'Hospital record', typeLab: 'Lab report', typeImaging: 'Imaging',
     typeDischarge: 'Discharge summary', typePrescription: 'Prescription', typeOther: 'Record',
@@ -172,7 +198,67 @@ Component({
     // without a round trip.
     _relabel() {
       this.setData({
-        documents: this.data.documents.map(d => ({ ...d, typeLabel: this._typeLabel(d.doc_type) })),
+        documents: this.data.documents.map(d => ({
+          ...d,
+          typeLabel: this._typeLabel(d.doc_type),
+          extLabel: this._extLabel(d.extraction),
+        })),
+      })
+    },
+
+    // What the extraction found, in one line. Counts only — the values themselves are the
+    // document's own metadata and the Medical Records layer, and a second copy here would be one
+    // more thing to keep in step.
+    _extLabel(ext) {
+      if (!ext) return ''
+      const t = this.data.t
+      if (['queued', 'claimed', 'processing'].includes(ext.status)) return t.extPending
+      if (ext.status === 'failed') return t.extFailed
+      if (ext.status === 'rejected') return t.extRejected
+      if (ext.status !== 'completed') return ''
+      const isZh = this.properties.lang !== 'en'
+      const bits = []
+      if (ext.accepted > 0) bits.push(isZh ? `${ext.accepted} 项指标` : `${ext.accepted} marker${ext.accepted === 1 ? '' : 's'}`)
+      if (ext.findings > 0) bits.push(isZh ? `${ext.findings} 条健康信息` : `${ext.findings} health detail${ext.findings === 1 ? '' : 's'}`)
+      if (bits.length === 0) return isZh ? '未读取到指标' : 'No markers found'
+      return isZh ? `已记录 ${bits.join('、')}` : `Recorded ${bits.join(', ')}`
+    },
+
+    // Re-run. The server clears the previous extraction BEFORE queueing, which is mandatory
+    // rather than tidy: health_events dedupes on (user_id, source, external_id), so a corrected
+    // value for the same marker and date would otherwise be a silent no-op.
+    async rerunExtraction(e) {
+      if (!this.properties.canUpload) return
+      const id = e.currentTarget.dataset.id
+      const { userId } = this.properties
+      const t = this.data.t
+      try {
+        const res = await this._req(`${BASE}/api/health-documents/${id}/extract`, 'POST', { openid: userId })
+        if (!res.data?.success) throw new Error(res.data?.error || 'failed')
+        this._toast(res.data.queued ? t.extRerunOk : t.extRerunBusy, 'success')
+        this._loadDocuments()
+      } catch (err) { this._toast(t.errGeneric) }
+    },
+
+    // 解析有误 — throw the reading away and keep the document. Deliberately a different action
+    // from deleting the document: the user is saying the reading was wrong, not the file.
+    rejectExtraction(e) {
+      if (!this.properties.canUpload) return
+      const id = e.currentTarget.dataset.id
+      const { userId } = this.properties
+      const t = this.data.t
+      wx.showModal({
+        title: t.extClearedTitle,
+        content: t.extClearedBody,
+        confirmColor: '#E05C5C',
+        success: async (m) => {
+          if (!m.confirm) return
+          try {
+            await this._req(`${BASE}/api/health-documents/${id}/extraction?openid=${encodeURIComponent(userId)}`, 'DELETE')
+            this._toast(t.extCleared, 'success')
+            this._loadDocuments()
+          } catch (err) { this._toast(t.errGeneric) }
+        },
       })
     },
 
@@ -186,6 +272,9 @@ Component({
           ...d,
           typeLabel: this._typeLabel(d.doc_type),
           sizeLabel: this._sizeLabel(d.size_bytes),
+          extLabel: this._extLabel(d.extraction),
+          extBusy: !!d.extraction && ['queued', 'claimed', 'processing'].includes(d.extraction.status),
+          extDone: !!d.extraction && d.extraction.status === 'completed',
         }))
         this.setData({ documents: docs, docsLoading: false })
       } catch (e) {
@@ -285,7 +374,18 @@ Component({
     async _uploadDocument(file) {
       const { userId } = this.properties
       const t = this.data.t
-      this.setData({ uploading: true, uploadStatus: t.uploading })
+      // Three phases, because a single 'uploading' label covered ~95% of the wait and never
+      // moved while it did — indistinguishable from a hang on a large scan over a slow uplink.
+      // readFile alone is seconds on a 20MB PDF (it pulls the whole file into the JS heap) and
+      // reports nothing, so it gets its own phase rather than hiding inside the transfer's.
+      //
+      // The accompanying bar is INDETERMINATE by necessity, not by preference: wx.request
+      // exposes no upload progress events, and wx.uploadFile — the only API that does — sends
+      // multipart/form-data, which would break the OSS presigned PUT's signature (it signs the
+      // raw body plus Content-Type). A real percentage needs an OSS POST-policy upload and a
+      // different presign shape server-side. Until then this says "still working" rather than
+      // inventing a number nothing can measure.
+      this.setData({ uploading: true, uploadStatus: t.preparing })
       try {
         const pre = await this._req(
           `${BASE}/api/health-documents/presign?openid=${encodeURIComponent(userId)}`
@@ -297,6 +397,7 @@ Component({
           wx.getFileSystemManager().readFile({ filePath: file.path, success: r => resolve(r.data), fail: reject })
         })
 
+        this.setData({ uploadStatus: t.uploading })
         const putStatus = await new Promise((resolve, reject) => {
           wx.request({
             url: put_url, method: 'PUT', data: bytes,

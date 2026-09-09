@@ -49,7 +49,7 @@ Library of reusable plan blueprints. Global templates have `channel_id = NULL`; 
 | `goal_zh` / `goal_en` | TEXT | One-sentence goal statement shown to users |
 | `duration_weeks` | INTEGER | Estimated plan duration |
 | `target_sub_ages` | TEXT[] | Sub-age dimensions this plan targets |
-| `recommended_dot_ids` | JSONB | Array of `dots.id` values |
+| `recommended_dot_ids` | JSONB | Array of **`dots.key_name`** strings (`["DOT-N11", …]`). The name is historical — it held `dots.id` until `migration_health_plan_recommended_dot_keys.sql`, and integers are still read for compatibility. Never write ids: a row number survives a formulary change while meaning a different dot, which is exactly what went wrong. |
 | `activity_guidance` | JSONB | Structured daily/weekly activity suggestions |
 | `milestones` | JSONB | Array of `{ week, label_zh, label_en }` |
 | `daily_tasks` | JSONB | Array of task config objects (see below) |
@@ -244,7 +244,15 @@ Miniapp: the Plan Detail Sheet (`pages/main/main.wxml`/`main.js`) renders this b
 
 ### Soft weighting of formulation by focus (`recommended_dot_ids`)
 
-A user's active focus's `recommended_dot_ids` (see the Plan Template table above) now softly biases dot-count generation toward that focus's recommended dots in both the deterministic and agentic formulation paths — never a hard filter; every dot remains primarily governed by biomarker severity, and a real biomarker need outside the chosen focus can still surface. Full mechanics (per-dot fallback biasing, the agentic prompt's `focusWeightingSection`) are documented in [`docs/ai-persona/08-formula-dots-and-reports.md`](../ai-persona/08-formula-dots-and-reports.md#health-plan-focus-linked-formulation-weighting) — not duplicated here to avoid the two docs drifting apart.
+A user's active focus's `recommended_dot_ids` (see the Plan Template table above) softly biases dot-count generation toward that focus's recommended dots in both the deterministic and agentic formulation paths — never a hard filter; every dot remains primarily governed by biomarker severity, and a real biomarker need outside the chosen focus can still surface.
+
+**The bias is purely additive: a focus only ever promotes.** A listed dot is dosed toward the high end of its own range (75%); everything else sits at exactly the midpoint it would get with no focus at all. Until 2026-09-08 an off-list dot was instead demoted to 25% — *below* the no-focus baseline — so joining a plan suppressed every dot the plan did not happen to name. That made list accuracy load-bearing (an omission was a demotion) and contradicted the sentence directly above this one. Do not reintroduce the demotion.
+
+Three sites apply the focus, and only the first two are dose-related: `_rankDotsBySeverity`'s `+0.15` on a 0–1 severity scale, which decides which dots survive `_capDistinctDots`' weekly tier cap; `_fallbackCountForDot`'s range bias; and `_padCandidatesFor`, which fills the tier-ladder rungs. Under a 6-dot tier the combination effectively chooses the six dots, so **a focus list is a clinical statement, not a hint** — see `migration_health_plan_recommended_dot_keys.sql` for what a stale one did.
+
+**`DOT-N7` belongs on no focus list.** It is `dosing_protocol='pulse'`, filtered out of both `_rankDotsBySeverity` and `_padCandidatesFor`, lifted out of the everyday recipe by `_planExpansionContext`, and not counted toward a tier — it is in every plan regardless, so listing it can only waste ranking weight on a dot the list cannot influence.
+
+**`DOT-N8` and `DOT-N12` have no `sub_age_target`**, so `_rankDotsBySeverity` scores them exactly `0` forever and a focus list is their only route into a formula. Neither is on any of the six seeded lists today. If either should be obtainable it needs a plan that genuinely targets it, or a `sub_age_target` — not a slot in an unrelated list. Full mechanics (per-dot fallback biasing, the agentic prompt's `focusWeightingSection`) are documented in [`docs/ai-persona/08-formula-dots-and-reports.md`](../ai-persona/08-formula-dots-and-reports.md#health-plan-focus-linked-formulation-weighting) — not duplicated here to avoid the two docs drifting apart.
 
 ---
 

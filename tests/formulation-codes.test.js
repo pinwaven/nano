@@ -96,7 +96,7 @@ test('a package that is not a live proposal has no width to report', () => {
 test('the codes list reaches the subtab', async () => {
     gcnCodes = async () => [{
         code: '0475-4162-9772-1554', sku_id: 's1', max_distinct_dots: 6,
-        package_name: '原粒 · 定制营养素 · 28天', tier_label: '6种原粒',
+        package_name: '原粒 · 定制营养素 · 28天', tier_label: '轻享套装',
         fulfillment: 'fast_track', sold_at: '2026-09-07T02:35:28.570Z',
     }];
     const res = await D.handleGetNutritionPlan('c40d46a4');

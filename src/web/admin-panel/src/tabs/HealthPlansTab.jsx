@@ -77,9 +77,21 @@ function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
     setForm(f => ({ ...f, target_sub_ages: f.target_sub_ages.includes(key) ? f.target_sub_ages.filter(s => s !== key) : [...f.target_sub_ages, key] }));
   };
 
-  const toggleDot = (id) => {
-    setForm(f => ({ ...f, recommended_dot_ids: f.recommended_dot_ids.includes(id) ? f.recommended_dot_ids.filter(d => d !== id) : [...f.recommended_dot_ids, id] }));
+  // Toggles by key_name, not by dots.id. The column stores keys now — an id is a row number that
+  // survives a formulary change while meaning a different dot, which is exactly how six seeded
+  // templates came to recommend the wrong ones (migration_health_plan_recommended_dot_keys.sql).
+  // Saving normalises any legacy integer the loaded template still holds, so editing an old
+  // template converts it rather than leaving a mixed array behind.
+  const toggleDot = (key) => {
+    setForm(f => {
+      const cur = (f.recommended_dot_ids || []).map(e => (typeof e === 'number' ? (dots.find(d => d.id === e)?.key_name ?? e) : e));
+      return { ...f, recommended_dot_ids: cur.includes(key) ? cur.filter(d => d !== key) : [...cur, key] };
+    });
   };
+
+  // A loaded template may still hold integers until it is next saved, so selection state has to
+  // read both shapes.
+  const isDotSelected = (d) => (form.recommended_dot_ids || []).some(e => (typeof e === 'number' ? e === d.id : e === d.key_name));
 
   const updateDailyTask = (key, field, value) => {
     setForm(f => ({ ...f, daily_tasks: (f.daily_tasks || DEFAULT_DAILY_TASKS).map(t => t.key === key ? { ...t, [field]: value } : t) }));
@@ -357,8 +369,8 @@ function HealthPlansTab({ dots, healthPlanTemplates, onRefresh }) {
                     <div className="chips-grid">
                       {dots.map(d => (
                         <button key={d.id} type="button"
-                          className={`subtab-btn${(form.recommended_dot_ids || []).includes(d.id) ? ' active' : ''}`}
-                          onClick={() => toggleDot(d.id)}
+                          className={`subtab-btn${isDotSelected(d) ? ' active' : ''}`}
+                          onClick={() => toggleDot(d.key_name)}
                           style={{ fontSize: 11 }}>
                           {d.key_name} · {isZh && d.name_zh ? d.name_zh : d.name}
                         </button>

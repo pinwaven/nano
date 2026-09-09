@@ -83,7 +83,9 @@ async function _resolveOwner(openid, coachId) {
         return { ok: false, error: { success: false, reason: 'missing_openid', error: 'openid is required', statusCode: 400 } };
     }
     const { rows } = await pool.query(
-        'SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]
+        // language rides along so an extraction queued here can snapshot it, and the result
+        // message localises without a second read at delivery time.
+        'SELECT user_id, language FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]
     );
     const userId = rows[0]?.user_id;
     if (!userId) {
@@ -95,7 +97,7 @@ async function _resolveOwner(openid, coachId) {
             return { ok: false, error: { success: false, reason: 'access_denied', error: 'Access denied', statusCode: 403 } };
         }
     }
-    return { ok: true, userId };
+    return { ok: true, userId, language: rows[0].language || 'zh' };
 }
 
 // Upload, register and delete are the owner's alone — a coach reads a client's records, it never
@@ -223,6 +225,23 @@ async function handlePostHealthDocument(body) {
              RETURNING *, doc_date::text AS doc_date`,
             [userId, ossKey, filename.slice(0, 300), contentType, head.size_bytes, head.etag, docType, docDate, institution, note]
         );
+        // Queue an extraction. A document nobody reads is the problem this feature exists to
+        // solve, so this is automatic rather than a button the user has to find.
+        //
+        // Required at CALL TIME, not at module load: handlers/doc_extraction.js pulls in
+        // handlers/chat.js (for deliverTerminalMessage) and with it the whole prompt/LLM graph,
+        // which has no business on the upload path of a warm container. Same reason
+        // handlers/users.js requires './chat' at its call site (CLAUDE.md 28c).
+        //
+        // A failure here must never fail the upload: the document is safely stored either way and
+        // the user can re-run extraction by hand.
+        try {
+            const { enqueueDocExtraction } = require('./doc_extraction');
+            await enqueueDocExtraction(row.id, userId, { language: owner.language });
+        } catch (queueErr) {
+            console.error(JSON.stringify({ level: 'WARN', msg: 'doc extraction enqueue failed', document_id: row.id, error: queueErr.message }));
+        }
+
         return { success: true, document: _publicRow(row) };
     } catch (err) {
         if (err.code === '23505') return { success: false, error: 'This file is already registered', statusCode: 409 };
@@ -244,7 +263,48 @@ async function handleGetHealthDocuments(query) {
              ORDER BY COALESCE(doc_date, created_at::date) DESC, id DESC LIMIT 200`,
             [owner.userId]
         );
-        return { success: true, documents: rows.map(_publicRow) };
+
+        // The extraction state, joined on the newest job per document. DISTINCT ON rather than a
+        // correlated subquery because a re-run leaves the previous job in place as history.
+        //
+        // Degrades to no extraction state rather than failing the list. This endpoint predates
+        // extraction and is the user's only view of their own records: it must keep working if
+        // doc_extraction_jobs is missing (worker deployed ahead of its migration) or the query
+        // fails for any other reason.
+        let byDoc = new Map();
+        try {
+            const { rows: jobs } = await pool.query(
+                `SELECT DISTINCT ON (document_id) document_id, status, result, rejected, health_report_id
+                   FROM doc_extraction_jobs
+                  WHERE user_id = $1
+                  ORDER BY document_id, created_at DESC`,
+                [owner.userId]
+            );
+            byDoc = new Map(jobs.map(j => [Number(j.document_id), j]));
+        } catch (jobErr) {
+            console.error(JSON.stringify({ level: 'WARN', msg: 'extraction state unavailable', error: jobErr.message }));
+        }
+
+        return {
+            success: true,
+            documents: rows.map(r => {
+                const pub = _publicRow(r);
+                pub.summary = r.summary || null;
+                const job = byDoc.get(Number(r.id));
+                pub.extraction = job ? {
+                    status: job.status,
+                    // Counts only. The values themselves are already visible as the document's
+                    // own metadata and in the Medical Records layer; repeating them here would be
+                    // a second copy to keep in step.
+                    accepted: job.result?.counts?.observations_accepted ?? 0,
+                    findings: job.result?.counts?.findings_accepted ?? 0,
+                    unmapped: job.result?.counts?.unmapped ?? 0,
+                    rejected: Array.isArray(job.rejected) ? job.rejected.length : 0,
+                    has_report: job.health_report_id != null,
+                } : null;
+                return pub;
+            }),
+        };
     } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetHealthDocuments failed', error: err.message }));
         return { success: false, error: err.message };
@@ -301,7 +361,79 @@ async function handleDeleteHealthDocument(documentId, query) {
     }
 }
 
+/**
+ * POST /health-documents/:id/extract — re-run extraction, or run it for the first time on a
+ * document uploaded before this feature existed.
+ *
+ * The previous extraction is cleared BEFORE the new job is queued, and that ordering is
+ * mandatory rather than tidy: health_events dedupes on (user_id, source, external_id) with
+ * ON CONFLICT DO NOTHING, so a corrected value for the same marker and date would otherwise be a
+ * silent no-op and the re-run would appear to change nothing.
+ */
+async function handlePostHealthDocumentExtract(documentId, body) {
+    try {
+        const refusal = _refuseCoach(body?.coach_id);
+        if (refusal) return refusal;
+        const owner = await _resolveOwner(body?.openid, null);
+        if (!owner.ok) return owner.error;
+
+        const { rows: [doc] } = await pool.query(
+            `SELECT id FROM health_documents WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+            [documentId, owner.userId]
+        );
+        if (!doc) return { success: false, reason: 'document_not_found', error: 'Document not found', statusCode: 404 };
+
+        const { clearExtraction, enqueueDocExtraction } = require('./doc_extraction');
+        const removed = await clearExtraction(doc.id, owner.userId);
+        const jobUid = await enqueueDocExtraction(doc.id, owner.userId, { language: owner.language });
+        // A null job_uid means one is already in flight for this document — a double tap, not an
+        // error. Report it so the client can say "already running" rather than "queued".
+        return { success: true, queued: !!jobUid, ...removed };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostHealthDocumentExtract failed', error: err.message }));
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * DELETE /health-documents/:id/extraction — the user's 解析有误.
+ *
+ * Removes everything the extraction wrote and marks the job 'rejected', which is deliberately a
+ * different terminal state from 'failed': a failure may legitimately be retried, but a result the
+ * user has explicitly thrown away must not be silently recreated. The DOCUMENT itself is
+ * untouched — they are saying the reading was wrong, not that the file was.
+ */
+async function handleDeleteHealthDocumentExtraction(documentId, query) {
+    try {
+        const refusal = _refuseCoach(query?.coach_id);
+        if (refusal) return refusal;
+        const owner = await _resolveOwner(query?.openid, null);
+        if (!owner.ok) return owner.error;
+
+        const { rows: [doc] } = await pool.query(
+            `SELECT id FROM health_documents WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+            [documentId, owner.userId]
+        );
+        if (!doc) return { success: false, reason: 'document_not_found', error: 'Document not found', statusCode: 404 };
+
+        const { clearExtraction } = require('./doc_extraction');
+        const removed = await clearExtraction(doc.id, owner.userId);
+        await pool.query(
+            `UPDATE doc_extraction_jobs
+                SET status = 'rejected', result_token = NULL, completed_at = NOW(), updated_at = NOW()
+              WHERE document_id = $1 AND status <> 'rejected'`,
+            [doc.id]
+        );
+        return { success: true, ...removed };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleDeleteHealthDocumentExtraction failed', error: err.message }));
+        return { success: false, error: err.message };
+    }
+}
+
 module.exports = {
+    handlePostHealthDocumentExtract,
+    handleDeleteHealthDocumentExtraction,
     handleGetHealthDocumentPresign,
     handlePostHealthDocument,
     handleGetHealthDocuments,

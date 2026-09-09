@@ -1,0 +1,330 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Nano — Document Extraction External Agent API",
+    "version": "1.0.0",
+    "description": "Pull queue for an external agent that turns uploaded health documents (体检报告 PDFs, photographed paper lab printouts, discharge summaries) into structured digital-twin data.\n\nEvery response is HTTP 200 with a JSON body, INCLUDING routine failures — branch on `reason`, never on a status code.\n\nSeparate service from the Viva AG API (`/viva-ag/*`): different token, different queue, no shared state. The prose contract, which is the authoritative one, is served at `GET /doc-extract/docs`."
+  },
+  "servers": [
+    { "url": "https://nano-dev.gcn.net/api", "description": "dev" },
+    { "url": "https://nano.gcn.net/api", "description": "prod" }
+  ],
+  "security": [{ "serviceToken": [] }],
+  "tags": [
+    { "name": "discovery", "description": "Version handshake, the contract, and the extraction vocabulary" },
+    { "name": "queue", "description": "Claim, heartbeat, submit, fail" },
+    { "name": "testing", "description": "Dry-run against the real validator, with no job and no write" }
+  ],
+  "paths": {
+    "/doc-extract/ping": {
+      "get": {
+        "tags": ["discovery"],
+        "summary": "Health check and contract version",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "success": { "type": "boolean" },
+            "env": { "type": "string", "enum": ["dev", "prod"] },
+            "contract_version": { "type": "integer" },
+            "queue_depth": { "type": "integer" },
+            "server_time": { "type": "string" }
+          }
+        } } } } }
+      }
+    },
+    "/doc-extract/docs": {
+      "get": {
+        "tags": ["discovery"],
+        "summary": "The full prose contract (Markdown)",
+        "description": "The authoritative document. Read this first — it is written to be sufficient on its own.",
+        "responses": { "200": { "description": "Markdown", "content": { "text/plain": { "schema": { "type": "string" } } } } }
+      }
+    },
+    "/doc-extract/openapi.json": {
+      "get": {
+        "tags": ["discovery"],
+        "summary": "This specification",
+        "responses": { "200": { "description": "OpenAPI document", "content": { "application/json": { "schema": { "type": "object" } } } } }
+      }
+    },
+    "/doc-extract/catalog": {
+      "get": {
+        "tags": ["discovery"],
+        "summary": "The extraction vocabulary",
+        "description": "Every biomarker nano can store, generated live from biomarker_catalog. A `key_name` outside this list is NOT accepted — send it in `unmapped` instead, never mapped onto a neighbouring marker. The same list ships with every claim; this endpoint exists so a prompt can be built and tuned before any job exists.",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "success": { "type": "boolean" },
+            "contract_version": { "type": "integer" },
+            "catalog": { "type": "array", "items": { "$ref": "#/components/schemas/CatalogEntry" } }
+          }
+        } } } } }
+      }
+    },
+    "/doc-extract/validate": {
+      "post": {
+        "tags": ["testing"],
+        "summary": "Dry-run a result payload against the real validator",
+        "description": "Runs the SAME pure validator the result path runs, with no job, no claim and no write. `job_uid` and `result_token` are ignored. Iterate here until `rejected` is empty before running a live job.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResultPayload" } } } },
+        "responses": { "200": { "description": "What would happen", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ValidationOutcome" } } } } }
+      }
+    },
+    "/doc-extract/jobs/claim": {
+      "post": {
+        "tags": ["queue"],
+        "summary": "Claim the head of the queue",
+        "description": "Atomic (FOR UPDATE SKIP LOCKED): two pollers get two different jobs, never the same one twice. An empty queue is `{\"success\":true,\"job\":null}` — not an error. Mints a fresh `result_token` and invalidates any previous holder's.",
+        "requestBody": { "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "worker_id": { "type": "string", "maxLength": 120, "description": "Free-form; log correlation only" },
+            "lease_seconds": { "type": "integer", "minimum": 60, "maximum": 3600, "default": 600 }
+          }
+        } } } },
+        "responses": { "200": { "description": "A job, or null", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "success": { "type": "boolean" },
+            "job": { "oneOf": [{ "$ref": "#/components/schemas/Job" }, { "type": "null" }] }
+          }
+        } } } } }
+      }
+    },
+    "/doc-extract/jobs/heartbeat": {
+      "post": {
+        "tags": ["queue"],
+        "summary": "Extend the lease",
+        "description": "Extends from now. Send one at least every `lease_seconds / 2`, from a separate timer rather than between processing steps.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": {
+          "type": "object",
+          "required": ["job_uid"],
+          "properties": {
+            "job_uid": { "type": "string" },
+            "result_token": { "type": "string", "description": "Or send it as the X-Doc-Extract-Job-Token header" },
+            "extend_seconds": { "type": "integer", "minimum": 60, "maximum": 3600, "default": 600 },
+            "progress_note": { "type": "string", "maxLength": 500 }
+          }
+        } } } },
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": { "success": { "type": "boolean" }, "lease_expires_at": { "type": "string" }, "reason": { "$ref": "#/components/schemas/Reason" } }
+        } } } } }
+      }
+    },
+    "/doc-extract/jobs/result": {
+      "post": {
+        "tags": ["queue"],
+        "summary": "Submit the extraction",
+        "description": "Validated then written: document metadata, the lab panel (as health_reports + health_events), findings (as personal memory facts), then one digital-twin refresh.\n\nNano REJECTS, never repairs — a rejected entry is not written, the rest of the submission still lands, and every refusal comes back in `rejected` with a reason. Always read it: it is the only signal that an extraction is systematically wrong.\n\nIdempotent: a repeat with the same token returns `already_completed` and writes nothing.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResultPayload" } } } },
+        "responses": { "200": { "description": "Accepted, or a reason", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": {
+            "success": { "type": "boolean" },
+            "job_uid": { "type": "string" },
+            "already_completed": { "type": "boolean" },
+            "report_id": { "type": ["integer", "null"], "description": "null when no observations were stored — see the missing_date rule" },
+            "accepted": { "$ref": "#/components/schemas/Counts" },
+            "rejected": { "type": "array", "items": { "$ref": "#/components/schemas/Rejection" } },
+            "reason": { "$ref": "#/components/schemas/Reason" }
+          }
+        } } } } }
+      }
+    },
+    "/doc-extract/jobs/fail": {
+      "post": {
+        "tags": ["queue"],
+        "summary": "Report a failure",
+        "description": "`retryable: false` for anything a retry cannot fix — an encrypted PDF, a blank scan, a photo of something that is not a health document. A document with nothing extractable is NOT a failure: submit a result with metadata and a summary instead.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": {
+          "type": "object",
+          "required": ["job_uid"],
+          "properties": {
+            "job_uid": { "type": "string" },
+            "result_token": { "type": "string" },
+            "reason": { "type": "string", "maxLength": 200 },
+            "retryable": { "type": "boolean", "default": true }
+          }
+        } } } },
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": {
+          "type": "object",
+          "properties": { "success": { "type": "boolean" }, "requeued": { "type": "boolean" }, "reason": { "$ref": "#/components/schemas/Reason" } }
+        } } } } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serviceToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "DOC_EXTRACT_API_TOKEN, minted as `dex_` + 32 hex. Issued per environment; the two are never interchangeable."
+      }
+    },
+    "parameters": {
+      "jobToken": {
+        "name": "X-Doc-Extract-Job-Token",
+        "in": "header",
+        "required": true,
+        "schema": { "type": "string" },
+        "description": "The per-job fencing token from the claim. Rotated on every claim, so a stale one means the lease moved on. Never sent as a query parameter — query strings land in access logs and this gates a medical record."
+      }
+    },
+    "schemas": {
+      "Reason": {
+        "type": "string",
+        "enum": ["missing_params", "job_not_found", "invalid_token", "job_not_claimable", "job_already_completed", "lease_expired", "document_not_found", "result_too_large", "nothing_extracted", "internal_error"]
+      },
+      "CatalogEntry": {
+        "type": "object",
+        "properties": {
+          "key_name": { "type": "string", "description": "Use verbatim. The only identifier nano resolves." },
+          "display_name": { "type": "string" },
+          "display_name_zh": { "type": "string" },
+          "unit": { "type": "string", "description": "The unit values are stored in. Send the report's own unit; nano converts only the documented pairs." },
+          "category": { "type": "string" },
+          "ref_low": { "type": ["number", "null"] },
+          "ref_high": { "type": ["number", "null"], "description": "Nano's reference value, given for sanity-checking. Some are risk thresholds rather than physiological ceilings." }
+        }
+      },
+      "Document": {
+        "type": "object",
+        "properties": {
+          "document_id": { "type": "integer" },
+          "filename": { "type": "string" },
+          "doc_type": { "$ref": "#/components/schemas/DocType" },
+          "doc_date": { "type": ["string", "null"], "format": "date" },
+          "institution": { "type": ["string", "null"] },
+          "note": { "type": ["string", "null"] },
+          "content_type": { "type": "string" },
+          "size_bytes": { "type": ["integer", "null"] },
+          "etag": { "type": ["string", "null"] },
+          "uploaded_at": { "type": "string" },
+          "url": { "type": "string", "description": "Presigned, direct from object storage. Bytes never pass through nano." },
+          "url_expires_at": { "type": "string", "description": "6 hours from the claim" },
+          "supports_range": { "type": "boolean", "description": "HTTP Range works — chunk or resume a large file" }
+        }
+      },
+      "DocType": {
+        "type": "string",
+        "enum": ["lab_report", "hospital_record", "imaging", "discharge_summary", "prescription", "other"],
+        "description": "On a claimed job this is almost always \"other\": no client asks the user to classify an upload, so filling it in is part of the extraction."
+      },
+      "Job": {
+        "type": "object",
+        "properties": {
+          "job_uid": { "type": "string" },
+          "attempt": { "type": "integer" },
+          "max_attempts": { "type": "integer" },
+          "queued_at": { "type": "string" },
+          "lease_expires_at": { "type": "string" },
+          "result_token": { "type": "string" },
+          "document": { "$ref": "#/components/schemas/Document" },
+          "subject": {
+            "type": "object",
+            "description": "Enough to read an age- or sex-dependent reference range, and nothing more. Carries no user id, name or contact of any kind; `ref` is the job_uid.",
+            "properties": {
+              "ref": { "type": "string" },
+              "age": { "type": ["integer", "null"] },
+              "gender": { "type": ["string", "null"] },
+              "language": { "type": "string", "description": "Write `summary` and finding `text` in this language" }
+            }
+          },
+          "catalog": { "type": "array", "items": { "$ref": "#/components/schemas/CatalogEntry" } }
+        }
+      },
+      "Observation": {
+        "type": "object",
+        "required": ["key_name", "value", "unit"],
+        "properties": {
+          "key_name": { "type": "string", "description": "From the catalog, verbatim. Anything else belongs in `unmapped`." },
+          "value": { "type": "number", "description": "A number — not a range, not \"<0.5\", not a string carrying the unit" },
+          "unit": { "type": "string", "description": "As printed on the report. Case, spacing and µ/u are normalised." },
+          "data_date": { "type": "string", "format": "date", "description": "Falls back to document.doc_date" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1, "description": "Below 0.6 is rejected" },
+          "source_text": { "type": "string", "maxLength": 200, "description": "The line it was read from. Not stored as data — it is what makes a wrong read diagnosable." }
+        }
+      },
+      "Finding": {
+        "type": "object",
+        "required": ["category", "text", "confidence"],
+        "description": "A durable personal fact the document asserts about the patient. These filter what products may be recommended and feed nutrition formulation, so a wrongly recorded allergy is worse than a missed one. Not a drug the report merely mentions, not a condition it rules out, not family history.",
+        "properties": {
+          "category": { "type": "string", "enum": ["allergy", "condition", "dietary_restriction", "preference", "goal", "other"] },
+          "text": { "type": "string", "maxLength": 200, "description": "Short, in the subject's language" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1, "description": "Required. Below 0.8 is rejected, and an absent confidence is rejected outright." }
+        }
+      },
+      "Unmapped": {
+        "type": "object",
+        "description": "An analyte read off the report that is not in the catalog. Expected and useful — a real 体检报告 carries 50-80 analytes and nano models 25. This is how the catalog gets extended.",
+        "properties": {
+          "label": { "type": "string", "maxLength": 200 },
+          "value": { "type": ["string", "number", "null"] },
+          "unit": { "type": ["string", "null"] }
+        }
+      },
+      "ResultPayload": {
+        "type": "object",
+        "required": ["job_uid"],
+        "description": "Every field but job_uid and result_token is optional. A document with nothing extractable is still a legitimate result — send metadata and a summary with empty arrays rather than calling /jobs/fail.",
+        "properties": {
+          "job_uid": { "type": "string" },
+          "result_token": { "type": "string" },
+          "document": {
+            "type": "object",
+            "properties": {
+              "doc_type": { "$ref": "#/components/schemas/DocType" },
+              "doc_date": { "type": "string", "format": "date", "description": "The date ON the report. Never today's date as a stand-in — a wrong date puts an old panel into the twin as though it were current." },
+              "institution": { "type": "string", "maxLength": 120 },
+              "note": { "type": "string", "maxLength": 200 }
+            }
+          },
+          "summary": { "type": "string", "maxLength": 2000, "description": "Plain language, in the subject's language. No ':::' — those are display-card fences in nano's chat renderer and are stripped on ingest." },
+          "observations": { "type": "array", "maxItems": 200, "items": { "$ref": "#/components/schemas/Observation" } },
+          "findings": { "type": "array", "maxItems": 40, "items": { "$ref": "#/components/schemas/Finding" } },
+          "unmapped": { "type": "array", "maxItems": 200, "items": { "$ref": "#/components/schemas/Unmapped" } }
+        }
+      },
+      "Rejection": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": ["unknown_marker", "invalid_value", "unit_mismatch", "implausible_value", "low_confidence", "missing_date", "duplicate_observation", "unknown_doc_type", "unparseable_date", "unknown_finding_category", "empty_finding"]
+          },
+          "entry": { "type": "object", "description": "The offending input, echoed back" },
+          "detail": { "type": "string" }
+        }
+      },
+      "Counts": {
+        "type": "object",
+        "properties": {
+          "observations_accepted": { "type": "integer" },
+          "observations_submitted": { "type": "integer" },
+          "findings_accepted": { "type": "integer" },
+          "findings_submitted": { "type": "integer" },
+          "unmapped": { "type": "integer" },
+          "rejected": { "type": "integer" }
+        }
+      },
+      "ValidationOutcome": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "contract_version": { "type": "integer" },
+          "would_accept": { "type": "boolean" },
+          "document": { "type": "object" },
+          "summary": { "type": ["string", "null"] },
+          "observations": { "type": "array", "items": { "$ref": "#/components/schemas/Observation" } },
+          "findings": { "type": "array", "items": { "$ref": "#/components/schemas/Finding" } },
+          "unmapped": { "type": "array", "items": { "$ref": "#/components/schemas/Unmapped" } },
+          "rejected": { "type": "array", "items": { "$ref": "#/components/schemas/Rejection" } },
+          "counts": { "$ref": "#/components/schemas/Counts" }
+        }
+      }
+    }
+  }
+}
