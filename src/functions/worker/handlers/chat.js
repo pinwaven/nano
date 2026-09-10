@@ -50,6 +50,7 @@ const { _runDeterministicFormulation, _buildFormulaChartBlock, _commitProposedPl
 const { fetchAiCatalog } = require('../lib/gcnClient');
 const { PLAN_WEEKS, N7_KEY } = require('../lib/dotsProductModel');
 const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock');
+const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
 
 // Channels with a GCN storefront behind them (mirrors handlers/login.js's own copy — the same
 // physically-duplicated-constant convention this codebase uses across handlers). Nothing else has
@@ -1445,6 +1446,25 @@ async function handlePostChat(body) {
             // than a silently dropped turn — the coach app and the web user-app both have the tool
             // but not this plumbing, and a sandbox ("login as") session must never write a real
             // formulation against the impersonated account.
+            //
+            // Deterministic override first. A misclassification here is not a degraded answer but
+            // a wrong ACTION: the branch below returns launch_tool and the miniapp starts
+            // formulating, so someone asking 「我已经买了什么原粒套餐」 would get a brand new
+            // formula instead of an answer. The classifier is told this too, but it decides with
+            // an LLM and this question is one word away from a request. Same risk acceptance as
+            // messageNeedsBiomarkerHistory: a false positive costs one agentic turn.
+            //
+            // casual_chat is promoted for the mirror-image reason. It is not in HIGH_RISK_INTENTS,
+            // so it has no tools and its template renders no package block — 「我的订单到哪了」
+            // classified there on dev and came back with factConstraint's canned 联系客服 line,
+            // which is the correct answer for a model that has no order data and the wrong one
+            // when a tool could have fetched it. Only casual_chat is promoted: every other intent
+            // either already has the tools or is answering a different question entirely.
+            if (messageAsksAboutFormulationPackage(message)
+                && (intent === 'formulate_dots' || intent === 'casual_chat')) {
+                console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_package_question', user_id, from: intent }));
+                intent = 'nutrition_question';
+            }
             if (intent === 'formulate_dots') {
                 if (body.client === 'miniapp' && !sandbox) {
                     // Persisted here because this branch returns before the shared insert below.
@@ -1626,6 +1646,13 @@ async function handlePostChat(body) {
                 // (25 items server-side) and carries no prices: the model is never given a number
                 // it could leak, since _buildProductCardBlock renders those from the same snapshot.
                 store_products: _filterProductsByUserFacts(fetched.store_products || [], fetched.user_facts?.rows || []),
+                // Gates the 原粒套餐 vocabulary block (§28g). Channel-gated the same way
+                // store_products is — with no storefront there is no package to describe — but
+                // deliberately NOT gated on required_data: the block teaches the model to reach
+                // for get_formulation_packages, and a purchase question must never go unanswered
+                // because the classifier failed to emit a key. It carries no data, so the cost of
+                // it being present on a turn that doesn't need it is a few lines of prompt.
+                formulation_packages_available: GCN_LINKED_CHANNEL_KEYS.has(channelKeyName),
                 // Gates prompts/chat/outputFormat.js's ::: display-card syntax. Scoped to the
                 // miniapp because it's the only surface whose renderer understands the fences —
                 // the coach app shows content as a bare <text> and the web user-app uses

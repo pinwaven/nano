@@ -35,7 +35,7 @@ Violations here don't block generation — they're folded into GENERATE's system
 
 Up to `GENERATE_MAX_ITERS = 3` tool-calling iterations, `temperature: 0.3`. Uses `AGENTIC_TOOL_DEFS` / `createAgenticToolHandlers` from `lib/agenticTools.js` — 11 dedicated, typed, read-only tools, one per data domain:
 
-`get_biomarkers`, `get_biomarker_history`, `get_dots`, `get_health_plan`, `get_dot_inventory`, `get_health_reports`, `get_questionnaire_responses`, `get_weight_history`, `get_health_twin`, `get_nutrition_schedule`, `get_reminders`
+`get_biomarkers`, `get_biomarker_history`, `get_dots`, `get_health_plan`, `get_formulation_packages`, `get_health_reports`, `get_questionnaire_responses`, `get_weight_history`, `get_health_twin`, `get_nutrition_schedule`, `get_reminders`
 
 None of these tool handlers branch on persona internally — the tool layer itself is fully persona-generic (the file's own header comment still says "for the Viva agentic chat loop," which is stale — see [09-known-issues.md](09-known-issues.md)). Every tool call is logged into `toolCallLog`, consulted later by JUDGE and by `extractToolGroundTruth`.
 

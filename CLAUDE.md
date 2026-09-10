@@ -461,7 +461,7 @@ For the gated case, `handlers/chat.js` delegates to `runAgenticTurn()` (`lib/age
 
 1. **PLAN** (1 LLM call, `prompts/chat/planTemplate.js`) — produces a structured `intended_claims` list *before* any prose is written.
 2. **Plan validation** (deterministic, 0 LLM calls) — cross-checks dot/dimension references in the plan against real data; mismatches become an extra instruction folded into the GENERATE system prompt rather than blocking generation outright.
-3. **GENERATE** (up to 3 tool-calling iterations) — uses dedicated per-domain read tools (`lib/agenticTools.js`: `get_biomarkers`, `get_biomarker_history`, `get_dots`, `get_health_plan`, `get_dot_inventory`, `get_health_reports`, `get_questionnaire_responses`, `get_weight_history`, `get_health_twin`, `get_nutrition_schedule`, `get_reminders`) instead of the generic `query_database` SQL tool. Each tool is a fixed, typed wrapper — never raw model-authored SQL — and biomarker-shaped data always comes from `data.validated`, never `data.actual` (per §17). `get_biomarker_history`/`get_dot_inventory`/`get_health_reports` were added 2026-07-28 after live testing showed the original tool set (mirroring the pre-fetch context) had no way to answer questions like "how many Kino tests have I done" or "how many doses of a dot do I have left" — data that existed in `biomarkers`/`user_cartridges`/`health_reports` but was reachable by nothing, causing Viva to correctly but unhelpfully fall back to "not enough information." `health_events` (raw wearable ingestion log) was deliberately left unexposed — `health_twin`'s rolling averages/trend_data already summarize it cleanly, and dumping its heterogeneous per-category JSONB into a tool would add hallucination surface rather than reduce it.
+3. **GENERATE** (up to 3 tool-calling iterations) — uses dedicated per-domain read tools (`lib/agenticTools.js`: `get_biomarkers`, `get_biomarker_history`, `get_dots`, `get_health_plan`, `get_formulation_packages`, `get_health_reports`, `get_questionnaire_responses`, `get_weight_history`, `get_health_twin`, `get_nutrition_schedule`, `get_reminders`) instead of the generic `query_database` SQL tool. Each tool is a fixed, typed wrapper — never raw model-authored SQL — and biomarker-shaped data always comes from `data.validated`, never `data.actual` (per §17). `get_biomarker_history`/`get_health_reports` were added 2026-07-28 after live testing showed the original tool set (mirroring the pre-fetch context) had no way to answer questions like "how many Kino tests have I done" or "how many doses of a dot do I have left" — data that existed in `biomarkers`/`user_cartridges`/`health_reports` but was reachable by nothing, causing Viva to correctly but unhelpfully fall back to "not enough information." `health_events` (raw wearable ingestion log) was deliberately left unexposed — `health_twin`'s rolling averages/trend_data already summarize it cleanly, and dumping its heterogeneous per-category JSONB into a tool would add hallucination surface rather than reduce it.
 4. **JUDGE** (1 LLM call, `prompts/viva/judgeTemplate.js`) — grades the draft against the plan; the full pre-fetched `llmContext` GENERATE's system prompt was itself built from (health_twin, questionnaire_context, active_health_plans, user_profile, plan, ...), with `biomarkers`/`dots` overridden by a fresh re-fetch (not the GENERATE-time snapshot, so drift is still caught for those two specifically); `tool_calls_made`, the complete list of every tool call GENERATE actually made with its real result; the curated knowledge base (below); and `factCheck.js`'s existing detectors (via the shared `detectAllRisks` export). Both the `llmContext` spread and `tool_calls_made` were added 2026-07-28 after live testing found the same bug twice — first narrowly (JUDGE couldn't verify `get_biomarker_history`'s test count, only `get_biomarkers`/`get_dots`), then broadly (JUDGE had no visibility into `llmContext` at all, so a correct wearable-data analysis sourced straight from the pre-fetched `health_twin` got fully stripped out as "unsupported" across 2 revise rounds). The fix generalizes to the whole context rather than patching each data source one at a time.
 5. **REVISE + RE-JUDGE** — on REJECT, up to 2 correction-retry + re-check rounds (`REVISE_MAX_ROUNDS`), stopping early the moment a re-judge PASSes; ships the latest revision regardless if it still REJECTs after the last round. Widened from 1 to 2 rounds on 2026-07-28 after live dev testing showed a single revise pass sometimes left residual violations unfixed on multi-violation drafts. Never loops past this bound.
 6. `verifyBiomarkerGrounding` still runs unconditionally afterward for every intent/persona (unchanged, orthogonal check: numeric drift vs. science/catalog fabrication) — for the agentic branch it also receives `extraValidDates`/`extraValidValues`, extracted from every tool call GENERATE actually made (`extractToolGroundTruth()` in `lib/agenticChat.js`). Without this, any legitimate historical date/value surfaced via `get_biomarker_history` (or the other history-shaped tools) gets misflagged as a fabrication — it only ever compared against the single latest snapshot — and gets silently rewritten away. Found and fixed via live dev testing 2026-07-28 (a correct "63 past tests" answer citing real historical dates/values was rewritten twice before this fix). Empty for the non-agentic path, which has no tool history to draw from, so its behavior is unchanged.
@@ -699,7 +699,7 @@ Added 2026-07-29, originally Viva-only. **Genericized by the persona-unification
 
 **The decision now runs through the full agentic loop, delivered async — not a blocking HTTP call.** Given §22's confirmed FC 3.0 behavior (the platform cancels an invocation the instant the HTTP client disconnects) and that a PLAN→GENERATE→JUDGE→REVISE turn can take 10s–180s+, `handlePostFormulaDots`'s agentic branch (`_handleFormulaDotsAgentic()`, both personas — see this section's opening note) does not run the decision inline. Instead:
 
-1. **Phase 1 (fast, synchronous):** insert a `nutrition_plans` row with `status = 'pending'` (new column, migration `migration_nutrition_plans_status.sql`; `'pending' | 'active' | 'superseded'`, default `'active'` so every pre-existing row and Nano's path need zero change) — no schedules yet. Build a rich `llmContext` following the same "always-fetch" convention `handlePostChat`/`handlePostHealthAdvice` use: `health_twin`, `questionnaire_context`, `active_health_plans` are now fetched here for the first time (previously `null`/never fetched for this handler); `user_facts`, `essential_knowledge`, `current_solar_term`, `dots` (now with min/max) as before. Biomarker history, dot inventory, and prior schedules are deliberately *not* pre-fetched — they're reachable on-demand through the agentic loop's existing tools (`get_biomarker_history`, `get_dot_inventory`, `get_nutrition_schedule`), mirroring how `handlePostChat` already splits "always fetched" vs. "tool-fetched" data. Publish a `chat.generate` event (`publishChatGenerateEvent`, unmodified) with a new `kind: 'formula_dots_generate'` and `pending_plan_id` in the payload, then return `{success:true, processing:true}` immediately — actually *faster* than the old synchronous path, since no LLM call blocks the response anymore.
+1. **Phase 1 (fast, synchronous):** insert a `nutrition_plans` row with `status = 'pending'` (new column, migration `migration_nutrition_plans_status.sql`; `'pending' | 'active' | 'superseded'`, default `'active'` so every pre-existing row and Nano's path need zero change) — no schedules yet. Build a rich `llmContext` following the same "always-fetch" convention `handlePostChat`/`handlePostHealthAdvice` use: `health_twin`, `questionnaire_context`, `active_health_plans` are now fetched here for the first time (previously `null`/never fetched for this handler); `user_facts`, `essential_knowledge`, `current_solar_term`, `dots` (now with min/max) as before. Biomarker history, dot inventory, and prior schedules are deliberately *not* pre-fetched — they're reachable on-demand through the agentic loop's existing tools (`get_biomarker_history`, `get_nutrition_schedule`), mirroring how `handlePostChat` already splits "always fetched" vs. "tool-fetched" data. Publish a `chat.generate` event (`publishChatGenerateEvent`, unmodified) with a new `kind: 'formula_dots_generate'` and `pending_plan_id` in the payload, then return `{success:true, processing:true}` immediately — actually *faster* than the old synchronous path, since no LLM call blocks the response anymore.
 2. **Phase 2 (async, `handleChatGenerateEvent`'s `kind === 'formula_dots_generate'` branch):** runs `runAgenticTurn()` unmodified against a new prompt, `prompts/viva/systemFormulaGenerate.js` (supersedes and replaces the old narrative-only `systemFormulaExplain.js`, now deleted — nothing publishes the old `'formula_dots'` kind anymore). The prompt lists each dot's real min–max range (not a flat 1–10) and default timing slot, includes the full digital-twin context, and instructs the model to scale within each dot's own range by biomarker severity, plus a **soft, prompt-driven AM/PM balancing rule**: after assigning each dot's total to its default slot, compare morning vs. evening totals and move part of a dot's count to its non-primary slot to narrow the gap — but keep the majority of any dot's count in its biologically appropriate slot, and never move a stimulant dot into evening or a sleep/relaxation dot into morning. (The schema has no hard `timing_flexible` flag — this is a "try the best" scope by design; a future column could tighten the guarantee if the soft version proves too loose in practice.) Output is normal prose analysis followed by a trailing action-JSON tail, the same established convention `record_weight`/`set_reminder`/`remember_fact` use: `{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","morning":2,"evening":1}, ...]}`, one entry per formulary dot including explicit 0s.
 3. **New finalizer `finalizeFormulaDotsGenerate()`** (`handlers/chat.js`) parses the action tail (`_extractTrailingJson()` — a brace-depth scan, not a `[^}]*` regex, since this action's JSON nests objects unlike the other three's flat shape), validates every `dot_key` against the real formulary and clamps each dot's `morning + evening` total into its own min/max (scaling the split proportionally if clamping changes the total) — never trusting the model's numbers or keys blindly, same principle as every other action. Any dot the model omitted gets the same deterministic per-dot fallback (`_fallbackCountForDot()`), split entirely into its default slot. If the action tail is missing or unparseable entirely, the whole thing falls back to `_runDeterministicFormulation()` so the user is never left with nothing (same resilience principle as §27's `remember_fact` blank-reply fix). Commits via `_commitNutritionPlan()` against the `pending_plan_id`. **The agentic reply's own prose (tail stripped) doubles as the user-facing explanation** — collapsing the old two-hop "decide, then a second agentic call to explain" design into one, since Phase 2 is now the smart call itself rather than a dumb single-shot needing a narrator.
 4. On any Phase-2 failure (agentic turn throws), `handleChatGenerateEvent`'s catch block runs the same deterministic-formulation-and-commit fallback rather than just posting an error notification — a pending row is never left orphaned.
@@ -1290,7 +1290,9 @@ Dots subtab must still render the user's active plan when the order half is unav
 
 `PACKAGE_STAGES` (12 values) is the vocabulary; the miniapp keys its copy off the string
 (`t['pkgStage_' + stage]`), so **a new stage needs a line in both `T.zh` and `T.en`** — WXML has no
-compile-time key checking and a missing key renders empty.
+compile-time key checking and a missing key renders empty. Since 2026-09-10 the chat model reads
+these too, through `PACKAGE_STAGE_NARRATION` in the same file — see §28g for the coupling rule and
+why the prompt is deliberately not a third site.
 
 - `awaiting_formulation` vs `awaiting_ag` are **one GCN status split by which package was bought**.
   A fast-track package waits on the buyer; a premium one is Viva AG's to fulfil and asks nothing of
@@ -1674,6 +1676,154 @@ write package copy at all. `planTemplate.js` and `judgeTemplate.js` were taught 
 reason §27 and §37 both record: an unrecognised action tail is graded as an unsupported claim and
 burns REVISE rounds. **Keep JUDGE's DELIBERATELY NARROW clause** — it is what stops a six-dot
 package being graded as `plan_drift`.
+
+## 28g. Viva Can Answer "What Have I Bought?" (2026-09-10)
+
+`get_formulation_packages` (`lib/agenticTools.js`) is how the chat model learns what the user has
+actually **purchased** of 原粒 · 定制营养素 · 28天 — the order, its stage, unredeemed codes they
+hold, and the three packages the store sells. Before it, nothing in chat could see an order.
+
+A user asked 「我已经买了什么原粒套餐?」 and got *"你目前已激活并正在使用的原粒共17款…剩余800粒…"*.
+On dev that user had **no `active` plan at all**, `custom_formulation_purchased_at` NULL, and two
+28天 orders sitting at `pending_payment`. The 17 dots came from `get_dot_inventory` →
+`user_cartridges`, the **Neo dispenser's** cartridge table (800 dots per cartridge, hence 剩余800粒)
+for hardware §28d gated off — legacy rows that cannot grow, narrated as a live regimen.
+
+**JUDGE passed it, and would again.** The answer *was* grounded, in the wrong table. §27 records
+the class: JUDGE checks facts, not relevance. So relevance had to be fixed structurally, not by
+grading harder.
+
+### The fix is deterministic, because a prompt hope is not a fix here
+
+`messageAsksAboutFormulationPackage` (`prompts/chat/formulationPackageBlock.js`) force-queues the
+tool, exactly as `messageNeedsBiomarkerHistory` already does — PLAN decides `tools_needed` with an
+LLM and is unreliable, and §28f's nine measured qwen-plus runs are the standing reminder of what
+betting on model compliance costs.
+
+The same regex **also promotes two intents to `nutrition_question`** in `handlePostChat`, before the
+`launch_tool` branch, and each has a measured failure behind it:
+
+- **`formulate_dots`** — that branch is not a degraded answer, it is a wrong *action*.
+  「我已经买了什么原粒套餐」 is one word away from a request to formulate, and misreading it starts a
+  brand-new formulation instead of answering.
+- **`casual_chat`** — it is not in `HIGH_RISK_INTENTS`, so it has no tools and its template renders
+  no package block. 「我的订单到哪了」 classified there on dev and came back with `factConstraint`'s
+  canned 联系客服 line: the right answer for a model with no order data, the wrong one when a tool
+  could have fetched it. Only these two are promoted; every other intent either already has the
+  tools or is answering a different question.
+
+**It must never match the Formulate-Dots trigger message** (`请根据我的完整健康数据…`), which rides
+the same `runAgenticTurn`. Anchor on purchase vocabulary — 买/订单/付款/发货/物流/兑换码 — never on
+方案/配方/定制 alone. A test pins both halves.
+
+### The model narrates; the server writes the stage sentence
+
+`PACKAGE_STAGE_NARRATION` (`handlers/dots.js`, directly below `PACKAGE_STAGES`) holds one
+`{meaning, next_step}` per stage per language, and the tool projects them onto each row. Same
+division §28f draws for the card ("the model ranks; the server partitions") and §37 for product
+copy ("the model picks, the server writes").
+
+> ### The stage vocabulary is code, in two places, and neither is a prompt
+>
+> 1. `handlers/dots.js` — the `PACKAGE_STAGES` set and `PACKAGE_STAGE_NARRATION` beside it.
+> 2. `pages/main/main.js` — `pkgStage_<stage>` in **both** `T.zh` and `T.en`.
+> 3. Nothing else. **The chat prompt never learns a stage string.** A prompt enumerating them
+>    would be a third definition in the one medium where drift is invisible: rename a stage in
+>    code and the prompt keeps narrating the old meaning, confidently, forever.
+>
+> `tests/chat-formulation-package-tool.test.js` enforces 1 against 2 and asserts 3 against the
+> **rendered** block (the module's header comment may name a stage while explaining the bug — a
+> comment is not something the model reads).
+
+`next_step` is empty wherever the honest answer is "nothing, wait" — `awaiting_ag` most of all,
+where the whole point of the premium package is that it asks nothing of the user.
+
+**The raw `stage` enum is not sent at all.** Given it alongside the sentence, the model quoted the
+machine value into user prose — 状态均为"**pending_payment**" — which is the exact thing the
+sentence exists to prevent (dev, 2026-09-10). `stage_meaning` is already distinct per stage, so the
+enum adds nothing a reply can use. `plan_status` is withheld for the same reason and replaced by
+**`formula_status`**, a second server-written sentence: handed only a null, the model invented a
+dot roster for two unformulated orders — *"两套方案中都已包含原粒6号、9号、7号"* — and **JUDGE
+passed it**, because every dot it named was real. A null field is an invitation to fill it in; a
+sentence saying "nobody has decided what goes in this yet" is not.
+
+Three wording rules in the block exist because a live run produced each one: don't quote a field
+name back to the user; you may still give dot **advice**, but never as "already in your package";
+and `max_distinct_dots` is a weekly cap ("up to N"), never a content list. A fourth — that paying
+does not itself generate a formula (§28c: the fast track needs the user to run 营养定制 again) — is
+phrased as a constraint on wording rather than as a fact to relay, because the first, emphatic
+version was copied verbatim into a reply that had just contradicted it one sentence earlier.
+
+### Three details that each have a bug behind them
+
+**A flat array, never a `{packages, codes, tiers}` wrapper.** `extractToolGroundTruth` normalises
+a result with `Array.isArray(data) ? data : (Array.isArray(data.tests) ? data.tests : [data])`, so
+a wrapper is treated as one row and nothing is harvested — real order dates would never reach
+`extraValidDates` and `verifyBiomarkerGrounding` would rewrite a correct answer away as a
+fabrication (§21 step 6). The `data.tests` branch is already the fossil of one such wrapper; don't
+add the second. `ordered_at`/`shipped_at`/`sold_at` joined `DATE_FIELDS` for the same reason.
+
+**Dates are emitted date-only.** `formatToShanghai` returns an **offsetless** `yyyy-MM-dd HH:mm:ss`
+and `addDate` re-parses it with `new Date(...)`, which reads it in the process timezone (UTC on FC)
+and applies +8 again — every timestamp at or after 16:00 Shanghai would be allowlisted under the
+following day. A bare `YYYY-MM-DD` is parsed as UTC midnight by spec, so the round trip is exact.
+*The same skew still affects `get_biomarkers`/`get_biomarker_history`'s `tested_at`; not fixed
+here, and worth its own pass.*
+
+**Degraded is not empty.** All three fetchers swallow every failure and return `[]`, so "GCN is
+unreachable" and "you have bought nothing" are byte-identical to the model — this bug relocated.
+`fetchFormulationTiers` is user-independent and returns three rows in a healthy system, so **all
+three sources empty at once** returns `{ok:false}` with an explicit "do not tell them they have no
+packages". The conjunction matters: a nano-side `proposed` plan still answers while GCN is down.
+
+### What the model is not given
+
+No `order_id`, `plan_id`, `submit_plan_id`, `sku_id`, `label_code`, and **not the redeem code
+string** — redeeming happens in the app, so the model has no use for it, and a value it was never
+given is one it cannot leak (§37's rule for prices). No price exists in any of the three sources
+and none may be added: nano does not price this product, a store sells the code upstream. `tier`
+rows carry no width either — §28f took that number off the card, and on the catalog it is a
+merchandising claim rather than a fact about something the user owns.
+
+### `get_dot_inventory` was removed from the tool set
+
+The handler and `user_cartridges` stay so the dispenser can be re-enabled; only the tool def and
+impl are gone. **Removing a tool means removing every prompt that names it** — three shipping
+prompts did (`prompts/{nano,viva}/systemFormulaGenerate.js`), and the formulation turn runs the
+*same* `AGENTIC_TOOL_DEFS`, so leaving one would burn a GENERATE iteration on `unknown tool`.
+`tests/chat-formulation-package-tool.test.js` scans every prompt for `\bget_[a-z_]+` and fails on
+any name that is not a real tool. (The `\b` is load-bearing: `target_dots_min` contains
+`get_dots_min`.)
+
+### A latent bug fixed in passing: a turn that replies with nothing
+
+Each forced tool burns one GENERATE iteration, so three forced tools left `rawReply === ''` — JUDGE
+graded an empty string and `finalizeChatReply` shipped its canned acknowledgement. A second
+deterministic trigger made that likelier, so `buildForcedToolQueue` now caps the queue at
+`GENERATE_MAX_ITERS - 1` (deterministic triggers first, PLAN's advisory ones after) and the final
+iteration pins `tool_choice: 'none'`. §21's "generate ≤3" ceiling is unchanged.
+
+`tool_choice:'none'` was **verified live** against DashScope qwen-plus on the exact message shape
+this sees (history already holding a tool call and its result): `finish_reason` `stop`, zero tool
+calls, real content. Re-probe before changing it — `agenticChat.js` already records one case where
+DashScope diverged from the spec under a non-`auto` `tool_choice`.
+
+### The essential block's logistics ban was NOT narrowed
+
+`factConstraint.js` forbids inferring 物流/配送时效 and prescribes a canned 联系客服 line — the exact
+shape "发货了吗" fires. Its existing carve-out (*未在本次对话中明确提供*) already covers data the
+tool supplied this turn, so the new block only restates that locally. **If a dev run on a
+`shipped` order still returns the 联系客服 line, that is the signal to do §26/§37's three-site
+narrowing** — the `knowledge_entries` row, `FALLBACK_ESSENTIAL_BLOCK`, and `factConstraint.js`'s
+`FALLBACK_ZH`/`FALLBACK_EN`, all together, or a transient DB error silently restores the refusal.
+
+### Nothing changed in GCN
+
+`fetchFormulationOrders`/`fetchFormulationCodes`/`fetchFormulationTiers` already wrapped three
+served `requireNanoService` endpoints carrying every field kept here. No migration, no GCN deploy,
+no miniapp change. *Know, don't change:* `fetchFormulationTiers` is not store-scoped, so `tier`
+rows are the global catalog — the same source the formula card uses, so chat and card agree, but
+the block describes packages and never tells the user where to buy one.
 
 ## 29. Viva Proactive Daily Check-Ins (Morning / Midday / Evening)
 

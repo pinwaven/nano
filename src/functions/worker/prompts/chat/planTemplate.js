@@ -65,7 +65,7 @@ ${JSON.stringify({ biomarkers: llmContext.biomarkers, bioage: llmContext.bioage,
 
 List every specific, checkable factual claim you plan to make: biomarker values, dot recommendations, science/protocol facts, dimension references, or evidence-level statements. Do not list general conversational content, only checkable facts.
 
-If answering fully requires data NOT already in context above — e.g. comparing multiple past Kino tests, a trend over time, a count of past tests/reports, dot inventory levels, scheduled doses, or reminders — this is NOT grounds to decline or say the data is unavailable. A dedicated tool exists for exactly this (see tools_needed below); list it there so it gets called before you write the reply, instead of telling the user the information doesn't exist.
+If answering fully requires data NOT already in context above — e.g. comparing multiple past Kino tests, a trend over time, a count of past tests/reports, what package the user has bought or where that order is, scheduled doses, or reminders — this is NOT grounds to decline or say the data is unavailable. A dedicated tool exists for exactly this (see tools_needed below); list it there so it gets called before you write the reply, instead of telling the user the information doesn't exist.
 
 Do NOT list a user's own self-reported personal fact (diet, allergy, preference, goal — anything they just stated about themselves in USER MESSAGE above) as a claim needing evidence-level backing or knowledge-base grounding. Acknowledging what the user just told you is not a scientific claim; it doesn't need a citation or evidence-level phrase, and a lack of a matching knowledge-base entry is not a gap to flag.
 Likewise, suggesting a product from the "recommendable products" list supplied in the system prompt is a merchandising choice, not a scientific claim: it needs no evidence-level backing or knowledge-base entry of its own. Any HEALTH claim made ABOUT that product is still a normal claim and must be planned as one.
@@ -80,7 +80,7 @@ RESPOND WITH ONLY VALID JSON, NO OTHER TEXT:
   "intended_claims": [
     {"type": "biomarker_value|dot_recommendation|science_fact|dimension_reference|evidence_level|other", "claim": "<short description>", "ref_id": "<dot id, biomarker key, or KB entry id, or null>"}
   ],
-  "tools_needed": ["<any of: get_biomarkers, get_biomarker_history, get_dots, get_health_plan, get_dot_inventory, get_health_reports, get_questionnaire_responses, get_weight_history, get_health_twin, get_nutrition_schedule, get_reminders>"],
+  "tools_needed": ["<any of: get_biomarkers, get_biomarker_history, get_dots, get_health_plan, get_formulation_packages, get_health_reports, get_questionnaire_responses, get_weight_history, get_health_twin, get_nutrition_schedule, get_reminders>"],
   "risk_notes": "<anything you're unsure is grounded, or empty string>"
 }`;
 };

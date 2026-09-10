@@ -824,6 +824,71 @@ const PACKAGE_STAGES = new Set([
     'cancelled', 'refunded',
 ]);
 
+// What each stage MEANS, and what the user does next — written here, in code, and handed to the
+// chat model on the row itself (get_formulation_packages, §28g). The model narrates these; it
+// never derives them from the stage string.
+//
+// This is the same division §28f draws for the package card ("the model ranks; the server
+// partitions") and §37 for product copy ("the model picks, the server writes"). A prompt that
+// enumerated the stages would be a THIRD definition of this vocabulary, in the one medium where
+// drift is invisible: rename a stage in code and the prompt would keep narrating the old meaning,
+// confidently, forever. Keep this table and the miniapp's t['pkgStage_' + stage] labels in step
+// with PACKAGE_STAGES above; a test asserts all three cover exactly the same values.
+//
+// `next_step` is what the USER can do, so it is empty wherever the answer is "nothing, wait" —
+// 'awaiting_ag' most of all, where the whole point of the premium package is that it asks nothing
+// of them. Never invent a delivery date or a price here; nano does not price this product.
+const PACKAGE_STAGE_NARRATION = {
+    proposed: {
+        zh: { meaning: '这是对话里生成的配方，还没有下单，也没有人在配制它。', next_step: '如果想要这份配方，可以用兑换码开始配制。' },
+        en: { meaning: 'A formula generated in chat. Nothing has been ordered and nobody is compounding it.', next_step: 'Redeem a code to have this formula made.' },
+    },
+    pending_payment: {
+        zh: { meaning: '订单已创建但尚未付款，付款前不会开始配制。', next_step: '在「方案 · 原粒」里完成付款。' },
+        en: { meaning: 'The order exists but has not been paid. Nothing is compounded until it is.', next_step: 'Complete payment under Plans · Dots.' },
+    },
+    paid: {
+        zh: { meaning: '已付款，系统正在安排后续流程。', next_step: '' },
+        en: { meaning: 'Paid. The order is being routed onward.', next_step: '' },
+    },
+    awaiting_formulation: {
+        zh: { meaning: '这一份套餐已经付款，正在等你确认要配制哪一份配方。', next_step: '运行「营养定制」生成配方，然后确认提交。' },
+        en: { meaning: 'This package is paid and is waiting for you to confirm which formula to compound.', next_step: 'Run the 营养定制 tool, then confirm the formula.' },
+    },
+    awaiting_ag: {
+        zh: { meaning: '这一份套餐由 Viva AG 出配方，不需要你做任何事。', next_step: '' },
+        en: { meaning: 'Viva AG formulates this package. Nothing is required from you.', next_step: '' },
+    },
+    expert_review: {
+        zh: { meaning: '配方已提交，营养专家正在审核。', next_step: '' },
+        en: { meaning: 'The formula has been submitted and a nutrition expert is reviewing it.', next_step: '' },
+    },
+    compounding: {
+        zh: { meaning: '配方已通过，正在配制胶囊。', next_step: '' },
+        en: { meaning: 'The formula is approved and the capsules are being compounded.', next_step: '' },
+    },
+    shipped: {
+        zh: { meaning: '已发货。', next_step: '收到盒子后扫描盒上的二维码，方案才会开始。' },
+        en: { meaning: 'Shipped.', next_step: 'Scan the QR code on the box when it arrives — that is what starts the cycle.' },
+    },
+    delivered: {
+        zh: { meaning: '已送达，但盒子还没有被扫描，方案尚未开始。', next_step: '扫描盒上的二维码开始这一个周期。' },
+        en: { meaning: 'Delivered, but the box has not been scanned yet, so the cycle has not started.', next_step: 'Scan the QR code on the box to begin the cycle.' },
+    },
+    active: {
+        zh: { meaning: '盒子已扫描，这是你目前正在服用的方案。', next_step: '' },
+        en: { meaning: 'The box was scanned. This is the plan you are currently taking.', next_step: '' },
+    },
+    cancelled: {
+        zh: { meaning: '订单已取消。', next_step: '' },
+        en: { meaning: 'The order was cancelled.', next_step: '' },
+    },
+    refunded: {
+        zh: { meaning: '订单已退款。', next_step: '' },
+        en: { meaning: 'The order was refunded.', next_step: '' },
+    },
+};
+
 // Ranked so the row a user can act on is never buried under one they cannot. Within a rank,
 // newest first. Deliberately not pure recency: the whole point of the list is to surface the
 // package that is waiting on them.
@@ -4128,6 +4193,14 @@ module.exports = {
     _planDayGroups,
     _resolveOrderContext,
     _mergeFormulationPackages,
+    // Read by lib/agenticTools.js's get_formulation_packages (§28g). Exported rather than
+    // duplicated in lib/: they belong beside _packageRow/PACKAGE_STAGES, which is what defines
+    // what a "package" is, and lib/twinBundle.js's own header calls the opposite choice a
+    // compromise. Safe to require from there — dots.js pulls in nothing from lib/agentic*.
+    _fetchFormulationPackages,
+    _fetchFormulationCodes,
+    PACKAGE_STAGES,
+    PACKAGE_STAGE_NARRATION,
     _awaitingOrders,
     _capDistinctDots,
     _equalizeToTarget,

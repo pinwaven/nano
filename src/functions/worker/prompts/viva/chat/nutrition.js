@@ -5,6 +5,7 @@ const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 const { getProductRecommendBlock } = require('../../chat/productRecommendBlock');
+const { getFormulationPackageBlock } = require('../../chat/formulationPackageBlock');
 
 module.exports = (ctx) => {
   const { user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, current_solar_term } = ctx;
@@ -60,6 +61,8 @@ ${getCurrentDateBlock(ctx.now_iso)}
 ${getFactMemoryBlock(ctx.user_facts)}
 
 ${getProductRecommendBlock(ctx.store_products)}
+
+${getFormulationPackageBlock(ctx.formulation_packages_available)}
 
 ${getAskQuestionsBlock()}
 

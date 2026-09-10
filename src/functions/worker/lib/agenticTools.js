@@ -15,6 +15,14 @@
 
 const { formatQuestionnaireContext } = require('../handlers/questionnaires');
 const { formatToShanghai } = require('./time-utils');
+// Safe: handlers/dots.js requires nothing from lib/agentic*, so this closes no cycle in either
+// load order, and it adds no module to the cold path — handlers/chat.js already requires both.
+const {
+    _fetchFormulationPackages,
+    _fetchFormulationCodes,
+    PACKAGE_STAGE_NARRATION,
+} = require('../handlers/dots');
+const { fetchFormulationTiers } = require('./gcnClient');
 
 const AGENTIC_TOOL_DEFS = [
     {
@@ -68,14 +76,13 @@ const AGENTIC_TOOL_DEFS = [
     {
         type: 'function',
         function: {
-            name: 'get_dot_inventory',
-            description: "Fetch the user's physical dot cartridge inventory (which dots are loaded, remaining/total dose counts, status) — use for questions like how many doses of a dot are left.",
-            parameters: {
-                type: 'object',
-                properties: {
-                    include_removed: { type: 'boolean', description: 'Also include removed/finished cartridges, not just active ones' },
-                },
-            },
+            name: 'get_formulation_packages',
+            // Replaced get_dot_inventory, which read user_cartridges — the Neo dispenser's
+            // cartridge table for hardware that is not shipping (§28d gated it off), so it could
+            // only ever narrate legacy rows. It was the closest-sounding tool to "what dots do I
+            // have", which is exactly how a purchase question got answered out of it. §28g.
+            description: "Fetch what the user has actually BOUGHT of 原粒 · 定制营养素 · 28天: their package orders and each one's current stage (paid, being compounded, shipped, in progress…), any unredeemed codes they hold, and the three packages the store sells. Use for every question about a purchase, an order, payment, shipping or which packages exist. This is the ONLY source for those — a nutrition plan or dosing schedule does not say what was bought.",
+            parameters: { type: 'object', properties: {} },
         },
     },
     {
@@ -157,9 +164,63 @@ function clampInt(value, fallback, min, max) {
     return Math.max(min, Math.min(n, max));
 }
 
+// Date-ONLY, and that is load-bearing twice over.
+//
+// 1. formatToShanghai returns 'yyyy-MM-dd HH:mm:ss' with no offset, and extractToolGroundTruth's
+//    addDate re-parses whatever we emit with `new Date(value)` — which reads an offsetless string
+//    in the PROCESS timezone (UTC on FC) and then applies +8 again. Every timestamp at or after
+//    16:00 Shanghai would be harvested as the following day, so the date the model was shown and
+//    the date allowlisted as grounded would differ and a correct answer could be rewritten away.
+//    A bare YYYY-MM-DD is parsed as UTC midnight by spec, so the round trip is exact.
+// 2. A raw UTC ISO string has been observed being echoed to the user verbatim, which is why no
+//    tool in this file hands the model one.
+function dateOnly(value) {
+    if (!value) return null;
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    return formatToShanghai(d).slice(0, 10);
+}
+
 // Binds handlers to one user/session. Schema (AGENTIC_TOOL_DEFS) is static and exported
 // separately since it doesn't depend on user_id/language.
 function createAgenticToolHandlers({ pool, user_id, language }) {
+    // What a package stage means, and what the user does next, in their language — authored in
+    // handlers/dots.js beside PACKAGE_STAGES itself. The model narrates these rather than
+    // deriving them, so the chat prompt never has to learn a stage string (§28g).
+    const zh = language === 'zh';
+    const narrate = (stage, fulfillment) => {
+        const entry = PACKAGE_STAGE_NARRATION[stage];
+        if (!entry) return { stage_meaning: null, next_step: null };
+        const copy = entry[zh ? 'zh' : 'en'];
+        let next = copy.next_step || null;
+        // Before payment, next_step stops at "pay" — and the model kept inventing what follows,
+        // landing on "系统将自动进入营养定制环节" in roughly a third of live dev runs. Paying
+        // starts nothing on its own (§28c), so the continuation is spelled out here rather than
+        // banned in the prompt: given the true next sentence, the model has nothing to invent.
+        //
+        // It depends on the package, which is why it is not in the static table: a fast-track
+        // buyer must run 营养定制 themselves, while a premium buyer is explicitly done (§28d).
+        if (next && (stage === 'pending_payment' || stage === 'paid')) {
+            next += fulfillment === 'expert_review'
+                ? (zh ? '之后由 Viva AG 出配方，你不需要再做别的。' : ' After that Viva AG formulates it and nothing more is required from you.')
+                : (zh ? '付款本身不会生成配方——付款之后你还要自己再运行一次「营养定制」并确认提交。' : ' Paying does not itself produce a formula — afterwards you must run the 营养定制 tool yourself and confirm.');
+        }
+        return { stage_meaning: copy.meaning, next_step: next };
+    };
+
+    // An order with no plan attached has no recipe — nobody has decided what goes in it. Said in
+    // words rather than left as a null field, because a null is an invitation to fill it in.
+    const formulaStatus = (planStatus) => {
+        if (planStatus) {
+            return language === 'zh'
+                ? '这一份套餐已经绑定了配方。'
+                : 'A formula is attached to this package.';
+        }
+        return language === 'zh'
+            ? '这一份套餐还没有绑定配方——里面具体放哪些原粒尚未确定，不要描述它的配方内容。'
+            : 'No formula is attached to this package yet — which dots go in it has not been decided, so do not describe its contents.';
+    };
+
     return {
         async get_biomarkers() {
             const { rows } = await pool.query(
@@ -255,20 +316,89 @@ function createAgenticToolHandlers({ pool, user_id, language }) {
             };
         },
 
-        async get_dot_inventory(args = {}) {
-            const statusClause = args.include_removed ? '' : `AND uc.status = 'active'`;
-            const { rows } = await pool.query(
-                `SELECT uc.dot_id, d.name, d.name_zh, uc.total_dots, uc.remaining_dots, uc.status, uc.last_dispensed_at
-                 FROM user_cartridges uc
-                 JOIN dots d ON d.id = uc.dot_id
-                 WHERE uc.user_id = $1 ${statusClause}
-                 ORDER BY uc.last_dispensed_at DESC NULLS LAST LIMIT 20`,
-                [user_id]
-            );
-            return {
-                ok: true,
-                data: rows.map(r => ({ ...r, last_dispensed_at: r.last_dispensed_at ? formatToShanghai(r.last_dispensed_at) : null })),
-            };
+        // What the user has BOUGHT — read live from GCN every time, never cached on a nano row,
+        // because an order can be refunded, cancelled or fulfilled between two reads (§28d).
+        //
+        // Returns a FLAT array with a `kind` discriminator, not a {packages, codes, tiers}
+        // wrapper. extractToolGroundTruth (lib/agenticChat.js) normalises a tool result with
+        // `Array.isArray(data) ? data : (Array.isArray(data.tests) ? data.tests : [data])`, so a
+        // wrapper object is treated as one row and nothing is harvested from it — real order
+        // dates would then never reach extraValidDates and verifyBiomarkerGrounding would flag a
+        // correct answer as a fabrication and rewrite it away (the bug CLAUDE.md §21 step 6
+        // records). The `data.tests` branch is already the fossil of one such wrapper; do not add
+        // the second.
+        async get_formulation_packages() {
+            const [packages, codes, tiers] = await Promise.all([
+                _fetchFormulationPackages(user_id),
+                _fetchFormulationCodes(user_id),
+                fetchFormulationTiers(),
+            ]);
+
+            // DEGRADED IS NOT EMPTY. All three fetchers swallow every failure and return [], so
+            // "GCN is unreachable" and "you have bought nothing" are byte-identical here — and
+            // the model will state the second one confidently, which is this tool's own origin
+            // bug relocated. fetchFormulationTiers is user-independent and returns three rows in
+            // a healthy system, so all three empty at once means the far side is down. The
+            // conjunction matters: a nano-side 'proposed' plan still answers while GCN is dead,
+            // which is the degradation §28d asks for.
+            if (packages.length === 0 && codes.length === 0 && tiers.length === 0) {
+                return {
+                    ok: false,
+                    reason: 'the order system could not be reached — tell the user their order status is temporarily unavailable, and do NOT tell them they have no packages',
+                };
+            }
+
+            const rows = [
+                // The raw `stage` enum is deliberately NOT sent. Given it, the model quoted it
+                // verbatim into user prose — 状态均为"pending_payment" — which is precisely what
+                // stage_meaning exists to prevent (observed live on dev, 2026-09-10). It has
+                // nothing to add: stage_meaning is already distinct per stage.
+                ...packages.map(p => ({
+                    kind: 'package',
+                    ...narrate(p.stage, p.fulfillment),
+                    // Whether anyone has decided what goes IN this package yet. Server-written,
+                    // for the same reason as stage_meaning: handed only a null plan_status, the
+                    // model invented a dot roster for two unformulated orders and JUDGE passed it,
+                    // because every dot it named was real (dev, 2026-09-10).
+                    formula_status: formulaStatus(p.plan_status),
+                    package_name: p.package_name,
+                    tier_label: p.tier_label,
+                    max_distinct_dots: p.max_distinct_dots,
+                    day_index: p.day_index,
+                    total_days: p.total_days,
+                    ordered_at: dateOnly(p.ordered_at),
+                    shipped_at: dateOnly(p.shipped_at),
+                    tracking_number: p.tracking_number,
+                    shipping_carrier: p.shipping_carrier,
+                    tracking_status_desc: p.tracking_status_desc,
+                })),
+                // The code STRING is deliberately withheld: redeeming happens in the app, so the
+                // model has no use for it, and a value it was never given is a value it cannot
+                // leak — the same reasoning §37 applies to prices.
+                ...codes.map(c => ({
+                    kind: 'code',
+                    package_name: c.package_name,
+                    tier_label: c.tier_label,
+                    max_distinct_dots: c.max_distinct_dots,
+                    fulfillment: c.fulfillment,
+                    sold_at: dateOnly(c.sold_at),
+                    next_step: language === 'zh'
+                        ? '在「方案 · 原粒」里用这个兑换码开始配制。'
+                        : 'Use this code under Plans · Dots to start compounding.',
+                })),
+                // The catalog, for "what packages are there". No width here: §28f took that
+                // number off the card because what separates the packages is a product decision
+                // moving past "how many kinds of dot", and on the catalog it is a merchandising
+                // claim rather than a fact about something the user owns. tier_description is the
+                // store's own positioning line and is passed through verbatim, never rewritten.
+                ...tiers.map(t => ({
+                    kind: 'tier',
+                    package_name: t.package_name,
+                    tier_label: t.tier_label,
+                    tier_description: t.tier_description,
+                })),
+            ];
+            return { ok: true, data: rows };
         },
 
         async get_health_reports(args = {}) {

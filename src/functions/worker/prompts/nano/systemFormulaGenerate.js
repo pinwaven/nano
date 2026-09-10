@@ -218,7 +218,7 @@ ${biomarkersStr}
 配方库（短代码: 名称 [成分] — 每日总量范围，默认时段，对应维度）：
 ${formularyLines}
 
-可用工具：你可以调用 get_biomarker_history 查看历史检测趋势、get_dot_inventory 查看用户当前各 Dot 的剩余库存（避免对已有大量剩余的 Dot 过度追加）、get_nutrition_schedule 查看以往的配方历史（避免与近期方案剧烈波动、了解用户的 Dot 使用习惯）。不确定时优先调用工具核实，而不是凭空假设。
+可用工具：你可以调用 get_biomarker_history 查看历史检测趋势、get_nutrition_schedule 查看以往的配方历史（避免与近期方案剧烈波动、了解用户的 Dot 使用习惯）。不确定时优先调用工具核实，而不是凭空假设。
 
 任务：
 1. 分析：这段文字是本次配方决策的说明，**不是**一份通用健康状态总结——绝不能只罗列生物标志物/生理年龄/穿戴设备数据而不提及任何具体 Dot。必须明确点名你在下方"配方"中实际选择或加重的至少2-3个 Dot，说明"为什么选它、对应哪个生物标志物或维度"，让用户看得出这段话和下面的配方是同一个决策的两个部分。${NOTE_ZH_DIALOGUE_LABEL}可以简短提及驱动决策的关键数据，但核心内容是解释 Dot 选择，不是复述体检报告。2-3句话，对话语气，不使用列表或标题。
@@ -259,7 +259,7 @@ Elevated dimensions: ${elevatedDims}
 Formulary (short key: name [ingredients] — daily total range, default slot, target dimension):
 ${formularyLines}
 
-Available tools: call get_biomarker_history for historical test trends, get_dot_inventory for the user's current remaining stock of each Dot (avoid over-adding to a Dot they already have plenty of), get_nutrition_schedule for prior formulation history (avoid wild swings from recent plans, and learn the user's Dot usage habits). When unsure, verify with a tool rather than assuming.
+Available tools: call get_biomarker_history for historical test trends, get_nutrition_schedule for prior formulation history (avoid wild swings from recent plans, and learn the user's Dot usage habits). When unsure, verify with a tool rather than assuming.
 
 Task:
 1. Analysis: this text explains the actual formulation decision — it is **not** a generic health-status summary. Never just list biomarkers/BioAge/wearable data without naming any specific Dot. You must explicitly name at least 2-3 Dot short-keys/names you actually chose or emphasized in the "formulation" below, and explain why each was chosen and which biomarker or dimension it addresses — the reader should see this text and the formulation below as two parts of the same decision. You may briefly mention the key data driving the decision, but the core content is explaining the Dot choices, not restating the lab report. 2-3 sentences, conversational tone, no lists or headers.

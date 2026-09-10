@@ -24,6 +24,7 @@ const { classifyBiomarkers, THRESHOLDS: BIOMARKER_THRESHOLDS, DIMENSION_BIOMARKE
 const planTemplate = require('../prompts/chat/planTemplate');
 const judgeTemplate = require('../prompts/viva/judgeTemplate');
 const { findRelevantEntries } = require('./knowledgeBase');
+const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
 
 const GENERATE_MAX_ITERS = 3;
 const REVISE_MAX_ROUNDS = 2;
@@ -41,6 +42,26 @@ const REAL_DIMENSIONS = new Set(['CellularAge', 'MetabolicAge', 'MicroVascularAg
 const BIOMARKER_HISTORY_TRIGGER_RE = /(几次|多少次|哪几次|历次|累计.*(测|检测|检查)|一共.*(测|检测|检查)|对比|比较|历史(检测|记录|数据)?|之前的?(检测|数据|结果)|以前的?(检测|数据|结果)|上一?次|两次|每次|变化趋势|趋势)|(how many (times|tests)|compare|history|trend|previous test|last two|change over time)/i;
 function messageNeedsBiomarkerHistory(message) {
     return BIOMARKER_HISTORY_TRIGGER_RE.test(message || '');
+}
+
+// Which tools GENERATE is FORCED to call, in order, before it is allowed to write prose.
+//
+// Deterministic triggers come first, because they are the ones we know are needed from the
+// message itself; PLAN's tools_needed is LLM-judged and advisory. Both are capped at
+// GENERATE_MAX_ITERS - 1: each forced tool burns one iteration, so forcing all three leaves the
+// loop with nothing but tool calls and it exits with rawReply === '' — which JUDGE then grades
+// and finalizeChatReply ships as a canned acknowledgement. One iteration is always reserved for
+// the reply itself.
+function buildForcedToolQueue(plan, message, validToolNames, maxForced) {
+    const deterministic = [
+        ...(messageNeedsBiomarkerHistory(message) ? ['get_biomarker_history'] : []),
+        ...(messageAsksAboutFormulationPackage(message) ? ['get_formulation_packages'] : []),
+    ];
+    const queue = Array.from(new Set([
+        ...deterministic,
+        ...(plan?.tools_needed || []),
+    ])).filter(t => validToolNames.has(t));
+    return queue.slice(0, Math.max(0, maxForced));
 }
 
 function safeParseJson(raw) {
@@ -80,7 +101,10 @@ async function callJson(client, model, prompt, temperature, logContext, stepName
 // historical dates AND real historical biomarker readings got rewritten away twice, first
 // because the date check only knew one valid date, then because the value check only knew
 // one valid value per biomarker key. Both extractions run in a single pass over the same rows.
-const DATE_FIELDS = ['tested_at', 'report_date', 'scheduled_date', 'scheduled_for', 'start_date', 'ended_at', 'last_dispensed_at'];
+// 'ordered_at'/'shipped_at'/'sold_at' come from get_formulation_packages: a reply that correctly
+// names the day an order was placed must not be flagged as a fabrication. extraValidDates is a
+// permissive allowlist, so widening it can only ever reduce false positives.
+const DATE_FIELDS = ['tested_at', 'report_date', 'scheduled_date', 'scheduled_for', 'start_date', 'ended_at', 'last_dispensed_at', 'ordered_at', 'shipped_at', 'sold_at'];
 function extractToolGroundTruth(toolCallLog) {
     const dates = new Set();
     const values = {};
@@ -298,7 +322,7 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     // Every tool call GENERATE actually makes gets logged here (name + args + result), so
     // JUDGE can verify claims grounded in ANY tool — not just the two re-fetched below. Without
     // this, JUDGE has no way to confirm a correct claim sourced from e.g. get_biomarker_history
-    // or get_dot_inventory, and will reject it as "unverifiable" even when it's right (found via
+    // or get_formulation_packages, and will reject it as "unverifiable" even when it's right (found via
     // live dev testing 2026-07-28: a correct "63 past tests" claim, sourced from a real
     // get_biomarker_history call, was rejected and revised away because JUDGE's ground truth
     // only ever covered get_biomarkers/get_dots).
@@ -314,10 +338,7 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     // function, so the data is guaranteed to be fetched rather than merely suggested. Falls
     // back to 'auto' once the forced queue is drained, same as before PLAN found nothing to force.
     const validToolNames = new Set(AGENTIC_TOOL_DEFS.map(t => t.function.name));
-    const forcedToolQueue = Array.from(new Set([
-        ...(plan?.tools_needed || []).filter(t => validToolNames.has(t)),
-        ...(messageNeedsBiomarkerHistory(message) ? ['get_biomarker_history'] : []),
-    ]));
+    const forcedToolQueue = buildForcedToolQueue(plan, message, validToolNames, GENERATE_MAX_ITERS - 1);
     for (let iter = 0; iter < GENERATE_MAX_ITERS; iter++) {
         if (!stageFits(lastStageMs)) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_turn_deadline_exceeded', context: logContext, stage: 'generate', iter, time_left_ms: timeLeftMs(), last_stage_ms: lastStageMs }));
@@ -325,11 +346,25 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         }
         budget.generateIters = iter + 1;
         const forcedTool = forcedToolQueue.shift();
+        // The last iteration must produce prose, so tools are taken off the table for it. Without
+        // this, a loop whose every iteration returns tool_calls falls out with rawReply === '',
+        // JUDGE grades an empty string, and finalizeChatReply ships its canned acknowledgement —
+        // a nonsense answer to a real question. Capping forcedToolQueue frees the iteration; this
+        // stops the model spending it on another tool call anyway. §21's "generate ≤3" is intact.
+        //
+        // tool_choice:'none' verified live against DashScope qwen-plus 2026-09-10 on the exact
+        // message shape this sees (history already containing a tool call and its result):
+        // finish_reason 'stop', zero tool_calls, real content. Worth re-probing before changing —
+        // this file already records one case where DashScope diverged from the spec under a
+        // non-'auto' tool_choice.
+        const lastIter = iter === GENERATE_MAX_ITERS - 1;
         const completion = await timeStage(() => client.chat.completions.create({
             model,
             messages: generateMessages,
             tools: AGENTIC_TOOL_DEFS,
-            tool_choice: forcedTool ? { type: 'function', function: { name: forcedTool } } : 'auto',
+            tool_choice: forcedTool
+                ? { type: 'function', function: { name: forcedTool } }
+                : (lastIter ? 'none' : 'auto'),
             temperature: 0.3,
         }));
         const choice = completion.choices[0];
@@ -565,4 +600,7 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     return { reply: rawReply, extraValidDates, extraValidValues };
 }
 
-module.exports = { runAgenticTurn, sanitizeJudgeVerdict };
+// extractToolGroundTruth and buildForcedToolQueue are exported for tests: both are pure, and both
+// guard a failure mode that is invisible until it ships (a correct date rewritten as a
+// fabrication; a turn that spends every iteration on tool calls and replies with nothing).
+module.exports = { runAgenticTurn, sanitizeJudgeVerdict, extractToolGroundTruth, buildForcedToolQueue };
