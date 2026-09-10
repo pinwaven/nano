@@ -813,6 +813,84 @@ page {
    than a second card — because the chart is the formula the user is getting and the rungs are
    what they could add. Given equal weight they read as three competing options, which is the one
    thing this layout was chosen to avoid. */
+/* One purchasable package. Three of these sit side by side in the card, and unlike the upgrade
+   ladder they replaced they are PEERS: the recommended one is open and the others collapse to a
+   header, but none of them is styled as subordinate to another. That is the whole point of the
+   change — 轻享 is a different formula, not a smaller portion of 尊享. */
+.fcard-tier {
+  margin-top: 18rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 14rpx;
+  background: rgba(127, 127, 127, 0.08);
+}
+.fcard-tier:first-child {
+  margin-top: 4rpx;
+}
+.fcard-tier-open {
+  background: rgba(127, 127, 127, 0.12);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.22);
+}
+.fcard-tier-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12rpx;
+  /* Vertical padding, not just line height: this is a finger target in a chat bubble, and the
+     title row is only ~17px of intrinsic height on its own. */
+  padding: 6rpx 0;
+}
+/* The affordance. Without it the collapsed packages read as static summaries — which is exactly
+   how they were reported. */
+.fcard-tier-chev {
+  font-size: var(--fs-22, 22rpx);
+  color: var(--text-sub);
+  line-height: 1;
+  padding-left: 8rpx;
+}
+.fcard-tier-name {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+}
+.fcard-tier-label {
+  font-size: var(--fs-24, 24rpx);
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.5rpx;
+}
+.fcard-tier-rec {
+  font-size: var(--fs-19, 19rpx);
+  color: var(--chat-accent);
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  background: rgba(var(--blue-rgb), 0.18);
+}
+.fcard-tier-note {
+  display: block;
+  margin-top: 8rpx;
+  font-size: var(--fs-21, 21rpx);
+  line-height: 1.5;
+  color: var(--text-sub);
+}
+/* Overrides .fcard-legend's own top margin: collapsed, the roster sits directly under the
+   positioning line rather than below a bar chart. */
+.fcard-tier-dots {
+  margin-top: 12rpx;
+}
+.fcard-tier-pitch {
+  display: block;
+  margin-top: 12rpx;
+  font-size: var(--fs-21, 21rpx);
+  line-height: 1.55;
+  color: var(--text-sub);
+}
+.fcard-tier-hint {
+  display: block;
+  margin-top: 14rpx;
+  font-size: var(--fs-19, 19rpx);
+  line-height: 1.5;
+  color: var(--text-sub);
+}
 .fcard-upgrades {
   margin-top: 22rpx;
   padding-top: 20rpx;
@@ -878,6 +956,15 @@ page {
   line-height: 1.5;
   color: var(--text-sub);
 }
+/* Sits directly above the CTA and explains it: without it, a button reading 开始配制 on one
+   package and 购买 on another looks arbitrary. */
+.fcard-owned {
+  display: block;
+  margin-top: 14rpx;
+  font-size: var(--fs-19, 19rpx);
+  color: var(--chat-accent);
+  text-align: center;
+}
 .fcard-cta {
   margin-top: 18rpx;
   padding: 18rpx 24rpx;
@@ -890,18 +977,6 @@ page {
   border: 1rpx solid rgba(var(--blue-rgb), 0.40);
 }
 .fcard-cta:active {
-  opacity: 0.7;
-}
-.fcard-label {
-  margin-top: 14rpx;
-  padding: 14rpx 20rpx;
-  border-radius: 14rpx;
-  text-align: center;
-  font-size: var(--fs-22, 22rpx);
-  color: var(--text-sub);
-  border: 1rpx dashed rgba(127, 127, 127, 0.35);
-}
-.fcard-label:active {
   opacity: 0.7;
 }
 .fcard-agnote {

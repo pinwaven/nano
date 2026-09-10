@@ -160,7 +160,7 @@
                cascade reach inside it. See utils/markdown.js.
                Do NOT put a comment between any wx:if / wx:elif / wx:else pair below: a comment
                node breaks the chain and produces "Page not found" on Android. -->
-          <block wx:for="{{messages}}" wx:key="id">
+          <block wx:for="{{messages}}" wx:for-index="mi" wx:key="id">
             <view wx:if="{{item.sep}}" class="msg-daysep"><text class="msg-daysep-text">{{item.sep}}</text></view>
             <view
               id="m{{item.id}}"
@@ -258,58 +258,125 @@
                         <text class="fcard-title">{{t.formulaCardTitle}}</text>
                         <text class="fcard-note">{{t.formulaEvalNote}}</text>
                       </view>
-                      <view wx:for="{{seg.groups}}" wx:for-item="fg" wx:for-index="fgi" wx:key="days" class="fcard-group">
-                        <view wx:if="{{fg.days}}" class="fcard-days">
-                          <text class="fcard-daylabel">{{t.formulaDayWord}} {{fg.days}}</text>
-                          <text wx:if="{{fg.kind === 'n7'}}" class="fcard-daytag">{{t.formulaResetDay}}</text>
-                        </view>
-                        <view class="fcard-row">
-                          <text class="fcard-slot">{{t.formulaAm}}</text>
-                          <view class="fcard-track">
-                            <view
-                              wx:for="{{fg.items}}"
-                              wx:for-item="fi"
-                              wx:for-index="fk"
-                              wx:key="key"
-                              class="fcard-seg"
-                              style="width:{{fi.amPct}}%;background:{{fi.color}}"
-                            ></view>
+                      <!-- One block per purchasable package, each a COMPLETE formula. The
+                           recommended one is open; the others collapse to a name, the store's own
+                           positioning line and their dot roster, and expand on tap.
+
+                           A card with no packages at all — every card written before 2026-09-10,
+                           and every card for a user who already holds a package — arrives here as
+                           a single unnamed open package, so there is one code path, not two.
+
+                           Deliberately no per-package button: which package a user gets is decided
+                           by whichever redeem code they hold, not by what they tap, and a code
+                           cannot be bought in-app — so a button here would offer a choice that
+                           does not exist. The single CTA below serves all of them. -->
+                      <view
+                        wx:for="{{seg.tiers}}"
+                        wx:for-item="ft"
+                        wx:for-index="fti"
+                        wx:key="width"
+                        class="fcard-tier {{ft.open ? 'fcard-tier-open' : ''}}"
+                      >
+                        <!-- The whole COLLAPSED block is the tap target, not just its title row.
+                             Measured 2026-09-10: with bindtap on the header alone, a 17px strip was
+                             live and the other 81% of the block — the positioning line and the dot
+                             roster, i.e. everything a finger actually aims at — did nothing, and
+                             the packages read as unclickable. An automator tap by selector hits the
+                             handler either way, so only a real measurement catches this.
+
+                             When OPEN, only the title row and the positioning line collapse it: a
+                             tap anywhere on the chart below must not close the thing being read. -->
+                        <view
+                          wx:if="{{ft.label}}"
+                          class="fcard-tier-head"
+                          bindtap="handleFormulaTierToggle"
+                          data-mi="{{mi}}"
+                          data-si="{{si}}"
+                          data-ti="{{fti}}"
+                        >
+                          <view class="fcard-tier-name">
+                            <text class="fcard-tier-label">{{ft.label}}</text>
+                            <text wx:if="{{ft.recommended}}" class="fcard-tier-rec">{{t.formulaTierRecommended}}</text>
                           </view>
-                          <text class="fcard-num">{{fg.am}}</text>
+                          <text class="fcard-tier-chev">{{ft.open ? '⌃' : '⌄'}}</text>
                         </view>
-                        <view class="fcard-row">
-                          <text class="fcard-slot">{{t.formulaPm}}</text>
-                          <view class="fcard-track">
-                            <view
-                              wx:for="{{fg.items}}"
-                              wx:for-item="fi"
-                              wx:for-index="fk"
-                              wx:key="key"
-                              class="fcard-seg"
-                              style="width:{{fi.pmPct}}%;background:{{fi.color}}"
-                            ></view>
+                        <!-- The tap sits on a wrapping <view>, not on the <text>: a bindtap bound
+                             directly to a <text> node did not fire here (measured), while the same
+                             handler on its parent view does. -->
+                        <view
+                          wx:if="{{ft.note}}"
+                          class="fcard-tier-note"
+                          bindtap="handleFormulaTierToggle"
+                          data-mi="{{mi}}"
+                          data-si="{{si}}"
+                          data-ti="{{fti}}"
+                        ><text>{{ft.note}}</text></view>
+                        <!-- Collapsed: the roster alone, so the packages can be compared without
+                             opening each one. -->
+                        <view
+                          wx:if="{{!ft.open}}"
+                          class="fcard-legend fcard-tier-dots"
+                          bindtap="handleFormulaTierToggle"
+                          data-mi="{{mi}}"
+                          data-si="{{si}}"
+                          data-ti="{{fti}}"
+                        >
+                          <view wx:for="{{ft.dots}}" wx:for-item="fd" wx:for-index="fdk" wx:key="key" class="fcard-leg">
+                            <view class="fcard-swatch" style="background:{{fd.color}}"></view>
+                            <text class="fcard-leg-name">{{fd.name}}</text>
                           </view>
-                          <text class="fcard-num">{{fg.pm}}</text>
                         </view>
-                        <view class="fcard-legend">
-                          <view wx:for="{{fg.items}}" wx:for-item="fi" wx:for-index="fk" wx:key="key" class="fcard-leg">
-                            <view class="fcard-swatch" style="background:{{fi.color}}"></view>
-                            <text class="fcard-leg-name">{{fi.name}}</text>
-                            <text class="fcard-leg-num">{{fi.am}}·{{fi.pm}}</text>
+                        <block wx:if="{{ft.open}}">
+                          <view wx:for="{{ft.groups}}" wx:for-item="fg" wx:for-index="fgi" wx:key="days" class="fcard-group">
+                            <view wx:if="{{fg.days}}" class="fcard-days">
+                              <text class="fcard-daylabel">{{t.formulaDayWord}} {{fg.days}}</text>
+                              <text wx:if="{{fg.kind === 'n7'}}" class="fcard-daytag">{{t.formulaResetDay}}</text>
+                            </view>
+                            <view class="fcard-row">
+                              <text class="fcard-slot">{{t.formulaAm}}</text>
+                              <view class="fcard-track">
+                                <view
+                                  wx:for="{{fg.items}}"
+                                  wx:for-item="fi"
+                                  wx:for-index="fk"
+                                  wx:key="key"
+                                  class="fcard-seg"
+                                  style="width:{{fi.amPct}}%;background:{{fi.color}}"
+                                ></view>
+                              </view>
+                              <text class="fcard-num">{{fg.am}}</text>
+                            </view>
+                            <view class="fcard-row">
+                              <text class="fcard-slot">{{t.formulaPm}}</text>
+                              <view class="fcard-track">
+                                <view
+                                  wx:for="{{fg.items}}"
+                                  wx:for-item="fi"
+                                  wx:for-index="fk"
+                                  wx:key="key"
+                                  class="fcard-seg"
+                                  style="width:{{fi.pmPct}}%;background:{{fi.color}}"
+                                ></view>
+                              </view>
+                              <text class="fcard-num">{{fg.pm}}</text>
+                            </view>
+                            <view class="fcard-legend">
+                              <view wx:for="{{fg.items}}" wx:for-item="fi" wx:for-index="fk" wx:key="key" class="fcard-leg">
+                                <view class="fcard-swatch" style="background:{{fi.color}}"></view>
+                                <text class="fcard-leg-name">{{fi.name}}</text>
+                                <text class="fcard-leg-num">{{fi.am}}·{{fi.pm}}</text>
+                              </view>
+                            </view>
+                            <text class="fcard-foot">{{t.formulaTotalLabel}} {{fg.total}}</text>
                           </view>
-                        </view>
-                        <text class="fcard-foot">{{t.formulaTotalLabel}} {{fg.total}}</text>
+                          <text wx:if="{{ft.pitch}}" class="fcard-tier-pitch">{{ft.pitch}}</text>
+                        </block>
                       </view>
                       <text wx:if="{{seg.cycleDays}}" class="fcard-cycle">{{seg.cycleDays}}{{t.formulaDaysUnit}} · {{seg.cycleCapsules}}{{t.formulaCapsulesUnit}}</text>
-                      <!-- The upgrade ladder: what a wider package would ADD on top of the
-                           chart above, never a second formula competing with it. Rungs only
-                           exist when the user has bought nothing yet (the server omits them
-                           otherwise), so no extra gate is needed here.
-
-                           Deliberately no per-rung button: which tier a user gets is decided by
-                           whichever redeem code they hold, not by what they tap, and a code
-                           cannot be bought in-app — so a button here would offer a choice that
-                           does not exist. The single CTA below serves every rung. -->
+                      <text wx:if="{{seg.tiers.length > 1}}" class="fcard-tier-hint">{{t.formulaTierHint}}</text>
+                      <!-- The retired upgrade ladder, still rendered for cards written before
+                           packages replaced it. Chat history is permanent; a card from last week
+                           must not turn into a blank space. Never present on a new card. -->
                       <view wx:if="{{seg.rungs.length}}" class="fcard-upgrades">
                         <text class="fcard-uphead">{{t.formulaUpgradeTitle}}</text>
                         <view wx:for="{{seg.rungs}}" wx:for-item="fr" wx:for-index="fri" wx:key="width" class="fcard-rung">
@@ -330,14 +397,6 @@
                         <text class="fcard-rung-hint">{{t.formulaUpgradeHint}}</text>
                       </view>
                       <view
-                        wx:if="{{seg.labelUrl}}"
-                        class="fcard-label"
-                        bindtap="handleFormulaLabel"
-                        data-url="{{seg.labelUrl}}"
-                      >
-                        <text>{{t.formulaLabelCta}}</text>
-                      </view>
-                      <view
                         wx:if="{{seg.planId && isAeviva && seg.orderMode === 'submit'}}"
                         class="fcard-cta"
                         bindtap="handleFormulaSubmit"
@@ -345,14 +404,31 @@
                       >
                         <text>{{t.formulaSubmitCta}}</text>
                       </view>
-                      <view
-                        wx:elif="{{seg.planId && isAeviva && seg.orderMode === 'buy'}}"
-                        class="fcard-cta"
-                        bindtap="handleFormulaOrder"
-                        data-plan="{{seg.planId}}"
-                      >
-                        <text>{{t.formulaOrderCta}}</text>
-                      </view>
+                      <!-- The buy-mode CTA follows the OPEN package: the user is choosing between
+                           three, and which one they are looking at is which one this acts on. It
+                           says 开始配制 when they already hold that tier's 兑换码 (with the line
+                           above saying so, since otherwise the wording looks arbitrary), and
+                           otherwise offers to buy that tier from their own store.
+
+                           seg.cta is resolved in JS — _formulaCtaFor needs the codes list, which
+                           WXML cannot join against. A card with no packages (legacy, or a user who
+                           already holds one) has no cta and falls back to the generic CTA below. -->
+                      <block wx:elif="{{seg.planId && isAeviva && seg.orderMode === 'buy'}}">
+                        <text wx:if="{{seg.cta.owned}}" class="fcard-owned">{{seg.cta.owned}}</text>
+                        <view
+                          class="fcard-cta"
+                          bindtap="handleFormulaOrder"
+                          data-plan="{{seg.planId}}"
+                          data-mode="{{seg.cta.mode}}"
+                          data-code="{{seg.cta.code}}"
+                          data-max="{{seg.cta.max}}"
+                          data-label="{{seg.cta.label}}"
+                          data-width="{{seg.cta.width}}"
+                          data-order="{{seg.cta.orderId}}"
+                        >
+                          <text>{{seg.cta.btn || t.formulaOrderCta}}</text>
+                        </view>
+                      </block>
                       <text wx:elif="{{seg.orderMode === 'ag'}}" class="fcard-agnote">{{t.formulaAgPending}}</text>
                     </view>
                     <view wx:elif="{{seg.t === 'product'}}" class="pcard">

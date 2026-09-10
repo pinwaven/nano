@@ -144,6 +144,10 @@ async function fetchFormulationTiers() {
             .map(p => ({
                 tier_label: p.tier_label || null,
                 package_name: p.package_name || null,
+                // The store's own one-line positioning for this tier (GCN skus.description). The
+                // card renders it verbatim, so a package reads the same in chat as on the shelf.
+                // Absent until GCN's catalog carries one; the card simply omits the line.
+                tier_description: p.tier_description || null,
                 max_distinct_dots: Number(p.max_distinct_dots),
             }))
             .sort((a, b) => a.max_distinct_dots - b.max_distinct_dots);

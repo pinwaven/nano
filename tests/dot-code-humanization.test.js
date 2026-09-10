@@ -76,7 +76,7 @@ test('every path that hands a user prose runs it through the rewriter', () => {
         'src/functions/worker/handlers/dots.js': 1,        // deterministic fail-open delivery
         'src/functions/worker/handlers/checkin.js': 1,     // daily check-in
         'src/functions/worker/handlers/viva_ag.js': 1,     // external agent's summary
-        'src/functions/worker/lib/rungCopy.js': 1,         // pitches live INSIDE the fence
+        'src/functions/worker/lib/tierCopy.js': 1,         // pitches live INSIDE the fence
     };
     for (const [file, count] of Object.entries(sites)) {
         const s = read(file);

@@ -39,7 +39,7 @@ const { getCurrentSolarTerm } = require('../lib/solarTerms');
 const { detectAllRisks } = require('../lib/factCheck');
 const systemHealthReportTemplate = require('../prompts/nano/systemHealthReport');
 const { runAgenticTurn } = require('../lib/agenticChat');
-const { attachRungCopy } = require('../lib/rungCopy');
+const { attachTierCopy } = require('../lib/tierCopy');
 const { checkFormulationQuality } = require('../lib/formulationQuality');
 const { v4: uuidv4 } = require('uuid');
 const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
@@ -1992,11 +1992,11 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
                     .filter(w => Number.isFinite(w) && w >= 1 && w <= PLAN_WEEKS))].sort((a, b) => a - b)
                 : [];
             // A "tier" tag and an "upgrades" array used to be read here. Both were removed from
-            // the prompt on 2026-09-07 (see lib/rungCopy.js for the measurements): asking one
+            // the prompt on 2026-09-07 (see lib/tierCopy.js for the measurements): asking one
             // completion to reproduce the server's own emphasis ranking never worked, and copy
-            // written about the wrong dots is worse than no copy. Rung membership is now decided
-            // by _capDistinctDots alone and the copy is written afterwards by a call that is
-            // shown the result. A stale cached prompt may still send them; they are ignored.
+            // written about the wrong dots is worse than no copy. Package membership is now
+            // decided by _capDistinctDots alone and the copy is written afterwards by a call that
+            // is shown the result. A stale cached prompt may still send them; they are ignored.
             entries.set(item.dot_key, { count, dot, weeks, level });
         }
         if (entries.size === 0) entries = null;
@@ -2140,7 +2140,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     //
     // The ladder comes from llmContext, not a fresh fetch: the variants must be built against the
     // same widths the model was told to aim at (see _handleFormulaDotsAgentic).
-    let tierVariants = null, rungs = [];
+    let tierVariants = null, tierCards = [];
     // Does the allocation actually answer this user's biology? Nothing else asks: JUDGE grades
     // the prose, and validateAgFormulation only checks manufacturability, and only on the AG
     // path. Deterministic, and deliberately NOT a gate — the alternative to a flawed formula
@@ -2165,7 +2165,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         }
     }
 
-    ({ morningRecipe, eveningRecipe, tierVariants, rungs } = _applyTierLadder({
+    ({ morningRecipe, eveningRecipe, tierVariants, tierCards } = _applyTierLadder({
         morningRecipe, eveningRecipe, dotsFormulary: llmContext.dots, orderContext,
         tiers: llmContext.formulation_tiers,
         // Only ever used for slots above the narrowest tier, so the core formula stays the
@@ -2190,13 +2190,13 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         }));
     }
 
-    // The rungs are final now, so their copy can be written about what they actually contain.
-    // One short call, never fatal: a rung with no pitch is the state the card already handles,
+    // The packages are final now, so their copy can be written about what they actually contain.
+    // One short call, never fatal: a package with no pitch is the state the card already handles,
     // and this runs on the async delivery path where nobody is waiting on an HTTP response.
-    rungs = await attachRungCopy({
+    tierCards = await attachTierCopy({
         client: getLlmClient(),
         model: process.env.FORMULA_COPY_MODEL || process.env.MODEL || 'qwen-plus-latest',
-        rungs, dotsFormulary: llmContext.dots, lang,
+        tiers: tierCards, dotsFormulary: llmContext.dots, lang,
         essentialKnowledge: llmContext.essential_knowledge,
         logContext: { user_id, handler: 'finalizeFormulaDotsGenerate' },
     });
@@ -2210,11 +2210,6 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         analysis: finalContent, morningRecipe, eveningRecipe, tierVariants,
         activeHealthPlans: llmContext.active_health_plans,
     });
-    // The label code is minted with the plan, and the QR built from it is part of what the user
-    // gets here — not something that appears later when a box is compounded.
-    const labelCode = planId
-        ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [planId])).rows[0]?.label_code
-        : null;
     // The numbers have to be legible in the bubble itself: this card is the whole deliverable,
     // and the Dots subtab still shows the user's ACTIVE plan, which a proposal deliberately is
     // not — so there is nothing there for a "view plan" button to point at.
@@ -2223,7 +2218,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     // same purchase — see _buildFormulaChartBlock's `#order` note), which orderContext above
     // already answered.
     const chatMessage = humanizeDotCodes(
-        finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, llmContext.dots, lang, { planId, orderMode: orderContext.mode, labelCode, rungs }),
+        finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, llmContext.dots, lang, { planId, orderMode: orderContext.mode, tiers: tierCards }),
         llmContext.dots, lang);
 
     await saveChatMessage(user_id, 'ai', chatMessage, null, personaType);
@@ -2396,11 +2391,8 @@ async function handleChatGenerateEvent(payload) {
                         tierVariants: fb.tierVariants,
                         activeHealthPlans: llmContext.active_health_plans,
                     });
-                    const fbLabelCode = fbPlanId
-                        ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [fbPlanId])).rows[0]?.label_code
-                        : null;
                     const fbMessage = fallback.finalContent
-                        + _buildFormulaChartBlock(fb.morningRecipe, fb.eveningRecipe, llmContext.dots, language, { planId: fbPlanId, orderMode: fbOrder.mode, labelCode: fbLabelCode, rungs: fb.rungs });
+                        + _buildFormulaChartBlock(fb.morningRecipe, fb.eveningRecipe, llmContext.dots, language, { planId: fbPlanId, orderMode: fbOrder.mode, tiers: fb.tierCards });
                     await saveChatMessage(user_id, 'ai', fbMessage, null, personaType);
                     await pool.query(
                         'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',

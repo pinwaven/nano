@@ -28,7 +28,7 @@ switch (envVersion) {
 // uploads — no build pipeline exists, so this is the only way to confirm WeChat DevTools
 // is actually running the latest code rather than a stale cached compile. See CLAUDE.md
 // "Miniapp VERSION Marker". Format: MMDD-N (month+day, build number that day).
-const VERSION = '0909-1';
+const VERSION = '0910-6';
 const WX_VERSION = accountInfo.miniProgram.version || '';
 const IS_DEV = envVersion === 'develop' || envVersion === 'trial';
 

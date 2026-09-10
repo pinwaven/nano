@@ -108,11 +108,11 @@ A finding that is true of the whole formula but not of its narrowest tier is a d
 
 ---
 
-## 5. The tier ladder
+## 5. The three packages
 
-With nothing purchased, one allocation becomes **three nested formulas** — 6 / 8 / 10 种原粒 —
-because that width is what the three packages differ by, and it is what the user is choosing
-between (§28c).
+With nothing purchased, one allocation becomes **three complete formulas** — 轻享 / 臻选 / 尊享,
+6 / 8 / 10 种原粒 — because that width is what the three packages differ by, and it is what the user
+is choosing between (§28c).
 
 - `_buildTierLadder` ranks the allocation **once** and takes the top *k* of each week for each
   width. Nesting follows from ranking the same list every time; ranking each variant
@@ -122,13 +122,50 @@ between (§28c).
   different six next week, so `_capDistinctDots` caps each week separately and returns a `weeks`
   map. `_countDistinctDots` is the widest week, never the cycle's union.
 - `DOT-N7` is in every variant and counted toward none.
-- `_padCandidatesFor` fills upgrade slots the model left empty — GENERATE curates inside the
-  agentic loop and often returns exactly the narrowest tier, which would collapse the wider
-  variants into duplicates and produce no ladder at all. Padding never reaches the core.
-- `attachRungCopy` writes each rung's one-line pitch **afterwards**, in a separate call shown the
-  rung's real dots (names, ingredients, dimension — never doses). Asking the formulating
-  completion to also tag tiers and pitch them never worked: it produced copy naming dots that were
-  not in the rung. A pitch naming a dot outside its own rung is still dropped, as a backstop.
+- `_padCandidatesFor` fills the upper packages when the model left them empty — GENERATE curates
+  inside the agentic loop and often returns exactly the narrowest width, which would collapse the
+  wider variants into duplicates and produce no choice at all. Padding never reaches the core.
+- **`_equalizeToTarget` then doses each package as its own formula**, levelling a narrower one up
+  toward the widest's daily load — bounded by each dot's own `target_dots_max` and by a locked dot's
+  own capsule, and never lowering or dropping anything. It often lands short: a package built from
+  dots that top out at 1-3 cannot reach the widest's load however much capsule room there is, and
+  that is an authored limit rather than a shortfall to repair. Without it the three tiers were byte-identical
+  doses and the narrow one was simply the wide one minus four dots, with 45% of its capsule empty.
+  The **widest** variant is the ceiling and is returned untouched: it is what the formulator
+  prescribed, and dosing above that would be padding.
+- `_recommendedWidth` marks the narrowest package that carries every dot the **model** asked for,
+  measured before padding.
+- **The card names no width.** The number is still the enforcement contract and still reaches the
+  model, but the user-facing card shows each package's name, the store's positioning line and its
+  actual formula instead — what separates the packages is moving beyond a dot count.
+- `attachTierCopy` writes each package's one-line pitch **afterwards**, in a separate call shown its
+  real dots (names, ingredients, dimension — never doses). Asking the formulating completion to also
+  tag tiers and pitch them never worked: it produced copy naming dots that were not in that package.
+  A pitch naming a dot the package does not hold is still dropped, as a backstop.
+
+### What the user can do about it
+
+One call-to-action, following whichever package is **open** — that is the one they are deciding
+about. `_formulaCtaFor` resolves it and stores it on the segment (`seg.cta`), because WXML cannot
+join a tier against the user's codes; it is recomputed when the card is built, when a package is
+opened, and when `_loadDots` lands the codes and packages lists.
+
+| state for that tier | line above | button | action |
+|---|---|---|---|
+| order at `pending_payment` | `<tier>订单待支付` | 去支付 | `pay_order` on that order |
+| unredeemed fast-track code | `你已购买<tier>` | 开始配制 | the code sheet, prefilled |
+| neither | — | 购买<tier> | `buy_formulation_package`, **addressed by width** |
+
+- **Unpaid is checked first.** A buyer sent to order a tier they already ordered dead-ends on
+  GCN's `formulation_already_in_progress`.
+- **Exact width match.** A wider code compounds its own variant, so 开始配制 on a narrower package
+  while holding a wider code would compound a formula other than the one on screen.
+- **No sku id ever leaves nano.** GCN resolves width → sku against the buyer's own listed items
+  (`openFormulationPackageByWidth`), and what a shopper can buy is the **兑换码** sku, not the
+  physical one. A stored chat message would otherwise freeze a sku id for good.
+- **No label/QR here.** A proposal is not a purchase — nothing is paid for and no box exists. The
+  label goes to whoever compounds it: `label_code` travels with the fast-track submission and
+  prints from the supplier's own dashboard (GCN `migration_0111`).
 
 ---
 
@@ -266,6 +303,11 @@ disagreeing about what a user is actually taking.
    `_expandPlanDay`.
 5. **`proposed_recipe`'s base fits every tier**, so a proposal is always purchasable.
 6. **Locked dots are immovable**; flexible dots are free.
+7. **The client holds no sku ids.** A tier is addressed by its weekly width and resolved by GCN,
+   because the card is a stored chat message and a sku id in it would never expire.
+8. **The card asserts nothing a user cannot check.** No dot count, no price, no label for a box
+   that does not exist — only the formula itself, the store's own positioning line, and copy
+   written against the dots the server validated.
 
 ---
 
@@ -275,10 +317,14 @@ disagreeing about what a user is actually taking.
 node --test tests/capsule-balance.test.js      # levelling, locked dots, validator conformance
 node --test tests/formula-28day-proposal.test.js
 node --test tests/formulation-package-tier.test.js
+node --test tests/formula-tier-packages.test.js  # levelling, ceilings, the recommendation
+node --test tests/formula-tier-ladder.test.js    # nesting, the #tier card round trip
+node --test tests/tier-copy.test.js              # the per-package copy call
+node --test tests/formulation-codes.test.js      # the CTA's three branches
 node --test tests/ranking-formulation.test.js
 node --test tests/dose-levels.test.js
 node --test tests/formulation-quality.test.js
-node --test tests/rung-copy.test.js
+node --test tests/tier-copy.test.js
 ```
 
 `npm test` is an unconfigured stub (`exit 1`) — run the files directly, or `node --test tests/`.

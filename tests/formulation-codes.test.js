@@ -307,22 +307,86 @@ test('the now-unrendered string is gone from both blocks rather than left dead',
     assert.ok(!('pkgOrderBtn' in T.zh) && !('pkgOrderBtn' in T.en));
 });
 
-test('the chat card keeps its CTA and opens the in-app sheet, not the store webview — that '
-    + 'surface has no codes section, so removing it there would leave no action at all', () => {
-    const fn = mainJs.slice(mainJs.indexOf('async handleFormulaOrder'),
-                            mainJs.indexOf('async handleFormulaOrder') + 1800);
-    assert.ok(!/_openAevivaStoreGated/.test(fn), 'must no longer open the webview');
-    assert.ok(/_openCodeSheet/.test(fn), 'must open the in-app sheet');
+// Cut to the function's real end rather than a byte count: a fixed +1800 window silently drops
+// assertions the moment the handler grows, which is exactly what happened when the per-package CTA
+// landed — two tests went green-to-red for a reason that had nothing to do with their subject.
+function handlerBody(name) {
+    const start = mainJs.indexOf(name);
+    assert.notStrictEqual(start, -1, `${name} not found`);
+    const end = mainJs.indexOf('\n  },\n', start);
+    assert.notStrictEqual(end, -1, `${name} has no terminator`);
+    return mainJs.slice(start, end);
+}
+
+test('the chat card CTA branches on the OPEN package: redeem what you hold, buy what you do not', () => {
+    // Until 2026-09-10 this surface had one CTA that always opened the in-app sheet, because "which
+    // tier a user gets is decided by whichever redeem code they hold, not by what they tap". That
+    // stopped being true once a shopper could buy a specific tier's 兑换码 from their own store, so
+    // the button now follows the package they have open.
+    const fn = handlerBody('async handleFormulaOrder');
+    // Holding this tier's code: prefill the sheet with THAT code — never retype, never the store.
+    assert.ok(/mode === 'redeem'/.test(fn) && /_openCodeSheet\(\{\s*\n?\s*code,/.test(fn),
+        'a held code must open the sheet prefilled');
+    // Not holding it: the store, addressed by WIDTH. nano holds no sku ids (§28c) and this card is
+    // a stored chat message that would freeze one for good.
+    assert.ok(/mode === 'buy'/.test(fn), 'the buy branch must exist');
+    assert.ok(/intent: 'buy_formulation_package'/.test(fn), 'and it must use the package intent');
+    assert.ok(/max_distinct_dots: Number\(width\)/.test(fn), 'addressed by width, never by sku id');
+    assert.ok(!/sku_id/.test(fn), 'no sku id may reach this handler');
+    // The generic CTA is still the fallback for a card with no packages.
     assert.ok(/t\.formulaOrderCta/.test(mainWxml), 'the chat card CTA must still render');
 });
 
-test('it lands on the codes list when the user owns codes, rather than asking them to retype '
-    + 'one — and uses plansDotsSubTab, since tab:"dots" matches no WXML block', () => {
-    const fn = mainJs.slice(mainJs.indexOf('async handleFormulaOrder'),
-                            mainJs.indexOf('async handleFormulaOrder') + 1800);
+test('it still lands on the codes list when a legacy card has no package to act on', () => {
+    const fn = handlerBody('async handleFormulaOrder');
     assert.ok(/this\.data\.codes \|\| \[\]\)\.length > 0/.test(fn));
     assert.ok(/plansDotsSubTab: 'dots'/.test(fn));
     assert.ok(!/tab: 'dots'/.test(fn));
+});
+
+test('the CTA carries everything its three branches need, and an unpaid tier goes to PAY', () => {
+    // Pin's real dev state on 2026-09-10: two orders at pending_payment for 轻享 and 臻选, and no
+    // codes at all. Sending them to BUY a tier they have already ordered is a dead end — GCN
+    // refuses a second one with `formulation_already_in_progress` — so an unpaid order outranks
+    // the buy branch and reuses the pay_order intent Plans ▸ Dots already uses.
+    const fn = handlerBody('async handleFormulaOrder');
+    assert.ok(/mode === 'pay'/.test(fn) && /intent: 'pay_order'/.test(fn));
+    const resolver = mainJs.slice(mainJs.indexOf('_formulaCtaFor(tier) {'),
+                                  mainJs.indexOf('_attachFormulaCta(segments) {'));
+    assert.ok(/stage === 'pending_payment'/.test(resolver), 'the unpaid branch must exist');
+    assert.ok(resolver.indexOf("stage === 'pending_payment'") < resolver.indexOf('codes || []'),
+        'an unpaid order must be checked BEFORE a held code, or a paid tier offers to be paid twice');
+    // Every branch must produce the same key set, or WXML binds undefined into a data- attribute.
+    for (const key of ['mode', 'owned', 'btn', 'code', 'max', 'orderId', 'label', 'width']) {
+        assert.ok(new RegExp(`${key}[,:]`).test(resolver), `cta.${key} missing from a branch`);
+    }
+    for (const attr of ['data-mode', 'data-code', 'data-max', 'data-label', 'data-width', 'data-order']) {
+        assert.ok(mainWxml.includes(`${attr}="{{seg.cta.`), `${attr} must be bound`);
+    }
+    assert.ok(/class="fcard-owned"/.test(mainWxml), 'the line above the button must render');
+});
+
+test('the CTA is re-resolved whenever either of its two inputs changes', () => {
+    // It depends on the open package AND on the codes/packages lists, which arrive from a separate
+    // fetch. A card delivered before _loadDots resolves would otherwise offer to buy a package the
+    // user already holds a code for, and never correct itself.
+    assert.ok(/_attachFormulaCta\(msg\.segments\)/.test(mainJs), 'built with the message');
+    assert.ok(/_refreshFormulaCtas\(\)/.test(mainJs), 'refreshed when the lists land');
+    const toggle = mainJs.slice(mainJs.indexOf('handleFormulaTierToggle(e) {'),
+                                mainJs.indexOf('handleFormulaTierToggle(e) {') + 1600);
+    assert.ok(/_formulaCtaFor\(/.test(toggle), 'and moved with the selection on tap');
+});
+
+test('the owned line and the button text both resolve in both languages', () => {
+    // The line above the button is what makes 开始配制 read as a consequence rather than a whim, so
+    // a missing key here degrades the CTA into something arbitrary — and WXML renders it blank.
+    for (const key of ['formulaOwnedPkg', 'formulaOrderedPkg', 'formulaStartCta', 'formulaBuyPkgCta']) {
+        for (const [lang, block] of [['zh', T.zh], ['en', T.en]]) {
+            assert.ok(block[key], `${key} missing from T.${lang}`);
+        }
+    }
+    assert.ok(T.zh.formulaOwnedPkg('臻选套装').includes('臻选套装'));
+    assert.ok(T.en.formulaBuyPkgCta('Signature').includes('Signature'));
 });
 
 test('the chat card names its own plan, since Plans ▸ Dots may never have loaded there', () => {

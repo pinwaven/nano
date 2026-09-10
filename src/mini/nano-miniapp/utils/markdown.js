@@ -346,10 +346,22 @@ function _buildDirective (name, inner) {
   //                              CTA). Absent, unknown, or unrecognised all mean 'buy'.
   //   #day|<ranges>|<kind>       starts a group; rows after it belong to it. Ranges are bare
   //                              numbers ("1-9,12-28"); the day WORD is the page's, not ours.
+  //   #tier|<label>|<width>|<rec> starts a PACKAGE: every #day group and row after it belongs to
+  //                              it, until the next #tier. Only ever present on a 'buy'-mode
+  //                              card — a user who already paid holds a fixed tier and is not
+  //                              choosing between them. <rec> is 1 on exactly one package: the
+  //                              narrowest that carries the whole formulation.
+  //   #note|<text>               that package's own positioning line, verbatim from the store
+  //   #pitch|<text>              that package's line for THIS user
   //   #rung|<label>|<width>|<pitch>
-  //                              an UPGRADE rung: the dots a wider package would add on top of
-  //                              everything above it. Rows after it attach to the rung, never to
-  //                              the last day group. Only ever present on a 'buy'-mode card.
+  //                              RETIRED 2026-09-10 and no longer written: the card now draws a
+  //                              complete formula per package instead of a base plus upgrade
+  //                              rungs. Still parsed, because chat history is permanent and
+  //                              every card written before that date contains one.
+  //
+  // A card with no #tier — every card written before three packages existed, and every card for
+  // a user who already holds one — becomes a single unnamed package, so the page has one code
+  // path rather than two.
   if (name === 'formula') {
     var fgroups = []
     var fcur = null
@@ -360,6 +372,8 @@ function _buildDirective (name, inner) {
     var flabel = ''
     var frungs = []
     var fcurRung = null
+    var ftiers = []
+    var fcurTier = null
     for (var f = 0; f < rows.length; f++) {
       var line = rows[f]
       var fp = line.split('|')
@@ -385,6 +399,28 @@ function _buildDirective (name, inner) {
         fmode = (fp[1] === 'submit' || fp[1] === 'ag') ? fp[1] : 'buy'
         continue
       }
+      if (fp[0] === '#tier') {
+        fcurTier = {
+          label: fp[1] || '',
+          width: parseInt(fp[2], 10) > 0 ? parseInt(fp[2], 10) : 0,
+          recommended: fp[3] === '1',
+          note: '',
+          pitch: '',
+          groups: []
+        }
+        // A new package starts its own chart; nothing after this line may attach to the previous
+        // package's last day group.
+        fcur = null
+        ftiers.push(fcurTier)
+        continue
+      }
+      if (fp[0] === '#note' || fp[0] === '#pitch') {
+        // Rejoin the tail: both are sentences and may legitimately contain a '|', which the
+        // server replaces with '/' before writing — but a future writer might not, and a line
+        // truncated at the first pipe reads as a broken promise rather than as a bug.
+        if (fcurTier) fcurTier[fp[0] === '#note' ? 'note' : 'pitch'] = fp.slice(1).join('|')
+        continue
+      }
       if (fp[0] === '#rung') {
         // Rejoin the tail: the pitch is a sentence and may legitimately contain a '|', which the
         // server replaces with '/' before writing — but a future writer might not, and a pitch
@@ -407,6 +443,7 @@ function _buildDirective (name, inner) {
           items: [], am: 0, pm: 0, total: 0
         }
         fgroups.push(fcur)
+        if (fcurTier) fcurTier.groups.push(fcur)
         continue
       }
       if (fp[0].charAt(0) === '#') continue
@@ -432,6 +469,7 @@ function _buildDirective (name, inner) {
         // Legacy card, or rows before any #day line: one implicit unlabelled group.
         fcur = { days: '', kind: 'regular', items: [], am: 0, pm: 0, total: 0 }
         fgroups.push(fcur)
+        if (fcurTier) fcurTier.groups.push(fcur)
       }
       fcur.am += am
       fcur.pm += pm
@@ -465,15 +503,63 @@ function _buildDirective (name, inner) {
         grp.items[i2].pmPct = grp.items[i2].pm / fmax * 100
       }
     }
+    // Packages with nothing to draw are dropped, then the ones that remain are given their own
+    // dot roster and their delta over the package below. A card with no #tier becomes one unnamed
+    // package holding every group, so the page renders both shapes with one loop.
+    var ftkept = []
+    for (var t2 = 0; t2 < ftiers.length; t2++) {
+      var tr = ftiers[t2]
+      var tgroups = []
+      for (var q = 0; q < tr.groups.length; q++) if (tr.groups[q].items.length) tgroups.push(tr.groups[q])
+      if (!tgroups.length) continue
+      tr.groups = tgroups
+      ftkept.push(tr)
+    }
+    if (!ftkept.length) {
+      ftkept = [{ label: '', width: 0, recommended: true, note: '', pitch: '', groups: fkept }]
+    }
+    for (var t3 = 0; t3 < ftkept.length; t3++) {
+      var tier = ftkept[t3]
+      var seen = {}
+      var roster = []
+      for (var g3 = 0; g3 < tier.groups.length; g3++) {
+        // The everyday group only: an N7 reset day holds one dot in isolation and listing it as
+        // part of the roster would say this package contains a single dot.
+        if (tier.groups[g3].kind === 'n7') continue
+        for (var r3 = 0; r3 < tier.groups[g3].items.length; r3++) {
+          var it = tier.groups[g3].items[r3]
+          if (seen[it.key]) continue
+          seen[it.key] = 1
+          roster.push({ key: it.key, name: it.name, color: it.color })
+        }
+      }
+      // The roster IS the package: its actual dots, drawn as swatches when collapsed. Deliberately
+      // no count and no "+N over the one below" — what separates the packages is a product
+      // decision moving beyond "how many kinds of dot", so a number here would be the first thing
+      // to go stale, and it is the one claim on this card a user cannot verify for themselves.
+      tier.dots = roster
+      // The recommended package is the one the card opens on. Exactly one, always: a card whose
+      // server marked none (or, from a future writer, several) still opens on something.
+      tier.open = !!tier.recommended
+    }
+    var anyOpen = false
+    for (var t4 = 0; t4 < ftkept.length; t4++) {
+      if (ftkept[t4].open && !anyOpen) { anyOpen = true; continue }
+      ftkept[t4].open = false
+    }
+    if (!anyOpen) ftkept[0].open = true
+
     return {
       t: 'formula',
       groups: fkept,
+      tiers: ftkept,
       cycleDays: fcycleDays,
       cycleCapsules: fcycleCaps,
       planId: fplan,
       orderMode: fmode,
       labelUrl: flabel,
       // Rungs with no dots are dropped: an upgrade that adds nothing reads as a broken promise.
+      // Only ever non-empty for a card written before packages replaced the ladder.
       rungs: frungs.filter(function (r) { return r.items.length }),
       // Legacy top-level fields, kept so anything still reading seg.items/am/pm/total sees the
       // everyday dose rather than nothing.

@@ -44,7 +44,7 @@ const FALLBACK_ZH = `【事实约束 — 最高优先级，不得违反】
 
 提及具体 Dots 时，编号、名称、成分必须逐字复制提示词中 Dots 配方库里给出的原文，不得凭记忆改写、替换或编造——配方库内容可能随产品迭代更新，你训练数据中记忆的旧版名称/成分可能已不准确。如果不确定某个编号对应的准确名称，宁可只说编号，也不要猜测或凭记忆填写名称。
 
-升级文案例外（仅适用于配方卡要求的 "upgrades" 字段）：为更宽的原粒套餐撰写的那一句升级说明，可以使用向往式、有画面感的产品介绍语气，不必逐字挂靠某一项指标——它是产品介绍，不是疗效承诺。上述禁令在此处全部照常生效：不得写出起效时间、改善幅度、任何数值预测或效果保证；不得编造成分、作用机制或功效；原粒的编号、名称与成分仍必须逐字取自配方库；也不得写出价格、库存或购买渠道。`;
+套餐文案例外（仅适用于配方卡上每一款原粒套餐的那一句定位说明）：为一款套餐撰写的那句话，可以使用向往式、有画面感的产品介绍语气，不必逐字挂靠某一项指标——它是产品介绍，不是疗效承诺。上述禁令在此处全部照常生效：不得写出起效时间、改善幅度、任何数值预测或效果保证；不得编造成分、作用机制或功效；原粒的编号、名称与成分仍必须逐字取自配方库；也不得写出价格、库存或购买渠道。`;
 
 const FALLBACK_EN = `[FACT CONSTRAINT — HIGHEST PRIORITY, MUST NOT BE VIOLATED]
 Never fabricate: specific study names, journal names, publication years, clinical trial IDs, participant counts, statistical percentages, specific onset windows (e.g. "within 72 hours", "after 2 weeks"), predicted improvement magnitudes or numeric forecasts, author names or institution names, specific p-values, gene locus IDs (e.g. rs-prefixed SNP IDs), allele frequencies, or reference database names.
@@ -68,7 +68,7 @@ When referencing an item from the recommendable-products list: explain only why 
 
 When referencing a specific Dot, the number, name, and ingredients must be copied verbatim from the Dots formulary given in this prompt — never rewritten, substituted, or recalled from memory, since the formulary can change between product iterations and any name/ingredient you remember from training data may be outdated. If unsure of the exact name for a given number, state only the number rather than guessing or recalling a name from memory.
 
-Upgrade-copy exception (applies ONLY to the "upgrades" field the formulation card asks for): the one line written for a wider dots package may use aspirational, evocative product-writing tone and need not cite a specific marker line by line — it is a product description, not a promise of effect. Every ban above still applies here in full: never state an onset window, an improvement magnitude, any numeric forecast, or a guarantee of results; never invent an ingredient, mechanism, or effect; dot numbers, names and ingredients remain verbatim from the formulary; and never write a price, stock level, or purchase channel.`;
+Package-copy exception (applies ONLY to the one positioning line the formulation card carries for each dots package): that line may use aspirational, evocative product-writing tone and need not cite a specific marker line by line — it is a product description, not a promise of effect. Every ban above still applies here in full: never state an onset window, an improvement magnitude, any numeric forecast, or a guarantee of results; never invent an ingredient, mechanism, or effect; dot numbers, names and ingredients remain verbatim from the formulary; and never write a price, stock level, or purchase channel.`;
 
 function getFactConstraintBlock(preloaded, isZh = true) {
   if (preloaded) return preloaded;

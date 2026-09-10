@@ -280,7 +280,7 @@ const T = {
     hrSaved: '已保存到您的健康档案（健康页 › 实验室）。',
     hrSavedBioage: '您的生物年龄也已更新。',
     hrSaveError: '保存失败，请重试。',
-    toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
+    toolFormulaDotMsg: '请帮我配制我的原粒方案',
     // Focus sheet (see _startFormulaDots). Deliberately says what the direction DOES rather than
     // just naming it — the point of asking is that the user knows the choice is theirs.
     pkgPayBtn: '去支付',
@@ -315,15 +315,28 @@ const T = {
     formulaDaysUnit: '天',
     formulaCapsulesUnit: '粒胶囊',
     formulaOrderCta: '使用兑换码开始配制 →',
-    // The upgrade ladder on a 'buy'-mode formula card (:::formula's #rung lines). The hint is
-    // load-bearing, not decoration: a wider tier cannot be bought in the app, so telling the user
+    // The CTA on a card whose packages the user is choosing between. `formulaOwnedPkg` sits above
+    // the button so the reason it says 开始配制 rather than 购买 is stated, not inferred.
+    formulaOwnedPkg: (name) => `你已购买${name}`,
+    formulaOrderedPkg: (name) => `${name}订单待支付`,
+    formulaStartCta: '开始配制 →',
+    formulaBuyPkgCta: (name) => `购买${name} →`,
+    formulaPkgUnavailable: '您的门店暂未上架此套装，请联系门店。',
+    // The packages on a 'buy'-mode formula card (:::formula's #tier lines). The hint is
+    // load-bearing, not decoration: a package cannot be bought in the app, so telling the user
     // where the code comes from is the only actionable thing on the whole section.
+    formulaTierRecommended: '推荐',
+    // Deliberately NO dot count. What separates the packages is a product decision that is moving
+    // beyond "how many kinds", so a number here would be the first thing to go stale — and it is
+    // the one thing on this card the user cannot check for themselves. The formula below each name
+    // is the honest answer to "what do I get".
+    formulaTierHint: '每一款都是一份完整配方，各有侧重。对应的兑换码由门店提供，兑换后即按该款配方配制。',
+    // Retired with the upgrade ladder, kept for cards already in chat history (see main.wxml).
     formulaUpgradeTitle: '再往上一档',
     // A tier caps dots PER WEEK, so an upgrade can also be the same dot running more weeks.
     formulaWeekPrefix: '第',
     formulaWeekSuffix: '周',
     formulaUpgradeHint: '更宽的一档由门店提供对应的兑换码，兑换后即按该档配方配制。',
-    formulaLabelCta: '查看配方标签与二维码',
     formulaSubmitCta: '确认此方案，开始配制 →',
     formulaSubmitConfirmTitle: '确认配制方案',
     formulaSubmitConfirmBody: '确认后将按此 28 天方案为您配制并发货，配方不可再更改。如需调整，请先重新生成。',
@@ -661,11 +674,17 @@ const T = {
     formulaDaysUnit: ' days',
     formulaCapsulesUnit: ' capsules',
     formulaOrderCta: 'Redeem a code to start →',
+    formulaOwnedPkg: (name) => `You already own ${name}`,
+    formulaOrderedPkg: (name) => `${name} — payment pending`,
+    formulaStartCta: 'Start compounding →',
+    formulaBuyPkgCta: (name) => `Buy ${name} →`,
+    formulaPkgUnavailable: 'Your store does not carry this package yet — please contact them.',
+    formulaTierRecommended: 'Recommended',
+    formulaTierHint: 'Each package is a complete formula with its own emphasis. Your store provides the matching redeem code.',
     formulaUpgradeTitle: 'One tier up',
     formulaWeekPrefix: 'wk ',
     formulaWeekSuffix: '',
     formulaUpgradeHint: "A wider tier comes as its own redeem code from your store — redeeming one formulates at that tier.",
-    formulaLabelCta: 'View formulation label & QR',
     formulaSubmitCta: 'Confirm and start compounding →',
     formulaSubmitConfirmTitle: 'Confirm this formulation',
     formulaSubmitConfirmBody: 'This 28-day formulation will be compounded and shipped to you. It cannot be changed afterwards — regenerate first if you want to adjust it.',
@@ -1091,6 +1110,9 @@ function mapPackages(rawPackages, t, lang) {
       name,
       meta: bits.join(' · '),
       order_id: p.order_id || null,
+      // The weekly width, as a field rather than only folded into `meta`: the formulation card
+      // matches its packages against this to decide whether a tier is already ordered.
+      max_distinct_dots: p.max_distinct_dots || null,
       plan_id: p.plan_id || null,
       // The formula a waiting package could be filled with — a DIFFERENT plan from plan_id, which
       // is what is already attached (nothing is bound until submit). Dropping this is what makes
@@ -1853,6 +1875,113 @@ Page({
     this._openAevivaStoreGated({ intent: 'buy_custom_formulation', nutrition_plan_id: nutritionPlanId })
   },
 
+  // What the card's call-to-action should say and do for ONE package.
+  //
+  // The CTA follows the package the user has OPEN, because that is the one they are deciding
+  // about. Until 2026-09-10 there was a single shared CTA on the reasoning that "which tier a user
+  // gets is decided by whichever redeem code they hold, not by what they tap, so a per-package
+  // button would offer a choice that does not exist". That is no longer true: a shopper can buy a
+  // specific tier's 兑换码 from their own bound store, and may already hold codes for several.
+  //
+  // EXACT tier match, deliberately. A wider code compounds ITS OWN variant — handlePostFormulationSubmit
+  // picks the widest variant the code covers (_selectTierVariant) — so offering 开始配制 on a
+  // narrower package while holding a wider code would compound a formula other than the one on
+  // screen. Holding a 尊享 code and opening 轻享 therefore still offers to buy 轻享; the user's own
+  // 尊享 card is where their code is waiting.
+  //
+  // Returns null for a card with no packages (a legacy card, or a user who already holds one), and
+  // the WXML then falls back to the generic redeem CTA exactly as before.
+  _formulaCtaFor(tier) {
+    const { t, codes } = this.data
+    if (!tier || !(Number(tier.width) > 0) || !tier.label) return null
+    const width = Number(tier.width)
+    // An expert-review code is Viva AG's to formulate; redeeming one here would hand the user a
+    // package this tool cannot fill (§28d).
+    // An order for this tier that is placed but NOT PAID. Sending them to buy it again is a dead
+    // end — GCN refuses a second one with `formulation_already_in_progress` — so the honest CTA is
+    // the one Plans ▸ Dots already offers for that row: go and pay it.
+    const unpaid = (this.data.packages || []).find(
+      p => p.stage === 'pending_payment' && p.order_id && Number(p.max_distinct_dots) === width)
+    if (unpaid) {
+      return {
+        mode: 'pay',
+        owned: t.formulaOrderedPkg(tier.label),
+        btn: t.pkgPayBtn,
+        code: '', max: null, orderId: unpaid.order_id, label: tier.label, width,
+      };
+    }
+    const held = (codes || []).find(c => c.fastTrack && Number(c.max_distinct_dots) === width)
+    if (held) {
+      return {
+        mode: 'redeem',
+        owned: t.formulaOwnedPkg(tier.label),
+        btn: t.formulaStartCta,
+        code: held.code,
+        max: held.max_distinct_dots || width,
+        orderId: '',
+        label: tier.label,
+        width,
+      };
+    }
+    return { mode: 'buy', owned: '', btn: t.formulaBuyPkgCta(tier.label), code: '', max: null, orderId: '', label: tier.label, width };
+  },
+
+  // Recomputes every formula card's CTA in place. Cheap and idempotent, so it runs whenever either
+  // input changes: the card is built, a package is opened, or the user's codes finish loading.
+  _attachFormulaCta(segments) {
+    for (const seg of segments || []) {
+      if (!seg || seg.t !== 'formula' || !Array.isArray(seg.tiers)) continue
+      seg.cta = this._formulaCtaFor(seg.tiers.find(x => x.open) || seg.tiers[0])
+    }
+  },
+
+  // Re-runs the above across the whole transcript. Called after _loadDots resolves, because a card
+  // delivered before the codes list arrived would otherwise offer to buy a package the user
+  // already holds a code for.
+  _refreshFormulaCtas() {
+    const messages = this.data.messages || []
+    let touched = false
+    for (const m of messages) {
+      if (!m || !Array.isArray(m.segments)) continue
+      if (!m.segments.some(sg => sg && sg.t === 'formula')) continue
+      this._attachFormulaCta(m.segments)
+      touched = true
+    }
+    if (touched) this.setData({ messages })
+  },
+
+  // Opens one package on a :::formula card and closes whichever was open. The card shows three
+  // complete formulas and only one at a time, so this is a radio, not a checkbox: two open charts
+  // in a chat bubble is the stacked layout this collapsing exists to avoid.
+  //
+  // Addressed by message index + segment index + tier index, because the flag lives inside the
+  // parsed segment rather than in page-level state — a chat transcript can hold several formula
+  // cards, and each has to remember its own open package independently.
+  handleFormulaTierToggle(e) {
+    const { mi, si, ti } = e.currentTarget.dataset
+    const msg = (this.data.messages || [])[mi]
+    const seg = msg && (msg.segments || [])[si]
+    const tiers = seg && seg.tiers
+    if (!tiers || !tiers[ti]) return
+    // A single package is the whole card (a legacy card, or a user who already holds a package);
+    // collapsing it would leave the bubble with nothing in it.
+    if (tiers.length < 2) return
+    const patch = {}
+    const nextOpen = []
+    for (let i = 0; i < tiers.length; i++) {
+      const open = i === Number(ti) ? !tiers[i].open : false
+      nextOpen.push(open)
+      if (open !== tiers[i].open) patch[`messages[${mi}].segments[${si}].tiers[${i}].open`] = open
+    }
+    if (!Object.keys(patch).length) return
+    // The CTA belongs to whichever package is now open, so it moves with the selection rather than
+    // being recomputed on tap by the handler that acts on it.
+    const openIdx = nextOpen.indexOf(true)
+    patch[`messages[${mi}].segments[${si}].cta`] =
+      this._formulaCtaFor(openIdx >= 0 ? tiers[openIdx] : null)
+    this.setData(patch)
+  },
+
   // The order CTA on a :::formula card in chat. NOT on the Plans ▸ Dots proposal row any more —
   // that row sits directly above the 兑换码 section, which offers the same action with the user's
   // actual codes named, so a second button there was strictly worse. This surface has no such
@@ -1874,31 +2003,50 @@ Page({
     if (this.data.proposedDistinctDots === null) {
       try { await this._loadDots(user, lang) } catch (err) { /* the sheet still works unwarned */ }
     }
-    // Someone who already owns codes should tap one, not retype it — and the list only exists on
-    // Plans ▸ Dots, so land them there rather than opening a blank code field over the top of
-    // codes we could have named. Note the sub-tab key is plansDotsSubTab, not tab:'dots', which
-    // matches no WXML block and renders blank (real-device report, 2026-07-29).
+    const { mode, code, max, label, width } = e.currentTarget.dataset
+
+    // The user holds a code for exactly this package: go straight to redeeming THAT code against
+    // THIS formula. The sheet still collects shipping and still confirms, so nothing is spent on a
+    // single tap — it is prefilled, not skipped.
+    if (mode === 'redeem' && code) {
+      this._openCodeSheet({
+        code, manual: false,
+        max: Number(max) || null,
+        name: label || '',
+        planId: planId || null,
+      })
+      return
+    }
+
+    // Ordered but unpaid: land on that order's payment QR rather than starting a second checkout.
+    if (mode === 'pay' && e.currentTarget.dataset.order) {
+      this._openAevivaStoreGated({ intent: 'pay_order', order_id: e.currentTarget.dataset.order })
+      return
+    }
+
+    // No code for this package. The tier is bought as a 兑换码 from the user's own bound store, so
+    // hand GCN the WIDTH and let it resolve which sku that is — nano deliberately holds no sku ids
+    // (§28c: a stale client-side formulation sku is what broke both checkouts in the sandbox on
+    // 2026-08-22), and this card is a stored chat message that would freeze one for good.
+    if (mode === 'buy' && Number(width) > 0) {
+      this._openAevivaStoreGated({
+        intent: 'buy_formulation_package',
+        max_distinct_dots: Number(width),
+        nutrition_plan_id: planId || null,
+      })
+      return
+    }
+
+    // Legacy card, or a package list that never resolved. Someone who already owns codes should
+    // tap one, not retype it — and the list only exists on Plans ▸ Dots, so land them there rather
+    // than opening a blank code field over the top of codes we could have named. Note the sub-tab
+    // key is plansDotsSubTab, not tab:'dots', which matches no WXML block and renders blank
+    // (real-device report, 2026-07-29).
     if ((this.data.codes || []).length > 0) {
       this.setData({ tab: 'plans', plansDotsSubTab: 'dots' })
       return
     }
     this._openCodeSheet({ code: '', manual: true, max: null, name: '', planId: planId || null })
-  },
-
-  // Opens the formulation's label page — the GCN aeviva page that draws the QR, lists every dot
-  // with its ingredients, and is what gets printed on the box. Deliberately a webview rather than
-  // a QR drawn natively here: the user should be looking at the exact page the label is printed
-  // from, and there is then only one renderer to keep correct.
-  //
-  // The URL is written by the server into the card and scheme-checked by the markdown parser
-  // before it reaches this handler; it is never taken from model output.
-  handleFormulaLabel(e) {
-    const url = e.currentTarget.dataset.url
-    if (!url) return
-    wx.navigateTo({
-      url: `/pages/appview/appview?url=${encodeURIComponent(url)}`,
-      fail: () => wx.setClipboardData({ data: url }),
-    })
   },
 
   // The confirm CTA on a :::formula card, shown only when GCN reported a paid FAST-TRACK package
@@ -3016,7 +3164,7 @@ Page({
     const msg = { id, role: r, imageUrl: imageUrl || null, source: source || null, ts: createdAt ? +new Date(createdAt) : Date.now(), sep: '' }
     if (r === 'action') { msg.action = action; msg.label = label; return msg }
     if (r === 'coach') { msg.content = (content || '').replace(/\n+/g, ' '); return msg }
-    if (r === 'ai') { msg.segments = mdToSegments(content || ''); this._attachSparks(msg.segments) }
+    if (r === 'ai') { msg.segments = mdToSegments(content || ''); this._attachSparks(msg.segments); this._attachFormulaCta(msg.segments) }
     else msg.content = content || ''
     // Distinguishes an image-only bubble (which drops its padding via .msg-bubble-image) from an
     // image WITH text, which must keep it. The old wx:elif chain rendered the image and silently
@@ -3872,8 +4020,15 @@ Page({
         dispenseStatus: '',
       })
       this._applyDotsWeek(0)
+      // A formula card delivered before this resolved would be offering to BUY a package the user
+      // already holds a code for. The codes are one of the two inputs to that decision, so the
+      // cards are re-resolved the moment they land.
+      this._refreshFormulaCtas()
     } catch (e) {
       this.setData({ dotsLoading: false, hasPlan: false, packages: [], hasPackageInFlight: false, hasProposedFormula: false, codes: [], proposedDistinctDots: null, proposedTierWidths: null })
+      // Same reason in reverse: a card must not keep offering 开始配制 against a codes list that
+      // has just been cleared.
+      this._refreshFormulaCtas()
     }
   },
 

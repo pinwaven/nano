@@ -422,18 +422,27 @@ test('handlePostBoxClaim can read the code back out of the QR URL', () => {
     }
 });
 
-test('the card carries the label URL, and the renderer refuses a non-https one', () => {
+test('the card carries NO label URL — a proposal is not a purchase', () => {
+    // Retired 2026-09-10. The card used to offer the formulation's label/QR page, but at proposal
+    // time nothing has been paid for and no box exists, so the QR pointed at a label for capsules
+    // nobody was compounding. The label belongs after payment, on the GCN order. `label_code` is
+    // still minted with the plan and the public label page is unchanged — only the chat CTA is gone.
     const block = D._buildFormulaChartBlock(MORNING, EVENING, FORMULARY, 'zh',
         { planId: 9, orderMode: 'buy', labelCode: 'WVB1A2B3C4D5E6F' });
-    const seg = md.mdToSegments(block).find(s => s.t === 'formula');
+    assert.ok(!block.includes('#label'), 'even given a code, the card must not advertise the label');
+    assert.strictEqual(md.mdToSegments(block).find(s => s.t === 'formula').labelUrl, '');
+});
+
+test('a card already in history keeps its #label parsing, and still refuses a non-https one', () => {
+    // Chat history is permanent: cards written before this contain a #label line, and the parser
+    // must keep reading them rather than mangling the card around them. Nothing renders the URL any
+    // more, but the scheme check stays — it is one WXML edit away from being live again.
+    const legacy = ':::formula\n#label|https://aeviva.gcn.net/formulation-label.html?c=WVB1A2B3C4D5E6F\n'
+        + '#day|1-28|regular\nDOT-N1|x|#4A5D7B|1|0\n:::';
+    const seg = md.mdToSegments(legacy).find(s => s.t === 'formula');
     assert.strictEqual(seg.labelUrl, D._formulationLabelUrl('WVB1A2B3C4D5E6F'));
+    assert.strictEqual(seg.groups.length, 1, 'the rest of the card still parses around it');
 
-    // No code minted (a legacy card, or a proposal whose write failed) — no button, not a broken one.
-    const none = D._buildFormulaChartBlock(MORNING, EVENING, FORMULARY, 'zh', { planId: 9 });
-    assert.ok(!none.includes('#label'));
-    assert.strictEqual(md.mdToSegments(none).find(s => s.t === 'formula').labelUrl, '');
-
-    // It reaches wx.navigateTo, so anything that is not an https URL is dropped.
     for (const bad of ['javascript:alert(1)', 'http://evil.example/x', '/pages/admin/admin']) {
         const seg2 = md.mdToSegments(`:::formula\n#label|${bad}\n#day|1-28|regular\nDOT-N1|x|#4A5D7B|1|0\n:::`)
             .find(s => s.t === 'formula');

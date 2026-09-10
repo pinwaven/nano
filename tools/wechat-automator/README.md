@@ -80,6 +80,16 @@ node example.js
   the subtree's visible text newline-joined, which is what makes a resolved-vs-empty i18n check
   possible in both languages.
 
+- **A passing `element.tap()` does NOT mean a user can tap it.** `tap()` dispatches at the element
+  you selected, so it exercises the handler and its `data-*` wiring while telling you nothing about
+  whether the target is *reachable*. A collapsible card shipped this way with only its 17px title
+  row bound: the tap test passed, and on a real device 81% of the block — the part a finger actually
+  aims at — was dead. Measure coverage instead: `parent.size().height` against the summed
+  `size().height` of the elements that carry the `bindtap`, and assert the ratio.
+- **`bindtap` on a bare `<text>` does not fire; put it on a wrapping `<view>`.** Confirmed live: the
+  identical handler and `data-*` attributes on a `<text>` node produced no event, and moving them to
+  a `<view>` wrapping that same `<text>` worked immediately. Applies to automator taps and, from the
+  report that led to finding it, to real taps too.
 - **Synthetic touch gestures don't trigger real scroll-view scrolling.** `touchstart`/`touchmove`/
   `touchend` dispatched at a `scroll-view` element show zero `scrollTop` change — confirmed even on
   a known-working scroll-view via a control test, so it's an automator/simulator limitation, not a

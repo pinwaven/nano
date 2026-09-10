@@ -14,7 +14,6 @@ const { classifyBiomarker, LABELS_ZH: STATUS_LABELS_ZH, LABELS_EN: STATUS_LABELS
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 const { getTwinVocabBlock } = require('../chat/twinVocabulary');
-const { PLAN_WEEKS } = require('../../lib/dotsProductModel');
 
 const DIM_LABELS = {
     ResilienceAge:    { zh: '抗压年龄', en: 'Resilience Age' },
@@ -147,10 +146,9 @@ CHOOSE the ${formulation_package.max_distinct_dots} that matter most in each wee
     // hit it; here the tier is the thing being chosen, and the user has never been shown what it
     // costs them to choose the narrow one.
     //
-    // So the ask is one nested set of formulas, not three: the essential core, then +2, then +2.
-    // The server takes prefixes of the model's own tier ordering (_buildTierLadder), which is what
-    // makes the widths hold whatever the model tags — the tag decides WHICH dot is the better next
-    // addition, a clinical judgement, and nothing else.
+    // The ask is ONE ordered list, from which the server builds three complete formulas — one per
+    // package sold, each dosed to carry the same daily load (_equalizeToTarget). The model never
+    // partitions them: it ranks, and the ranking is what the widths are taken from.
     //
     // Widths come from GCN's catalog, never hardcoded: a tier repriced, added or retired in the
     // admin panel has to reach this prompt with no deploy, the same rule the checkout follows.
@@ -168,29 +166,21 @@ CHOOSE the ${formulation_package.max_distinct_dots} that matter most in each wee
 
     const tierLadderSection = (!packageSection && tierRungs.length > 1)
         ? (isZh
-            ? `用户尚未购买套餐。可购买的28天套餐共 ${tierRungs.length} 档，区别只在于**每周**可同时服用的原粒种类数（DOT-N7 为系统固定的重置原粒，任何一档都不计入）：
-${tierRungs.map((t, i) => `· ${t.label || t.max + '种'}：任意一周最多 ${t.max} 种${i === 0 ? '（核心档）' : `（比上一档多 ${t.max - tierRungs[i - 1].max} 种）`}`).join('\n')}
+            ? `用户尚未购买套餐。可购买的28天套餐共 ${tierRungs.length} 款，每一款都是一份完整配方，区别在于**每周**可同时服用的原粒种类数（DOT-N7 为系统固定的重置原粒，任何一款都不计入）：
+${tierRungs.map((t, i) => `· ${t.label || t.max + '种'}：任意一周最多 ${t.max} 种${i === 0 ? '' : `（比上一款多 ${t.max - tierRungs[i - 1].max} 种）`}`).join('\n')}
 
-系统会按你给出的剂量强度，自动把这份配比切成上面这 ${tierRungs.length} 档——**你不需要、也不要自己挑出哪几种属于哪一档**。你要做的只有一件事：把每个原粒的数值给准。一个原粒在它自己范围内的位置就是你的优先级表达（贴近上限＝这一项最重要，贴近下限＝这一项这次不吃重），最核心的 ${tierRungs[0].max} 种由系统据此选出。
-**排序里要放满 ${rankTarget} 个**：绝不要因为“反正只有 ${tierRungs[0].max} 种进核心档”就只排出 ${tierRungs[0].max} 个——排在后面的几个正是更宽档位的内容，少排一个就少一个档位。
+系统会按你给出的重要性排序，自动生成上面这 ${tierRungs.length} 款各自的完整配方——**你不需要、也不要自己挑出哪几种属于哪一款**。你要做的只有一件事：把排序排准。排在越前面的原粒，越会出现在每一款里，并拿到该原粒范围内偏高的剂量。
+**排序里要放满 ${rankTarget} 个**：绝不要因为“反正最窄的一款只装得下 ${tierRungs[0].max} 种”就只排出 ${tierRungs[0].max} 个——排在后面的几个正是更宽那几款的内容，少排一个就少一款可选。
 
-正文分析请围绕最核心的那 ${tierRungs[0].max} 种来写；更宽档位补上了什么，由系统在卡片上单独说明，正文里不要提。`
-            : `The user has not bought a package yet. The 28-day packages come in ${tierRungs.length} tiers, differing in exactly one thing — how many distinct dots may run in ANY ONE WEEK (DOT-N7 is the system's fixed reset dot and counts toward none of them):
-${tierRungs.map((t, i) => `· ${t.label || t.max + ' dots'}: at most ${t.max} in any one week${i === 0 ? ' (the core tier)' : ` (${t.max - tierRungs[i - 1].max} more than the tier below)`}`).join('\n')}
+正文分析请围绕这位用户的整体调理方向与优先级来写，**不要指向其中某一款套餐**，也不要提"档位""升级""加配"：每一款的定位说明由系统在卡片上逐一给出。`
+            : `The user has not bought a package yet. The 28-day product comes as ${tierRungs.length} packages. Each is a complete formula in its own right; they differ in how many distinct dots may run in ANY ONE WEEK (DOT-N7 is the system's fixed reset dot and counts toward none of them):
+${tierRungs.map((t, i) => `· ${t.label || t.max + ' dots'}: at most ${t.max} in any one week${i === 0 ? '' : ` (${t.max - tierRungs[i - 1].max} more than the package below)`}`).join('\n')}
 
-The system splits your allocation into those ${tierRungs.length} tiers itself, by dose intensity — **you do not need to, and must not, pick which dots belong to which tier.** Your one job is to get each dot's number right. Where a dot sits inside its own range IS your priority signal (near its ceiling = this one matters most here, near its floor = not a focus this cycle), and the core ${tierRungs[0].max} are chosen from that.
-**Fill all ${rankTarget} places**: never stop at ${tierRungs[0].max} on the reasoning that "only that many make the core tier" — the entries after it ARE the wider tiers, and one you leave out is a tier that cannot be built.
+The system builds all ${tierRungs.length} complete formulas itself, from your ranking — **you do not need to, and must not, pick which dots belong to which package.** Your one job is to get the ORDER right: the higher a dot ranks, the more packages it appears in and the closer to its own ceiling it is dosed.
+**Fill all ${rankTarget} places**: never stop at ${tierRungs[0].max} on the reasoning that "the narrowest package only holds that many" — the entries after it ARE the wider packages, and one you leave out is a package that cannot be built.
 
-Write the prose analysis about the core ${tierRungs[0].max}; what the wider tiers add is described separately by the system on the card, so don't cover it in the prose.`)
+Write the prose analysis about this user's overall direction and priorities. **Do not single out any one package**, and do not use the language of tiers, upgrades or add-ons: each package's own positioning is written by the system, on the card.`)
         : '';
-
-    // Only mentioned when a package is in play, because packageSection is the only place the
-    // "weeks" field is actually specified — naming it otherwise invites a field the model was
-    // never taught the shape of.
-    const weeksNote = (!packageSection && !tierLadderSection) ? ''
-        : (isZh
-            ? ''
-            : '');
 
     const seasonSection = current_solar_term
         ? (isZh
@@ -202,13 +192,13 @@ Write the prose analysis about the core ${tierRungs[0].max}; what the wider tier
 
     // One action tail in both modes. The ladder used to add "tier" tags and an "upgrades" array
     // here; both were removed 2026-09-07 — see the sibling viva prompt for the measurements.
-    // Rungs are now chosen by the server from dose emphasis and their copy written by a second,
-    // tightly-scoped call that is SHOWN the dots it describes (lib/rungCopy.js). A stale cached
+    // Packages are now chosen by the server from the ranking and their copy written by a second,
+    // tightly-scoped call that is SHOWN the dots it describes (lib/tierCopy.js). A stale cached
     // prompt still parses: the extra fields are simply ignored.
     const formatLineZh = `{"action":"formulate_dots","ranking":[{"dot_key":"D-N9","why":"一句话说明为什么排这里"}, ...按重要性排序，共 ${rankTarget} 条]}`;
     const formatLineEn = `{"action":"formulate_dots","ranking":[{"dot_key":"D-N9","why":"one line on why it ranks here"}, ...${rankTarget} entries, most important first]}`;
 
-const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的任务是：为用户配置接下来28天（4周）的 Waven Dots 方案——这是一次真实的配方决策，不是解释一个已有方案。系统会将你给出的每日总量重复安排到这28天内（DOT-N7 除外，见下方配方库中的专项说明${weeksNote}）。
+const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的任务是：为用户配置接下来28天（4周）的 Waven Dots 方案——这是一次真实的配方决策，不是解释一个已有方案。系统会将你给出的每日总量重复安排到这28天内（DOT-N7 除外，见下方配方库中的专项说明）。
 
 生物标志物的状态（正常/偏高/高）已在下方直接标注，请严格使用该标注。
 
@@ -232,7 +222,7 @@ ${formularyLines}
 
 任务：
 1. 分析：这段文字是本次配方决策的说明，**不是**一份通用健康状态总结——绝不能只罗列生物标志物/生理年龄/穿戴设备数据而不提及任何具体 Dot。必须明确点名你在下方"配方"中实际选择或加重的至少2-3个 Dot，说明"为什么选它、对应哪个生物标志物或维度"，让用户看得出这段话和下面的配方是同一个决策的两个部分。${NOTE_ZH_DIALOGUE_LABEL}可以简短提及驱动决策的关键数据，但核心内容是解释 Dot 选择，不是复述体检报告。2-3句话，对话语气，不使用列表或标题。
-2. 配方：为配方库中的**每一个**短代码给出一个强度档 level（"high"/"moderate"/"low"/"none"）。粒数由系统按每个 Dot 自己的范围换算，脉冲式 Dot 也一样（系统只会在真正的脉冲日安排它）。早晚如何拆分同样由系统按默认时段/是否"早晚皆可"自动计算，你**不需要**、也**不应该**自己写粒数或拆分早晚——只需决定每个 Dot 的强度档。
+2. 配方：从配方库中挑出对这位用户最有价值的 ${rankTarget} 个短代码，按重要性从高到低排成一份列表。粒数由系统按每个 Dot 自己的范围和它在这份列表中的位置换算，脉冲式 Dot 也一样（系统只会在真正的脉冲日安排它）。早晚如何拆分同样由系统按默认时段/是否"早晚皆可"自动计算，你**不需要**、也**不应该**自己写粒数或拆分早晚——只需把这份排序排准。
 
 配方规则（务必遵守）：
 - **你不需要写任何粒数**。你唯一要做的判断是：从配方库中挑出对这位用户最有价值的 ${rankTarget} 个 Dot，**按重要性从高到低排好序**。每个 Dot 该给多少粒、早晚怎么分、总量会不会超过一颗胶囊装得下的量，全部由系统计算——各 Dot 的范围差异极大（从1粒到上百粒），这部分交给系统才不会出错。
@@ -249,7 +239,7 @@ ${formatLineZh}
 - 引用用户真实的生物标志物/趋势数值，说明驱动因素。
 - 全程使用简体中文回复，结尾干净收尾，不提问、不引导用户继续追问。`;
 
-    const taskEn = `You are Nano, a warm precision-longevity AI built by Waven. Your task right now: formulate the next 28 days' (4-week) Waven Dots plan for this user — this is a real formulation decision, not an explanation of an existing plan. The system repeats your assigned daily totals across all 28 days (except DOT-N7 — see its dedicated note in the formulary below${weeksNote}).
+    const taskEn = `You are Nano, a warm precision-longevity AI built by Waven. Your task right now: formulate the next 28 days' (4-week) Waven Dots plan for this user — this is a real formulation decision, not an explanation of an existing plan. The system repeats your assigned daily totals across all 28 days (except DOT-N7 — see its dedicated note in the formulary below).
 
 Biomarker status (normal/elevated/high) is already labeled directly below — use that label as-is.
 
@@ -273,7 +263,7 @@ Available tools: call get_biomarker_history for historical test trends, get_dot_
 
 Task:
 1. Analysis: this text explains the actual formulation decision — it is **not** a generic health-status summary. Never just list biomarkers/BioAge/wearable data without naming any specific Dot. You must explicitly name at least 2-3 Dot short-keys/names you actually chose or emphasized in the "formulation" below, and explain why each was chosen and which biomarker or dimension it addresses — the reader should see this text and the formulation below as two parts of the same decision. You may briefly mention the key data driving the decision, but the core content is explaining the Dot choices, not restating the lab report. 2-3 sentences, conversational tone, no lists or headers.
-2. Formulation: give **every single** short-key in the formulary an intensity level ("high"/"moderate"/"low"/"none"). The system converts each level into a real count using that Dot's own range, pulse Dots included (it schedules those only on the real pulse days). The AM/PM split is computed automatically from each Dot's default slot and flexibility flag — you do **not** need to, and should **not**, write pill counts or decide the morning/evening split yourself; just decide each Dot's level.
+2. Formulation: pick the ${rankTarget} short-keys worth most to this user and put them in one list, most important first. The system converts each position into a real count using that Dot's own range, pulse Dots included (it schedules those only on the real pulse days). The AM/PM split is computed automatically from each Dot's default slot and flexibility flag — you do **not** need to, and should **not**, write pill counts or decide the morning/evening split yourself; just get the order right.
 
 Formulation rules (must follow):
 - **You do not write any pill counts.** Your only judgement is which ${rankTarget} Dots from the formulary matter most to this user, **ordered from most important to least**. How many pills each one gets, how they split between morning and evening, and whether the total fits in a capsule are all computed by the system — the ranges differ enormously (1 pill to over a hundred), and that part is where they get crossed.

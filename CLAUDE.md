@@ -736,8 +736,8 @@ no retry.
 Two rules make it safe, and both are load-bearing:
 
 - **It never rewrites inside a `::: ... :::` block.** A `:::formula` row is keyed on the code and
-  `utils/markdown.js` parses that key. Which is also why **rung pitches are rewritten in
-  `lib/rungCopy.js` instead** — they end up inside the fence as `#rung|label|width|pitch`.
+  `utils/markdown.js` parses that key. Which is also why **package pitches are rewritten in
+  `lib/tierCopy.js` instead** — they end up inside the fence as `#pitch|<text>`.
 - **It runs once per delivery, on the assembled string**, never inside `saveChatMessage` or the
   notification insert. A chat row and its notification row differing by a token defeat the client's
   text-keyed de-dup (`_aiKey`) and render the bubble twice.
@@ -834,6 +834,11 @@ group — **keep them optional**:
 - `#cycle|<days>|<capsules>` — footer
 - `#plan|<id>` — the proposed row; enables the order CTA, and is digits-validated in the renderer
   before it reaches a `data-` attribute
+- `#label|<url>` — **retired 2026-09-10, no longer written or rendered.** A proposal is not a
+  purchase: nothing has been paid for and no box exists, so the QR pointed at a label for capsules
+  nobody was compounding. The label belongs after payment, on the GCN order. The parser and its
+  https check are kept for cards already in chat history. `label_code` is still minted with the plan
+  and `GET /api/formulation-label` is unchanged — only the chat CTA is gone.
 - `#day|<ranges>|<kind>` — starts a group. Ranges are **bare numbers**; the localised day word is
   the page's (`t.formulaDayWord`), because `utils/markdown.js` has no language context.
 
@@ -950,10 +955,25 @@ code the Mini Program scans to activate the plan.
 
 ```
 _commitProposedPlan  → label_code minted
-chat card            → #label|https://aeviva.gcn.net/formulation-label.html?c=WVB…
 box batch for a plan → the FIRST box reuses that code as its box_code
+printed box label    → https://aeviva.gcn.net/formulation-label.html?c=WVB…
 user scans the box   → /WVB[0-9A-Fa-f]{12}/ reads it out of that URL → plan goes active
 ```
+
+**The chat card no longer shows it** (2026-09-10). It did, on the reasoning that the QR is "part of
+what the user gets here" — but at proposal time nothing is paid for and no box exists, so it offered
+a label for capsules nobody was compounding.
+
+**It belongs to whoever compounds the box.** `handlePostFormulationSubmit` sends `label_code` to GCN
+with the fast-track submission (GCN `migration_0111` stores it as
+`order_item_custom_formulations.nano_label_code`), and the supplier dashboard prints it from
+`formulation-label.html?c=<code>` — the same page the box QR resolves to, so 维秋云健 prints
+byte-for-byte what the customer later scans. GCN's own print button predates this but was gated on
+`nano_verification_ref`, which only the older per-dot product ever sets: measured 2026-09-10, not one
+order on either environment carried one, so it had never appeared for a real order.
+
+Sending the **code**, never a URL: where GCN hosts the label page is GCN's decision, and nano must
+not be the thing that fixes it.
 
 - **One code space, two tables.** `generateLabelCode()` checks `boxes.box_code` **and**
   `nutrition_plans.label_code`. A collision means a scan resolving to someone else's capsules.
@@ -1106,10 +1126,17 @@ side of the wire.
 
 **The name is merchandising; the number is the contract.** GCN's `migration_0107` renamed the three
 tiers off their widths — a shopper read 6种原粒 as the whole 28-day box — but `max_distinct_dots` is
-untouched and is what every side enforces and reports. Never parse a width out of `tier_label`, and
-never stop showing the width beside the name: nano's package row renders 最多 6 种原粒 next to it and
-`systemFormulaGenerate` states 轻享套装：任意一周最多 6 种 for every rung, which is the only place the
-buyer learns what a tier costs them.
+untouched and is what every side enforces and reports. **Never parse a width out of `tier_label`.**
+
+**The width is no longer shown on the formulation card** (2026-09-10, reversing the rule that stood
+here). What separates the packages is a product decision moving beyond "how many kinds of dot", so a
+number on the card would be the first thing to go stale, and it is the one claim there that a user
+cannot check for themselves. The card names each package, gives it the store's own positioning line,
+and draws its actual formula — which answers "what do I get" without asserting a spec. `systemFormulaGenerate`
+still states 轻享套装：任意一周最多 6 种 to the **model**, because that is the enforcement contract, not
+merchandising. Two surfaces still print `最多 N 种原粒` — the Plans ▸ Dots package row and the submit
+picker (§28d) — and they describe a package the user has already bought rather than one they are
+choosing between; retire them together with whatever replaces the width, not before.
 
 **It caps one week, not the cycle.** A 轻享套装 buyer may take six dots this week and a partly
 different six next week; what they bought is the width of any single week. So a 28-day formula can
@@ -1289,9 +1316,16 @@ of it. **It is a plain join, and that only holds while every GCN endpoint return
 (`臻选套装`, never a full sentence) — `handleNanoFormulationCodes` used to return the code sku's own
 name here, which contains the product name, and composing with that printed it twice.
 
-The width moved down to the meta line (`最多 8 种原粒`) and is now shown **unconditionally**, not as
-a fallback for a missing tier: renaming the tiers off their dot counts (GCN `migration_0107`) took
-the number out of the name, and nothing else on the row was saying it.
+The width moved down to the meta line (`最多 8 种原粒`) and is shown **unconditionally**, not as a
+fallback for a missing tier: renaming the tiers off their dot counts (GCN `migration_0107`) took the
+number out of the name, and nothing else on the row was saying it.
+
+**These rows still print the width; the formulation card no longer does** (§28c, 2026-09-10). That
+is not drift: a package row and the submit picker describe a package the user has **already bought**,
+where the number is a fact about their purchase, while the card is where three packages are being
+chosen between and a spec that is about to stop meaning "how many kinds of dot" would go stale
+first. Retire these two together with whatever replaces the width — not before, or the user loses
+the only statement of what they bought.
 
 ### Offered, not matched
 
@@ -1427,110 +1461,219 @@ The order card in Plans ▸ Dots is unchanged and still runs 营养定制: formu
 Where a code comes from is answered on the redeem screen ("your store provides this code"), which is
 the only surface that can say it truthfully.
 
-## 28f. 营养定制 Proposes Three Nested Formulas (2026-09-07)
+## 28f. 营养定制 Proposes Three Packages (2026-09-10)
 
-With **nothing waiting**, the chat tool now proposes the essential **6-dot** formula and shows what
-a further **+2** and **+2** would add — the three purchasable widths (§28c). With a package already
-waiting the card is unchanged: that tier is settled, and a second CTA beside the one the user must
-tap risks stalling the order they already paid for.
+With **nothing waiting**, the chat tool proposes **three complete formulas** — one per purchasable
+package (§28c) — with the one matched to this user open and the other two collapsed beside it. Each
+carries the store's own positioning line and a line written for this user.
 
-Before this the tier was invisible at the one moment it was being chosen. The tool formulated
-against no ceiling, so a proposal was routinely wider than any package sold — prod's `c40d46a4`
-held a 17-dot one — and unpurchasable the moment a code was spent on it.
+Before this the tool proposed one formula and bolted two "+2" upgrade rungs underneath it, styled
+as deliberately subordinate. That was right while the tiers were merchandised as 6种/8种/10种. GCN's
+`migration_0107`/`0108` renamed them off their dot counts and gave each a positioning line, so a
+shopper now reads three **products**, and a card saying "here is your formula, plus two add-ons"
+describes something the store no longer sells.
 
-### `proposed_recipe` gained an optional `tiers`, and the base is the NARROWEST
+Before *that* (until 2026-09-07) the tool formulated against no ceiling at all, so a proposal was
+routinely wider than any package sold — prod's `c40d46a4` held a 17-dot one — and unpurchasable the
+moment a code was spent on it.
 
-```json
-{ "morning": {…}, "evening": {…},
-  "tiers": [ {"max_distinct_dots": 6, "morning": {…}, "evening": {…}}, {"…": 8}, {"…": 10} ] }
-```
+### The model ranks; the server partitions. Do not move that line.
 
-**`morning`/`evening` are the narrowest variant.** That is what lets every reader that predates the
-key — `_activateProposedPlan`, `handleGetFormulationCheckoutSnapshot`,
-`_getCommittedPlanDay0Breakdown` (the printed label), `_packageRow.distinct_dots` — keep working
-untouched while seeing a recipe that fits any tier. No migration; the column already existed.
+The tail is `{"action":"formulate_dots","ranking":[{dot_key, why}, …]}` — no `tier` tags, no
+`upgrades` array, no counts, no `weeks`. Those were removed on 2026-09-07 after **nine measured
+qwen-plus runs** in which it never once produced the requested partition (17/0/0, 7/6/4, 9/4/4 ×3,
+4/0/0 ×2, 6/3/2), and one revision of the instruction pushed it to zero 13 of 17 dots and emit no
+ladder at all. `_capDistinctDots`'s `tierByKey` parameter is the vestige of it and is `undefined` at
+every production call site; only `tests/formula-tier-ladder.test.js` exercises it.
 
-`handlePostFormulationSubmit` picks the widest variant the redeemed code covers
-(`_selectTierVariant`) and, in the same write that binds `gcn_order_id`, **collapses the row** to
-that variant and drops `tiers`. After submission the plan is single-recipe again, so the box scan,
-the label and the snapshot all read what is actually being compounded. §28c's over-tier refusal is
-untouched and still fires — for a plan with no `tiers`, which was capped by nothing.
+The prompt says so in as many words — 你不需要、也不要自己挑出哪几种属于哪一款 — and asks for
+**`rankTarget` = the widest package's width** entries, because the entries after the narrowest
+package's width *are* the wider packages.
+
+### Each package is dosed as its own formula — `_equalizeToTarget`
+
+Until 2026-09-10 every variant was `_capDistinctDots` applied to the **same** allocation, so the
+doses were byte-identical across widths. Measured on dev proposal 38864: **79 dots a day at the
+6-wide package against 109 at the 10-wide**, out of a 144 capacity. 轻享 was not a lighter formula,
+it was the expensive one with four dots deleted and 45% of the capsule empty — and nothing about it
+said 基础均衡.
+
+`_equalizeToTarget` is the mirror of `_fitRecipeToDailyBudget`, which by contract only ever takes
+away. It runs inside `_buildTierLadder`'s width loop, **after** the cap and before
+`_ladderAdditions`. Same allocation now delivers 98 / 109 / 109.
+
+**Parity is the goal, not a guarantee.** A narrow package can only carry what its own dots' ceilings
+allow, and several real dots top out at 1-3 (`DOT-N3`, `DOT-N10`, `DOT-N13`, `DOT-N18`). Live dev run
+(plan 38865): 61 → **91** at 6-wide, where 91 is exactly the sum of that package's six ceilings;
+100 → **144** at 8-wide, stopped by the capsule budget; 150 unchanged at 10-wide. Do not "fix" a
+package that lands short — it is at an authored limit, and passing it is what `dose_above_max`
+exists to refuse.
+
+**The target is the widest variant's own daily total, never the raw `2 × MAX_DOTS_PER_CAPSULE`.**
+This equalises what the packages deliver; it does not fill capsules. Dosing a package above what the
+formulator prescribed for the whole formulary is padding, which every other dose path in this file
+refuses to do — so the widest variant is the ceiling and is returned byte-identical.
+
+Three constraints, all load-bearing:
+
+1. **No dot passes its own `target_dots_max`**, and a dot with no authored range is not raised at
+   all. `validateAgFormulation`'s `dose_above_max` is a refusal, not a warning.
+2. **A locked dot (`timing_flexible = false`) stays inside one capsule.** It cannot be moved between
+   capsules by `_balanceCapsules` or by `_fitRecipeToDailyBudget` stage 1, so an over-full locked
+   slot is resolved downstream by **dropping a whole dot** — an equalisation that removes an
+   intervention is the worst outcome available here.
+3. **It only ever adds.** Never below what came in, and never a change of membership.
+
+`weeks` / `levels` / `order` ride through untouched. `_fitRecipeToDailyBudget` may drop them because
+it runs last inside the per-week loop; this runs long before that, and `_capDistinctDots`'s ranking
+downstream reads all three.
+
+**Membership still nests strictly**, because `_capDistinctDots` still ranks the same `full`
+allocation at every width and a week's top 6 are always inside its top 8. Do not re-rank per
+variant — that can drop from the wide variant a dot the narrow one kept, i.e. an upgrade that takes
+something away.
 
 ### A width is PER WEEK, and every variant carries its own rotation
 
-§28c's rule is untouched here: a 6种 formula may run six dots this week and a partly different six
-next week, so its four weeks together can contain well more than six distinct dots. Each variant is
-therefore built by **`_capDistinctDots`** — the same cap that already binds a purchased package —
-which caps each week independently and returns that variant's own `weeks` map. A width means
-exactly the same thing on the card as it does at submission, and `_countDistinctDots` (the widest
-week) is what both compare against.
+§28c's rule is untouched: a 6种 formula may run six dots this week and a partly different six next
+week, so its four weeks together can contain well more than six distinct dots. Each variant is built
+by **`_capDistinctDots`** — the same cap that binds a purchased package — which caps each week
+independently and returns that variant's own `weeks` map. `_countDistinctDots` (the widest week) is
+what both the card and `handlePostFormulationSubmit` compare against.
 
-**Nesting follows from that**, not from a separate mechanism: `_capDistinctDots` ranks the same
-full allocation on every call and keeps the top `width` of each week, and a week's top 6 are always
-inside its top 8. Do not re-rank per variant — ranking each variant's own set independently can
-drop from the wide variant a dot the narrow one kept, i.e. an upgrade that takes something away.
+The tier tag rides into that ranking via `_capDistinctDots`'s optional `tierByKey`, which nothing
+passes today. `_padCandidatesFor` fills the upper packages when GENERATE curates below the widest
+width — live dev runs returned six dots where a single-shot completion of the same prompt gave
+seventeen, and six is the narrowest package, so the wider variants collapse as duplicates and no
+choice appears at all. **Padding never reaches the core**: it runs only once the model has filled
+the narrowest width itself, and a padded dot is untagged so it sorts behind everything the model
+chose.
 
-The tier tag rides into that ranking (`_capDistinctDots`'s optional `tierByKey`): tag first, then
-emphasis, with untagged dots sorting as the most optional. So a mis-tagged tier needs no
-correcting, and a completion with no tags at all still ladders.
+### Which package is recommended
 
-**A rung's additions are computed week by week** (`_ladderAdditions`), because under rotation an
-upgrade can be two more dots every week *or* the same dot running two more weeks — a cycle-wide set
-comparison sees only the first. Each rung row carries the weeks it adds when they aren't all four.
+`_recommendedWidth`: the narrowest that carries **every dot the model itself asked for**, measured
+from `distinct.size` captured at the top of `_buildTierLadder` **before** the padding loop. Widest
+as the fallback.
 
-`_applyTierLadder` is the single fork — ladder when `orderContext.mode === 'buy'`, else the existing
-`_capDistinctDots` trim — shared by the agentic delivery and the deterministic fallback. **The
-fallback must ladder too**; a proposal with no `tiers` and no cap is one a wider code cannot be
-spent on.
+The claim is only *your recommended protocol needs N slots, and this is the narrowest package with
+N* — a fact about the allocation, not about the product. It is server-computed and never model
+prose, so it sits outside everything JUDGE grades.
 
-### Two things live testing forced, both non-obvious
+**A padded dot must not widen it.** Padding completes the ladder, not the protocol; letting one
+count would recommend the top package on every proposal and make the badge mean nothing.
 
-**The upgrade slots are server-filled.** GENERATE doses the whole formulary when asked in isolation
-but *curates* inside the agentic loop — live dev runs returned six dots where a single-shot
-completion of the same prompt gave seventeen. Six is the narrowest tier, so the wider variants
-collapse as duplicates and no ladder appears at all. `_padCandidatesFor` offers dots targeting the
-user's own elevated dimensions first, dosed by `_fallbackCountForDot`. It **never reaches the
-core**: padding runs only once the model has filled the narrowest tier itself, and a padded dot is
-untagged so it sorts behind everything the model chose.
+### The card
 
-**A pitch that names a dot outside its own rung is dropped** (`_rungPitch`). The model writes the
-copy but the server decides membership, and the first real run had them disagree — a pitch reading
-"加配肠道焕新与脉络畅流" above a rung holding two different dots, and another naming a dot the
-formulation did not contain. The prompt now asks for copy that names no dots (the card lists them
-on the next line); this is the backstop, and it drops rather than repairs.
+`#tier|<label>|<width>|<rec>` starts a package; every `#day` group and row after it belongs to it
+until the next `#tier`. `#note` is the store's positioning line and `#pitch` the one written for
+this user; both are optional and both rejoin their tail on `|`.
 
-**JUDGE and PLAN both had to be told the narrowness is intended.** JUDGE rejected a deliberately
-6-dot core as `plan_drift` — "must reflect the full set of clinically indicated dots" — and the
-forced REVISE stripped the upgrade copy. A dot missing from a formulation is never an omission:
-the number of dots is a product constraint the model does not get to widen.
+- **`#rung` is retired and no longer written**, but is still **parsed** — chat history is permanent
+  and every card written before 2026-09-10 contains one. `_ladderAdditions` outlived its own output:
+  nothing renders `added` any more, and its remaining job inside `_buildTierLadder` is the one that
+  was always load-bearing — **a width that adds nothing over the one below it is not a package**, so
+  it is skipped rather than shown as a duplicate the buyer is asked to choose between.
+- **A card with no `#tier` becomes one unnamed open package**, so `main.wxml` has a single code
+  path. That covers every legacy card and every user who already holds a package.
+- **The card states no dot count and no "+N over the one below."** What separates the packages is a
+  product decision moving beyond "how many kinds of dot" (§28c), so a number here would be the first
+  thing to go stale — and it is the one claim on this card a user cannot check for themselves. A
+  collapsed package shows its name, the store's positioning line and its **actual dot roster**; the
+  open one shows the whole formula. `<width>` still rides in the `#tier` line as data, but nothing
+  renders it, and the parser deliberately derives no `dotCount`/`more` for anything to reach for.
+- **The whole collapsed package is the tap target**, not its title row. Measured 2026-09-10 after a
+  real-device report: with `bindtap` on the header alone, **19%** of a collapsed block was live —
+  a 17px strip — and the positioning line and dot roster, i.e. everything a finger aims at, did
+  nothing. Now 73%. When a package is OPEN only its title row and positioning line collapse it: a
+  tap on the chart being read must not close it. A `⌄`/`⌃` chevron supplies the affordance, without
+  which the collapsed packages read as static summaries — which is how they were reported.
+  - **`bindtap` on a bare `<text>` does not fire**; it works on a wrapping `<view>`. Confirmed live
+    with the identical handler and `data-*` on both.
+  - **An automator `tap()` by selector proves the handler is wired, not that a finger can reach
+    it.** The tap test passed throughout. Measure coverage instead — `tools/wechat-automator/README.md`.
+- Bar widths normalise against the largest capsule across **all** groups of **all** packages, so the
+  visible difference between them is the number of colour segments rather than the bar length —
+  which is the honest reading, since the daily loads are now equal by construction.
+- **The CTA follows the OPEN package** (2026-09-10, reversing the one-shared-CTA rule that stood
+  here — "which tier a user gets is decided by whichever redeem code they hold, not by what they
+  tap"). That stopped being true: a shopper can buy a specific tier's 兑换码 from their own bound
+  store, and may already hold codes for several. Three branches, resolved in `_formulaCtaFor` and
+  stored on the segment as `seg.cta` because WXML cannot join a tier against the codes list:
 
-### The widths come from GCN, and no rung is a CTA
+  | state for THAT tier | line above | button | action |
+  |---|---|---|---|
+  | order at `pending_payment` | `<tier>订单待支付` | 去支付 | `pay_order` intent on that order |
+  | unredeemed fast-track code | `你已购买<tier>` | 开始配制 | the code sheet, prefilled with that code |
+  | neither | — | 购买<tier> | `buy_formulation_package` intent, addressed by WIDTH |
 
-`GET /api/mall/nano/formulation-packages` (`requireNanoService`, always 200): fast-track tiers only
-— a premium package is Viva AG's to formulate, so offering it advertises an upgrade this tool
-cannot fulfil — and **no price**, because nano does not price this product and there is no payment
-at redemption. It travels in `llmContext.formulation_tiers` rather than being re-fetched at
-delivery: the variants must be built against the widths the model was told to aim at.
+  **The unpaid check comes first**, or a buyer who already ordered that tier is sent to order it
+  again — GCN refuses a second with `formulation_already_in_progress`, so it dead-ends.
 
-The card carries `#rung|<label>|<width>|<pitch>` blocks after the day groups, rows in the same
-`key|name|color|am|pm` shape plus an optional 6th field — the weeks that dot is added in, absent
-when it runs all four. **One CTA, at the bottom, for all of them**: which tier a user gets is
-decided by whichever redeem code they hold, and a code cannot be bought in-app (§28e), so a
-per-rung button would offer a choice that does not exist.
+  **EXACT width match.** A wider code compounds its own variant (`_selectTierVariant` takes the
+  widest the code covers), so offering 开始配制 on a narrower package while holding a wider code
+  would compound a formula other than the one on screen.
 
-### The guardrail was narrowed, in three places
+  **Addressed by width, never by sku id.** §28c's ban is why: a stale client-side formulation sku
+  broke both checkouts in the sandbox on 2026-08-22, and this card is a stored chat message that
+  would freeze one for good. GCN resolves width → sku against the buyer's own listed items
+  (`openFormulationPackageByWidth`), and what a shopper can actually buy is the **兑换码** sku —
+  `handleStoreItems` strips any sku another active sku redeems for.
 
-Aspirational upgrade copy collides with the always-injected essential block, which reads every
-claim as a clinical one. The new clause is a **permission plus a restatement of the hard bans** —
-no onset window, improvement magnitude, numeric forecast, guarantee, invented mechanism, or price;
-dot names still verbatim — scoped by name to the `"upgrades"` field alone.
+  `seg.cta` is recomputed on all three of its inputs: when the card is built, when a package is
+  opened, and when `_loadDots` lands the codes/packages lists (`_refreshFormulaCtas`). A card with
+  no packages has no `cta` and falls back to the generic redeem CTA.
+- `handleFormulaTierToggle` is a **radio, not a checkbox** — two open charts in one bubble is the
+  stacked layout the collapsing exists to avoid — and is addressed by message + segment + tier index
+  because a transcript can hold several formula cards, each remembering its own open package.
 
-Per §37's precedent it lives in `knowledge_entries` (`migration_knowledge_upgrade_copy.sql`),
+### The copy: the store's line, and one written here
+
+The tagline comes from GCN (`skus.description` → `tier_description` on
+`GET /api/mall/nano/formulation-packages` → `fetchFormulationTiers` → `llmContext.formulation_tiers`).
+It is **not** re-written on this side: a package reading one way on the shelf and another in chat is
+the defect `migration_0107` fixed for the tier name, one line lower.
+
+**`lib/tierCopy.js`** (was `rungCopy.js`) writes the per-user line — one per package including the
+narrowest, from a short scoped second call that is **shown** the dots it is describing, so the
+sentence and the chart under it cannot disagree. It never cites a dose, because it is never given
+one. It is never fatal: a package with no pitch renders as its dots alone.
+
+`_tierPitch` drops a pitch outright if it names any dot that package does not hold — found live on
+dev, where the model narrated one split and tagged a different one. **Drops, never repairs.**
+
+Pitches are humanized (`humanizeDotCodes`) **inside `tierCopy.js`, before placement**, because
+`dotNames.js` deliberately refuses to rewrite anything between `:::` fences and a `#pitch` line
+lives inside one.
+
+### Storage is unchanged, and there is no migration
+
+`proposed_recipe.morning`/`evening` stays the **narrowest** variant. Every reader that predates
+`tiers` — `_activateProposedPlan`, `handleGetFormulationCheckoutSnapshot`,
+`_getCommittedPlanDay0Breakdown` (the printed label), `_packageRow.distinct_dots` — keeps working
+and sees a recipe that fits any package sold. `handlePostFormulationSubmit` picks the widest variant
+the redeemed code covers (`_selectTierVariant`) and collapses the row to it. §28c's over-tier
+refusal is untouched and still fires for a plan with no `tiers`.
+
+The base's per-dot day-0 numbers are now higher, so the printed label and the checkout snapshot
+report what a 轻享 code actually compounds. That is correct — and it does mean a label printed
+before this differs from one printed after.
+
+### The guardrail is scoped to the package line, in three places
+
+Aspirational product copy collides with the always-injected essential block, which reads every claim
+as a clinical one. The exception used to name the `"upgrades"` field — gone from the prompts since
+2026-09-07, and never covering the narrowest package at all — and now names the card's per-package
+positioning line. It is a **permission plus a restatement of the hard bans**: no onset window,
+improvement magnitude, numeric forecast, guarantee, invented mechanism, or price; dot names still
+verbatim.
+
+Per §26/§37 it lives in `knowledge_entries` (`migration_knowledge_tier_copy.sql`),
 `lib/knowledgeBase.js`'s `FALLBACK_ESSENTIAL_BLOCK`, and `prompts/chat/factConstraint.js` —
 **change all three together**, or a transient DB error silently returns the model to refusing to
-write a rung at all. `planTemplate.js` and `judgeTemplate.js` were taught the tail for the reason
-§27 and §37 both record: an unrecognised action tail is graded as an unsupported claim and burns
-REVISE rounds.
+write package copy at all. `planTemplate.js` and `judgeTemplate.js` were taught the tail for the
+reason §27 and §37 both record: an unrecognised action tail is graded as an unsupported claim and
+burns REVISE rounds. **Keep JUDGE's DELIBERATELY NARROW clause** — it is what stops a six-dot
+package being graded as `plan_drift`.
 
 ## 29. Viva Proactive Daily Check-Ins (Morning / Midday / Evening)
 

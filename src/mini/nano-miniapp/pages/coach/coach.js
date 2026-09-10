@@ -130,7 +130,7 @@ const T = {
     toolTestChip: '检测服务',
     toolHealthAdvice: '健康管理',
     toolUploadImage: '上传图片',
-    toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
+    toolFormulaDotMsg: '请帮我配制我的原粒方案',
     toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
     formulaGenerating: '正在为你定制营养方案…',
     formulaComplete: '该客户的 28 天定制方案已生成，详见对话中的配比卡片。',

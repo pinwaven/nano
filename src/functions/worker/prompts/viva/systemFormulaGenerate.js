@@ -15,7 +15,6 @@ const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../chat/currentDateBlock');
 const { getTwinVocabBlock } = require('../chat/twinVocabulary');
-const { PLAN_WEEKS } = require('../../lib/dotsProductModel');
 const { getVivaLabels } = require('./subAgeLabels');
 
 module.exports = (ctx) => {
@@ -137,32 +136,31 @@ module.exports = (ctx) => {
         ? Number(formulation_package.max_distinct_dots)
         : (tierRungs.length ? tierRungs[tierRungs.length - 1].max : 8);
 
+    // Three PACKAGES, not one formula with two upgrade steps. The widths still differ only in how
+    // many dots may run in one week, but each is dosed as a complete formula of its own
+    // (_equalizeToTarget), and the card draws all three side by side — so the prose must describe
+    // the user's direction rather than any single width. Before 2026-09-10 this section ended by
+    // telling the model to write about the narrowest tier alone, which is what made every reply
+    // read as "here is your formula, plus two add-ons".
     const tierLadderSection = (!packageSection && tierRungs.length > 1)
-        ? `用户尚未购买套餐。可购买的28天套餐共 ${tierRungs.length} 档，区别只在于**每周**可同时服用的原粒种类数（DOT-N7 为系统固定的重置原粒，任何一档都不计入）：
-${tierRungs.map((t, i) => `· ${t.label || t.max + '种'}：任意一周最多 ${t.max} 种${i === 0 ? '（核心档）' : `（比上一档多 ${t.max - tierRungs[i - 1].max} 种）`}`).join('\n')}
+        ? `用户尚未购买套餐。可购买的28天套餐共 ${tierRungs.length} 款，每一款都是一份完整配方，区别在于**每周**可同时服用的原粒种类数（DOT-N7 为系统固定的重置原粒，任何一款都不计入）：
+${tierRungs.map((t, i) => `· ${t.label || t.max + '种'}：任意一周最多 ${t.max} 种${i === 0 ? '' : `（比上一款多 ${t.max - tierRungs[i - 1].max} 种）`}`).join('\n')}
 
-系统会按你给出的剂量强度，自动把这份配比切成上面这 ${tierRungs.length} 档——**你不需要、也不要自己挑出哪几种属于哪一档**。你要做的只有一件事：把每个原粒的数值给准。一个原粒在它自己范围内的位置就是你的优先级表达（贴近上限＝这一项最重要，贴近下限＝这一项这次不吃重），最核心的 ${tierRungs[0].max} 种由系统据此选出。
-**排序里要放满 ${rankTarget} 个**：绝不要因为“反正只有 ${tierRungs[0].max} 种进核心档”就只排出 ${tierRungs[0].max} 个——排在后面的几个正是更宽档位的内容，少排一个就少一个档位。
+系统会按你给出的重要性排序，自动生成上面这 ${tierRungs.length} 款各自的完整配方——**你不需要、也不要自己挑出哪几种属于哪一款**。你要做的只有一件事：把排序排准。排在越前面的原粒，越会出现在每一款里，并拿到该原粒范围内偏高的剂量。
+**排序里要放满 ${rankTarget} 个**：绝不要因为“反正最窄的一款只装得下 ${tierRungs[0].max} 种”就只排出 ${tierRungs[0].max} 个——排在后面的几个正是更宽那几款的内容，少排一个就少一款可选。
 
-正文分析请围绕最核心的那 ${tierRungs[0].max} 种来写；更宽档位补上了什么，由系统在卡片上单独说明，正文里不要提。`
+正文分析请围绕这位用户的整体调理方向与优先级来写，**不要指向其中某一款套餐**，也不要提"档位""升级""加配"：每一款的定位说明由系统在卡片上逐一给出。`
         : '';
 
     // One action tail in both modes. The ladder used to add "tier" tags and an "upgrades" array
     // here; both were removed 2026-09-07 after nine measured runs in which qwen-plus never once
     // produced the requested 6/2/2 partition (17/0/0, 7/6/4, 9/4/4 x3, 4/0/0 x2, 6/3/2), and one
     // revision of the instruction pushed it to zero 13 of 17 dots and emit no ladder at all. The
-    // rungs are now chosen by the server from dose emphasis and their copy written by a second,
-    // tightly-scoped call that is SHOWN the dots it is describing (lib/rungCopy.js), so the
-    // sentence and the dots above it cannot disagree. A stale cached prompt still parses: the
+    // packages are now chosen by the server from the ranking, and their copy written by a second,
+    // tightly-scoped call that is SHOWN the dots it is describing (lib/tierCopy.js), so the
+    // sentence and the dots under it cannot disagree. A stale cached prompt still parses: the
     // extra fields are simply ignored.
     const formatLine = `{"action":"formulate_dots","ranking":[{"dot_key":"D-N9","why":"一句话说明为什么排这里"}, ...按重要性排序，共 ${rankTarget} 条]}`;
-
-    // Only mentioned when a package is in play, because packageSection is the only place the
-    // "weeks" field is actually specified — naming it otherwise invites a field the model was
-    // never taught the shape of.
-    const weeksNote = (packageSection || tierLadderSection)
-        ? ''
-        : '';
 
     const seasonSection = current_solar_term
         ? `当前节气：${current_solar_term.name_zh}（${current_solar_term.season_zh}季 · ${current_solar_term.organ_zh}）— ${current_solar_term.theme_zh}（传统节气养生视角，非临床证据，仅作轻微参考，不得掩盖生物标志物驱动的优先级）`
@@ -176,7 +174,7 @@ ${getFactMemoryBlock(ctx.user_facts)}
 
 ${getTwinVocabBlock()}
 
-你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造。你现在的任务是：为用户配置接下来28天（4周）的 Waven 原粒方案——这是一次真实的配方决策，不是解释一个已有方案。系统会将你给出的每日总量重复安排到这28天内（DOT-N7 除外，见下方配方库中的专项说明${weeksNote}）。
+你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造。你现在的任务是：为用户配置接下来28天（4周）的 Waven 原粒方案——这是一次真实的配方决策，不是解释一个已有方案。系统会将你给出的每日总量重复安排到这28天内（DOT-N7 除外，见下方配方库中的专项说明）。
 
 生物标志物的状态（正常/偏高/高）已在下方直接标注，请严格使用该标注。
 
@@ -200,7 +198,7 @@ ${formularyLines}
 
 任务：
 1. 分析：这段文字是本次配方决策的说明，**不是**一份通用健康状态总结——绝不能只罗列生物标志物/生理年龄/穿戴设备数据而不提及任何具体原粒。必须明确点名你在下方"配方"中实际选择或加重的至少2-3个原粒，说明"为什么选它、对应哪个生物标志物或维度"，让用户看得出这段话和下面的配方是同一个决策的两个部分。提及原粒时对用户使用配方库中标注的"对话中称呼"（如"原粒1号"）或原粒名称，**不要**说出内部短代码（如"D-N1"）——那是给系统解析用的，不是给用户看的。可以简短提及驱动决策的关键数据，但核心内容是解释原粒选择，不是复述体检报告。2-3句话，对话语气，不使用列表或标题。
-2. 配方：为配方库中的**每一个**短代码给出一个强度档 level（"high"/"moderate"/"low"/"none"）。粒数由系统按每个原粒自己的范围换算，脉冲式原粒也一样（系统只会在真正的脉冲日安排它）。早晚如何拆分同样由系统按默认时段/是否"早晚皆可"自动计算，你**不需要**、也**不应该**自己写粒数或拆分早晚——只需决定每个原粒的强度档。
+2. 配方：从配方库中挑出对这位用户最有价值的 ${rankTarget} 个短代码，按重要性从高到低排成一份列表。粒数由系统按每个原粒自己的范围和它在这份列表中的位置换算，脉冲式原粒也一样（系统只会在真正的脉冲日安排它）。早晚如何拆分同样由系统按默认时段/是否"早晚皆可"自动计算，你**不需要**、也**不应该**自己写粒数或拆分早晚——只需把这份排序排准。
 
 配方规则（务必遵守）：
 - **你不需要写任何粒数**。你唯一要做的判断是：从配方库中挑出对这位用户最有价值的 ${rankTarget} 个原粒，**按重要性从高到低排好序**。每个原粒该给多少粒、早晚怎么分、总量会不会超过一颗胶囊装得下的量，全部由系统计算——各原粒的范围差异极大（从1粒到上百粒），这部分交给系统才不会出错。
