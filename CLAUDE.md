@@ -3014,3 +3014,29 @@ never shows as a purchase.
 `lib/extractionPrimitives.js` holds the date/number coercions `docExtraction` and `foodSensitivity`
 share, so a food panel and a lab panel arriving in the same submission cannot apply different date
 rules. Deploy order, as §39: **migrate, then the worker.**
+
+## 41. MCP Server — Read-Only Data Access for the Analysis Workshop (2026-09-15)
+
+`src/functions/mcp/` (`nano-mcp-dev`, `https://nano-dev.gcn.net/mcp`) exposes **both** dev
+databases — `nano_db_dev` and `gcn_db_dev` — to MCP-compatible clients as five tools:
+`waven_get_data_map`, `waven_list_tables`, `waven_describe_table`, `waven_search_columns` and
+`waven_query` (one `SELECT`-shaped statement, row-capped). Bearer `MCP_API_TOKEN`. Deploy with
+`npm run deploy:mcp`; run locally with `npm run mcp:local`. Full detail, including why the
+Streamable HTTP transport is hand-rolled on FC's event-function model:
+[docs/architecture/mcp-server.md](docs/architecture/mcp-server.md).
+
+Three rules, each load-bearing:
+
+- **Dev only, by construction.** `lib/db.js` refuses any database whose name does not end in
+  `_dev`, and `s-prod.yaml` has no `mcp` block. Do not add an env switch to reach prod — that
+  needs a read-only Postgres role and its own decision.
+- **Every query runs inside `SET TRANSACTION READ ONLY`** (`withReadOnly()`), catalog lookups
+  included. `lib/sql-guard.js` is the second layer (single statement, allowed leads, no
+  `FOR UPDATE`/`pg_sleep`/`lo_*`/…); Postgres is the one that actually refuses writes.
+- **Pools stay at `max: 2`.** Same cluster as GCN prod (§32).
+
+`lib/data-map.md` is what the model reads first — the cross-database join keys
+(`gcn.users.nano_user_id` ↔ `nano.users.user_id`, `order_item_custom_formulations.nano_nutrition_plan_id`
+↔ `nutrition_plans.id`, `partners.nano_partner_id`, `sectors.owner_nano_channel_id` ↔
+`channels.key_name`) and the naming traps (§11's `key_name` rule, §17's `validated`-not-`actual`
+rule, GCN's "no `stores` table"). Keep it current when a cross-repo key is added.

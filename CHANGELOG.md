@@ -8,6 +8,20 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 
+- **MCP server for the data-analysis workshop** (`CLAUDE.md` §41, `docs/architecture/mcp-server.md`) · 2026-09-15
+  - New FC function `src/functions/mcp/` (`nano-mcp-dev`, `https://nano-dev.gcn.net/mcp`): a
+    stateless Streamable HTTP MCP endpoint exposing **both** dev databases (`nano_db_dev`,
+    `gcn_db_dev`) through `waven_get_data_map`, `waven_list_tables`, `waven_describe_table`,
+    `waven_search_columns` and a read-only `waven_query`.
+  - Read-only three ways: every statement runs inside `SET TRANSACTION READ ONLY` with a statement
+    timeout; a pure SQL guard allows one `SELECT`-shaped statement and refuses `FOR UPDATE`,
+    `pg_sleep`, `lo_*`, `dblink` and friends; pool construction refuses any database name not
+    ending in `_dev`. Pools are capped at 2 connections each (shared cluster, §32).
+  - The transport is hand-rolled on the SDK's `Transport` interface because FC 3.0 HTTP triggers
+    are event functions with no Node request/response objects.
+  - `npm run deploy:mcp` / `npm run mcp:local`; new `.env` keys `MCP_API_TOKEN`, `GCN_DB_PASS`.
+    Dev only — no `mcp` block in `s-prod.yaml`.
+
 - **慢性食物过敏 (food IgG) panels become twin data** (`CLAUDE.md` §40) · 2026-09-11
   - A 120-item food-sensitivity report uploaded as a 健康文档 is now extracted into its own tables
     (`food_catalog`, `food_sensitivity_panels`, `food_sensitivity_results`), turned into a
