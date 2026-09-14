@@ -2,9 +2,13 @@
 
 This is the end-user-facing manual for the Waven Nano (and white-labeled, e.g. Aeviva) WeChat Mini Program. It covers three audiences, each with their own guide:
 
-- **[End User Guide](end-user-guide.md)** — for everyday users of the Mini Program: chatting with your AI health companion, scanning Kino chips, reading your BioAge and sub-ages, connecting a wearable ring, managing your Dots nutrition plan, joining health plan focuses, and using the store and learning content.
+- **[End User Guide](end-user-guide.md)** — for everyday users of the Mini Program: chatting with your AI health companion, scanning Kino chips, reading your BioAge and sub-ages, connecting a wearable ring, uploading health records, building/ordering/activating your 28-day Dots formulation, joining health plan focuses, Viva AG deep analysis, and using the store and learning content. **Illustrated with screenshots** (`images/`).
 - **[Coach Guide](coach-guide.md)** — for coaches using the in-app Coach Panel to manage clients: viewing client health data, recommending plans, messaging, notes/goals, invites, questionnaires, CRM, and earnings.
 - **[Admin Guide](admin-guide.md)** — for channel admins using the in-app Admin Panel: managing users, coaches, the store catalog, orders, invite codes, rewards/payouts, and partners within a channel.
+
+>  The end-user guide is also available as a print-ready PDF:
+> **[end-user-guide.pdf](end-user-guide.pdf)** (27 pages). It is generated from the markdown by
+> `tools/manual-pdf/build.sh` — re-run that after editing the guide, or the PDF goes stale.
 
 > Note: the **web** Admin Panel (superadmin-only, browser-based) is a separate tool and is not covered here.
 
