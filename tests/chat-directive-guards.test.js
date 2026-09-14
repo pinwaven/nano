@@ -135,3 +135,33 @@ test('markdown-banning conversational intents are deliberately left alone', () =
       `${rel} bans headings/lists or is a one-line transactional turn — a card there is wrong`);
   }
 });
+
+test('stripping a trailing invitation keeps every table row, heading, bullet and line break', () => {
+  // The old implementation rebuilt the reply from the matched sentences only, so anything not
+  // ending in 。！？ — and every \n — vanished. A 7-day meal-plan table shipped as its intro
+  // and closing glued into one paragraph (dev, 2026-09-15).
+  const body = [
+    'Mary，已确认你当前没有原粒方案。',
+    '',
+    '### 一周三餐',
+    '',
+    '| 餐次 | 周一 | 周二 |',
+    '|------|------|------|',
+    '| 早餐 | 糙米燕麦粥 | 小米南瓜粥 |',
+    '| 午餐 | 杂粮饭 + 清炒西兰花 | 糙米饭 + 蒸豆腐 |',
+    '',
+    '1️⃣ **稳住GA**：先吃蔬菜再吃主食',
+    '2️⃣ **适配白露**：粥品温热食用',
+    '',
+    '所有葱蒜韭菜已全程规避。',
+  ].join('\n');
+  const text = body + '\n\n如需我为你生成PDF打印版，请随时告诉我。';
+  const out = stripTrailingQuestion(text, { strict: true });
+  assert.strictEqual(out, body, 'only the trailing invitation may be removed');
+});
+
+test('stripping an invitation inside a takeaway fence leaves the fence lines and newlines intact', () => {
+  const text = '你的炎症水平稳定。\n\n:::takeaway\n8 周后复测一次。需要我帮你安排复测吗？\n:::';
+  const out = stripTrailingQuestion(text, { strict: true });
+  assert.strictEqual(out, '你的炎症水平稳定。\n\n:::takeaway\n8 周后复测一次。\n:::');
+});

@@ -633,8 +633,16 @@ function stripTrailingQuestion(text, { strict = true } = {}) {
     const violates = strict ? (isQuestion || isInvitation) : isInvitation;
     if (!violates) return text;
     if (sentences.length <= 1) return text; // whole reply is one sentence — nothing safe to fall back to
-    sentences.splice(lastIdx, 1);
-    return sentences.join('').trimEnd();
+    // Cut the offending sentence out of the ORIGINAL text by position. This used to rebuild the
+    // reply as `sentences.join('')`, and `sentences` is only what the regex above matched: a
+    // punctuation-terminated sentence. A markdown table row, a heading, a bullet like
+    // 「1️⃣ **稳住GA**」 and every line break are none of those, so whenever this fired on a
+    // structured reply it silently deleted the structure and glued the survivors into one
+    // paragraph — a 2939-char seven-day meal plan shipped as 385 chars of intro and closing,
+    // reproduced on dev 2026-09-15. Removing by index leaves everything else byte-identical.
+    const cutAt = trimmed.lastIndexOf(last);
+    if (cutAt <= 0) return text;
+    return (trimmed.slice(0, cutAt) + trimmed.slice(cutAt + last.length)).trimEnd();
 }
 
 // Cross-checks any biomarker figures / dates / age the model actually wrote against the ground-truth
