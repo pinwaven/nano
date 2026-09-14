@@ -83,6 +83,22 @@ module.exports = (ctx) => {
         .filter(([, age]) => age > (bioage?.ChronoAge ?? Infinity))
         .map(([dim]) => (isZh ? DIM_LABELS[dim]?.zh : DIM_LABELS[dim]?.en) || dim)
         .join(isZh ? '、' : ', ') || (isZh ? '无' : 'none');
+    // Every dimension, labelled, comparison done — see the viva prompt's note: with none
+    // elevated the model reached for tool output and echoed raw keys (「MetabolicAge（41.5岁）」).
+    const dimLabel = (dim) => (isZh ? DIM_LABELS[dim]?.zh : DIM_LABELS[dim]?.en) || dim;
+    const subAgeLines = Object.entries(bioage?.SubAges || {})
+        .filter(([, age]) => typeof age === 'number')
+        .map(([dim, age]) => {
+            const diff = typeof bioage?.ChronoAge === 'number' ? Math.round((age - bioage.ChronoAge) * 10) / 10 : null;
+            let rel = '';
+            if (diff != null) {
+                if (isZh) rel = diff > 0 ? `，老于实际年龄 ${diff} 岁` : diff < 0 ? `，年轻于实际年龄 ${Math.abs(diff)} 岁` : '，与实际年龄相同';
+                else rel = diff > 0 ? `, ${diff} years older than chronological` : diff < 0 ? `, ${Math.abs(diff)} years younger than chronological` : ', equal to chronological';
+            }
+            return isZh ? `  ${dimLabel(dim)}：${age} 岁${rel}` : `  ${dimLabel(dim)}: ${age}${rel}`;
+        })
+        .join('\n') || (isZh ? '  （暂无）' : '  (none)');
+    const dimNamesList = ['CellularAge', 'MetabolicAge', 'MicroVascularAge', 'ResilienceAge'].map(dimLabel).join(isZh ? '、' : ', ');
 
     const twinSection = health_twin
         ? (isZh
@@ -202,7 +218,7 @@ Write the prose analysis about this user's overall direction and priorities. **D
             : `Current solar term: ${current_solar_term.name_zh} (${current_solar_term.season_zh} · ${current_solar_term.organ_zh}) — traditional seasonal-wellness framing, not clinical evidence; use only as a light accent, never override biomarker-driven priorities.`)
         : '';
 
-    const NOTE_ZH_DIALOGUE_LABEL = '提及原粒时对用户使用配方库中标注的"对话中称呼"（如"原粒1号"）或原粒名称，**不要**说出内部短代码（如"D-N1"）——那是给系统解析用的，不是给用户看的。';
+    const NOTE_ZH_DIALOGUE_LABEL = `提及原粒时对用户使用配方库中标注的"对话中称呼"（如"原粒1号"）或原粒名称，**不要**说出内部短代码（如"D-N1"）——那是给系统解析用的，不是给用户看的。同理，年龄维度只用上面给出的中文名称（生理年龄、实际年龄、${dimNamesList}），**绝不**在回复里出现 BioAge、ChronoAge、MetabolicAge 这类英文字段名。`;
 
     // One action tail in both modes. The ladder used to add "tier" tags and an "upgrades" array
     // here; both were removed 2026-09-07 — see the sibling viva prompt for the measurements.
@@ -226,7 +242,9 @@ ${seasonSection}
 
 生物标志物：
 ${biomarkersStr}
-年龄：BioAge = ${bioAge}, ChronoAge = ${chronoAge}
+年龄：生理年龄 ${bioAge} 岁，实际年龄 ${chronoAge} 岁
+四个子年龄：
+${subAgeLines}
 偏高维度：${elevatedDims}
 
 配方库（短代码: 名称 [成分] — 每日总量范围，默认时段，对应维度）：
@@ -267,7 +285,9 @@ ${seasonSection}
 
 Biomarkers:
 ${biomarkersStr}
-Age: BioAge = ${bioAge}, ChronoAge = ${chronoAge}
+Age: biological age ${bioAge}, chronological age ${chronoAge}
+Four sub-ages:
+${subAgeLines}
 Elevated dimensions: ${elevatedDims}
 
 Formulary (short key: name [ingredients] — daily total range, default slot, target dimension):
@@ -276,7 +296,7 @@ ${formularyLines}
 Available tools: call get_biomarker_history for historical test trends, get_nutrition_schedule for prior formulation history (avoid wild swings from recent plans, and learn the user's Dot usage habits). When unsure, verify with a tool rather than assuming.
 
 Task:
-1. Analysis: this text explains the actual formulation decision — it is **not** a generic health-status summary. Never just list biomarkers/BioAge/wearable data without naming any specific Dot. You must explicitly name at least 2-3 Dot short-keys/names you actually chose or emphasized in the "formulation" below, and explain why each was chosen and which biomarker or dimension it addresses — the reader should see this text and the formulation below as two parts of the same decision. You may briefly mention the key data driving the decision, but the core content is explaining the Dot choices, not restating the lab report. 2-3 sentences, conversational tone, no lists or headers.
+1. Analysis: this text explains the actual formulation decision — it is **not** a generic health-status summary. Never just list biomarkers/bio-age/wearable data without naming any specific Dot. Refer to age dimensions only by the names given above (biological age, chronological age, ${dimNamesList}) — never internal field names such as BioAge, ChronoAge or MetabolicAge. You must explicitly name at least 2-3 Dot short-keys/names you actually chose or emphasized in the "formulation" below, and explain why each was chosen and which biomarker or dimension it addresses — the reader should see this text and the formulation below as two parts of the same decision. You may briefly mention the key data driving the decision, but the core content is explaining the Dot choices, not restating the lab report. 2-3 sentences, conversational tone, no lists or headers.
 2. Formulation: pick the ${rankTarget} short-keys worth most to this user and put them in one list, most important first. The system converts each position into a real count using that Dot's own range, pulse Dots included (it schedules those only on the real pulse days). The AM/PM split is computed automatically from each Dot's default slot and flexibility flag — you do **not** need to, and should **not**, write pill counts or decide the morning/evening split yourself; just get the order right.
 
 Formulation rules (must follow):

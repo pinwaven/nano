@@ -64,6 +64,18 @@ module.exports = (ctx) => {
 
     const bioAge = bioage?.BioAge ?? '未知';
     const chronoAge = bioage?.ChronoAge ?? '未知';
+    // Every dimension, labelled, with the comparison already done — not only the elevated ones.
+    // A user with all four below chronological age (prod 2026-09-14) left the 偏高维度 line at
+    // 无, and the model went looking in tool output and came back with the raw keys
+    // (「MetabolicAge（41.5岁）」). Names here are the only ones it should ever use in prose.
+    const subAgeLines = Object.entries(bioage?.SubAges || {})
+        .filter(([, age]) => typeof age === 'number')
+        .map(([dim, age]) => {
+            const diff = typeof bioage?.ChronoAge === 'number' ? Math.round((age - bioage.ChronoAge) * 10) / 10 : null;
+            const rel = diff == null ? '' : diff > 0 ? `，老于实际年龄 ${diff} 岁` : diff < 0 ? `，年轻于实际年龄 ${Math.abs(diff)} 岁` : '，与实际年龄相同';
+            return `  ${labels[dim] || dim}：${age} 岁${rel}`;
+        })
+        .join('\n') || '  （暂无）';
 
     const twinSection = health_twin
         ? `数字孪生 · 日常监测（近7天均值）：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 静息心率 ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}\n30天趋势：${health_twin.trend_data ? JSON.stringify(health_twin.trend_data) : '暂无'}`
@@ -198,7 +210,9 @@ ${seasonSection}
 
 生物标志物：
 ${biomarkersStr}
-年龄：BioAge = ${bioAge}, ChronoAge = ${chronoAge}
+年龄：生理年龄 ${bioAge} 岁，实际年龄 ${chronoAge} 岁
+四个子年龄：
+${subAgeLines}
 偏高维度：${Object.entries(bioage?.SubAges || {}).filter(([, age]) => age > (bioage?.ChronoAge ?? Infinity)).map(([dim]) => labels[dim] || dim).join('、') || '无'}
 
 配方库（短代码: 名称 [成分] — 每日总量范围，默认时段，对应维度）：
@@ -207,7 +221,7 @@ ${formularyLines}
 可用工具：你可以调用 get_biomarker_history 查看历史检测趋势、get_nutrition_schedule 查看以往的配方历史（避免与近期方案剧烈波动、了解用户的原粒使用习惯）。不确定时优先调用工具核实，而不是凭空假设。
 
 任务：
-1. 分析：这段文字是本次配方决策的说明，**不是**一份通用健康状态总结——绝不能只罗列生物标志物/生理年龄/穿戴设备数据而不提及任何具体原粒。必须明确点名你在下方"配方"中实际选择或加重的至少2-3个原粒，说明"为什么选它、对应哪个生物标志物或维度"，让用户看得出这段话和下面的配方是同一个决策的两个部分。提及原粒时对用户使用配方库中标注的"对话中称呼"（如"原粒1号"）或原粒名称，**不要**说出内部短代码（如"D-N1"）——那是给系统解析用的，不是给用户看的。可以简短提及驱动决策的关键数据，但核心内容是解释原粒选择，不是复述体检报告。2-3句话，对话语气，不使用列表或标题。
+1. 分析：这段文字是本次配方决策的说明，**不是**一份通用健康状态总结——绝不能只罗列生物标志物/生理年龄/穿戴设备数据而不提及任何具体原粒。必须明确点名你在下方"配方"中实际选择或加重的至少2-3个原粒，说明"为什么选它、对应哪个生物标志物或维度"，让用户看得出这段话和下面的配方是同一个决策的两个部分。提及原粒时对用户使用配方库中标注的"对话中称呼"（如"原粒1号"）或原粒名称，**不要**说出内部短代码（如"D-N1"）——那是给系统解析用的，不是给用户看的。同理，年龄维度只用上面给出的中文名称（生理年龄、实际年龄、${labels.CellularAge}、${labels.MetabolicAge}、${labels.MicroVascularAge}、${labels.ResilienceAge}），**绝不**在回复里出现 BioAge、ChronoAge、MetabolicAge 这类英文字段名。可以简短提及驱动决策的关键数据，但核心内容是解释原粒选择，不是复述体检报告。2-3句话，对话语气，不使用列表或标题。
 2. 配方：从配方库中挑出对这位用户最有价值的 ${rankTarget} 个短代码，按重要性从高到低排成一份列表。粒数由系统按每个原粒自己的范围和它在这份列表中的位置换算，脉冲式原粒也一样（系统只会在真正的脉冲日安排它）。早晚如何拆分同样由系统按默认时段/是否"早晚皆可"自动计算，你**不需要**、也**不应该**自己写粒数或拆分早晚——只需把这份排序排准。
 
 配方规则（务必遵守）：

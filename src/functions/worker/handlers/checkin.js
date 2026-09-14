@@ -2,6 +2,7 @@
 
 const { pool } = require('../lib/db');
 const { humanizeDotCodes } = require('../lib/dotNames');
+const { humanizeSubAgeKeys } = require('../lib/subAgeLabels');
 const { getNowShanghai } = require('../lib/time-utils');
 const { getCurrentSolarTerm } = require('../lib/solarTerms');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
@@ -189,7 +190,7 @@ async function handleDailyCheckinEvent({ user_id, period, persona_type }) {
         if (!rawMessage) throw new Error('LLM returned empty response');
         // Same rule as every other user-facing reply: a user is never shown an internal
         // dot code. Both writes below take this one string.
-        const message = humanizeDotCodes(rawMessage, dotsResult.rows, lang);
+        const message = humanizeSubAgeKeys(humanizeDotCodes(rawMessage, dotsResult.rows, lang), lang);
 
         await saveChatMessage(user_id, 'ai', message, null, personaType);
         // Flip the claimed row to 'pending' only now that real content exists — this is

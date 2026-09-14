@@ -15,6 +15,7 @@
 
 const { formatQuestionnaireContext } = require('../handlers/questionnaires');
 const { formatToShanghai } = require('./time-utils');
+const { describeBioAge } = require('./subAgeLabels');
 // Safe: handlers/dots.js requires nothing from lib/agentic*, so this closes no cycle in either
 // load order, and it adds no module to the cold path — handlers/chat.js already requires both.
 const {
@@ -202,7 +203,7 @@ function dateOnly(value) {
 
 // Binds handlers to one user/session. Schema (AGENTIC_TOOL_DEFS) is static and exported
 // separately since it doesn't depend on user_id/language.
-function createAgenticToolHandlers({ pool, user_id, language }) {
+function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_names = null }) {
     // What a package stage means, and what the user does next, in their language — authored in
     // handlers/dots.js beside PACKAGE_STAGES itself. The model narrates these rather than
     // deriving them, so the chat prompt never has to learn a stage string (§28g).
@@ -252,7 +253,11 @@ function createAgenticToolHandlers({ pool, user_id, language }) {
                 ok: true,
                 data: {
                     validated: row.data?.validated || {},
-                    bioage_profile: row.data?.bioage_profile || {},
+                    // Labelled in the user's language, never the raw `bioage_profile`: handed
+                    // that object, the model echoed its keys into prose — 「BioAge 39.2岁」,
+                    // 「MetabolicAge（41.5岁）」 on prod 2026-09-14 — and `Scores`/`Details`/`mFI`
+                    // are internals nothing user-facing should narrate (lib/subAgeLabels.js).
+                    bio_age: describeBioAge(row.data?.bioage_profile, language, sub_age_display_names),
                     // Shanghai-local, human-readable — raw pg timestamptz values serialize to
                     // UTC ISO strings ("...T07:51:49.631Z") when JSON.stringify'd for the tool
                     // result, and the model has been observed echoing that literally into a

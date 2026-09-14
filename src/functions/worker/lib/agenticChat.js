@@ -282,7 +282,7 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         try { return await fn(); } finally { lastStageMs = Date.now() - startedAt; }
     };
     const budget = { plan: 0, generateIters: 0, judge: 0, revise: 0, rejudge: 0 };
-    const toolHandlers = createAgenticToolHandlers({ pool, user_id, language });
+    const toolHandlers = createAgenticToolHandlers({ pool, user_id, language, sub_age_display_names: llmContext.sub_age_display_names || null });
     const knowledgeExcerpts = await findRelevantEntries(personaType || 'nano', message);
     // Fires a short "what I'm doing" status update at 3 phase-transition checkpoints (not on
     // every REVISE/RE-JUDGE round — re-narrating a retry as new activity would just look odd).

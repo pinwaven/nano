@@ -31,6 +31,7 @@
 const crypto = require('crypto');
 const { pool } = require('../lib/db');
 const { humanizeDotCodes } = require('../lib/dotNames');
+const { humanizeSubAgeKeys } = require('../lib/subAgeLabels');
 const ossLib = require('../lib/oss');
 const { requireVivaAgAccess } = require('../lib/vivaAgAccess');
 const { buildTwinBundle, presignDocuments, fetchHealthDocuments, BUNDLE_VERSION, DEFAULT_DOC_URL_TTL_SECONDS, clampInt } = require('../lib/twinBundle');
@@ -242,7 +243,7 @@ async function _sanitizeSummary(raw, lang = 'zh') {
     // exactly as the agent wrote it.
     try {
         const { rows } = await pool.query('SELECT key_name, key_name_zh, name, name_zh FROM dots');
-        text = humanizeDotCodes(text, rows, lang);
+        text = humanizeSubAgeKeys(humanizeDotCodes(text, rows, lang), lang);
     } catch (err) {
         _logError('dot code rewrite skipped', err, {});
     }
