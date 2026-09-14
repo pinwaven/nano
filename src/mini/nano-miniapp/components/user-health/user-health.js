@@ -283,6 +283,15 @@ const T = {
     noFactsSelf: '暂无记录的个人信息。',
     factCategories: { dietary_restriction: '饮食限制', allergy: '过敏', preference: '偏好', goal: '目标', other: '其他' },
     labPanel: '快照', labAbnormal: '项异常', labAllNormal: '所有指标正常',
+    foodPanelTitle: '慢性食物过敏（IgG）',
+    foodClass: ['未超标', '轻度', '中度', '重度'],
+    foodSummaryNone: '检测了 {n} 种食物，没有一种达到过敏分级。',
+    foodSummarySome: '检测了 {n} 种食物，其中 {k} 种需要暂时回避。',
+    foodAvoidUntil: '建议回避至 {d}',
+    foodWindowPassed: '建议回避期已过（{d}），可复查或尝试恢复',
+    foodSubstitutes: '可替代：',
+    foodBelowDetection: '低于检出限',
+    foodPanelNote: '这是 IgG 介导的慢性食物过敏，与急性过敏不同，通常是暂时的。',
     noReports: '暂无检测报告。',
     reportTypeLabels: { annual_checkup: '年度体检', lab_panel: '化验报告', imaging: '影像检查', other: '其他' },
     reportSourceLabels: { lab_api: '实验室', manual_upload: '手动上传', fhir_import: 'FHIR' },
@@ -406,6 +415,15 @@ const T = {
     noFactsSelf: 'No personal facts recorded yet.',
     factCategories: { dietary_restriction: 'Diet', allergy: 'Allergy', preference: 'Preference', goal: 'Goal', other: 'Other' },
     labPanel: 'Snapshot', labAbnormal: 'abnormal', labAllNormal: 'All markers normal',
+    foodPanelTitle: 'Chronic food sensitivity (IgG)',
+    foodClass: ['Not elevated', 'Mild', 'Moderate', 'Severe'],
+    foodSummaryNone: '{n} foods tested; none reached a sensitivity class.',
+    foodSummarySome: '{n} foods tested; {k} to avoid for now.',
+    foodAvoidUntil: 'Avoid until {d}',
+    foodWindowPassed: 'Avoidance window ended {d} — recheck or try reintroducing',
+    foodSubstitutes: 'Instead: ',
+    foodBelowDetection: 'below detection',
+    foodPanelNote: 'IgG-mediated chronic sensitivity — unlike an acute allergy, this is usually temporary.',
     noReports: 'No lab reports yet.',
     reportTypeLabels: { annual_checkup: 'Annual Checkup', lab_panel: 'Lab Panel', imaging: 'Imaging', other: 'Other' },
     reportSourceLabels: { lab_api: 'Lab', manual_upload: 'Uploaded', fhir_import: 'FHIR' },
@@ -1067,6 +1085,17 @@ function _buildLabPanel(twin, lang) {
   return { labPanel: items, labPanelDate, labPanelAbnormal }
 }
 
+// Medical Records layer — one accent per food-sensitivity class. Class 0 never renders (it is
+// not a restriction), so the map starts at 1.
+function _foodClassColor(cls) {
+  switch (cls) {
+    case 3:  return '#ef4444'
+    case 2:  return '#f97316'
+    case 1:  return '#eab308'
+    default: return 'rgba(166,196,229,0.55)'
+  }
+}
+
 // Personal Profile layer — one accent per user_memory_facts category.
 function _factCategoryColor(cat) {
   switch (cat) {
@@ -1201,6 +1230,9 @@ Component({
     twinRaw: null,
     userFacts: [],
     userFactsLoaded: false,
+    foodPanel: null,
+    foodPositives: [],
+    foodSummary: '',
     healthScore: null,
     healthScoreColor: '#A6C4E5',
     healthScoreGrade: '',
@@ -1360,6 +1392,7 @@ Component({
       this._loadHealthTwin()
       this._loadHealthReports()
       this._loadUserFacts()
+      this._loadFoodSensitivity()
       this._loadMetricHistory()
       try {
         const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(userId)}`)
@@ -2725,6 +2758,56 @@ Component({
      *
      * Self view only — the coach app already has its own Facts tab on the client sheet.
      */
+    /**
+     * Medical Records layer — the user's chronic food-sensitivity (IgG) panel (§40).
+     *
+     * Read-only. The panel is a lab result, not something a user edits, and its derived
+     * restrictions are ordinary user_memory_facts shown in the Personal Profile layer. A wrong
+     * panel is corrected by re-running or deleting the extraction on the document itself, which
+     * clears the panel, its results and its facts together.
+     *
+     * Only the positives are listed. This report tested 120 foods and 117 came back clear; a
+     * 120-row list would bury the three that matter, so the total is stated instead.
+     */
+    async _loadFoodSensitivity() {
+      const { userId, mode, coachId } = this.properties
+      if (!userId) return
+      try {
+        const q = `openid=${encodeURIComponent(userId)}`
+          + (mode === 'coach' && coachId ? `&coach_id=${encodeURIComponent(coachId)}` : '')
+        const res = await this._req(`${BASE}/api/food-sensitivity?${q}`)
+        const panel = res.data?.panel || null
+        if (!panel) { this.setData({ foodPanel: null, foodPositives: [], foodSummary: '' }); return }
+        const isZh = (this.properties.lang || 'zh') !== 'en'
+        const t = T[isZh ? 'zh' : 'en']
+        const today = new Date().toISOString().slice(0, 10)
+        const positives = (res.data?.foods || []).filter(f => f.class >= 1).map(f => {
+          const passed = f.avoid_until && f.avoid_until < today
+          return {
+            food_key: f.food_key,
+            name: isZh ? f.name_zh : (f.name_en || f.name_zh),
+            classLabel: t.foodClass[f.class] || '',
+            color: _foodClassColor(f.class),
+            // The lab declined to measure below its detection limit, so there is no figure to
+            // show — the marker is the fact, not a number nobody produced.
+            valueText: f.below_detection ? t.foodBelowDetection
+              : (f.value == null ? '' : `${f.value} ${panel.unit}`),
+            windowText: !f.avoid_until ? ''
+              : (passed ? t.foodWindowPassed.replace('{d}', f.avoid_until)
+                        : t.foodAvoidUntil.replace('{d}', f.avoid_until)),
+            substitutes: (f.substitutes_zh || []).join('、'),
+          }
+        })
+        const summary = positives.length === 0
+          ? t.foodSummaryNone.replace('{n}', panel.foods_tested)
+          : t.foodSummarySome.replace('{n}', panel.foods_tested).replace('{k}', positives.length)
+        this.setData({ foodPanel: panel, foodPositives: positives, foodSummary: summary })
+      } catch (_) {
+        // A twin section that cannot load is a missing section, never a broken tab.
+        this.setData({ foodPanel: null, foodPositives: [], foodSummary: '' })
+      }
+    },
+
     async _loadUserFacts() {
       const { userId, mode } = this.properties
       if (!userId || mode !== 'self') return

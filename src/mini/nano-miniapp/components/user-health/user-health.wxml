@@ -828,7 +828,33 @@ module.exports.c = function (hex, theme) {
             <text class="rpt-arrow">›</text>
           </view>
         </view>
-        <text wx:elif="{{!reportsLoading && labPanel.length === 0}}" class="health-empty">{{t.noReports}}</text>
+        <text wx:elif="{{!reportsLoading && labPanel.length === 0 && !foodPanel}}" class="health-empty">{{t.noReports}}</text>
+
+        <view wx:if="{{foodPanel}}" class="fs-block">
+          <!-- Chronic food sensitivity (食物特异性 IgG). Its own block inside Medical Records,
+               never folded into the lab snapshot above: a food is not a biomarker_catalog marker
+               and this panel never reaches health_twin.latest_lab_data. §40.
+               The comment lives INSIDE the block on purpose — a comment node between wx:if / wx:elif
+               siblings breaks rendering on real Android devices. -->
+          <view class="ht-lab-snapshot-header">
+            <text class="ht-lab-snapshot-title">{{t.foodPanelTitle}}</text>
+            <text class="ht-lab-date">{{foodPanel.report_date}}</text>
+          </view>
+          <text class="fs-summary">{{foodSummary}}</text>
+          <view wx:if="{{foodPositives.length > 0}}" class="fs-list">
+            <view wx:for="{{foodPositives}}" wx:key="food_key" class="fs-row"
+                  style="border-color: {{tc.c(item.color, theme)}}44;">
+              <view class="fs-row-head">
+                <text class="fs-food">{{item.name}}</text>
+                <text class="fs-class" style="color: {{tc.c(item.color, theme)}};">{{item.classLabel}}</text>
+                <text class="fs-val">{{item.valueText}}</text>
+              </view>
+              <text wx:if="{{item.windowText}}" class="fs-window">{{item.windowText}}</text>
+              <text wx:if="{{item.substitutes}}" class="fs-subs">{{t.foodSubstitutes}}{{item.substitutes}}</text>
+            </view>
+          </view>
+          <text class="fs-footnote">{{t.foodPanelNote}}</text>
+        </view>
       </view>
 
       <!-- Twin layer: Personal Profile — read-only view of what the AI has recorded
