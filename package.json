@@ -11,6 +11,8 @@
     "deploy:user": "./scripts/deploy-user-app.sh",
     "deploy:user:prod": "./scripts/deploy-user-app-prod.sh",
     "deploy:worker": "source .env && s worker deploy -y",
+    "deploy:mcp": "source .env && s mcp deploy -y",
+    "mcp:local": "node src/functions/mcp/local.js",
     "deploy:dispatcher": "source .env && s dispatcher deploy -y",
     "deploy:agent": "source .env && s agent deploy -y",
     "deploy:lab": "source .env && s lab deploy -y",
