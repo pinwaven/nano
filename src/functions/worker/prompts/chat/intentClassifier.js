@@ -24,6 +24,9 @@ INTENTS:
   order is, whether it has shipped, tracking, a redeem code they hold, or which packages exist
   ("我已经买了什么原粒套餐", "我的订单到哪了", "发货了吗", "有哪些套餐", "what did I buy",
   "where is my order"). Past tense or a question word means they are ASKING, not requesting.
+  And it is ONLY about dots. A request for FOOD — a meal plan, recipes, a diet menu, what to eat
+  for breakfast/lunch/dinner ("给我订制一周的营养餐", "帮我安排饮食计划", "make me a meal plan",
+  "what should I eat this week") — is nutrition_question, even when it says 定制/订制/营养.
 - longevity_science  — educational questions about aging, longevity science, mechanisms (not about their personal data)
 - record_action      — explicitly logging their own personal data (weight, sleep hours, meals, etc.)
 - set_reminder       — asking Nano to remind them about something at a specific future time or after a delay

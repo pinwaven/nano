@@ -52,6 +52,7 @@ const { PLAN_WEEKS, N7_KEY } = require('../lib/dotsProductModel');
 const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock');
 const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
 const { messageAsksAboutFoodSensitivity } = require('../prompts/chat/foodSensitivityBlock');
+const { messageAsksForMealPlan } = require('../prompts/chat/mealPlanRequest');
 
 // Channels with a GCN storefront behind them (mirrors handlers/login.js's own copy — the same
 // physically-duplicated-constant convention this codebase uses across handlers). Nothing else has
@@ -1488,6 +1489,14 @@ async function handlePostChat(body) {
             if (messageAsksAboutFoodSensitivity(message)
                 && (intent === 'formulate_dots' || intent === 'casual_chat')) {
                 console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_food_sensitivity_question', user_id, from: intent }));
+                intent = 'nutrition_question';
+            }
+            // A meal plan is food, not a dots formula. 「也给我订制一周的营养餐」 launched the
+            // formulation tool on prod (2026-09-14) — 订制+营养 is one character from 定制营养素.
+            // Only formulate_dots is demoted here: casual_chat can already answer "what should I
+            // eat this week" from its own template and needs no tool.
+            if (messageAsksForMealPlan(message) && intent === 'formulate_dots') {
+                console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_meal_plan_question', user_id, from: intent }));
                 intent = 'nutrition_question';
             }
             if (intent === 'formulate_dots') {
