@@ -1,0 +1,19 @@
+{
+  "name": "nano-mcp-server",
+  "version": "1.0.0",
+  "description": "Read-only MCP server over the nano + GCN dev databases (Aliyun FC 3.0)",
+  "main": "index.js",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "pg": "^8.20.0",
+    "pg-types": "^2.2.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "dotenv": "^16.6.1"
+  }
+}
