@@ -521,6 +521,18 @@ Two things now backstop it, and both must stay:
 `DELIVER_DEADLINE_MS` reads `CHAT_DELIVER_DEADLINE_MS` so the watchdog is testable without a 250s
 wall clock (`tests/chat-async-delivery.test.js`); nothing sets it in `s.yaml`.
 
+**The replay covers synchronous turns too (2026-09-13).** Until then `_chatWaitStartedAt` was only
+opened on a `{processing:true}` ack, so a `casual_chat`/`emotional_support` reply — persisted to
+both tables *before* its `{success:true}` ack — was delivered by the destructive notification read
+alone, and one lost poll response made it vanish for good (dots for ~2s, then nothing; the row sat
+in `chat_messages` until the next app open). Reproduced on dev with 「你好」. `_sendMessage` now
+opens the wait through `_beginChatWait(CHAT_WAIT_SYNC_MS)` (30s, not the async 285s — the reply
+already exists when the ack arrives), polls at once rather than on the next tick, and keeps the
+typing indicator up until the reply lands. **Every wait must go through `_beginChatWait`** so the
+budget can never be left over from a turn of the other kind. In DevTools specifically, a hot
+reload leaves an orphaned poller that consumes notifications (see the automator README); this is
+now survivable rather than a lost reply.
+
 The failure text is localised by `user.language` (`_asyncFailureMessage`) — it was hardcoded
 English and shown verbatim to zh-only Viva users. The client's last-resort message at 285s now says
 the turn didn't finish rather than "还在处理中", because by then both channels and the server

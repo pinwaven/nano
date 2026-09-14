@@ -832,6 +832,15 @@ const AI_ECHO_TYPES = new Set([
   'doc_extraction_result',
 ])
 
+// How long _poll keeps the typing indicator up for a reply before giving up, by how the server
+// acked the turn. Async ({processing:true}): the server's whole worst case — see the comment on
+// the timeout check in _poll. Sync ({success:true}): the reply was ALREADY written to
+// chat_messages and notifications when that ack arrived, so it is one poll tick away on either
+// channel; anything past this means both channels lost it (the LLM-failure fallback writes only
+// a notification, so a stolen one there genuinely has nothing to replay).
+const CHAT_WAIT_ASYNC_MS = 285000
+const CHAT_WAIT_SYNC_MS = 30000
+
 // Notification types delivered by the external Viva AG agent rather than by Viva itself. Drives
 // the "Viva AG" label on the bubble so the user can tell a deep analysis apart from a normal
 // reply; the durable equivalent is chat_messages.source.
@@ -1460,6 +1469,8 @@ Page({
   _dotsLoadedAt: 0,
   _plansLoadedAt: 0,
   _lastMsgId: null,
+  _chatWaitStartedAt: null,
+  _chatWaitBudgetMs: null,
   _touchX: 0,
   _touchY: 0,
 
@@ -3477,10 +3488,20 @@ Page({
       // agentic loop running async — see chat.generate) — mirrors _sendMessage's handling so the
       // same status-caption/safety-timeout machinery in _poll covers this path too.
       onAsyncStart: () => {
-        this._chatWaitStartedAt = Date.now()
+        this._beginChatWait(CHAT_WAIT_ASYNC_MS)
         this.setData({ typing: true, chatStatusText: this.data.t.chatThinking })
       },
     }
+  },
+
+  // Opens the "a reply is pending" window _poll works against: while it is open the
+  // chat_messages catch-up also replays ai rows (the durable backstop for the destructive
+  // notification read), and the typing indicator stays up until a reply lands or `budgetMs`
+  // elapses. Every wait goes through here so the budget can never be left over from a
+  // previous turn of the other kind.
+  _beginChatWait(budgetMs) {
+    this._chatWaitStartedAt = Date.now()
+    this._chatWaitBudgetMs = budgetMs
   },
 
   handleToolAction(e) {
@@ -3670,16 +3691,34 @@ Page({
         // status caption; _poll clears it when the actual reply (or the safety timeout)
         // arrives. Set an immediate local caption so there's no gap before the first
         // server-sent status notification lands on the next 3s poll tick.
-        this._chatWaitStartedAt = Date.now()
+        this._beginChatWait(CHAT_WAIT_ASYNC_MS)
         this.setData({ chatStatusText: t.chatThinking })
         return
       }
       // Sandbox sessions get the reply directly in the response (nothing was persisted
       // to notifications for polling to pick up).
-      if (app.globalData.sandboxMode && res.data?.reply) {
-        this._addMsg('ai', res.data.reply)
+      if (app.globalData.sandboxMode) {
+        if (res.data?.reply) this._addMsg('ai', res.data.reply)
+        this.setData({ typing: false, chatStatusText: '' })
+        return
       }
-      this.setData({ typing: false, chatStatusText: '' })
+      if (res.data?.success === false) {
+        this._addMsg('ai', t.errServer)
+        this.setData({ typing: false, chatStatusText: '' })
+        return
+      }
+      // Synchronous turn (casual_chat / emotional_support / the record_weight shortcut): the
+      // reply is already persisted server-side — chat_messages plus a notifications row — but it
+      // has NOT reached this page yet; it arrives through _poll. Until 2026-09-13 this branch
+      // dropped the typing indicator here and left delivery to the notification channel alone,
+      // which is a DESTRUCTIVE read: one poll response this page never receives (app backgrounded
+      // mid-request, a network blip, or in DevTools an orphaned poller from a hot reload) consumed
+      // the only copy, and the user watched the dots vanish with no reply — reproduced live on dev
+      // with "你好". Open the same wait window the async branch uses so _poll's chat_messages
+      // replay backstops this path too, keep the dots up until the reply actually lands, and poll
+      // right away instead of waiting up to 3s for the next tick.
+      this._beginChatWait(CHAT_WAIT_SYNC_MS)
+      this._poll(user)
     } catch (e) {
       this._addMsg('ai', this.data.t.errServer)
       this.setData({ typing: false, chatStatusText: '' })
@@ -3815,7 +3854,11 @@ Page({
     // 285s also sits just past handleChatGenerateEvent's own 250s watchdog, which now guarantees
     // an honest server-side message before the worker's 300s FC ceiling — so reaching this line
     // means even that never made it, and "didn't finish" is the accurate thing to say.
-    if (this.data.typing && this._chatWaitStartedAt && Date.now() - this._chatWaitStartedAt > 285000) {
+    //
+    // A synchronous turn uses the much shorter CHAT_WAIT_SYNC_MS (see _beginChatWait): its reply
+    // was already persisted when the ack arrived, so there is nothing to wait 285s for.
+    const waitBudget = this._chatWaitBudgetMs || CHAT_WAIT_ASYNC_MS
+    if (this.data.typing && this._chatWaitStartedAt && Date.now() - this._chatWaitStartedAt > waitBudget) {
       this._chatWaitStartedAt = null
       this._addMsg('ai', this.data.t.chatTimedOut)
       this.setData({ typing: false, chatStatusText: '' })

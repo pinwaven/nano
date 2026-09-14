@@ -30,6 +30,19 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Fixed
 
+- **Miniapp chat: a short (synchronous) reply could vanish — dots for a few seconds, then nothing** · 2026-09-13
+  - `casual_chat`/`emotional_support` turns are acked `{success:true}` *after* the reply is
+    persisted, and the client relied on the destructive `GET /api/notifications` read alone to show
+    it. One poll response the page never received (backgrounded mid-request, a network blip, or in
+    DevTools an orphaned poller left by a hot reload) consumed the only copy; the reply sat in
+    `chat_messages` unrendered until the next app open. Reproduced on dev with 「你好」.
+  - `_sendMessage` now opens the same wait window the async path uses (`_beginChatWait`), so
+    `_poll`'s `chat_messages` replay backstops this path too; it polls immediately instead of
+    waiting for the next 3s tick, and the typing indicator stays up until the reply actually
+    lands. The sync wait budget is 30s (`CHAT_WAIT_SYNC_MS`) rather than the async 285s, since the
+    reply already exists when the ack arrives. Verified in the DevTools automator with a
+    dropped-response harness: the reply renders from `chat_messages` within one tick, no duplicate.
+
 - **A food-named dietary restriction could silently delete a dot from a formula** · 2026-09-11
   - `formulationQuality._collides` is bidirectional substring containment and `allergy_conflict`
     removes the dot from both recipes, so a restriction on `玉米` matches the ingredient `玉米黄质`
