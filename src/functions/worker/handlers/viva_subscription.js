@@ -118,6 +118,75 @@ async function _extendUserSubscription(client, userId, durationDays, productType
     return override.persona_override_expires_at;
 }
 
+// A free, time-boxed Viva AG window so a user who uploads a chronic food-sensitivity panel gets
+// a deep review of it without buying the add-on (§40). Audited like every other grant, with its
+// own note, so the admin history never shows a free review as a purchase.
+//
+// IT WILL NOT FLIP A NANO USER'S PERSONA. requireVivaAgAccess is a composite of
+// effective-persona-is-viva AND a live Viva grant AND a live AG grant, and the only way to give a
+// nano-channel user the first of those is persona_override_type = 'viva' — which switches their
+// whole assistant's brand, prompts and (persona-scoped) chat history. Rebranding someone's
+// assistant as a side effect of uploading a PDF is not a trade this is allowed to make, so a user
+// who is not already effectively Viva simply does not get the review. The panel, the restrictions
+// and the formulation weighting all work for them regardless; only the narrated review is skipped.
+async function grantFoodPanelReviewAccess(userId, durationDays = 30) {
+    const client = await pool.connect();
+    try {
+        const { rows: [row] } = await client.query(
+            `SELECT u.user_id, u.persona_override_type, u.persona_override_expires_at,
+                    c.config->>'persona_type' AS channel_persona_type
+               FROM users u LEFT JOIN channels c ON c.id = u.channel_id
+              WHERE u.user_id = $1`,
+            [userId]
+        );
+        if (!row) return { granted: false, reason: 'user_not_found' };
+
+        const effective = resolveEffectivePersona({
+            channelPersonaType: row.channel_persona_type,
+            personaOverrideType: row.persona_override_type,
+            personaOverrideExpiresAt: row.persona_override_expires_at,
+        });
+        if (effective !== 'viva') return { granted: false, reason: 'not_viva_persona' };
+
+        await client.query('BEGIN');
+        // Same stacking semantics as every other grant: extend a live window, restart from now on
+        // an expired one. A user who already pays for AG loses nothing by uploading a panel.
+        const override = await grantPersonaOverride(client, userId, 'viva', durationDays);
+        await client.query(
+            `UPDATE users SET viva_subscription_expires_at = $2 WHERE user_id = $1`,
+            [userId, override.persona_override_expires_at]
+        );
+        const { rows: [agRow] } = await client.query(
+            `UPDATE users
+                SET viva_ag_expires_at = CASE
+                        WHEN viva_ag_expires_at > NOW() THEN viva_ag_expires_at + ($2 || ' days')::interval
+                        ELSE NOW() + ($2 || ' days')::interval
+                    END
+              WHERE user_id = $1
+              RETURNING viva_ag_expires_at`,
+            [userId, durationDays]
+        );
+        for (const [persona, expires] of [['viva', override.persona_override_expires_at],
+                                          ['viva_ag', agRow?.viva_ag_expires_at || null]]) {
+            await client.query(
+                `INSERT INTO persona_subscription_grants
+                    (user_id, persona_type, action, duration_days, new_expires_at, note, granted_by, channel_id)
+                 SELECT $1, $2, 'granted', $3, $4, 'Free review of an uploaded food-sensitivity panel', 'system', channel_id
+                   FROM users WHERE user_id = $1`,
+                [userId, persona, durationDays, expires]
+            );
+        }
+        await client.query('COMMIT');
+        return { granted: true, viva_ag_expires_at: agRow?.viva_ag_expires_at || null };
+    } catch (err) {
+        try { await client.query('ROLLBACK'); } catch (_) { /* the connection is already gone */ }
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'grantFoodPanelReviewAccess failed', error: err.message }));
+        return { granted: false, reason: 'internal_error' };
+    } finally {
+        client.release();
+    }
+}
+
 // GCN-allowed-path — called by GCN after payment is confirmed. Idempotent by order_ref
 // (deliberate deviation from handlePostFormulationPurchaseConfirmed's plain-UPDATE pattern:
 // this mints a valuable code rather than just setting a timestamp, so a retried/replayed call
@@ -303,6 +372,7 @@ async function handlePutVivaSubscriptionCode(id, body) {
 }
 
 module.exports = {
+    grantFoodPanelReviewAccess,
     handleGetVivaSubscriptionStatus,
     handleGetVivaSubscriptionPlans,
     handlePostVivaSubscriptionCheckoutConfirmed,

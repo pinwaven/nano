@@ -25,6 +25,7 @@ const planTemplate = require('../prompts/chat/planTemplate');
 const judgeTemplate = require('../prompts/viva/judgeTemplate');
 const { findRelevantEntries } = require('./knowledgeBase');
 const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
+const { messageAsksAboutFoodSensitivity } = require('../prompts/chat/foodSensitivityBlock');
 
 const GENERATE_MAX_ITERS = 3;
 const REVISE_MAX_ROUNDS = 2;
@@ -56,6 +57,7 @@ function buildForcedToolQueue(plan, message, validToolNames, maxForced) {
     const deterministic = [
         ...(messageNeedsBiomarkerHistory(message) ? ['get_biomarker_history'] : []),
         ...(messageAsksAboutFormulationPackage(message) ? ['get_formulation_packages'] : []),
+        ...(messageAsksAboutFoodSensitivity(message) ? ['get_food_sensitivity'] : []),
     ];
     const queue = Array.from(new Set([
         ...deterministic,
@@ -104,7 +106,7 @@ async function callJson(client, model, prompt, temperature, logContext, stepName
 // 'ordered_at'/'shipped_at'/'sold_at' come from get_formulation_packages: a reply that correctly
 // names the day an order was placed must not be flagged as a fabrication. extraValidDates is a
 // permissive allowlist, so widening it can only ever reduce false positives.
-const DATE_FIELDS = ['tested_at', 'report_date', 'scheduled_date', 'scheduled_for', 'start_date', 'ended_at', 'last_dispensed_at', 'ordered_at', 'shipped_at', 'sold_at'];
+const DATE_FIELDS = ['tested_at', 'report_date', 'scheduled_date', 'scheduled_for', 'start_date', 'ended_at', 'last_dispensed_at', 'ordered_at', 'shipped_at', 'sold_at', 'sampled_at', 'avoid_until'];
 function extractToolGroundTruth(toolCallLog) {
     const dates = new Set();
     const values = {};

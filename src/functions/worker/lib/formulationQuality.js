@@ -95,12 +95,27 @@ function checkFormulationQuality({ morningRecipe, eveningRecipe, dotsFormulary, 
     }
 
     // 2. Anything the user cannot take. The only finding the caller acts on rather than logs.
+    //
+    // A fact carrying a food_key is a FOOD-SENSITIVITY restriction derived from an IgG panel
+    // (CLAUDE.md §40), and it is matched against food_catalog.dot_conflict_keys — carried on the
+    // row by the caller's LEFT JOIN — instead of against prose. _collides is bidirectional
+    // substring containment, so the bare restriction "玉米" matches the ingredient 玉米黄质 and
+    // would silently delete DOT-N8 明眸 from a real formula; "大豆" and "芝麻" have the same
+    // shape. Foods and compounds are different namespaces, and dot_conflict_keys is empty for
+    // every seeded food, so a food restriction removes a dot only where a human declared the
+    // link. That is a countable gap instead of a silent wrong deletion (§11).
+    //
+    // A fact WITHOUT a food_key — every fact that exists today — keeps the prose match exactly.
+    // Do not close the food hazard by widening that match.
     for (const fact of userFacts || []) {
         if (fact.status && fact.status !== 'active') continue;
         if (!['allergy', 'dietary_restriction'].includes(fact.category)) continue;
-        const hits = [...totals.keys()].filter(k => byKey.get(k) && _collides(fact.fact_zh || fact.fact, byKey.get(k)));
+        const text = fact.fact_zh || fact.fact;
+        const hits = fact.food_key
+            ? [...totals.keys()].filter(k => (fact.dot_conflict_keys || []).includes(k))
+            : [...totals.keys()].filter(k => byKey.get(k) && _collides(text, byKey.get(k)));
         if (hits.length) {
-            add('allergy_conflict', 'material', `dosed dots collide with "${fact.fact_zh || fact.fact}" (${fact.category})`, hits);
+            add('allergy_conflict', 'material', `dosed dots collide with "${text}" (${fact.category})`, hits);
         }
     }
 

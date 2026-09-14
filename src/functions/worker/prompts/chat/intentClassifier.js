@@ -9,6 +9,10 @@ INTENTS:
   ALSO anything about a 原粒 package they have bought or ordered: what they bought, an order's
   status, payment, shipping, tracking, a redeem code, or which packages exist ("我的订单到哪了",
   "发货了吗", "我已经买了什么原粒套餐", "有哪些套餐", "where is my order", "has it shipped").
+  ALSO anything about food sensitivity, food allergy, intolerance or what they should avoid
+  eating ("我对什么食物过敏", "我能喝牛奶吗", "我要忌口什么", "我有什么不耐受",
+  "can I eat eggs", "what foods should I avoid", "am I allergic to milk") — these are answered
+  from an uploaded 慢性食物过敏 IgG panel.
   These are NOT casual_chat: answering them needs a tool only this intent can reach, and without
   it the reply is a dead end.
 - formulate_dots     — asking to START a custom formulation right now: to have their own dots

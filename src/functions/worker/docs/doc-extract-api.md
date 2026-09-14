@@ -233,6 +233,34 @@ Rules:
 The list currently holds 25 entries: 6 that drive nano's own biological-age model, and 19 common
 clinical-panel markers. It can change without notice, which is why it ships with every claim.
 
+### The food vocabulary — `food_catalog`
+
+A **chronic food-sensitivity report** (慢性食物过敏 / 食物特异性 IgG) is a different kind of
+document: a grid of 100+ foods, each with an antibody level and a printed class. Those are **not**
+biomarkers and must never be sent as `observations` — nano stores them separately, and routing them
+through the biomarker path would overwrite the user's clinical lab panel.
+
+`food_catalog` ships alongside `catalog` in every claim response, and standalone at
+`GET /doc-extract/catalog`:
+
+```json
+{ "food_key": "casein", "name_zh": "酪蛋白", "name_en": "Casein", "category": "dairy_egg",
+  "aliases": ["干酪素"], "common_sources_zh": ["牛奶","羊奶","双皮奶","奶酪"],
+  "substitutes_zh": ["豆浆","鸡蛋","虾皮"] }
+```
+
+The same four rules apply, with one addition:
+
+1. **`food_key` must come from this list, verbatim.** If you cannot resolve one, send the printed
+   name in `label` instead — nano matches it against `name_zh`, `name_en` and `aliases`.
+2. **Anything that resolves to neither goes to `unmapped`**, and is reported as `unmapped_food`.
+   Do not map an unknown food onto a similar one: 牛奶, 水牛牛奶, 煮过的牛奶, 脱脂奶粉 and 水解奶粉
+   are five distinct entries on a real panel, and so are 鸡蛋白 and 鸡蛋黄.
+3. **`aliases` exists because one lab spells one food two ways.** The reference report prints
+   卵类粘蛋白 in its results grid and 卵类黏蛋白 in its own appendix, and 螃蟹 vs 蟹.
+4. `common_sources_zh` and `substitutes_zh` are nano's own reference data, given so you can see
+   what a restriction will look like to the user. **Do not send them back** — they are ignored.
+
 ---
 
 ## 7. Submitting a result
@@ -272,6 +300,32 @@ POST /doc-extract/jobs/result
     { "label": "血小板压积", "value": "0.22", "unit": "%" },
     { "label": "红细胞分布宽度", "value": "12.8", "unit": "%" }
   ]
+}
+```
+
+### `food_sensitivity`
+
+Send this block **only** for a chronic food-sensitivity (IgG) report, in place of `observations`
+— never both for the same grid. Omit it entirely for every other kind of document; omitting it is
+the normal case and is not an error.
+
+```json
+{
+  "food_sensitivity": {
+    "panel_key": "igg_120",
+    "unit": "U/mL",
+    "sampled_at": "2026-04-15",
+    "report_date": "2026-04-23",
+    "institution": null,
+    "sample_no": "559535391997",
+    "class_bands": [ { "class": 1, "low": 50.0, "high": 100.0 } ],
+    "items": [
+      { "food_key": "casein", "label": "酪蛋白", "value": 52.8, "class": 1, "confidence": 0.97 },
+      { "food_key": "cow_milk", "label": "牛奶", "value": 50.9, "class": 1, "confidence": 0.97 },
+      { "food_key": "cherry", "label": "樱桃", "value": 44.3, "class": 0, "confidence": 0.95 },
+      { "food_key": "watermelon", "label": "西瓜", "below_detection": true, "class": 0, "confidence": 0.95 }
+    ]
+  }
 }
 ```
 
@@ -325,6 +379,37 @@ what products may be recommended to them and feeds their nutrition formulation. 
 allergy is a worse outcome than a missed one. Only send what the document actually asserts about
 the patient — not a drug the report mentions, not a condition it rules out, not a family history.
 
+### `food_sensitivity`
+
+Panel fields:
+
+| Field | Required | Notes |
+|---|---|---|
+| `panel_key` | yes | Short identifier for the assay, e.g. `igg_120` |
+| `unit` | yes | The unit printed on the grid, e.g. `U/mL`. Every item shares it |
+| `report_date` | **yes** | `YYYY-MM-DD`. **Without a readable one the whole panel is refused** — comparing this test to the next one is its entire clinical purpose, and a panel stamped with the wrong date cannot be compared |
+| `sampled_at` | recommended | 采样日期, when the report distinguishes it from 报告日期 |
+| `institution`, `sample_no` | no | As printed |
+| `class_bands` | recommended | Only the bands the page **actually prints**, as `{class, low, high}`. A report normally prints a band only for classes that have results |
+
+Item fields:
+
+| Field | Required | Notes |
+|---|---|---|
+| `food_key` | yes* | From `food_catalog`, verbatim. *Or send `label` alone and let nano resolve it |
+| `label` | recommended | The name as printed. Used to resolve when `food_key` is absent or unknown |
+| `class` | **yes** | The integer class **printed on the page** (0–3). Never compute it from the value — see below |
+| `value` | yes* | A number. *Omit it and send `below_detection: true` instead when the report prints a censored value |
+| `below_detection` | see above | `true` for a censored reading such as `<0.1`. **Never send the string, and never substitute the detection limit as a number** — the lab declined to measure it, and 0.1 would assert a measurement nobody made |
+| `unit` | no | Only if an item differs from the panel unit. A mismatch is rejected, never converted |
+| `confidence` | recommended | 0–1. Below **0.6** is rejected |
+
+**Read the class, do not derive it.** Every row on the grid is printed with its own class
+(`0级`/`1级`/`2级`/`3级`). Thresholds differ between labs and between assays, and a report prints a
+band only for the classes its subject actually has — so a panel with no positives prints no bands
+at all. Send what the page says. Nano cross-checks a class against its own printed band when one is
+present, and accepts it as read when one is not.
+
 ### The response
 
 ```json
@@ -332,6 +417,8 @@ the patient — not a drug the report mentions, not a condition it rules out, no
   "accepted": { "observations_accepted": 3, "observations_written": 3,
                 "observations_submitted": 4,
                 "findings_accepted": 1, "findings_submitted": 1,
+                "food_items_accepted": 120, "food_items_submitted": 120,
+                "food_panel_id": 41, "food_restrictions": 3,
                 "unmapped": 2, "rejected": 1 },
   "rejected": [ { "reason": "unit_mismatch", "entry": { "key_name": "FPG", "value": 95, "unit": "mg/dl" },
                   "detail": "expected mmol/L" } ] }
@@ -386,6 +473,24 @@ Rule 6 has a consequence worth planning around: **with no readable date anywhere
 are stored at all.** The document metadata and summary still are. A dated report is worth
 re-reading carefully for its date before you give up on it — but do not invent one, and do not
 substitute today. A wrong date puts an old panel into the user's twin as though it were current.
+
+### Per food-sensitivity item, in order
+
+| # | Rule | On violation |
+|---|---|---|
+| 0 | The panel itself has a `panel_key`, a `unit` and a readable, non-future `report_date` | `invalid_food_panel` — **the whole panel is refused**, no item is stored |
+| 1 | `food_key`, or `label`, resolves in `food_catalog` | `unmapped_food`, and the item is echoed in `unmapped` |
+| 2 | `class` is an integer 0–3 | `invalid_food_class`. An **absent** class is refused too — it must never default to 0, which is the one value that creates no restriction |
+| 3 | `value` is a finite number, **or** `below_detection` is `true` | `invalid_food_value` |
+| 4 | An item-level `unit` equals the panel's | `food_unit_mismatch` — never converted |
+| 5 | When the page printed a band for that class, the value falls inside it | `class_band_mismatch` — refused, **never reclassified** |
+| 6 | `confidence`, when given, is ≥ 0.6 | `low_confidence` |
+| 7 | Each `food_key` appears once | `duplicate_food_item`, first read wins |
+
+Beyond the item cap, the overflow is reported as `too_many_food_items`.
+
+An accepted item is **rebuilt from the catalog row**, not echoed: the name, English name and
+category nano stores are its own. Sending a different `name_zh` changes nothing.
 
 ### Convertible units
 
@@ -447,9 +552,11 @@ job.
 | Result payload | 256 KB |
 | Observations per result | 200 |
 | Findings per result | 40 |
+| Food-sensitivity items per result | 200 |
 | Summary | 2000 characters |
 | `text` / `source_text` | 200 characters |
 | Observation confidence floor | 0.6 |
+| Food-sensitivity item confidence floor | 0.6 |
 | Finding confidence floor | 0.8 |
 
 ---

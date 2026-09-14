@@ -4,8 +4,9 @@ const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 const { getProductRecommendBlock } = require('../../chat/productRecommendBlock');
 const { getFormulationPackageBlock } = require('../../chat/formulationPackageBlock');
+const { getFoodSensitivityBlock } = require('../../chat/foodSensitivityBlock');
 
-module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, rich_format, store_products, formulation_packages_available }) => {
+module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, rich_format, store_products, formulation_packages_available, food_sensitivity_available }) => {
   const isZh = user_profile.language === 'zh';
   const hasBioAge = bioage && bioage.BioAge;
 
@@ -50,6 +51,7 @@ ${getFactMemoryBlock(user_facts, isZh)}
 ${getProductRecommendBlock(store_products, isZh)}
 
 ${getFormulationPackageBlock(formulation_packages_available, isZh)}
+${getFoodSensitivityBlock(food_sensitivity_available, isZh)}
 
 You are Nano, a longevity AI built by Waven.
 

@@ -20,6 +20,7 @@ const vivaSystemFormulaGenerateTemplate = require('../prompts/viva/systemFormula
 const { v4: uuidv4 } = require('uuid');
 const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
+const { resolveGutAxisDotKeys } = require('../lib/foodSensitivity');
 const { formatQuestionnaireContext } = require('./questionnaires');
 // The same validator an externally-authored Viva AG formula must pass. A fast-track formula gets
 // no expert review at all, which makes this the ONLY thing standing between a generated table and
@@ -1838,6 +1839,54 @@ function _resolveCandidateDotKeys(activeHealthPlans, dotsFormulary) {
         .map(e => (typeof e === 'string' ? (byKey.has(e) ? e : null) : byId.get(e)?.key_name))
         .filter(Boolean));
     return keys.size > 0 ? keys : null;
+}
+
+// The user's live food-sensitivity restrictions, and the dots a positive panel promotes (§40).
+//
+// TWO SEPARATE JOBS, and only the first is a formulation input in the ordinary sense:
+//
+//  - `restrictions` is context. A chronic food-IgG response is not an ingredient allergy, so it
+//    does NOT remove a dot; that path stays with formulationQuality's allergy_conflict, which for
+//    a food restriction is keyed on food_catalog.dot_conflict_keys and is empty by default.
+//  - `promoted_dot_keys` unions into recommended_dot_keys, the SAME purely-additive channel a
+//    health-plan focus uses (_fallbackCountForDot lifts a recommended dot to 75% of its own
+//    range and never demotes anything else). Reusing it rather than inventing a second weighting
+//    means a food panel cannot suppress a dot a biomarker genuinely calls for.
+//
+// Only an UNEXPIRED restriction counts. The report's windows are 1, 2 and 3-6 months, so a panel
+// from last year describes a period that has already ended; continuing to weight a formula on it
+// would silently make a temporary finding permanent.
+async function _fetchFoodSensitivityContext(userId, dotsFormulary) {
+    try {
+        const { rows } = await pool.query(
+            `SELECT f.food_key, f.severity, f.valid_until::text AS valid_until, c.name_zh, c.name_en,
+                    c.category, c.common_sources_zh, c.substitutes_zh
+               FROM user_memory_facts f
+               JOIN food_catalog c ON c.food_key = f.food_key
+              WHERE f.user_id = $1 AND f.status = 'active' AND f.food_key IS NOT NULL
+              ORDER BY f.severity DESC NULLS LAST, f.food_key`,
+            [userId]
+        );
+        const today = getNowShanghai().toISODate();
+        const live = rows.filter(r => !r.valid_until || r.valid_until >= today);
+        return {
+            restrictions: live.map(r => ({
+                food_key: r.food_key,
+                name_zh: r.name_zh,
+                name_en: r.name_en,
+                category: r.category,
+                class: r.severity,
+                avoid_until: r.valid_until,
+                substitutes_zh: r.substitutes_zh || [],
+            })),
+            promoted_dot_keys: live.length > 0 ? resolveGutAxisDotKeys(dotsFormulary) : [],
+        };
+    } catch (err) {
+        // Never fail a formulation over this. A missing panel context costs some emphasis; a
+        // thrown error costs the user their formula entirely.
+        console.log(JSON.stringify({ level: 'WARN', msg: 'food_sensitivity_context_failed', error: err.message }));
+        return { restrictions: [], promoted_dot_keys: [] };
+    }
 }
 
 // Splits a dot's total count across morning/evening for the deterministic (non-agentic) path.
@@ -3889,9 +3938,15 @@ async function handlePostFormulaDots(body) {
         const currentSolarTerm = getCurrentSolarTerm(getNowShanghai().toJSDate());
         const essentialKnowledge = await getEssentialBlock(personaType);
         const userFactsResult = await pool.query(
-            `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
+            `SELECT f.category, f.fact_zh, f.severity, f.valid_until::text AS valid_until, f.food_key,
+                        COALESCE(fc.dot_conflict_keys, '{}') AS dot_conflict_keys
+                   FROM user_memory_facts f
+                   LEFT JOIN food_catalog fc ON fc.food_key = f.food_key
+                  WHERE f.user_id = $1 AND f.status = 'active'
+                  ORDER BY f.category, f.last_mentioned_at DESC`,
             [user.user_id]
         );
+        const foodSensitivity = await _fetchFoodSensitivityContext(user.user_id, dotsResult.rows);
 
         // Both personas now run the actual dot-count decision through the agentic
         // PLAN→GENERATE→JUDGE→REVISE loop, delivered async (see _handleFormulaDotsAgentic) —
@@ -3900,7 +3955,7 @@ async function handlePostFormulaDots(body) {
         // entry point for either persona, but stays as the deterministic fallback used on
         // agentic failure (handleChatGenerateEvent's catch block) and EventBridge publish
         // failure (this function's own fail-open path, below).
-        return await _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dotsFormulary: dotsResult.rows, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts: userFactsResult.rows, personaType, ignoreFocus });
+        return await _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dotsFormulary: dotsResult.rows, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts: userFactsResult.rows, foodSensitivity, personaType, ignoreFocus });
     } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostFormulaDots failed', error: err.message }));
         return { success: false, error: err.message };
@@ -3921,7 +3976,7 @@ async function handlePostFormulaDots(body) {
 // carrying a :::formula chart of the whole 28-day cycle. That row is what GCN's checkout prices,
 // and it becomes the user's live plan only when the delivered box is scanned. No 'pending' row is
 // inserted here — the write happens in the finalizer, once there is a validated recipe to write.
-async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dotsFormulary, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts, personaType, ignoreFocus = false }) {
+async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dotsFormulary, latestBio, lang, currentSolarTerm, essentialKnowledge, userFacts, foodSensitivity = { restrictions: [], promoted_dot_keys: [] }, personaType, ignoreFocus = false }) {
     const age = calculateAge(user.birth_date);
     const heightCm = user.bio_data?.height;
     const weightKg = user.bio_data?.weight;
@@ -3981,7 +4036,13 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
     // Resolved once, here, and then carried on llmContext — the prompts and the pad-candidate
     // ranking below all read this one Set rather than each deriving their own from
     // recommended_dot_ids. See the field's comment on llmContext.
-    const recommendedKeySet = _resolveCandidateDotKeys(activePlanRows, dotsFormulary);
+    const planKeySet = _resolveCandidateDotKeys(activePlanRows, dotsFormulary);
+    // A live food-sensitivity panel promotes the gut-axis dots through the same additive channel
+    // as a health-plan focus (§40). Union, never replace: a focus and a panel are two independent
+    // reasons to emphasise a dot, and dropping either would make one of them silently lose.
+    const recommendedKeySet = (planKeySet || foodSensitivity.promoted_dot_keys.length > 0)
+        ? new Set([...(planKeySet || []), ...foodSensitivity.promoted_dot_keys])
+        : null;
 
     const llmContext = {
         user_profile: { nickname: user.nickname, gender: user.gender, age, bmi, language: lang },
@@ -4011,6 +4072,10 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         // (migration_health_plan_recommended_dot_keys.sql). Mirrors the field
         // _runDeterministicFormulation already puts on its own context.
         recommended_dot_keys: recommendedKeySet ? [...recommendedKeySet] : null,
+        // Context, not a constraint: these do not remove a dot (§40). They are here so the
+        // narrative can say why the gut-axis dots are emphasised, and so a formula is not
+        // explained in terms of a food the user has been told to stop eating.
+        food_restrictions: foodSensitivity.restrictions,
         current_solar_term: currentSolarTerm,
         essential_knowledge: essentialKnowledge,
         user_facts: userFacts,

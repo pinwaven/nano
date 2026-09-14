@@ -46,6 +46,7 @@ const { pool } = require('../lib/db');
 const ossLib = require('../lib/oss');
 const { presignDocuments, DEFAULT_DOC_URL_TTL_SECONDS, clampInt } = require('../lib/twinBundle');
 const { validateExtraction, MAX_SUMMARY_LENGTH } = require('../lib/docExtraction');
+const { deriveFoodGuideline } = require('../lib/foodSensitivity');
 const { handlePostHealthReport } = require('./health-plans');
 const { updateHealthTwin } = require('../lib/healthTwinUpdater');
 const { deliverTerminalMessage } = require('./chat');
@@ -186,6 +187,32 @@ async function fetchCatalog() {
     }));
 }
 
+// The food vocabulary, handed to the agent alongside the biomarker catalog for exactly the same
+// reason: a food_key that resolves to nothing is dropped and counted, so the agent has to be
+// aiming at what nano can actually store. `aliases` ships because the source is OCR of a printed
+// grid and one lab spells one food two ways — 卵类粘蛋白 in the results table, 卵类黏蛋白 in its
+// own appendix.
+//
+// dot_conflict_keys is deliberately NOT sent: it governs what a restriction does to a dots
+// formula on nano's side and is none of the agent's business.
+async function fetchFoodCatalog() {
+    const { rows } = await pool.query(
+        `SELECT food_key, name_zh, name_en, category, aliases, common_sources_zh, substitutes_zh
+           FROM food_catalog
+          WHERE is_active = TRUE
+          ORDER BY category, food_key`
+    );
+    return rows.map(r => ({
+        food_key: r.food_key,
+        name_zh: r.name_zh,
+        name_en: r.name_en,
+        category: r.category,
+        aliases: r.aliases || [],
+        common_sources_zh: r.common_sources_zh || [],
+        substitutes_zh: r.substitutes_zh || [],
+    }));
+}
+
 // ---------------------------------------------------------------------------------------
 // Enqueue and correction — called from handlers/health_documents.js
 // ---------------------------------------------------------------------------------------
@@ -241,13 +268,21 @@ async function clearExtraction(documentId, userId) {
         'DELETE FROM user_memory_facts WHERE source_document_id = $1 AND user_id = $2',
         [documentId, userId]
     );
+    // A food-sensitivity panel lives in its own tables, so it has to be dropped explicitly.
+    // food_sensitivity_results cascades off the panel. This is mandatory, not tidy: a re-run
+    // inserts a fresh panel, and leaving the old one would leave the user reading two
+    // contradictory answers to "can I eat this" with no way to tell which is current.
+    const { rowCount: panelsRemoved } = await pool.query(
+        'DELETE FROM food_sensitivity_panels WHERE source_document_id = $1 AND user_id = $2',
+        [documentId, userId]
+    );
     await pool.query(
         `UPDATE health_documents SET summary = NULL, summary_generated_at = NULL WHERE id = $1 AND user_id = $2`,
         [documentId, userId]
     );
     // The lab panel came out of health_events, so the twin has to be recomputed without it.
     await updateHealthTwin(userId, pool);
-    return { reports_removed: reportIds.length, facts_removed: factsRemoved };
+    return { reports_removed: reportIds.length, facts_removed: factsRemoved, panels_removed: panelsRemoved };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -275,7 +310,8 @@ async function handleGetDocExtractPing() {
 // extraction prompt before a single job exists.
 async function handleGetDocExtractCatalog() {
     try {
-        return { success: true, contract_version: CONTRACT_VERSION, catalog: await fetchCatalog() };
+        const [catalog, foodCatalog] = await Promise.all([fetchCatalog(), fetchFoodCatalog()]);
+        return { success: true, contract_version: CONTRACT_VERSION, catalog, food_catalog: foodCatalog };
     } catch (err) {
         _logError('handleGetDocExtractCatalog failed', err);
         return _fail(REASONS.INTERNAL_ERROR, err.message);
@@ -292,11 +328,13 @@ async function handleGetDocExtractCatalog() {
  */
 async function handlePostDocExtractValidate(body) {
     try {
-        const validated = validateExtraction(body || {}, await fetchCatalog());
+        const [catalog, foodCatalog] = await Promise.all([fetchCatalog(), fetchFoodCatalog()]);
+        const validated = validateExtraction(body || {}, catalog, foodCatalog);
         return {
             success: true,
             contract_version: CONTRACT_VERSION,
             would_accept: validated.observations.length > 0 || validated.findings.length > 0
+                || (validated.food_sensitivity?.items.length || 0) > 0
                 || !!validated.summary || !!validated.document.doc_date,
             ...validated,
         };
@@ -383,6 +421,9 @@ async function handlePostDocExtractClaim(body) {
                     language: user?.language || 'zh',
                 },
                 catalog: await fetchCatalog(),
+                // Shipped on every claim, not only for panels we already know are food ones: the
+                // agent cannot tell what kind of report it holds until it has read the page.
+                food_catalog: await fetchFoodCatalog(),
             },
         };
     } catch (err) {
@@ -418,11 +459,26 @@ async function handlePostDocExtractHeartbeat(body) {
 // Result — where the twin actually gets filled
 // ---------------------------------------------------------------------------------------
 
-function _resultMessage(language, { docLabel, accepted, findings, unmapped, hasDate }) {
+function _resultMessage(language, { docLabel, accepted, findings, unmapped, hasDate,
+                                   foodItems = 0, foodRestrictions = [] }) {
     const isZh = (language || 'zh') !== 'en';
+    // Names the restricted foods rather than counting them: three names are shorter than the
+    // sentence describing them, and the whole point of the panel is which foods.
+    const foodNames = isZh
+        ? foodRestrictions.map(r => r.name_zh).join('、')
+        : foodRestrictions.map(r => r.name_en || r.name_zh).join(', ');
     if (isZh) {
         const parts = [`已读取你上传的${docLabel}。`];
+        if (foodItems > 0) {
+            parts.push(`其中 ${foodItems} 项食物 IgG 结果已记入你的数字孪生「医疗记录」。`);
+            if (foodRestrictions.length > 0) {
+                parts.push(`有 ${foodRestrictions.length} 项达到慢性食物过敏分级：${foodNames}，已加入你的饮食禁忌，之后的饮食建议和原粒配方都会避开它们。`);
+            } else {
+                parts.push('没有一项达到慢性食物过敏分级。');
+            }
+        }
         if (accepted > 0) parts.push(`其中 ${accepted} 项指标已记入你的数字孪生「医疗记录」。`);
+        else if (foodItems > 0) { /* the panel is the content; saying "no lab markers" would read as a failure */ }
         else if (!hasDate) parts.push('没有找到可识别的报告日期，所以这次只保存了文档信息，没有记录指标。');
         else parts.push('这份文档里没有可以记录的化验指标。');
         if (findings > 0) parts.push(`另外记录了 ${findings} 条个人健康信息（如过敏史）。`);
@@ -431,7 +487,16 @@ function _resultMessage(language, { docLabel, accepted, findings, unmapped, hasD
         return parts.join('');
     }
     const parts = [`I've read the ${docLabel} you uploaded.`];
+    if (foodItems > 0) {
+        parts.push(` ${foodItems} food IgG results were added to your digital twin's Medical Records.`);
+        if (foodRestrictions.length > 0) {
+            parts.push(` ${foodRestrictions.length} reached a chronic food-sensitivity class: ${foodNames}. They are now in your dietary restrictions, and both food advice and your dots formula will avoid them.`);
+        } else {
+            parts.push(' None of them reached a chronic food-sensitivity class.');
+        }
+    }
     if (accepted > 0) parts.push(` ${accepted} marker${accepted === 1 ? '' : 's'} were added to your digital twin's Medical Records.`);
+    else if (foodItems > 0) { /* the panel is the content here */ }
     else if (!hasDate) parts.push(" I couldn't find a readable report date, so I saved the document details but recorded no markers.");
     else parts.push(' There were no lab markers in it to record.');
     if (findings > 0) parts.push(` I also noted ${findings} personal health detail${findings === 1 ? '' : 's'} (such as an allergy).`);
@@ -471,7 +536,8 @@ async function handlePostDocExtractResult(body) {
         );
         if (!doc) return _fail(REASONS.DOCUMENT_NOT_FOUND);
 
-        const validated = validateExtraction(body, await fetchCatalog());
+        const [catalog, foodCatalog] = await Promise.all([fetchCatalog(), fetchFoodCatalog()]);
+        const validated = validateExtraction(body, catalog, foodCatalog);
         const { document, summary, observations, findings, unmapped, rejected, counts } = validated;
 
         // ── Tier 1: the document row. Four columns nothing has ever written, so this alone is
@@ -537,6 +603,94 @@ async function handlePostDocExtractResult(body) {
             }
         }
 
+        // ── Tier 4: a chronic food-sensitivity (IgG) panel and the guideline derived from it
+        //    (CLAUDE.md §40). Its own tables, never health_events(lab_result) — 120 food titres
+        //    dated after the user's 体检 would replace their clinical panel in
+        //    health_twin.latest_lab_data, which keeps only the single most recent lab date.
+        //
+        //    THE GUIDELINE IS DERIVED HERE, NOT SUBMITTED. What a class means is printed in the
+        //    report (停止摄食1个月 / 2个月 / 3-6个月), so lib/foodSensitivity.js transcribes it.
+        //    An external agent may narrate a panel; it may not decide what the user is told to
+        //    stop eating.
+        let foodPanelId = null;
+        let foodRestrictions = [];
+        if (validated.food_sensitivity && validated.food_sensitivity.panel
+            && validated.food_sensitivity.items.length > 0) {
+            try {
+                const fs = validated.food_sensitivity;
+                const { rows: panelRows } = await pool.query(
+                    `INSERT INTO food_sensitivity_panels
+                        (user_id, source_document_id, panel_key, unit, sampled_at, report_date,
+                         institution, sample_no, class_bands)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+                    [job.user_id, doc.id, fs.panel.panel_key, fs.panel.unit, fs.panel.sampled_at,
+                     fs.panel.report_date, fs.panel.institution || document.institution,
+                     fs.panel.sample_no, JSON.stringify(fs.panel.class_bands)]
+                );
+                foodPanelId = Number(panelRows[0].id);
+
+                for (const it of fs.items) {
+                    await pool.query(
+                        `INSERT INTO food_sensitivity_results
+                            (panel_id, user_id, food_key, value, below_detection, class)
+                         VALUES ($1,$2,$3,$4,$5,$6)
+                         ON CONFLICT (panel_id, food_key) DO NOTHING`,
+                        [foodPanelId, job.user_id, it.food_key, it.value, it.below_detection, it.class]
+                    );
+                }
+
+                const guideline = deriveFoodGuideline(fs, foodCatalog);
+                foodRestrictions = guideline.restrictions;
+
+                // Restrictions carry food_key, which is what keeps them OUT of
+                // formulationQuality's prose matcher — see migration_user_memory_facts_food.sql.
+                // Same per-fact try/catch as tier 3: one bad row must not abort the batch.
+                for (const f of guideline.facts) {
+                    try {
+                        await pool.query(
+                            `INSERT INTO user_memory_facts
+                                (user_id, category, fact_zh, source, source_document_id,
+                                 severity, valid_until, food_key)
+                             VALUES ($1,$2,$3,'document_extracted',$4,$5,$6,$7)
+                             ON CONFLICT (user_id, category, fact_zh) WHERE status = 'active'
+                             DO UPDATE SET last_mentioned_at = CURRENT_TIMESTAMP,
+                                           updated_at = CURRENT_TIMESTAMP,
+                                           severity = EXCLUDED.severity,
+                                           valid_until = EXCLUDED.valid_until,
+                                           food_key = EXCLUDED.food_key,
+                                           source_document_id = EXCLUDED.source_document_id`,
+                            [job.user_id, f.category, f.fact_zh, doc.id, f.severity, f.valid_until, f.food_key]
+                        );
+                    } catch (factErr) {
+                        _logError('doc_extraction food fact write failed', factErr,
+                            { job_uid: job.job_uid, food_key: f.food_key });
+                    }
+                }
+            } catch (panelErr) {
+                // The observations, findings and summary are already committed and are worth
+                // keeping. A failed panel is reported, not rolled back over the rest.
+                _logError('doc_extraction food panel write failed', panelErr, { job_uid: job.job_uid });
+                foodPanelId = null;
+            }
+
+            // A free deep review of the panel, on a scoped Viva AG grant (§40). Awaited so it
+            // actually runs — FC 3.0 freezes the context on return — but its result is ignored:
+            // the restrictions are already written, so a review that cannot be queued (the user
+            // is not on Viva, has something else in flight, or is at their daily cap) costs an
+            // explanation and never the guideline. Required at call time to keep the AG module
+            // off this path's warm-container load.
+            if (foodPanelId) {
+                try {
+                    const { enqueueFoodSensitivityReview } = require('./viva_ag');
+                    const queued = await enqueueFoodSensitivityReview(job.user_id, { language: job.language });
+                    console.log(JSON.stringify({ level: 'INFO', msg: 'food_sensitivity_review_enqueue',
+                        job_uid: job.job_uid, ...queued }));
+                } catch (reviewErr) {
+                    _logError('food sensitivity review enqueue failed', reviewErr, { job_uid: job.job_uid });
+                }
+            }
+        }
+
         // The panel reaches health_twin.latest_lab_data through health_events, and
         // handlePostHealthReport only refreshes the twin via its compute_bioage branch — which is
         // off. So this call is what actually lands the extraction in the twin. AWAITED: FC 3.0
@@ -550,7 +704,9 @@ async function handlePostDocExtractResult(body) {
                     health_report_id = $4, result_token = NULL, updated_at = NOW()
               WHERE id = $1`,
             [job.id, JSON.stringify({ document, summary, observations, findings, unmapped,
-                counts: { ...counts, observations_written: written } }),
+                food_sensitivity: validated.food_sensitivity,
+                food_restrictions: foodRestrictions,
+                counts: { ...counts, observations_written: written, food_panel_id: foodPanelId } }),
                 JSON.stringify(rejected), reportId]
         );
 
@@ -564,6 +720,8 @@ async function handlePostDocExtractResult(body) {
                 findings: findings.length,
                 unmapped: unmapped.length,
                 hasDate: !!reportDate,
+                foodItems: validated.food_sensitivity?.items.length || 0,
+                foodRestrictions,
             });
             const ids = await deliverTerminalMessage(job.user_id, job.persona_type || 'viva', NOTIFY_RESULT, text, CHAT_SOURCE);
             await pool.query(
@@ -579,7 +737,8 @@ async function handlePostDocExtractResult(body) {
             success: true,
             job_uid: job.job_uid,
             report_id: reportId == null ? null : Number(reportId),
-            accepted: { ...counts, observations_written: written },
+            accepted: { ...counts, observations_written: written, food_panel_id: foodPanelId,
+                        food_restrictions: foodRestrictions.length },
             rejected,
         };
     } catch (err) {

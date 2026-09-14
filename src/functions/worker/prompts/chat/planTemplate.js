@@ -80,7 +80,7 @@ RESPOND WITH ONLY VALID JSON, NO OTHER TEXT:
   "intended_claims": [
     {"type": "biomarker_value|dot_recommendation|science_fact|dimension_reference|evidence_level|other", "claim": "<short description>", "ref_id": "<dot id, biomarker key, or KB entry id, or null>"}
   ],
-  "tools_needed": ["<any of: get_biomarkers, get_biomarker_history, get_dots, get_health_plan, get_formulation_packages, get_health_reports, get_questionnaire_responses, get_weight_history, get_health_twin, get_nutrition_schedule, get_reminders>"],
+  "tools_needed": ["<any of: get_biomarkers, get_biomarker_history, get_dots, get_health_plan, get_formulation_packages, get_food_sensitivity, get_health_reports, get_questionnaire_responses, get_weight_history, get_health_twin, get_nutrition_schedule, get_reminders>"],
   "risk_notes": "<anything you're unsure is grounded, or empty string>"
 }`;
 };

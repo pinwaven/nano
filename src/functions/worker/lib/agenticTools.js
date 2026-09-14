@@ -23,6 +23,8 @@ const {
     PACKAGE_STAGE_NARRATION,
 } = require('../handlers/dots');
 const { fetchFormulationTiers } = require('./gcnClient');
+// Pure, no DB — the class→window map is a transcription of the report's own 戒断方案 page.
+const { CLASS_WINDOWS } = require('./foodSensitivity');
 
 const AGENTIC_TOOL_DEFS = [
     {
@@ -83,6 +85,23 @@ const AGENTIC_TOOL_DEFS = [
             // have", which is exactly how a purchase question got answered out of it. §28g.
             description: "Fetch what the user has actually BOUGHT of 原粒 · 定制营养素 · 28天: their package orders and each one's current stage (paid, being compounded, shipped, in progress…), any unredeemed codes they hold, and the three packages the store sells. Use for every question about a purchase, an order, payment, shipping or which packages exist. This is the ONLY source for those — a nutrition plan or dosing schedule does not say what was bought.",
             parameters: { type: 'object', properties: {} },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_food_sensitivity',
+            description: "Fetch the user's chronic food-sensitivity (慢性食物过敏 / food IgG) panel: which foods came back at a sensitivity class, how long each is to be avoided, what it is commonly hidden in and what to eat instead. Use for any question about which foods they react to, whether a specific food is safe for them, or what their 过敏/忌口 situation is. Pass `foods` to look up specific foods by name — the panel covers a fixed list, and a food that was never tested is reported as untested rather than guessed. This is the ONLY source for it: a nutrition plan, a dots formula and a lab panel all answer different questions.",
+            parameters: {
+                type: 'object',
+                properties: {
+                    foods: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Specific food names to look up, in Chinese as the user said them (e.g. ["牛奶","鸡蛋"]). Up to 10.',
+                    },
+                },
+            },
         },
     },
     {
@@ -327,6 +346,162 @@ function createAgenticToolHandlers({ pool, user_id, language }) {
         // correct answer as a fabrication and rewrite it away (the bug CLAUDE.md §21 step 6
         // records). The `data.tests` branch is already the fossil of one such wrapper; do not add
         // the second.
+        // The user's chronic food-sensitivity (IgG) panel. §40.
+        //
+        // FLAT ARRAY, one row per item, each tagged `kind` — never a {panel, items} wrapper.
+        // extractToolGroundTruth normalises a tool result with
+        // `Array.isArray(data) ? data : (Array.isArray(data.tests) ? data.tests : [data])`, so a
+        // wrapper becomes ONE row and harvests nothing: the real panel dates would never reach
+        // extraValidDates and verifyBiomarkerGrounding would rewrite a correct answer away as a
+        // fabrication. The data.tests branch is already the fossil of one such wrapper.
+        //
+        // NO DEGRADED BRANCH, unlike get_formulation_packages. That tool needs one because its
+        // three sources are cross-repo calls that return [] on failure, making "GCN is down"
+        // indistinguishable from "you bought nothing". These are nano's own tables: an empty
+        // result genuinely means no panel has been uploaded, and a query failure throws into the
+        // loop's own catch rather than quietly returning [].
+        async get_food_sensitivity({ foods } = {}) {
+            // ::text on every DATE column. node-postgres parses a DATE at LOCAL midnight, which
+            // serialises to a UTC instant — CLAUDE.md §35 records scheduled_date for 2026-08-16
+            // shipping as "2026-08-15T16:00:00.000Z", the wrong day to any consumer. Casting in
+            // SQL is the documented fix, and it also means these dates skip formatToShanghai
+            // entirely, which would re-apply +8 to an offsetless string (§28g).
+            const { rows: panels } = await pool.query(
+                `SELECT id, panel_key, unit, sampled_at::text AS sampled_at,
+                        report_date::text AS report_date, institution
+                   FROM food_sensitivity_panels
+                  WHERE user_id = $1
+                  ORDER BY report_date DESC, id DESC
+                  LIMIT 1`,
+                [user_id]
+            );
+            if (panels.length === 0) return { ok: true, data: [] };
+            const panel = panels[0];
+
+            const { rows: results } = await pool.query(
+                `SELECT r.food_key, r.value, r.below_detection, r.class,
+                        f.name_zh, f.name_en, f.category, f.aliases,
+                        f.common_sources_zh, f.substitutes_zh
+                   FROM food_sensitivity_results r
+                   JOIN food_catalog f ON f.food_key = r.food_key
+                  WHERE r.panel_id = $1
+                  ORDER BY r.class DESC, r.value DESC NULLS LAST`,
+                [panel.id]
+            );
+
+            const today = dateOnly(new Date());
+            const name = (r) => (zh ? r.name_zh : (r.name_en || r.name_zh));
+
+            // Server-written, quoted by the model — the same division §28g draws for a package
+            // stage and §37 for product copy. What a class means and how long the food is stopped
+            // are printed in the report; letting the model paraphrase them is how a 1个月 window
+            // becomes 三到六个月.
+            const severityText = (cls) => (zh
+                ? { 1: '轻度慢性过敏（1级）', 2: '中度慢性过敏（2级）', 3: '重度慢性过敏（3级）' }[cls]
+                : { 1: 'mild chronic sensitivity (class 1)', 2: 'moderate chronic sensitivity (class 2)', 3: 'severe chronic sensitivity (class 3)' }[cls]) || null;
+            const guidanceText = (cls) => {
+                const w = CLASS_WINDOWS[cls];
+                if (!w) return null;
+                if (zh) {
+                    const head = `建议停止摄食 ${w.months} 个月以上`;
+                    if (w.recheck_max_months) return `${head}（${w.months}-${w.recheck_max_months} 个月），之后复查该食物的抗体浓度再决定是否恢复。`;
+                    if (w.reintroduce_interval_days) return `${head}，之后可以每 ${w.reintroduce_interval_days} 天少量摄入一次。`;
+                    return `${head}，之后复查该食物的抗体浓度再决定是否恢复。`;
+                }
+                const head = `Stop eating it for at least ${w.months} month${w.months === 1 ? '' : 's'}`;
+                if (w.recheck_max_months) return `${head} (${w.months}-${w.recheck_max_months}), then recheck the antibody level before deciding whether to bring it back.`;
+                if (w.reintroduce_interval_days) return `${head}, then a small portion no more often than every ${w.reintroduce_interval_days} days.`;
+                return `${head}, then recheck the antibody level.`;
+            };
+            const addMonths = (iso, n) => {
+                const [y, m, d] = iso.split('-').map(Number);
+                const first = new Date(Date.UTC(y, (m - 1) + n, 1));
+                const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+                return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, last)))
+                    .toISOString().slice(0, 10);
+            };
+
+            const positives = results.filter(r => r.class >= 1);
+            const rows = [{
+                kind: 'panel',
+                panel_name: zh ? '慢性食物过敏（食物特异性 IgG）' : 'Chronic food sensitivity (food-specific IgG)',
+                unit: panel.unit,
+                sampled_at: panel.sampled_at,
+                report_date: panel.report_date,
+                institution: panel.institution,
+                foods_tested: results.length,
+                foods_with_sensitivity: positives.length,
+                // The distinction the report itself devotes a page to, and the one users most
+                // reliably get wrong. Stated as a fact on the row rather than left to the model,
+                // because calling this an allergy is a clinical misstatement, not a wording slip.
+                note: zh
+                    ? '这是 IgG 介导的慢性食物过敏（食物不耐受），与 IgE 介导的急性过敏不同：它通常是暂时的，戒断一段时间后多数可以恢复摄入。不要把它说成急性过敏或终身过敏。'
+                    : 'This is IgG-mediated chronic food sensitivity (intolerance), which is NOT the same as an IgE-mediated acute allergy: it is usually temporary and most foods can be reintroduced after a period of avoidance. Do not describe it as an acute or lifelong allergy.',
+            }];
+
+            for (const r of positives) {
+                const until = addMonths(panel.report_date, CLASS_WINDOWS[r.class].months);
+                rows.push({
+                    kind: 'restriction',
+                    food: name(r),
+                    category: r.category,
+                    class: r.class,
+                    severity_text: severityText(r.class),
+                    value: r.value == null ? null : Number(r.value),
+                    unit: panel.unit,
+                    guidance: guidanceText(r.class),
+                    avoid_until: until,
+                    // Resolved here rather than left as a date for the model to compare against a
+                    // "today" it does not reliably know. This is what makes the stored valid_until
+                    // actually mean something in a reply.
+                    window_has_passed: until < today,
+                    hidden_in: r.common_sources_zh || [],
+                    eat_instead: r.substitutes_zh || [],
+                });
+            }
+
+            // A specific lookup — "can I drink milk?". Resolved against the SAME declared
+            // vocabulary the panel was ingested through (name plus explicit aliases), never
+            // fuzzily, and a food the panel never covered comes back as untested rather than as
+            // an implied all-clear. 120 foods is a fixed list, not everything a person eats.
+            for (const raw of (Array.isArray(foods) ? foods : []).slice(0, 10)) {
+                const q = String(raw || '').trim();
+                if (!q) continue;
+                const hit = results.find(r => r.name_zh === q
+                    || (r.name_en || '').toLowerCase() === q.toLowerCase()
+                    || (r.aliases || []).includes(q));
+                if (!hit) {
+                    rows.push({
+                        kind: 'not_tested',
+                        food: q,
+                        note: zh
+                            ? '这一项不在这份检测覆盖的食物范围内，因此没有结果——不要据此说它安全，也不要说它有问题。'
+                            : 'This food is not covered by this panel, so there is no result for it — do not call it safe and do not call it a problem.',
+                    });
+                    continue;
+                }
+                rows.push({
+                    kind: 'result',
+                    food: name(hit),
+                    category: hit.category,
+                    class: hit.class,
+                    severity_text: hit.class >= 1 ? severityText(hit.class)
+                        : (zh ? '未达到过敏分级（0级）' : 'below the sensitivity threshold (class 0)'),
+                    value: hit.value == null ? null : Number(hit.value),
+                    // The lab declined to measure below its detection limit. Reported as a fact
+                    // rather than as a number, so the model cannot quote a titre nobody measured.
+                    below_detection: hit.below_detection,
+                    unit: panel.unit,
+                    guidance: hit.class >= 1 ? guidanceText(hit.class)
+                        : (zh ? '这一项没有超标，正常食用即可。' : 'This one is not elevated; it can be eaten normally.'),
+                    hidden_in: hit.class >= 1 ? (hit.common_sources_zh || []) : [],
+                    eat_instead: hit.class >= 1 ? (hit.substitutes_zh || []) : [],
+                });
+            }
+
+            return { ok: true, data: rows };
+        },
+
         async get_formulation_packages() {
             const [packages, codes, tiers] = await Promise.all([
                 _fetchFormulationPackages(user_id),

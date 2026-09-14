@@ -193,3 +193,59 @@ test('fetchCatalog selects every field the validator reads off a catalog row', (
             `validateExtraction reads catalog.${field}, which fetchCatalog never selects`);
     }
 });
+
+// ── the food-sensitivity half of the contract (§40) ──────────────────────────────────────────
+// Same rule as the rest of this file: the spec ships inside the function, so it cannot drift from
+// the code by deployment — only by someone editing one and not the other. These are what stop it.
+
+test('every food rejection reason the validator emits is documented', () => {
+    const src = fs.readFileSync(path.join(WORKER, 'lib', 'foodSensitivity.js'), 'utf8');
+    const emitted = [...new Set([...src.matchAll(/reject\(rejected, '([a-z_]+)'/g)].map(m => m[1]))];
+    assert.ok(emitted.length >= 7, `only found ${emitted.length} food reason codes`);
+    const table = md.slice(md.indexOf('### Per food-sensitivity item'), md.indexOf('### Convertible units'));
+    for (const r of emitted) {
+        assert.ok(md.includes(`\`${r}\``), `${r} is emitted by the code but appears nowhere in the contract`);
+    }
+    // The per-item ones belong in the per-item table specifically, where an implementer looks.
+    for (const r of emitted.filter(x => x !== 'invalid_food_panel' && x !== 'too_many_food_items')) {
+        assert.ok(table.includes(`\`${r}\``), `${r} is missing from the per-item rule table`);
+    }
+});
+
+test('the documented food limits match the code', () => {
+    const fsv = require(path.join(WORKER, 'lib', 'foodSensitivity.js'));
+    const limits = md.slice(md.indexOf('## 10. Limits'));
+    assert.ok(limits.includes(String(fsv.MAX_FOOD_ITEMS)), 'MAX_FOOD_ITEMS is not in the limits table');
+    assert.ok(limits.includes(String(fsv.FOOD_CONFIDENCE_FLOOR)), 'the food confidence floor is not in the limits table');
+    assert.ok(spec.components.schemas.FoodSensitivity.properties.items.maxItems === fsv.MAX_FOOD_ITEMS,
+        'the spec and the code disagree about the item cap');
+});
+
+test("the contract's food example is one nano would actually accept", () => {
+    // The same guarantee the biomarker worked example already carries: an implementer copying the
+    // block out of the docs gets something that validates.
+    const { validateFoodSensitivity } = require(path.join(WORKER, 'lib', 'foodSensitivity.js'));
+    const block = md.slice(md.indexOf('### `food_sensitivity`'));
+    const json = block.slice(block.indexOf('```json') + 7, block.indexOf('```', block.indexOf('```json') + 7));
+    const payload = JSON.parse(json);
+    assert.ok(payload.food_sensitivity, 'the example has no food_sensitivity block');
+
+    const sql = fs.readFileSync(path.join(__dirname, '..', 'src', 'schemas', 'migration_food_catalog.sql'), 'utf8');
+    const catalog = [...sql.matchAll(/^\s{4}\('([^']+)', '([^']+)', '([^']*)', '([^']+)',/gm)]
+        .map(m => ({ food_key: m[1], name_zh: m[2], name_en: m[3], category: m[4], aliases: [] }));
+    const r = validateFoodSensitivity(payload.food_sensitivity, catalog);
+    assert.deepStrictEqual(r.rejected, [], 'the documented example is rejected by the real validator');
+    assert.strictEqual(r.counts.items_accepted, payload.food_sensitivity.items.length);
+});
+
+test('the spec declares the food payload and the catalog ships the food vocabulary', () => {
+    assert.ok(spec.components.schemas.ResultPayload.properties.food_sensitivity,
+        'ResultPayload does not declare food_sensitivity');
+    assert.ok(spec.paths['/doc-extract/catalog'].get.responses['200']
+        .content['application/json'].schema.properties.food_catalog,
+        'the catalog endpoint does not declare food_catalog');
+    // The handler must actually send it, or an implementer cannot produce a food_key at all.
+    const handler = fs.readFileSync(path.join(WORKER, 'handlers', 'doc_extraction.js'), 'utf8');
+    assert.ok(handler.includes('food_catalog: await fetchFoodCatalog()'),
+        'the claim response does not ship food_catalog');
+});

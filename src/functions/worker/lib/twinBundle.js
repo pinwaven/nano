@@ -34,7 +34,10 @@ const { formatToShanghai, calculateAge, getNowShanghai } = require('./time-utils
 // Bump when the bundle's shape changes in a way an external consumer must notice. Returned in
 // every bundle response and echoed by /viva-ag/ping so the agent can assert compatibility.
 // v2 (2026-08-27) added job_questionnaires — purely additive, so a v1 consumer keeps working.
-const BUNDLE_VERSION = 2;
+// 3 — additive: layers.medical_records.food_sensitivity (§40). Every earlier field is unchanged,
+// so a consumer written against 2 keeps working; the version rises because a consumer that wants
+// the panel needs a way to know whether to expect it.
+const BUNDLE_VERSION = 3;
 
 // Presigned document URLs default to 6 hours: long enough for a multi-hour job that has to
 // resume a large download, short enough that a leaked bundle goes stale the same day.
@@ -287,6 +290,59 @@ async function fetchJobQuestionnaires(pool, assignmentIds) {
     return [...byAssignment.values()];
 }
 
+// The user's most recent chronic food-sensitivity (IgG) panel, and every food on it (§40).
+//
+// Twin layer 3, Medical Records — it is a lab result about the person, not something they do.
+// The whole panel ships, not only the positives: "what came back clear" is exactly as much an
+// answer as "what didn't", and an agent asked to plan a rotation diet needs the negatives.
+//
+// ::text on the DATE columns, per this module's own convention: node-postgres parses a DATE at
+// local midnight, which serialises to a UTC instant and reads as the wrong day to any consumer.
+async function fetchFoodSensitivity(pool, userId) {
+    const { rows: panels } = await pool.query(
+        `SELECT id, panel_key, unit, sampled_at::text AS sampled_at, report_date::text AS report_date,
+                institution, sample_no, class_bands
+           FROM food_sensitivity_panels
+          WHERE user_id = $1
+          ORDER BY report_date DESC, id DESC
+          LIMIT 1`,
+        [userId]
+    );
+    if (panels.length === 0) return null;
+    const panel = panels[0];
+    const { rows } = await pool.query(
+        `SELECT r.food_key, r.value, r.below_detection, r.class,
+                c.name_zh, c.name_en, c.category, c.common_sources_zh, c.substitutes_zh
+           FROM food_sensitivity_results r
+           JOIN food_catalog c ON c.food_key = r.food_key
+          WHERE r.panel_id = $1
+          ORDER BY r.class DESC, r.value DESC NULLS LAST`,
+        [panel.id]
+    );
+    return {
+        panel_key: panel.panel_key,
+        unit: panel.unit,
+        sampled_at: panel.sampled_at,
+        report_date: panel.report_date,
+        institution: panel.institution,
+        class_bands: panel.class_bands || [],
+        // Stated rather than left to be inferred: an IgG panel is routinely mistaken for an
+        // acute-allergy test, and this bundle goes to an external agent.
+        assay_note: 'IgG-mediated chronic food sensitivity (intolerance). NOT an IgE-mediated acute allergy: usually temporary, and most foods can be reintroduced after a period of avoidance.',
+        foods: rows.map(r => ({
+            food_key: r.food_key,
+            name_zh: r.name_zh,
+            name_en: r.name_en,
+            category: r.category,
+            value: r.value == null ? null : Number(r.value),
+            below_detection: r.below_detection,
+            class: r.class,
+            common_sources_zh: r.common_sources_zh || [],
+            substitutes_zh: r.substitutes_zh || [],
+        })),
+    };
+}
+
 async function fetchMemoryFacts(pool, userId) {
     const { rows } = await pool.query(
         `SELECT category, fact_zh, first_mentioned_at, last_mentioned_at
@@ -480,7 +536,7 @@ async function buildTwinBundle(pool, { user, ref, documentIds = null, urlTtlSeco
 
     const [
         latestBio, bioHistory, twin, weightHistory,
-        reports, documents, questionnaireRows, memoryFacts,
+        reports, documents, foodSensitivity, questionnaireRows, memoryFacts,
         healthPlans, schedule, inventory, reminders, formulary, dataInventory, jobQuestionnaires,
     ] = await Promise.all([
         _safe('latest_biomarkers', () => fetchLatestBiomarkers(pool, userId), null),
@@ -489,6 +545,7 @@ async function buildTwinBundle(pool, { user, ref, documentIds = null, urlTtlSeco
         _safe('weight_history', () => fetchWeightHistory(pool, userId), []),
         _safe('health_reports', () => fetchHealthReports(pool, userId), []),
         _safe('health_documents', () => fetchHealthDocuments(pool, userId, documentIds), []),
+        _safe('food_sensitivity', () => fetchFoodSensitivity(pool, userId), null),
         _safe('questionnaires', () => fetchQuestionnaireRows(pool, userId), []),
         _safe('memory_facts', () => fetchMemoryFacts(pool, userId), []),
         _safe('health_plans', () => fetchActiveHealthPlans(pool, userId, language), []),
@@ -537,6 +594,10 @@ async function buildTwinBundle(pool, { user, ref, documentIds = null, urlTtlSeco
                 lab_panel: twin?.latest_lab_data || null,
                 lab_date: twin?.latest_lab_date || null,
                 documents: presignDocuments(documents, urlTtlSeconds),
+                // Twin layer 3 (§40). Its own section, never folded into lab_panel: a food
+                // titre is not a biomarker and this panel never reaches
+                // health_twin.latest_lab_data. null when the user has uploaded none.
+                food_sensitivity: foodSensitivity,
             },
             personal_profile: {
                 bio_data: user.bio_data || null,

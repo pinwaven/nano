@@ -96,68 +96,29 @@ const UNIT_CONVERSIONS = {
     Hemoglobin:       { 'g/dl': v => v * 10 },
 };
 
-// Unit strings arrive from OCR, so they carry whatever casing, spacing and Unicode the report
-// used. µ vs u and L vs l are the two that actually show up.
-function _normalizeUnit(raw) {
-    return String(raw == null ? '' : raw)
-        .trim().toLowerCase()
-        .replace(/µ/g, 'u')      // MICRO SIGN
-        .replace(/μ/g, 'u')      // GREEK SMALL LETTER MU
-        .replace(/\s+/g, '');
-}
+// The primitive coercions live in lib/extractionPrimitives.js so lib/foodSensitivity.js — which
+// validates a food panel arriving in this same submission — applies byte-identical date and
+// number rules. Aliased to the original underscore names to keep every call site below unchanged.
+const {
+    normalizeUnit: _normalizeUnit,
+    toNumber: _toNumber,
+    toIsoDate: _toIsoDate,
+    trim: _trim,
+    sanitizeText: _sanitizeText,
+    reject: _reject,
+} = require('./extractionPrimitives');
 
-function _toNumber(v) {
-    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-    if (typeof v !== 'string') return null;
-    const t = v.trim();
-    if (!/^-?\d+(\.\d+)?$/.test(t)) return null;
-    const n = parseFloat(t);
-    return Number.isFinite(n) ? n : null;
-}
-
-// Accepts only a plain calendar date. A timestamp is truncated to its date part; anything else is
-// refused rather than coerced, because the caller's fallback for "no readable date" is to write no
-// report at all, and a wrong date is worse than no report.
-function _toIsoDate(v) {
-    if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v.toISOString().slice(0, 10);
-    if (typeof v !== 'string') return null;
-    const m = v.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$/);
-    if (!m) return null;
-    const [, y, mo, d] = m;
-    const dt = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
-    if (dt.getUTCFullYear() !== Number(y) || dt.getUTCMonth() !== Number(mo) - 1
-        || dt.getUTCDate() !== Number(d)) return null;                 // 2026-02-31 and friends
-    // A lab result dated in the future is a misread year, not a prophecy. One day of slack covers
-    // a report issued across a timezone boundary.
-    if (dt.getTime() > Date.now() + 24 * 3600 * 1000) return null;
-    return dt.toISOString().slice(0, 10);
-}
-
-function _trim(v, max) {
-    const s = String(v == null ? '' : v).trim();
-    if (!s) return null;
-    return s.length > max ? s.slice(0, max).trim() : s;
-}
-
-// The ':::' display-card fences are interpreted by the miniapp chat renderer, so an external
-// system emitting them could render arbitrary UI in the user's chat. Same strip
-// handlers/viva_ag.js applies to an AG summary on ingest, for the same reason.
-function _sanitizeText(raw, max) {
-    let text = String(raw == null ? '' : raw).replace(/^:::.*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
-    if (!text) return null;
-    return text.length > max ? text.slice(0, max).trim() : text;
-}
-
-function _reject(list, code, entry, detail) {
-    list.push({ reason: code, entry, ...(detail ? { detail } : {}) });
-}
+const { validateFoodSensitivity } = require('./foodSensitivity');
 
 /**
  * @param {object} payload  the agent's submission
  * @param {Array}  catalogRows  rows of biomarker_catalog (active only), as the handler fetched them
- * @returns {{document, summary, observations, findings, unmapped, rejected, counts}}
+ * @param {Array}  foodCatalogRows  rows of food_catalog (active only). Required only when the
+ *                 payload carries a food_sensitivity block; passing nothing when it does is
+ *                 reported as food_catalog_unavailable rather than silently dropping the panel.
+ * @returns {{document, summary, observations, findings, food_sensitivity, unmapped, rejected, counts}}
  */
-function validateExtraction(payload, catalogRows) {
+function validateExtraction(payload, catalogRows, foodCatalogRows = null) {
     const p = payload && typeof payload === 'object' ? payload : {};
     const rejected = [];
 
@@ -330,11 +291,33 @@ function validateExtraction(payload, catalogRows) {
         findings.push({ category, text, confidence });
     }
 
+    // A chronic food-sensitivity (IgG) panel, when the document is one (CLAUDE.md §40). Kept as
+    // its own section rather than folded into `observations`: a food is not a biomarker_catalog
+    // marker, and routing 120 food titres through health_events(lab_result) would replace the
+    // user's clinical panel in health_twin.latest_lab_data — see migration_food_catalog.sql.
+    //
+    // Its rejections and unmapped entries join the shared lists, so the agent and the user both
+    // see one accounting of everything this submission got wrong.
+    let foodSensitivity = null;
+    if (payload && payload.food_sensitivity != null) {
+        if (!Array.isArray(foodCatalogRows)) {
+            _reject(rejected, 'food_catalog_unavailable', null,
+                'the caller did not supply food_catalog, so the panel was not validated');
+        } else {
+            foodSensitivity = validateFoodSensitivity(payload.food_sensitivity, foodCatalogRows);
+            if (foodSensitivity) {
+                rejected.push(...foodSensitivity.rejected);
+                unmapped.push(...foodSensitivity.unmapped);
+            }
+        }
+    }
+
     return {
         document,
         summary,
         observations,
         findings,
+        food_sensitivity: foodSensitivity ? { panel: foodSensitivity.panel, items: foodSensitivity.items } : null,
         unmapped,
         rejected,
         counts: {
@@ -342,6 +325,8 @@ function validateExtraction(payload, catalogRows) {
             observations_submitted: rawObs.length,
             findings_accepted: findings.length,
             findings_submitted: rawFindings.length,
+            food_items_accepted: foodSensitivity ? foodSensitivity.counts.items_accepted : 0,
+            food_items_submitted: foodSensitivity ? foodSensitivity.counts.items_submitted : 0,
             unmapped: unmapped.length,
             rejected: rejected.length,
         },

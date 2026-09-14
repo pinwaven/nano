@@ -72,6 +72,7 @@ const { handleGetKinoDevices, handlePostKinoDevice, handlePutKinoDevice, handleD
 const { handleGetKnowledgeEntries, handlePostKnowledgeEntry, handlePutKnowledgeEntry, handleDeleteKnowledgeEntry } = require('./handlers/knowledge');
 const { handleGetPersonaSettings, handlePutPersonaSettings } = require('./handlers/personaSettings');
 const { handleGetUserFacts, handlePostUserFact, handlePutUserFact, handleDeleteUserFact } = require('./handlers/userFacts');
+const { handleGetFoodSensitivity } = require('./handlers/food_sensitivity');
 const { handleGetCreditBalance, handleGetCreditHistory, handlePostCreditWithdraw, handleGetUserWithdrawals, handleGetAdminWithdrawals, handlePutAdminWithdrawal, handleGetAdminUserCreditHistory, handlePostAdminUserCreditAdjustment } = require('./handlers/credits');
 const {
     handlePostVivaAgJob, handleGetVivaAgJobs, handleGetVivaAgJobDetail, handlePostVivaAgJobCancel, handleGetVivaAgResultUrl,
@@ -506,6 +507,8 @@ exports.handler = async (req, resp, context) => {
                 result = requirePermission(adminCtx, 'content:read') || await handleGetKnowledgeEntries();
             } else if (path.includes('/user-facts')) {
                 result = await handleGetUserFacts(query.openid, query.coach_id);
+            } else if (path.includes('/food-sensitivity')) {
+                result = await handleGetFoodSensitivity(query.openid, query.coach_id);
             } else if (path === '/phone-otp/list') {
                 result = await handlePhoneOtpList(query);
             } else if (path.match(/\/kino-tested-chips\/(\d+)/)) {

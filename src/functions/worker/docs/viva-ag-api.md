@@ -1,6 +1,6 @@
 # Viva AG — External Agent API
 
-Version 1 · bundle_version 1
+Version 1 · bundle_version 3
 
 This is the complete contract between Waven Nano and the external **Viva AG** (Advanced
 Generation) agent. Nano holds a queue of analysis jobs; your agent **pulls** from it, reads a
@@ -126,7 +126,7 @@ curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
 
 ```json
 { "success": true, "service": "viva-ag", "env": "dev",
-  "bundle_version": 1, "queue_depth": 2, "server_time": "2026-08-23 17:04:11" }
+  "bundle_version": 3, "queue_depth": 2, "server_time": "2026-08-23 17:04:11" }
 ```
 
 ---
@@ -173,9 +173,28 @@ Claimed:
   } }
 ```
 
-`command_key` is one of `full_analysis`, `document_review`, `risk_screen`, `dots_formulation`, or
-`null` when the user wrote a free-text request only. **`dots_formulation` (原粒定制) has its own
-required output format — see §8**; the other three are free-form analyses. `command` carries the user's own words when they typed any;
+`command_key` is one of `full_analysis`, `document_review`, `risk_screen`, `dots_formulation`,
+`food_sensitivity_review`, or `null` when the user wrote a free-text request only.
+**`dots_formulation` (原粒定制) has its own required output format — see §8**; the others are
+free-form analyses.
+
+**`food_sensitivity_review` (慢性食物过敏解读)** is queued automatically when a user uploads a
+chronic food-sensitivity (IgG) panel and nano finishes extracting it, on a free time-boxed grant —
+so unlike the other presets, the user did not tap anything. The panel itself is in
+`layers.medical_records.food_sensitivity`, whole, alongside the original PDF in `documents`.
+
+Two things about that review are fixed before you see the job, and writing against them is the
+whole job:
+
+- **The restrictions are already decided.** Nano derives which foods to avoid and for how long
+  from the printed class, deterministically, and has already written them into the user's record
+  before the job is created. Your report explains and contextualises them — it does not set them,
+  and a report that contradicts them is a report the user will be given alongside instructions
+  that say otherwise.
+- **This is IgG-mediated chronic sensitivity, not an IgE-mediated acute allergy.** The bundle says
+  so in `assay_note`. It is usually temporary and most foods are reintroduced after a period of
+  avoidance. Do not describe it as an allergy without that qualification, never as lifelong, and
+  never advise stopping a medication on the strength of it. `command` carries the user's own words when they typed any;
 if they only tapped a preset, it repeats the `command_key`. Treat `command_key` as the intent and
 `command` as the elaboration.
 
@@ -198,7 +217,7 @@ Shape:
 ```jsonc
 {
   "success": true,
-  "bundle_version": 2,
+  "bundle_version": 3,
   "generated_at": "2026-08-23 17:05:40",
   "job": { "job_uid": "…", "command": "…", "command_key": "…", "params": {},
            "questionnaire_rounds_used": 1, "questionnaire_rounds_remaining": 1 },
@@ -235,7 +254,16 @@ Shape:
     "medical_records": {
       "health_reports": [ { "report_date": "…", "institution": "…", "observations": [ … ] } ],
       "lab_panel": {…}, "lab_date": "…",
-      "documents": [ /* see section 5 */ ]
+      "documents": [ /* see section 5 */ ],
+      "food_sensitivity": {
+        "panel_key": "igg_120", "unit": "U/mL",
+        "sampled_at": "2026-04-15", "report_date": "2026-04-23",
+        "class_bands": [ { "class": 1, "low": 50.0, "high": 100.0 } ],
+        "assay_note": "IgG-mediated chronic food sensitivity (intolerance). NOT an IgE-mediated acute allergy…",
+        "foods": [ { "food_key": "casein", "name_zh": "酪蛋白", "name_en": "Casein",
+                     "category": "dairy_egg", "value": 52.8, "below_detection": false, "class": 1,
+                     "common_sources_zh": [ "牛奶", "羊奶" ], "substitutes_zh": [ "豆浆", "鸡蛋" ] } ]
+      }
     },
     "personal_profile": {
       "bio_data": {…},

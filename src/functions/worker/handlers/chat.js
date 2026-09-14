@@ -51,6 +51,7 @@ const { fetchAiCatalog } = require('../lib/gcnClient');
 const { PLAN_WEEKS, N7_KEY } = require('../lib/dotsProductModel');
 const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock');
 const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
+const { messageAsksAboutFoodSensitivity } = require('../prompts/chat/foodSensitivityBlock');
 
 // Channels with a GCN storefront behind them (mirrors handlers/login.js's own copy — the same
 // physically-duplicated-constant convention this codebase uses across handlers). Nothing else has
@@ -1297,7 +1298,12 @@ async function _fireQuestionnaireAnsweredFollowup(userId, assignmentId) {
             `SELECT id, key_name, key_name_zh, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ORDER BY id ASC`
         ),
         pool.query(
-            `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
+            `SELECT f.category, f.fact_zh, f.severity, f.valid_until::text AS valid_until, f.food_key,
+                        COALESCE(fc.dot_conflict_keys, '{}') AS dot_conflict_keys
+                   FROM user_memory_facts f
+                   LEFT JOIN food_catalog fc ON fc.food_key = f.food_key
+                  WHERE f.user_id = $1 AND f.status = 'active'
+                  ORDER BY f.category, f.last_mentioned_at DESC`,
             [userId]
         ),
         pool.query(
@@ -1465,6 +1471,17 @@ async function handlePostChat(body) {
                 console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_package_question', user_id, from: intent }));
                 intent = 'nutrition_question';
             }
+            // Same promotion, same two reasons, for a food-sensitivity question (§40).
+            // 「我能喝牛奶吗」 is conversational enough to classify as casual_chat, which is not in
+            // HIGH_RISK_INTENTS and therefore has no tools at all — so the one question the panel
+            // exists to answer would be answered from nothing. And 「我该吃什么」 sits one word from
+            // a request to formulate, where a misread starts a whole new 28-day formulation
+            // instead of answering.
+            if (messageAsksAboutFoodSensitivity(message)
+                && (intent === 'formulate_dots' || intent === 'casual_chat')) {
+                console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_food_sensitivity_question', user_id, from: intent }));
+                intent = 'nutrition_question';
+            }
             if (intent === 'formulate_dots') {
                 if (body.client === 'miniapp' && !sandbox) {
                     // Persisted here because this branch returns before the shared insert below.
@@ -1497,12 +1514,26 @@ async function handlePostChat(body) {
             fetches.dots = pool.query(
                 `SELECT id, key_name, key_name_zh, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ORDER BY id ASC`
             );
+            // Whether this user has a chronic food-sensitivity panel at all (§40) — one indexed
+            // EXISTS, so it rides along with the rest of the bundle. Not derived from user_facts:
+            // a panel where nothing came back positive produces no facts, and «nothing you were
+            // tested for came back elevated» is a real answer that the model can only give if it
+            // knows the panel is there.
+            fetches.has_food_panel = pool.query(
+                `SELECT EXISTS (SELECT 1 FROM food_sensitivity_panels WHERE user_id = $1) AS present`,
+                [user_id]
+            );
             // Always fetch active personal memory facts (dietary restrictions, allergies,
             // preferences, goals stated in prior conversations) — same unconditional
             // treatment as biomarker/dots above, not gated behind required_data, since an
             // allergy needs to be visible on every turn regardless of intent.
             fetches.user_facts = pool.query(
-                `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
+                `SELECT f.category, f.fact_zh, f.severity, f.valid_until::text AS valid_until, f.food_key,
+                        COALESCE(fc.dot_conflict_keys, '{}') AS dot_conflict_keys
+                   FROM user_memory_facts f
+                   LEFT JOIN food_catalog fc ON fc.food_key = f.food_key
+                  WHERE f.user_id = $1 AND f.status = 'active'
+                  ORDER BY f.category, f.last_mentioned_at DESC`,
                 [user_id]
             );
             if (required_data.includes('plan')) {
@@ -1653,6 +1684,7 @@ async function handlePostChat(body) {
                 // because the classifier failed to emit a key. It carries no data, so the cost of
                 // it being present on a turn that doesn't need it is a few lines of prompt.
                 formulation_packages_available: GCN_LINKED_CHANNEL_KEYS.has(channelKeyName),
+                food_sensitivity_available: fetched.has_food_panel?.rows?.[0]?.present === true,
                 // Gates prompts/chat/outputFormat.js's ::: display-card syntax. Scoped to the
                 // miniapp because it's the only surface whose renderer understands the fences —
                 // the coach app shows content as a bare <text> and the web user-app uses
@@ -2607,7 +2639,12 @@ async function handlePostHealthAdvice(body) {
                 [user_id]
             ),
             pool.query(
-                `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
+                `SELECT f.category, f.fact_zh, f.severity, f.valid_until::text AS valid_until, f.food_key,
+                        COALESCE(fc.dot_conflict_keys, '{}') AS dot_conflict_keys
+                   FROM user_memory_facts f
+                   LEFT JOIN food_catalog fc ON fc.food_key = f.food_key
+                  WHERE f.user_id = $1 AND f.status = 'active'
+                  ORDER BY f.category, f.last_mentioned_at DESC`,
                 [user_id]
             ),
         ]);

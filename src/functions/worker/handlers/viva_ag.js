@@ -47,7 +47,10 @@ const { formatToShanghai } = require('../lib/time-utils');
 // Preset intents the panel offers. 'dots_formulation' asks the agent to design a custom Dots
 // (原粒) formulation from the whole twin — the bundle already carries dots_formulary and the
 // user's committed nutrition schedule, so it needs no extra data, only a different intent.
-const VALID_COMMAND_KEYS = new Set(['full_analysis', 'document_review', 'risk_screen', 'dots_formulation']);
+// 'food_sensitivity_review' reads the user's uploaded 慢性食物过敏 panel, which the twin bundle
+// now carries whole (layers.medical_records.food_sensitivity, bundle_version 3) alongside the
+// original PDF — so like dots_formulation it needs no extra data, only a different intent.
+const VALID_COMMAND_KEYS = new Set(['full_analysis', 'document_review', 'risk_screen', 'dots_formulation', 'food_sensitivity_review']);
 const MAX_COMMAND_LENGTH = 2000;
 const MAX_SUMMARY_LENGTH = 4000;
 const MAX_RESULT_BYTES = 512 * 1024;
@@ -360,6 +363,62 @@ async function handlePostVivaAgJob(body) {
     } catch (err) {
         _logError('handlePostVivaAgJob failed', err);
         return _fail(REASONS.INTERNAL_ERROR, err.message);
+    }
+}
+
+/**
+ * Queue a free deep review of a freshly extracted food-sensitivity panel (§40).
+ *
+ * Called from the extraction result path, not from the panel, so it deliberately does NOT go
+ * through requireVivaAgAccess: it grants the window itself first. Everything else it keeps —
+ * the daily cap, the one-in-flight constraint, the document snapshot.
+ *
+ * THE REVIEW IS NARRATION, NEVER THE GUIDELINE. The restrictions are already derived and written
+ * by lib/foodSensitivity.js before this is ever called, so a review that is slow, refused or
+ * never claimed costs the user a written explanation and nothing else. Same split §36 draws
+ * between what nano decides and what an external agent is allowed to say.
+ *
+ * Every refusal is a quiet no-op: an upload must not fail because a bonus review could not run.
+ */
+async function enqueueFoodSensitivityReview(userId, { language = 'zh' } = {}) {
+    try {
+        // Required at call time, not at module load: viva_subscription.js is a cold path for
+        // this file, and requiring it at the top would pull it into every warm container. Same
+        // reasoning handlers/users.js records for its own require of ./chat.
+        const { grantFoodPanelReviewAccess } = require('./viva_subscription');
+        const grant = await grantFoodPanelReviewAccess(userId);
+        if (!grant.granted) return { queued: false, reason: grant.reason };
+
+        const { rows: [{ count }] } = await pool.query(
+            `SELECT COUNT(*) FROM viva_ag_jobs WHERE user_id = $1 AND created_at > NOW() - INTERVAL '1 day'`,
+            [userId]
+        );
+        if (parseInt(count, 10) >= MAX_JOBS_PER_DAY) return { queued: false, reason: 'daily_limit' };
+
+        const { rows: [user] } = await pool.query(
+            'SELECT user_id, channel_id, language FROM users WHERE user_id = $1', [userId]);
+        if (!user) return { queued: false, reason: 'user_not_found' };
+
+        const docs = await fetchHealthDocuments(pool, userId, null);
+        const jobUid = crypto.randomUUID();
+        try {
+            const { rows: [job] } = await pool.query(
+                `INSERT INTO viva_ag_jobs
+                    (job_uid, user_id, channel_id, persona_type, language, command_key, command, params, document_ids)
+                 VALUES ($1,$2,$3,'viva',$4,'food_sensitivity_review','food_sensitivity_review','{}'::jsonb,$5)
+                 RETURNING job_uid`,
+                [jobUid, userId, user.channel_id, user.language || language, docs.map(d => Number(d.id))]
+            );
+            return { queued: true, job_uid: job.job_uid };
+        } catch (err) {
+            // uniq_viva_ag_jobs_active — something is already running for this user. Routine, and
+            // the right outcome: their in-flight analysis is worth more than a duplicate review.
+            if (err.code === '23505') return { queued: false, reason: 'job_already_active' };
+            throw err;
+        }
+    } catch (err) {
+        _logError('enqueueFoodSensitivityReview failed', err, { user_id: userId });
+        return { queued: false, reason: 'internal_error' };
     }
 }
 
@@ -1284,6 +1343,7 @@ async function handlePostVivaAgFail(body) {
 }
 
 module.exports = {
+    enqueueFoodSensitivityReview,
     // User-facing (app bearer + ?openid=)
     handlePostVivaAgJob,
     handleGetVivaAgJobs,

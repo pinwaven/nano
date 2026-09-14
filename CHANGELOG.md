@@ -8,6 +8,35 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 
+- **慢性食物过敏 (food IgG) panels become twin data** (`CLAUDE.md` §40) · 2026-09-11
+  - A 120-item food-sensitivity report uploaded as a 健康文档 is now extracted into its own tables
+    (`food_catalog`, `food_sensitivity_panels`, `food_sensitivity_results`), turned into a
+    deterministic avoidance guideline, and used by both food advice and dots formulation.
+  - **Never `health_events(lab_result)`**: `health_twin.latest_lab_data` keeps only the most recent
+    lab date, so a food panel would have replaced the user's clinical panel with 120 food titres.
+  - `<0.1` travels as `below_detection` with a NULL value rather than as 0.1 — the lab declined to
+    measure it. The 0–3 class is read off the page, never derived from thresholds.
+  - New chat tool `get_food_sensitivity`, force-queued on a deterministic trigger, answering
+    「我对什么食物过敏」/「我能喝牛奶吗」 from the real panel and reporting an untested food as
+    untested. Restrictions reach food advice through the existing `user_memory_facts` recall.
+  - Formulation promotes DOT-N13 肠道焕新 and DOT-N14 免疫韧性 through §31's purely-additive focus
+    channel, and both prompts state plainly that the formulary has no digestive enzyme, glutamine
+    or omega-3 dot.
+  - A free, time-boxed Viva AG review (`food_sensitivity_review`, `bundle_version` 3) is queued for
+    users already on Viva. The review narrates; the restrictions are derived in code before the job
+    exists, so a failed review never costs a user their guideline.
+  - Restrictions are `dietary_restriction`, never `allergy` — IgG is not IgE — and carry the new
+    nullable `severity`/`valid_until`/`food_key` columns on `user_memory_facts`.
+
+### Fixed
+
+- **A food-named dietary restriction could silently delete a dot from a formula** · 2026-09-11
+  - `formulationQuality._collides` is bidirectional substring containment and `allergy_conflict`
+    removes the dot from both recipes, so a restriction on `玉米` matches the ingredient `玉米黄质`
+    and would drop **DOT-N8 明眸**. Food restrictions now match through
+    `food_catalog.dot_conflict_keys` (empty for every seeded food) instead of prose; facts without
+    a `food_key` are unchanged.
+
 - **Viva can answer "what have I bought?" — `get_formulation_packages`** (`worker/lib/agenticTools.js`, `worker/lib/agenticChat.js`, `worker/handlers/{dots,chat}.js`, `worker/prompts/chat/formulationPackageBlock.js`, `tests/chat-formulation-package-tool.test.js`) · 2026-09-10
   - A user asked 「我已经买了什么原粒套餐?」 and Viva answered *"你目前已激活并正在使用的原粒共17款…剩余800粒…"*. That user had **no active plan at all**, nothing paid, and two 28天 orders sitting at `pending_payment`. The 17 dots came from `get_dot_inventory` → `user_cartridges`, the **Neo dispenser's** cartridge table for hardware §28d gated off — legacy rows narrated as a live regimen. Nothing in chat could see an order: `llmContext` had no package field, `AGENTIC_TOOL_DEFS` had no commerce tool, and no prompt had any vocabulary for the product, so GENERATE reached for the only tool that sounded close.
   - **JUDGE passed it, and would again** — the answer *was* grounded, in the wrong table (§27: JUDGE checks facts, not relevance). So the fix is structural, not stricter grading.

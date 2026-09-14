@@ -119,6 +119,20 @@ module.exports = (ctx) => {
         const byKey = new Set((dots || []).map(d => d.key_name));
         return toShort([...entries].map(e => (typeof e === 'string' ? (byKey.has(e) ? e : null) : byId.get(e)?.key_name)));
     })();
+    // A live chronic food-sensitivity panel (§40). Context for the narrative, and the reason the
+    // gut-axis dots arrive already promoted in recommendedDotShortKeys — stated so the model can
+    // explain an emphasis it would otherwise have to guess at, and so it never suggests eating
+    // something the user has just been told to stop.
+    const foodRestrictionSection = (ctx.food_restrictions || []).length > 0
+        ? (isZh
+            ? `用户最近的慢性食物过敏（食物特异性 IgG）检测显示以下食物需要暂时回避：${ctx.food_restrictions.map(r => `${r.name_zh}（${r.class}级）`).join('、')}。
+这是 IgG 介导的慢性食物过敏，通常与肠道屏障功能和低度炎症相关，不是急性过敏。因此本轮可以适当偏向支持肠道屏障与免疫的原粒；但这只是排序上的偏向，各原粒的具体数值仍按生物标志物正常判断。
+注意：配方库里没有消化酶、盐酸甜菜碱、谷氨酰胺或 omega-3 类原粒，不要暗示本方案能提供这些成分。也不要在文字里建议用户食用上述需要回避的食物。`
+            : `The user's recent chronic food-sensitivity (food-specific IgG) panel flags these foods for temporary avoidance: ${ctx.food_restrictions.map(r => `${r.name_en || r.name_zh} (class ${r.class})`).join(', ')}.
+This is IgG-mediated chronic sensitivity — usually related to gut-barrier function and low-grade inflammation, not an acute allergy. You may therefore lean toward dots supporting the gut barrier and immune resilience; this is a ranking bias only, and every dot's actual number still follows normal biomarker judgement.
+Note: the formulary contains no digestive enzyme, betaine HCl, glutamine or omega-3 dot — do not imply this formula supplies any of them. Never suggest eating a food listed above.`)
+        : '';
+
     const focusWeightingSection = recommendedDotShortKeys.length > 0
         ? (isZh
             ? `本轮聚焦方案重点推荐 Dot：${recommendedDotShortKeys.join('、')}（配方决策时可适当偏向这些 Dot 范围的较高值；但其余 Dot 仍需按生物标志物正常判断决定数值，不得因未被推荐而强行归零——若某项生物标志物明显异常但对应 Dot 不在此列表中，仍应给出合理剂量）`
@@ -205,7 +219,7 @@ const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的�
 用户：${user_profile.nickname || '用户'}，${user_profile.age ? user_profile.age + ' 岁' : '年龄未知'}${user_profile.bmi ? '，BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
-${focusWeightingSection ? focusWeightingSection + '\n' : ''}${packageSection ? packageSection + '\n' : (tierLadderSection ? tierLadderSection + '\n' : '')}
+${focusWeightingSection ? focusWeightingSection + '\n' : ''}${foodRestrictionSection ? foodRestrictionSection + '\n' : ''}${packageSection ? packageSection + '\n' : (tierLadderSection ? tierLadderSection + '\n' : '')}
 ${twinSection}
 
 ${seasonSection}
@@ -246,7 +260,7 @@ Biomarker status (normal/elevated/high) is already labeled directly below — us
 User: ${user_profile.nickname || 'the user'}${user_profile.age ? ', ' + user_profile.age + ' years old' : ' (age unknown)'}${user_profile.bmi ? ', BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
-${focusWeightingSection ? focusWeightingSection + '\n' : ''}${packageSection ? packageSection + '\n' : (tierLadderSection ? tierLadderSection + '\n' : '')}
+${focusWeightingSection ? focusWeightingSection + '\n' : ''}${foodRestrictionSection ? foodRestrictionSection + '\n' : ''}${packageSection ? packageSection + '\n' : (tierLadderSection ? tierLadderSection + '\n' : '')}
 ${twinSection}
 
 ${seasonSection}
