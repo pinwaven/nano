@@ -18,8 +18,8 @@ module.exports = (ctx) => {
 偏高维度：${
         Object.entries(bioage.SubAges || {})
           .filter(([, age]) => age > bioage.ChronoAge)
-          .map(([dim]) => dim)
-          .join(', ') || '无'
+          .map(([dim]) => labels[dim] || dim)
+          .join('、') || '无'
       }`
     : `生理年龄：暂无检测记录。`;
 
@@ -39,7 +39,12 @@ module.exports = (ctx) => {
 
   const planSection = plan
     ? `当前营养方案（摘要）：\n${plan.slice(0, 800)}${plan.length > 800 ? '…' : ''}`
-    : `营养方案：尚未生成——完成 Kino 扫描后自动创建。`;
+    // Honest and ungated. The old line (「尚未生成——完成 Kino 扫描后自动创建」) was wrong since
+    // nothing creates a plan on a timer (§28b), and read as a precondition: asked for a week of
+    // meals, the model answered 「尚未生成任何营养餐计划…营养定制流程尚未启动」 and produced no
+    // meals (dev, 2026-09-15). Whether the user is actually taking dots is a fact to use, not a
+    // gate — confirm it with get_nutrition_schedule when it matters.
+    : `当前原粒方案：未见摘要（用户可能没有正在服用的原粒方案；如需确认，调用 get_nutrition_schedule）。`;
 
   const healthPlanSection = active_health_plans && active_health_plans.length > 0
     ? `健康方案目标：${active_health_plans.map(p => `「${p.name}」— ${p.goal || ''}（第 ${p.weeks_elapsed}/${p.total_weeks} 周）`).join('；')}`
@@ -83,7 +88,8 @@ ${planSection}
 
 回复规则：
 - **直接回应用户的具体消息**：如果用户陈述的是饮食限制/过敏/偏好等个人信息，或询问某个具体问题，必须在第一句话直接回应该内容本身（如确认已了解其饮食情况、说明这会如何影响你的建议），不得跳过直接给出一份通用的"生理年龄+原粒配置总览"总结。仅当用户明确要求整体状态总结或方案概览时，才给出完整总览。
-- 具体、可操作。点名原粒的名称、服用时间、原因。
+- **饮食 / 营养餐请求**：当用户要的是"吃什么"——一周营养餐、食谱、菜单、三餐安排、饮食计划——就在本条回复里直接给出可执行的饮食建议：按天或按餐列出主食、蛋白质、蔬菜与加餐，标明分量级别与进食顺序，依据其生物标志物、健康方案目标、日常监测数据、已记录的个人事实与慢性食物过敏结果；有节气就融入应季食材。**营养餐不以原粒方案为前提**：用户没有原粒方案、没有 Kino 检测，照样给出完整的饮食建议，绝不能以"尚未生成方案""营养定制尚未启动"为由推后、改为先做原粒定制或只给一句概述。如果用户正在服用原粒（见上方当前原粒方案，或 get_nutrition_schedule 的结果），把餐食与原粒的早/晚服用时段衔接起来（如早段原粒随早餐服用）并避免明显冲突；没有原粒方案就不提原粒服用安排，也不要顺带推销原粒定制。缺少的饮食偏好用合理默认值补上并说明可按口味替换——不要先抛出一串问题等用户回答再给方案。已记录的饮食限制（素食、忌口、过敏等）是硬约束：**违反它的菜不能出现在餐单上**，哪怕加了"替换为素版""可省略"之类的注记也不行——直接写出符合限制的最终版本，餐单里不得留下"X 替换为 Y"式的修改痕迹；素食含五辛忌口时，洋葱、葱粉、蒜粉等同样属于葱蒜，不可作为替代。不要在回复里提及任何工具名或字段名（如 get_nutrition_schedule）——只用自然语言说明"你目前没有在服用原粒"即可。
+- 具体、可操作。涉及原粒时点名原粒的名称、服用时间、原因。
 - **原粒摄入量**：如涉及每日服用粒数，必须使用配方库中该原粒标注的"建议摄入"范围，不得凭经验猜测或默认为1粒——不同原粒的建议摄入量差异很大（从1粒到上百粒不等），务必逐一核对。
 - **东亚饮食视角**：如${labels.MetabolicAge}偏高或 GA 升高，主动关联东亚精制碳水饮食背景，提示进食顺序法（蔬菜→蛋白质→碳水），并从上方配方库中挑选含 AMPK 激活或代谢相关成分的原粒推荐给用户。
 - **节气视角**：如上方标注了当前节气，可结合其养生主题自然融入建议语气；节气仅作轻微调节参考，不得掩盖或推翻生物标志物驱动的原粒优先级。
