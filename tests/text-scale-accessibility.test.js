@@ -201,15 +201,18 @@ test('two fingers resting close together are ignored', () => {
   assert.deepStrictEqual(s.fired, []);
 });
 
-test('both scalable tabs bind the gesture', () => {
-  // The health tab's binding lives on the component root; the chat tab is plain page markup,
-  // so it binds on .chat-tab. A converted tab with no binding is text that silently won't
-  // respond to the gesture the whole feature is built around.
+test('every scalable tab binds the gesture', () => {
+  // The health tab's binding lives on the component root; the main page's tabs are plain page
+  // markup, so each binds on its own root view (one shared handler since 8a27003 widened the
+  // conversion from the chat tab to the whole page). A converted tab with no binding is text
+  // that silently won't respond to the gesture the whole feature is built around.
   const uhWxml = read('components', 'user-health', 'user-health.wxml');
   assert.ok(/bindtouchmove="_onUhTouchMove"/.test(uhWxml), 'health tab lost its pinch binding');
   const mainWxml = read('pages', 'main', 'main.wxml');
-  assert.ok(/class="chat-tab[^"]*"[\s\S]{0,220}?bindtouchmove="onChatTouchMove"/.test(mainWxml),
-    'chat tab does not bind the pinch gesture');
+  for (const tab of ['chat-tab', 'plans-tab', 'learn-tab', 'store-tab']) {
+    assert.ok(new RegExp(`class="${tab}[^"]*"[\\s\\S]{0,220}?bindtouchmove="onTabTouchMove"`).test(mainWxml),
+      `${tab} does not bind the pinch gesture`);
+  }
 });
 
 test('both pages drive the shared stepper rather than reimplementing it', () => {
@@ -246,10 +249,10 @@ test('step handlers clamp to the 0-3 range', () => {
   }
 });
 
-// ── chat tab ────────────────────────────────────────────────────────────────
-// main.wxss is one file for the whole main page, so the chat conversion is line-range
-// scoped (the "Chat messages" .. "Loading states" sections). These assert that the prose
-// actually scales and that the other tabs were left alone.
+// ── main page ───────────────────────────────────────────────────────────────
+// The conversion started as a line-range scoped chat-tab pass and was widened to the whole
+// main page in 8a27003. These assert that the prose actually scales and that nothing has
+// crept back in as a literal size.
 
 test('chat prose containers are tokenised', () => {
   for (const cls of ['msg-text', 'msg-html']) {
@@ -261,14 +264,23 @@ test('chat prose containers are tokenised', () => {
   }
 });
 
-test('chat tokens all resolve, and other tabs were left untouched', () => {
+test('main page tokens all resolve, and no literal size has crept back in', () => {
   const defined = new Set(Object.keys(LEVELS[0]).map(Number));
   for (const m of mainCss.matchAll(/var\(--fs-(\d+)/g)) {
     assert.ok(defined.has(Number(m[1])), `--fs-${m[1]} used in main.wxss but never defined`);
   }
-  // The conversion was deliberately scoped to chat; the rest of the page still has literals.
-  const literals = [...mainCss.matchAll(/font-size:\s*\d+rpx/g)].length;
-  assert.ok(literals > 200, `only ${literals} literal sizes left — the conversion escaped its range`);
+  // The only literals allowed are the menu's text-size stepper previews (.menu-fs-a0..a3 show
+  // the four levels side by side, so they must NOT scale) and the 1rpx opacity-0 hack. A new
+  // rule with a literal font-size is text that stays small at every level — .code-chip and
+  // .code-wx-addr shipped that way on 2026-09-01 and were caught here.
+  const stray = [];
+  for (const [i, line] of mainCss.split('\n').entries()) {
+    const m = line.match(/font-size:\s*(\d+)rpx/);
+    if (!m) continue;
+    if (/\.menu-fs-a\d\s*\{/.test(line) || m[1] === '1') continue;
+    stray.push(`line ${i + 1}: ${line.trim()}`);
+  }
+  assert.deepStrictEqual(stray, [], `literal font-size outside the allowlist: ${stray.join('; ')}`);
 });
 
 test('markdown tag styles are relative, so headings track the bubble', () => {

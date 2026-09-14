@@ -1720,7 +1720,7 @@ page {
    saw it on an in-app sale, and this is the only place its owner can read it back. */
 .code-chip {
   font-family: 'SF Mono', Menlo, monospace;
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   letter-spacing: 1rpx;
   color: var(--steel);
   flex-shrink: 0;
@@ -1729,7 +1729,7 @@ page {
 .code-wx-addr {
   align-self: flex-start;
   margin: 4rpx 0 12rpx;
-  font-size: 24rpx;
+  font-size: var(--fs-24, 24rpx);
   color: var(--steel);
   text-decoration: underline;
 }

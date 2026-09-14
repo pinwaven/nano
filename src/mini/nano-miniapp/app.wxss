@@ -152,7 +152,7 @@ page {
 }
 
 .fs-3 {
-  --fs-11: 16rpx;   --fs-13: 20rpx;   --fs-23: 34rpx;   --fs-80: 93rpx;
+  --fs-11: 17rpx;   --fs-13: 20rpx;   --fs-23: 34rpx;   --fs-80: 93rpx;
   --fs-14: 21rpx;   --fs-15: 23rpx;   --fs-16: 24rpx;   --fs-17: 26rpx;
   --fs-18: 27rpx;   --fs-19: 29rpx;   --fs-20: 30rpx;   --fs-21: 32rpx;
   --fs-22: 33rpx;   --fs-24: 35rpx;   --fs-25: 36rpx;   --fs-26: 38rpx;

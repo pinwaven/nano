@@ -1,12 +1,18 @@
-require('dotenv').config();
+// Legacy live-HTTP smoke against a running worker. It predates the bearer gate (sends no
+// Authorization header), the Kino biomarker contract (posts Glucose/Cholesterol to /chat) and the
+// removal of /ingest, so it cannot pass against any deployed worker and would create a real user
+// and real chat turns on whatever NANO_API_TARGET names. Opt in explicitly:
+//   RUN_ENDPOINT_TESTS=1 NANO_API_TARGET=http://localhost:3000 node --test tests/worker-endpoints.test.js
+// Under plain `npm test` it is skipped, not failed.
 const axios = require('axios');
 const assert = require('node:assert');
 const { test, describe, before } = require('node:test');
 
+const OPT_IN = process.env.RUN_ENDPOINT_TESTS === '1';
 const BASE_URL = process.env.NANO_API_TARGET || 'http://localhost:3000';
 const TEST_OPENID = 'test-user-' + Date.now();
 
-describe(`Worker Endpoints Integration Tests [${BASE_URL}]`, () => {
+describe(`Worker Endpoints Integration Tests [${BASE_URL}]`, { skip: !OPT_IN && 'set RUN_ENDPOINT_TESTS=1 to run against a live worker' }, () => {
     
     // Check if target is reachable
     before(async () => {
