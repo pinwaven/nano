@@ -34,6 +34,7 @@ function App() {
         if (r.data.success && r.data.user) {
           const u = r.data.user;
           sessionStorage.setItem('nano_user', JSON.stringify(u));
+          try { sessionStorage.setItem('nano_channel', JSON.stringify(r.data.channel || null)); } catch { /* ignore */ }
           setUser(u);
           setLang(u.language === 'en' ? 'en' : 'zh');
           const url = new URL(window.location.href);
@@ -45,8 +46,12 @@ function App() {
       .finally(() => setWvtLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleLogin = u => {
+  // `channel` is the login response's channel object (key_name / root_key_name / …). It was
+  // discarded before; kept alongside the user so a tab can gate on the channel tree rather
+  // than a bare channel_id.
+  const handleLogin = (u, channel = null) => {
     sessionStorage.setItem('nano_user', JSON.stringify(u));
+    try { sessionStorage.setItem('nano_channel', JSON.stringify(channel)); } catch { /* ignore */ }
     setUser(u);
     setLang(u.language === 'en' ? 'en' : 'zh');
   };
@@ -61,6 +66,7 @@ function App() {
 
   const handleLogout = () => {
     sessionStorage.removeItem('nano_user');
+    sessionStorage.removeItem('nano_channel');
     setUser(null);
     setTab('chat');
     setLang('zh');

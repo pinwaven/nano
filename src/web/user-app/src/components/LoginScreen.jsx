@@ -7,12 +7,18 @@ import { LangToggle } from './Widgets.jsx';
 const API = '/api';
 const QR_POLL_INTERVAL = 2500; // ms
 
+// Email OTP login (nano's /email-otp/*) is a Waven-channel identity; the server refuses an
+// aeviva-tree account with channel_not_supported, and the web user-app is channel-unaware at
+// login time, so the tab is always offered here and the refusal is surfaced as a message.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
 export default function LoginScreen({ onLogin, lang, onLangChange }) {
   const { t } = useLang();
-  const [tab, setTab] = useState('qr'); // 'phone' | 'qr'
+  const [tab, setTab] = useState('qr'); // 'phone' | 'email' | 'qr'
 
-  // ── Phone + OTP login ─────────────────────────────────────────
+  // ── Phone / email + OTP login ─────────────────────────────────
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [otpStep, setOtpStep] = useState('phone'); // 'phone' | 'code'
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
@@ -33,15 +39,29 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
 
   useEffect(() => () => clearInterval(cooldownRef.current), []);
 
+  const isEmail = tab === 'email';
+  const cleanedPhone = () => phone.trim().replace(/[\s\-()]/g, '');
+  const cleanedEmail = () => email.trim().toLowerCase();
+
   const handleSendCode = async () => {
-    const cleaned = phone.trim().replace(/[\s\-()]/g, '');
-    if (!/^1\d{10}$/.test(cleaned)) { setError(t.errInvalidPhone); return; }
+    let payload;
+    if (isEmail) {
+      const e = cleanedEmail();
+      if (!EMAIL_RE.test(e)) { setError(t.errInvalidEmail); return; }
+      payload = { email: e, language: lang };
+    } else {
+      const p = cleanedPhone();
+      if (!/^1\d{10}$/.test(p)) { setError(t.errInvalidPhone); return; }
+      payload = { phone: p };
+    }
     setLoading(true);
     setError('');
     try {
-      const r = await axios.post(`${API}/phone-otp/send`, { phone: cleaned });
+      const r = await axios.post(`${API}/${isEmail ? 'email-otp' : 'phone-otp'}/send`, payload);
       if (!r.data.success) {
-        setError(r.data.error === 'rate_limited' ? t.errRateLimited : t.errSendFailed);
+        setError(r.data.error === 'rate_limited' ? t.errRateLimited
+          : r.data.error === 'invalid_email' ? t.errInvalidEmail
+          : t.errSendFailed);
         return;
       }
       setOtpStep('code');
@@ -58,10 +78,17 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
     setLoading(true);
     setError('');
     try {
-      const cleaned = phone.trim().replace(/[\s\-()]/g, '');
-      const r = await axios.post(`${API}/phone-otp/verify`, { phone: cleaned, code: code.trim() });
-      if (!r.data.success) { setError(t.errInvalidCode); return; }
-      onLogin(r.data.user);
+      const payload = isEmail
+        ? { email: cleanedEmail(), code: code.trim(), language: lang }
+        : { phone: cleanedPhone(), code: code.trim() };
+      const r = await axios.post(`${API}/${isEmail ? 'email-otp' : 'phone-otp'}/verify`, payload);
+      if (!r.data.success) {
+        setError(r.data.error === 'too_many_attempts' ? t.errTooManyAttempts
+          : r.data.error === 'channel_not_supported' ? t.errChannelNotSupported
+          : t.errInvalidCode);
+        return;
+      }
+      onLogin(r.data.user, r.data.channel || null);
     } catch {
       setError(t.errNetwork);
     } finally {
@@ -75,6 +102,14 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
     setError('');
     clearInterval(cooldownRef.current);
     setResendCooldown(0);
+  };
+
+  // Switching identifier tabs restarts the OTP flow — a code sent to a phone must not be
+  // submitted against an email.
+  const switchTab = next => {
+    if (next === tab) return;
+    handleChangeNumber();
+    setTab(next);
   };
 
   // ── QR login ───────────────────────────────────────────────────
@@ -113,7 +148,7 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
           if (s === 'confirmed' && p.data.user) {
             stopPolling();
             setQrStatus('confirmed');
-            setTimeout(() => onLogin(p.data.user), 800);
+            setTimeout(() => onLogin(p.data.user, p.data.channel || null), 800);
           } else if (s === 'expired') {
             stopPolling();
             setQrStatus('expired');
@@ -160,40 +195,60 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
       <div className="login-tab-bar">
         <button
           className={`login-tab-btn${tab === 'phone' ? ' login-tab-btn--active' : ''}`}
-          onClick={() => setTab('phone')}
+          onClick={() => switchTab('phone')}
         >
           {t.loginTabPhone}
         </button>
         <button
+          className={`login-tab-btn${tab === 'email' ? ' login-tab-btn--active' : ''}`}
+          onClick={() => switchTab('email')}
+        >
+          {t.loginTabEmail}
+        </button>
+        <button
           className={`login-tab-btn${tab === 'qr' ? ' login-tab-btn--active' : ''}`}
-          onClick={() => setTab('qr')}
+          onClick={() => switchTab('qr')}
         >
           {t.loginTabQr}
         </button>
       </div>
 
-      {/* Phone + OTP login card */}
-      {tab === 'phone' && (
+      {/* Phone / email + OTP login card */}
+      {(tab === 'phone' || tab === 'email') && (
         <div className="login-card">
           <div className="login-card-label">{t.signIn}</div>
 
           {otpStep === 'phone' && (
             <>
               <div className="login-field">
-                <label className="login-label">{t.phoneLabel}</label>
-                <input
-                  className="login-input"
-                  type="tel"
-                  inputMode="tel"
-                  placeholder={t.phonePlaceholder}
-                  value={phone}
-                  onChange={e => { setPhone(e.target.value); setError(''); }}
-                  onKeyDown={e => { if (e.key === 'Enter') handleSendCode(); }}
-                  autoFocus
-                />
+                <label className="login-label">{isEmail ? t.emailLabel : t.phoneLabel}</label>
+                {isEmail ? (
+                  <input
+                    className="login-input"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    placeholder={t.emailPlaceholder}
+                    value={email}
+                    onChange={e => { setEmail(e.target.value); setError(''); }}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSendCode(); }}
+                    autoFocus
+                  />
+                ) : (
+                  <input
+                    className="login-input"
+                    type="tel"
+                    inputMode="tel"
+                    placeholder={t.phonePlaceholder}
+                    value={phone}
+                    onChange={e => { setPhone(e.target.value); setError(''); }}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSendCode(); }}
+                    autoFocus
+                  />
+                )}
               </div>
               {error && <div className="login-error">{error}</div>}
-              <button className="login-btn" onClick={handleSendCode} disabled={!phone.trim() || loading}>
+              <button className="login-btn" onClick={handleSendCode} disabled={!(isEmail ? email : phone).trim() || loading}>
                 {loading && <span className="login-btn-spinner" />}
                 {loading ? t.verifying : t.sendCode}
               </button>
@@ -228,8 +283,9 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
                   <button className="login-link-btn" onClick={handleSendCode} disabled={loading}>{t.resendCode}</button>
                 )}
                 <span className="login-footer-dot">·</span>
-                <button className="login-link-btn" onClick={handleChangeNumber} disabled={loading}>{t.changeNumber}</button>
+                <button className="login-link-btn" onClick={handleChangeNumber} disabled={loading}>{isEmail ? t.changeEmail : t.changeNumber}</button>
               </div>
+              {isEmail && <div className="login-qr-hint">{t.emailSpamHint}</div>}
             </>
           )}
         </div>
