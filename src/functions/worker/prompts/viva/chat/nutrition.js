@@ -1,5 +1,6 @@
 const { getVivaLabels } = require('../subAgeLabels');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getSubAgeInputsBlock } = require('../../chat/subAgeInputsBlock');
 const { getOutputFormatBlock } = require('../../chat/outputFormat');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
@@ -59,6 +60,8 @@ module.exports = (ctx) => {
     : '';
 
   return `${getFactConstraintBlock(ctx.essential_knowledge)}
+
+${getSubAgeInputsBlock(true, ctx.sub_age_display_names)}
 
 ${getOutputFormatBlock({ isZh: true, rich: ctx.rich_format, allow: ['takeaway', 'dots'] })}
 

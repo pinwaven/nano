@@ -1,4 +1,5 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getSubAgeInputsBlock } = require('../../chat/subAgeInputsBlock');
 const { getOutputFormatBlock } = require('../../chat/outputFormat');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
@@ -7,7 +8,7 @@ const { getFormulationPackageBlock } = require('../../chat/formulationPackageBlo
 const { getFoodSensitivityBlock } = require('../../chat/foodSensitivityBlock');
 const { SUB_AGE_LABELS: DIM_LABELS } = require('../../../lib/subAgeLabels');
 
-module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, rich_format, store_products, formulation_packages_available, food_sensitivity_available }) => {
+module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, rich_format, store_products, formulation_packages_available, food_sensitivity_available, sub_age_display_names }) => {
   const isZh = user_profile.language === 'zh';
   const hasBioAge = bioage && bioage.BioAge;
 
@@ -45,6 +46,8 @@ Elevated dimensions: ${
     : '';
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+${getSubAgeInputsBlock(isZh, sub_age_display_names)}
 
 ${getOutputFormatBlock({ isZh: isZh, rich: rich_format, allow: ['takeaway', 'dots'] })}
 
