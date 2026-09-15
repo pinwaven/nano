@@ -30,7 +30,7 @@ ${JSON.stringify(groundTruth)}
 APPROVED KNOWLEDGE BASE EXCERPTS (only these are pre-vetted specific science/protocol facts for this message):
 ${kbList}
 
-DETERMINISTIC RISK DETECTOR HITS (pattern-based pre-flags from factCheck.js, may include false positives — use judgment, don't blindly reject on these alone). One exception: a "fakeDimensionValue" hit means the system already matched a numeric value asserted for a dimension outside the four real ones — that is always a material fake_dimension violation, so report it. Note dimension_misattribution is NOT your responsibility at all: it is scanned deterministically and added automatically, so never emit that category yourself:
+DETERMINISTIC RISK DETECTOR HITS (pattern-based pre-flags from factCheck.js, may include false positives — use judgment, don't blindly reject on these alone). One exception: a "fakeDimensionValue" hit means the system already matched a numeric value asserted for a dimension outside the four real ones — that is always a material fake_dimension violation, so report it. An "unsupportedProductClaim" hit means the draft asserts something about the dots' capsule material, excipients, animal-free/vegan status or ingredient SOURCING (「植物胶囊」「无明胶」「不含动物成分」「D3来自地衣」) — the formulary in ground truth lists active ingredients only and carries none of that, so it is always a material unsupported_science_claim: report it and, in the correction_hint, tell the writer to delete the sentence (an honest 「配方库未提供该信息」 is the acceptable replacement). Note dimension_misattribution is NOT your responsibility at all: it is scanned deterministically and added automatically, so never emit that category yourself:
 ${(detectorHits || []).join(', ') || '(none)'}
 
 Check the draft for:
