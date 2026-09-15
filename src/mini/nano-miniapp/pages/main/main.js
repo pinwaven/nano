@@ -2261,9 +2261,11 @@ Page({
   async switchTab(e) {
     const tab = e.currentTarget.dataset.tab
     if (tab === 'store' && !this.data.isGuest) {
-      const { channel } = this.data
-      if (channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china') {
-        // Aeviva's GCN store opens as a separate navigated page (pages/appview — its own
+      // isAeviva = "this channel tree has a GCN storefront" (aeviva or waven root, see onLoad);
+      // the host is gcnStoreSlug. A literal key check here once missed the waven tree and
+      // dropped its users onto the native Health Store instead.
+      if (this.data.isAeviva) {
+        // The GCN store opens as a separate navigated page (pages/appview — its own
         // header/back button, a plain page layout) rather than an inline tab section:
         // <web-view> doesn't reliably support any overlay button (cover-view is only
         // documented for map/video/canvas/camera, not web-view) when embedded inside this
