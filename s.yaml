@@ -129,6 +129,16 @@ resources:
         SUPER_OTP_ENABLED: "true"
         # PNVS_SIGN_NAME/PNVS_TEMPLATE_CODE are optional — lib/sms.js defaults to the
         # verified system-provided pair (恒创联众 / 100001).
+        # Email OTP via Aliyun DirectMail (lib/email.js). DM_ACCOUNT_NAME is the verified sender
+        # address and is ALSO the dev-bypass switch: empty, and lib/email.js logs the code
+        # (email-otp-dev-bypass) instead of sending — keyed on the sender rather than on the
+        # AK because the AK below is shared with OSS/PNVS and is always present. Dev is a
+        # literal "" on purpose (Serverless Devs rejects ${env()} of an empty value); set it to
+        # the real sender here only to test actual delivery from dev. Credentials default to
+        # SMS_ACCESS_KEY_* (same root AK); DM_ACCESS_KEY_* exist only to move the sender to a
+        # scoped RAM user later. Region cn-hangzhou, same as the PNVS client.
+        DM_ACCOUNT_NAME: "no-reply@mail.gcn.net"
+        DM_FROM_ALIAS: "Waven Nano"
         # Dev/prod share one EventBridge bus (same Aliyun account) — nano-worker-dev and
         # nano-worker (prod) both had eb-triggers filtering on the bare "acs.chat" source,
         # so a dev-published chat.generate event was also picked up and processed by prod's

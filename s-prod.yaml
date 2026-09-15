@@ -121,6 +121,12 @@ resources:
         # permission (see gcn's docs/pnvs.md). No separate SMS credential provisioned.
         SMS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
         SMS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
+        # Email OTP via Aliyun DirectMail (lib/email.js) — see s.yaml for the full note. Prod
+        # reads DM_ACCOUNT_NAME from .env, and the deploy FAILS while it is unset/empty: an
+        # empty value means "log the code, send nothing", which is the dev bypass and must
+        # never be what prod runs with.
+        DM_ACCOUNT_NAME: ${env(DM_ACCOUNT_NAME)}
+        DM_FROM_ALIAS: "Waven Nano"
         # Admin-impersonation "super OTP" kill switch — see phone-otp.js's SUPER_OTP_CODE.
         # Deliberately set "true" here too (unlike DEMO_MODE-style dev-only flags) since the
         # whole point is debugging real accounts, which mostly live in prod.

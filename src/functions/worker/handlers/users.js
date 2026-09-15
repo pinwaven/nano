@@ -353,6 +353,7 @@ const GET_USER_SELECT =
     `SELECT u.user_id, u.nickname, u.avatar_url, u.avatar_character, u.phone, u.email, u.language, u.gender,
             u.birth_date, u.roles, u.coach_id, u.channel_id, u.created_at, u.merged_into_user_id,
             (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
+            (u.email_verified_at IS NOT NULL AND u.email IS NOT NULL) AS email_verified,
             u.bio_data as user_bio_data,
             COALESCE((u.preferences->>'text_scale')::int, 0) AS text_scale,
             u.wearable_brand, u.wearable_mac, u.wearable_name, u.wearable_bound_at,
@@ -481,6 +482,31 @@ async function syncPrimaryPhone(client, user_id, phone) {
     return { success: true };
 }
 
+// Email twin of syncPrimaryPhone — keeps user_emails (source of truth for email -> user_id
+// login) in step with an admin edit of users.email. Input is normalized here (lowercase/trim)
+// so the cache column and the identity row can never differ by case. verified_at stays NULL
+// on insert: a typed edit is not a verification.
+async function syncPrimaryEmail(client, user_id, email) {
+    if (!email) {
+        await client.query(`UPDATE user_emails SET is_primary = false WHERE user_id = $1`, [user_id]);
+        return { success: true, email: null };
+    }
+    const normalized = String(email).trim().toLowerCase();
+    const conflict = await client.query(
+        `SELECT user_id FROM user_emails WHERE email = $1 AND user_id != $2`,
+        [normalized, user_id]
+    );
+    if (conflict.rows.length > 0) return { success: false, error: 'email_in_use' };
+
+    await client.query(`UPDATE user_emails SET is_primary = false WHERE user_id = $1 AND email != $2`, [user_id, normalized]);
+    await client.query(
+        `INSERT INTO user_emails (user_id, email, is_primary) VALUES ($1, $2, true)
+         ON CONFLICT (email) DO UPDATE SET is_primary = true WHERE user_emails.user_id = EXCLUDED.user_id`,
+        [user_id, normalized]
+    );
+    return { success: true, email: normalized };
+}
+
 async function handlePutUser(user_id, body) {
     const { nickname, phone, email, gender, birth_date, language, coach_id, channel_id, bio_data, roles, avatar_url, avatar_character } = body;
     if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -534,6 +560,32 @@ async function handlePutUser(user_id, body) {
             }
         }
 
+        // Same treatment for email (user_emails / users.email_verified_at) — see the phone block.
+        let normalizedEmail = email || null;
+        if (emailProvided) {
+            const emailSync = await syncPrimaryEmail(client, user_id, email || null);
+            if (!emailSync.success) {
+                await client.query('ROLLBACK');
+                return { success: false, statusCode: 409, error: emailSync.error };
+            }
+            normalizedEmail = emailSync.email;
+            const currentEmailRes = await client.query('SELECT email FROM users WHERE user_id = $1', [user_id]);
+            const currentEmail = currentEmailRes.rows[0]?.email || null;
+            if (normalizedEmail !== currentEmail) {
+                let keepVerified = false;
+                if (normalizedEmail) {
+                    const verifiedRes = await client.query(
+                        `SELECT 1 FROM user_emails WHERE user_id = $1 AND email = $2 AND verified_at IS NOT NULL`,
+                        [user_id, normalizedEmail]
+                    );
+                    keepVerified = verifiedRes.rows.length > 0;
+                }
+                if (!keepVerified) {
+                    await client.query('UPDATE users SET email_verified_at = NULL WHERE user_id = $1', [user_id]);
+                }
+            }
+        }
+
         // Built dynamically rather than as hand-numbered positional-param variants (the
         // previous shape here) — that pattern is exactly what let phone/email/language/
         // coach_id silently go unprotected against partial updates in the first place; a
@@ -556,7 +608,7 @@ async function handlePutUser(user_id, body) {
             }
         };
         addConditional('phone', phoneProvided, phone || null);
-        addConditional('email', emailProvided, email || null);
+        addConditional('email', emailProvided, normalizedEmail);
         addConditional('language', languageProvided, language || 'zh');
         addConditional('coach_id', coachIdProvided, coach_id || null);
         if (bio_data) {

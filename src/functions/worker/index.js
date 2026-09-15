@@ -101,6 +101,7 @@ const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, ha
 const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified, handlePhoneOtpList, handlePhoneOtpRemove, handlePhoneOtpAdminAdd } = require('./handlers/phone-otp');
 const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handleChatGenerateEvent, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign, _fireQuestionnaireAnsweredFollowup } = require('./handlers/chat');
 const { CHAT_EVENT_SOURCE } = require('./lib/chatEventBridge');
+const { handleEmailOtpSend, handleEmailOtpVerify, handleEmailOtpBind, handleEmailSetPrimary, handleEmailOtpList, handleEmailOtpRemove, handleEmailOtpAdminAdd } = require('./handlers/email-otp');
 // Same environment-scoping fix as CHAT_EVENT_SOURCE (see chatEventBridge.js's comment for the
 // full 2026-08-01 incident writeup), applied to the other two EventBridge sources this function
 // consumes — acs.lab (from lab/index.js) and acs.dispatcher (from dispatcher/index.js). Each
@@ -296,7 +297,7 @@ exports.handler = async (req, resp, context) => {
 
     const adminCtx = { role: 'superadmin', username: 'superadmin', channelId: null, accountId: null, canManageSubchannels: false };
     const expectedBearer = process.env.API_BEARER_TOKEN;
-    if (expectedBearer && rawPath && path !== '/admin/login' && !path.startsWith('/qr-login/') && !path.startsWith('/phone-otp/')) {
+    if (expectedBearer && rawPath && path !== '/admin/login' && !path.startsWith('/qr-login/') && !path.startsWith('/phone-otp/') && !path.startsWith('/email-otp/')) {
         const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
         const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
         if (token === expectedBearer) {
@@ -513,6 +514,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePhoneOtpList(query);
             } else if (path.match(/\/kino-tested-chips\/(\d+)/)) {
                 const scanId = path.match(/\/kino-tested-chips\/(\d+)/)[1];
+            } else if (path === '/email-otp/list') {
+                result = await handleEmailOtpList(query);
                 result = await handleGetKinoTestedChipDetail(scanId);
             } else if (path.includes('/kino-tested-chips')) {
                 result = await handleGetKinoTestedChips(query);
@@ -834,6 +837,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleValidateInvite(parsedBody);
             } else if (path === '/wx-app-login') {
                 result = await handleWxAppLogin(parsedBody);
+            } else if (path === '/admin-email-add') {
+                result = requireAdminTab(adminCtx, 'users') || await handleEmailOtpAdminAdd(parsedBody);
             } else if (path === '/wx-login') {
                 result = await handleWxLogin(parsedBody);
             } else if (path === '/webview-token') {
@@ -864,6 +869,16 @@ exports.handler = async (req, resp, context) => {
                 const { code, app_id } = parsedBody;
                 result = await handleResolvePhone(code, app_id);
             } else if (path === '/bind-phone') {
+            } else if (path === '/email-otp/send') {
+                result = await handleEmailOtpSend(parsedBody);
+            } else if (path === '/email-otp/verify') {
+                result = await handleEmailOtpVerify(parsedBody);
+            } else if (path === '/email-otp/bind') {
+                result = await handleEmailOtpBind(parsedBody);
+            } else if (path === '/email-otp/set-primary') {
+                result = await handleEmailSetPrimary(parsedBody);
+            } else if (path === '/email-otp/remove') {
+                result = await handleEmailOtpRemove(parsedBody);
                 const { user_id, code, app_id, phone: rawPhone } = parsedBody;
                 result = await handleBindPhone(user_id, code, app_id, rawPhone);
             } else if (path.includes('/reminders')) {

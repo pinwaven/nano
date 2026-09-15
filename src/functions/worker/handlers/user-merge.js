@@ -155,6 +155,8 @@ async function mergeUsers(winnerId, loserId, matchedOn) {
         // non-primary first so the loser's phone(s) become the winner's additional phones
         // instead, and only the generic repoint's plain UPDATE has to run.
         await client.query(`UPDATE user_phones SET is_primary = false WHERE user_id = $1`, [loserId]);
+        // user_emails carries the identical one-primary-per-user index (migration_user_emails.sql).
+        await client.query(`UPDATE user_emails SET is_primary = false WHERE user_id = $1`, [loserId]);
 
         await repointForeignKeys(client, winnerId, loserId, conflictNotes);
         await client.query('UPDATE users SET merged_into_user_id = $1 WHERE user_id = $2', [winnerId, loserId]);

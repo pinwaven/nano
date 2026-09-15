@@ -8,6 +8,7 @@ const { mergeUsers, resolveMergedUser } = require('./user-merge');
 const { grantSignupTrial } = require('../lib/personaOverride');
 const { syncPartnerPhoneFromUser } = require('./partners');
 const { resolveCoachSession } = require('./login');
+const { resolveRootChannelKey } = require('../lib/channels');
 
 const PHONE_RE = /^1\d{10}$/;
 
@@ -33,7 +34,8 @@ async function logSuperOtpUse(phone, userId) {
 const USER_SELECT = `
     SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
            u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
-           u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
+           u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
+           (u.email_verified_at IS NOT NULL AND u.email IS NOT NULL) AS email_verified, b.bio_age,
            cu.nickname AS coach_name,
            c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
            c.config->'sub_age_display_names' AS channel_sub_age_names,
@@ -50,10 +52,13 @@ const USER_SELECT = `
 // Async because it also resolves the caller's own coach identity. The WeChat login paths have
 // always returned `coach` alongside user/channel; this one did not, so a coach signing in by phone
 // got globalData.coach = null and an empty coach panel (see resolveCoachSession in login.js).
+// channel.root_key_name is the top of the channel tree (lib/channels.js) — what the miniapp
+// gates the GCN store and email login on, since a waven-china-zj user is a Waven user.
+// Shared with handlers/email-otp.js.
 async function shapeUserRow(row) {
     const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = row;
     const channel = channel_name
-        ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
+        ? { name: channel_name, key_name: channel_key, root_key_name: await resolveRootChannelKey(user.channel_id), logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
         : null;
     const coach = await resolveCoachSession(user.user_id, user.roles);
     return { user, channel, coach };
@@ -118,7 +123,8 @@ async function handlePhoneOtpVerify(body) {
                  VALUES ($1, $2, 'phone', 'zh', $3, NOW(), NOW())
                  RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character,
                            coach_id, channel_id, roles, created_at, bio_data, referral_code, referred_by_user_id,
-                           (phone_verified_at IS NOT NULL AND phone IS NOT NULL) AS phone_verified`,
+                           (phone_verified_at IS NOT NULL AND phone IS NOT NULL) AS phone_verified,
+                           (email_verified_at IS NOT NULL AND email IS NOT NULL) AS email_verified`,
                 [user_id, fullPhone, referral_code]
             );
             await client.query(
@@ -489,4 +495,9 @@ async function handlePhoneOtpAdminAdd(body) {
     }
 }
 
-module.exports = { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified, handlePhoneOtpList, handlePhoneOtpRemove, handlePhoneOtpAdminAdd };
+module.exports = {
+    handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified,
+    handlePhoneOtpList, handlePhoneOtpRemove, handlePhoneOtpAdminAdd,
+    // Shared with handlers/email-otp.js so both login identities return one user/channel/coach shape.
+    USER_SELECT, shapeUserRow, SUPER_OTP_ENABLED, SUPER_OTP_CODE,
+};

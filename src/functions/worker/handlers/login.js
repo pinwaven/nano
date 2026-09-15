@@ -5,6 +5,7 @@ const { generateUserId, generateReferralCode, getWxAccessToken } = require('../l
 const { normalizeCnPhone } = require('../lib/phone');
 const { grantSignupTrial } = require('../lib/personaOverride');
 const { syncPartnerPhoneFromUser } = require('./partners');
+const { resolveRootChannelKey, resolveGcnSector } = require('../lib/channels');
 
 // A referral code belongs to a user, not a coach. Two things follow from that, and both are wanted:
 //
@@ -815,14 +816,18 @@ async function handleExchangeWebviewToken(body) {
         const WEBVIEW_USER_SELECT =
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                     u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
-                    u.merged_into_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
+                    u.merged_into_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
+                    (u.email_verified_at IS NOT NULL AND u.email IS NOT NULL) AS email_verified, b.bio_age,
                     cu.nickname AS coach_name, p.user_id AS coach_user_id,
                     c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
                     c.config->'sub_age_display_names' AS channel_sub_age_names,
                     c.config->>'locale' AS channel_locale,
                     (SELECT COALESCE(json_agg(json_build_object('phone', up.phone, 'is_primary', up.is_primary, 'verified_at', up.verified_at)
                                                ORDER BY up.is_primary DESC, up.verified_at DESC NULLS LAST), '[]'::json)
-                     FROM user_phones up WHERE up.user_id = u.user_id) AS phones
+                     FROM user_phones up WHERE up.user_id = u.user_id) AS phones,
+                    (SELECT COALESCE(json_agg(json_build_object('email', ue.email, 'is_primary', ue.is_primary, 'verified_at', ue.verified_at)
+                                               ORDER BY ue.is_primary DESC, ue.verified_at DESC NULLS LAST), '[]'::json)
+                     FROM user_emails ue WHERE ue.user_id = u.user_id) AS emails
              FROM users u
              LEFT JOIN coaches p ON u.coach_id = p.id
              LEFT JOIN users cu ON p.user_id = cu.user_id
@@ -846,8 +851,12 @@ async function handleExchangeWebviewToken(body) {
         }
 
         const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = resolvedRow;
+        // root_key_name is what GCN's handleNanoSSO compares against sectors.owner_nano_channel_id
+        // to refuse a cross-channel login (a waven-tree user's wvt presented to aeviva.gcn.net, or
+        // the reverse). GCN reads it optionally and only logs when absent, so its arrival here is
+        // what arms that guard — lib/channels.js must return the ROOT (aeviva for aeviva-china).
         const channel = channel_name
-            ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
+            ? { name: channel_name, key_name: channel_key, root_key_name: await resolveRootChannelKey(user.channel_id), logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
             : null;
 
         return { success: true, user, channel, context };
@@ -860,9 +869,9 @@ async function handleExchangeWebviewToken(body) {
 //
 // Mirrors handlePostWebviewToken/handleExchangeWebviewToken above, but for the
 // Inventory tab's embedded GCN console rather than a miniapp consumer webview.
-// Gating is channel-based, not role-based: any channel with a GCN sector (aeviva
-// today) can be bridged, for either a superadmin or that channel's own admin.
-const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
+// Gating is channel-based, not role-based: any channel whose tree has a GCN sector
+// (lib/channels.js — aeviva and waven) can be bridged, for either a superadmin or that
+// channel's own admin. The response names the sector so the embed opens the right console.
 
 async function handlePostAdminWebviewToken(body, adminCtx) {
     try {
@@ -877,9 +886,8 @@ async function handlePostAdminWebviewToken(body, adminCtx) {
             return { success: false, error: 'Unauthorized', statusCode: 403 };
         }
 
-        const chRes = await pool.query('SELECT key_name FROM channels WHERE id = $1', [channelId]);
-        const keyName = chRes.rows[0]?.key_name;
-        if (!keyName || !GCN_LINKED_CHANNEL_KEYS.has(keyName)) {
+        const sector = await resolveGcnSector(channelId);
+        if (!sector) {
             return { success: false, error: 'Channel is not GCN-linked', statusCode: 403 };
         }
 
@@ -891,7 +899,7 @@ async function handlePostAdminWebviewToken(body, adminCtx) {
             [token, adminCtx.role, adminCtx.accountId ?? null, channelId, expiresAt]
         );
 
-        return { success: true, wvt: token, expires_in: 60 };
+        return { success: true, wvt: token, expires_in: 60, sector };
     } catch (err) {
         return { success: false, error: err.message };
     }
