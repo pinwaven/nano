@@ -3,7 +3,7 @@
 const { pool } = require('../lib/db');
 const { humanizeDotCodes } = require('../lib/dotNames');
 const { humanizeSubAgeKeys } = require('../lib/subAgeLabels');
-const { scrubToolNames } = require('../lib/toolNameScrub');
+const { scrubToolNames, dropForeignLines } = require('../lib/toolNameScrub');
 // Physical product-model constants (cycle length, capsule fill limit, DOT-N7 isolation) —
 // shared with lib/agFormulation.js so nano's own formulator and the validator for an
 // externally-authored Viva AG formula can never disagree about what is manufacturable.
@@ -4149,9 +4149,9 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         } finally {
             client.release();
         }
-        const message = scrubToolNames(humanizeSubAgeKeys(humanizeDotCodes(
+        const message = dropForeignLines(scrubToolNames(humanizeSubAgeKeys(humanizeDotCodes(
             finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, dotsFormulary, lang, { planId, orderMode: orderContext.mode, tiers: tierCards }),
-            dotsFormulary, lang), lang), lang);
+            dotsFormulary, lang), lang), lang), lang);
         await pool.query(
             'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
             [user.user_id, 'formulation_proposal', message, 'pending']

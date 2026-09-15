@@ -574,7 +574,14 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         const directivePreserveBlock = hasDirectiveBlock
             ? `\n\nCRITICAL: your previous reply contains one or more ":::" display blocks (e.g. ":::metric", ":::takeaway", ":::dots"). Keep every one of them in your rewritten reply, with the same structure and closing ":::" line. They are display markup the client renders as cards, not prose you may drop or reflow into sentences. If a violation above concerns a value INSIDE a block, correct that value in place and keep the block. Do not remove, merge, or convert a block to plain text just because the violations above don't mention it.`
             : '';
-        const correctionPrompt = `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}${dimensionConstraintBlock}${actionPreserveBlock}${directivePreserveBlock}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
+        // "keeping the same language" was not enough: two English sentences landed mid-Chinese
+        // reply on dev 2026-09-15 ("Given your GA is 13.2%…, clinical consensus suggests…"),
+        // because the model patched the flagged clauses in the language of this prompt. Say it
+        // as a hard rule, and say what to do with a whole flagged sentence.
+        const languagePin = /[\u4e00-\u9fff]/.test(rawReply)
+            ? '\n\nLANGUAGE: the reply is in Simplified Chinese. Every sentence of your rewrite must be in Simplified Chinese too — never leave an English sentence, clause or parenthetical in it, and never translate a flagged sentence into English while fixing it. The correction hints above are written in English FOR YOU: never paste a hint\'s wording into the reply (「classified as normal (elevated threshold: >15%)」 reached a user this way) — restate what it means in Simplified Chinese. If a flagged claim cannot be supported, delete that sentence rather than hedging it in English.'
+            : '';
+        const correctionPrompt = `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}${dimensionConstraintBlock}${actionPreserveBlock}${directivePreserveBlock}${languagePin}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
         try {
             // Timed as one unit (REVISE completion + RE-JUDGE) — that whole cost is what the
             // next round's fit check has to budget for.

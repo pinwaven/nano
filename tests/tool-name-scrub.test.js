@@ -42,3 +42,33 @@ test('every delivery site that humanizes sub-age keys also scrubs tool names', (
     assert.equal(scrub, age, `${p}: ${age} sub-age sites but ${scrub} scrub sites`);
   }
 });
+
+test('action names and quoted field labels are internal identifiers too (dev 2026-09-15)', () => {
+  assert.strictEqual(scrubToolNames('或将该安排同步至App日程（需调用 set_reminder）'), '或将该安排同步至App日程');
+  assert.strictEqual(
+    scrubToolNames('🔹 你有一份配方（`stage_meaning`: “还没有下单。”）；\n🔹 它已绑定配方（`formula_status`: “已经绑定了配方。”），但不对应订单。'),
+    '🔹 你有一份配方；\n🔹 它已绑定配方，但不对应订单。');
+  // A label outside parentheses drops with its colon, leaving the value the user should read.
+  assert.strictEqual(scrubToolNames('`formula_status`: 这一份套餐已经绑定了配方。'), '这一份套餐已经绑定了配方。');
+  // Single words, units and biomarker names are not identifiers.
+  const plain = 'hsCRP 0.32 mg/L，GA 13.2%，白露节气，set reminder tomorrow';
+  assert.strictEqual(scrubToolNames(plain), plain);
+});
+
+test('a backticked code span quoting machine state goes whole; a plain emphasised name stays', () => {
+  assert.strictEqual(scrubToolNames('原粒4号 是唯一被标记为 `timing_flexible=false` 的晨间原粒'), '原粒4号 是唯一被标记为 系统数据 的晨间原粒');
+  assert.strictEqual(scrubToolNames("在配方库中标注为 `timing='Evening'`，其芽孢杆菌…"), '在配方库中标注为 系统数据，其芽孢杆菌…');
+  assert.strictEqual(scrubToolNames('推荐 `静心夜` 和 `豆腐`'), '推荐 `静心夜` 和 `豆腐`');
+});
+
+const { dropForeignLines } = require('../src/functions/worker/lib/toolNameScrub');
+test('dropForeignLines removes an all-English line from a zh reply and nothing else', () => {
+  const text = '### ✅ 一、原粒是否为素食？\n**No matched knowledge base entries exist for vegetarian or plant-based capsule formulation claims.**\n- 配方库中仅提供活性成分名称与剂量。\n\n| GA | 13.2% |\n|----|-------|\n:::takeaway\nKeep this fence line exactly as it is written here.\n:::\nhsCRP 0.32 mg/L 正常。';
+  const out = dropForeignLines(text, 'zh');
+  assert.ok(!out.includes('No matched knowledge base'));
+  assert.ok(out.includes('| GA | 13.2% |') && out.includes('|----|-------|'), 'table rows stay');
+  assert.ok(out.includes('Keep this fence line exactly as it is written here.'), 'fence content stays');
+  assert.ok(out.includes('hsCRP 0.32 mg/L 正常。'));
+  assert.strictEqual(dropForeignLines(text, 'en'), text, 'an English user keeps everything');
+  assert.strictEqual(dropForeignLines('Vitamin D3, HPMC', 'zh'), 'Vitamin D3, HPMC', 'short Latin runs are not a foreign line');
+});

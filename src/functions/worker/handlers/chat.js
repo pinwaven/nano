@@ -1,7 +1,7 @@
 const { pool } = require('../lib/db');
 const { humanizeDotCodes } = require('../lib/dotNames');
 const { humanizeSubAgeKeys } = require('../lib/subAgeLabels');
-const { scrubToolNames } = require('../lib/toolNameScrub');
+const { scrubToolNames, dropForeignLines } = require('../lib/toolNameScrub');
 const { buildHealthTags } = require('../lib/healthTags');
 const ossLib = require('../lib/oss');
 const { generateUserId, getWxAccessToken } = require('../lib/auth');
@@ -1247,9 +1247,9 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
     // client's text-keyed de-dup and render the bubble twice.
     // Same rule for the bio-age keys (lib/subAgeLabels.js): 「BioAge 39.2岁」 reached a user on
     // prod 2026-09-14. Rewritten on the same single string, for the same de-dup reason.
-    const reply = scrubToolNames(humanizeSubAgeKeys(
+    const reply = dropForeignLines(scrubToolNames(humanizeSubAgeKeys(
         humanizeDotCodes((strippedReply || fallbackReply) + productCard, llmContext.dots, user.language),
-        user.language, llmContext.sub_age_display_names), user.language);
+        user.language, llmContext.sub_age_display_names), user.language), user.language);
 
     if (sandbox) {
         // Sandbox sessions have no notification-polling side channel to rely on —
@@ -2299,9 +2299,9 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     // The CTA depends on whether the user already paid for a package (the two orderings of the
     // same purchase — see _buildFormulaChartBlock's `#order` note), which orderContext above
     // already answered.
-    const chatMessage = scrubToolNames(humanizeSubAgeKeys(humanizeDotCodes(
+    const chatMessage = dropForeignLines(scrubToolNames(humanizeSubAgeKeys(humanizeDotCodes(
         finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, llmContext.dots, lang, { planId, orderMode: orderContext.mode, tiers: tierCards }),
-        llmContext.dots, lang), lang, llmContext.sub_age_display_names), lang);
+        llmContext.dots, lang), lang, llmContext.sub_age_display_names), lang), lang);
 
     await saveChatMessage(user_id, 'ai', chatMessage, null, personaType);
     await pool.query(
@@ -2581,9 +2581,9 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
 
     // Same rule as finalizeChatReply: rewritten once, so the saved row and the returned message
     // are the same string. This endpoint's callers render `message` directly.
-    rawReply = scrubToolNames(humanizeSubAgeKeys(
+    rawReply = dropForeignLines(scrubToolNames(humanizeSubAgeKeys(
         humanizeDotCodes(rawReply, llmContext.dots, llmContext.user_profile?.language || 'zh'),
-        llmContext.user_profile?.language || 'zh', llmContext.sub_age_display_names), llmContext.user_profile?.language || 'zh');
+        llmContext.user_profile?.language || 'zh', llmContext.sub_age_display_names), llmContext.user_profile?.language || 'zh'), llmContext.user_profile?.language || 'zh');
 
     if (!sandbox) {
         await saveChatMessage(user_id, 'ai', rawReply, null, personaType);
