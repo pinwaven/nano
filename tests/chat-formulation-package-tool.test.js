@@ -357,8 +357,11 @@ test('handlers/chat.js reclassifies a purchase question away from formulate_dots
     assert.match(block, /intent === 'casual_chat'/, 'a purchase question must not land on a toolless intent');
     assert.ok(!/'emotional_support'|'biomarker_question'/.test(block),
         'only the two intents that measurably fail are promoted — this is not a general reclassifier');
-    assert.match(src, /formulation_packages_available: GCN_LINKED_CHANNEL_KEYS\.has\(channelKeyName\)/,
+    // The gate is the channel tree's GCN sector (lib/channels.js resolveGcnSector — aeviva and
+    // waven roots), resolved once per turn; never required_data.
+    assert.match(src, /formulation_packages_available: !!gcnSector,/,
         'the block must stay channel-gated, and must NOT be gated on required_data');
+    assert.match(src, /gcnSector = await resolveGcnSector\(user\.channel_id\)/);
 });
 
 test('the forced queue puts deterministic triggers first and always leaves room for prose', () => {

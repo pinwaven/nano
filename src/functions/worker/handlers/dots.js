@@ -1,6 +1,7 @@
 'use strict';
 
 const { pool } = require('../lib/db');
+const { resolveGcnSector } = require('../lib/channels');
 const { humanizeDotCodes } = require('../lib/dotNames');
 const { humanizeSubAgeKeys } = require('../lib/subAgeLabels');
 const { scrubToolNames, dropForeignLines, localizeStatusWords } = require('../lib/toolNameScrub');
@@ -4022,7 +4023,7 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
     // two applies is not known until the order lookup answers.
     const [orderContext, formulationTiers] = await Promise.all([
         _resolveOrderContext(user.user_id),
-        fetchFormulationTiers(),
+        resolveGcnSector(user.channel_id).then(sector => fetchFormulationTiers(sector)).catch(() => fetchFormulationTiers()),
     ]);
     // Mutually exclusive by design: formulation_package is the tier already bought,
     // formulation_tiers the menu of tiers on offer. A user holding a package is not shopping.

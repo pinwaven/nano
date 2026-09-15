@@ -3,11 +3,10 @@ const { requirePermission, verifySubchannelOwnership, generatePartnerInviteCode 
 const { recordReferralCommission, recordSalesCommission, generatePartnerPayouts, getCommissionRules, resolveRate } = require('../lib/partnerCommissions');
 const { gcnFetch } = require('../lib/gcnClient');
 
-// Channels whose commerce (store creation, sales, shipping) is delegated to GCN — mirrors
-// GCN_LINKED_CHANNEL_KEYS in handlers/login.js (kept separate/duplicated intentionally,
-// same pattern GCN itself uses for its nanoClient.js copies — not worth a shared-module
-// coupling for one small constant).
-const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
+// Channels whose commerce (store creation, sales, shipping) is delegated to GCN resolve to
+// their GCN sector through the channel tree (lib/channels.js — aeviva and waven roots); the
+// sector is what the provision call names, never a literal.
+const { resolveGcnSector } = require('../lib/channels');
 
 // Nano's partner.status enum ('pending'|'active'|'inactive') has no 1:1 match in GCN's
 // ('pending'|'active'|'suspended'|'exited') — 'inactive' maps to 'suspended' rather than
@@ -170,14 +169,15 @@ async function handlePostPartnerGcnProvision(partnerId) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const { rows } = await pool.query(`
             SELECT p.id, p.tier, p.real_name, p.phone, p.status, p.gcn_partner_id, p.referred_by_partner_id,
-                   p.entry_fee_paid, ch.key_name AS channel_key
+                   p.entry_fee_paid, p.channel_id, ch.key_name AS channel_key
             FROM partners p
             LEFT JOIN channels ch ON ch.id = p.channel_id
             WHERE p.id = $1
         `, [partnerId]);
         const partner = rows[0];
         if (!partner) return { success: false, error: 'Partner not found', statusCode: 404 };
-        if (!GCN_LINKED_CHANNEL_KEYS.has(partner.channel_key)) {
+        const sector = await resolveGcnSector(partner.channel_id);
+        if (!sector) {
             return { success: false, error: 'Partner is not in a GCN-linked channel', statusCode: 400 };
         }
         if (partner.status !== 'active') {
@@ -191,7 +191,7 @@ async function handlePostPartnerGcnProvision(partnerId) {
                 phone: partner.phone,
                 tier: partner.tier,
                 real_name: partner.real_name,
-                sector_id: 'aeviva',
+                sector_id: sector,
                 // Phase 3 of gcn/docs/aeviva/10-partner-system-consolidation-roadmap.md — GCN
                 // resolves referred_by_partner_id (nano's own integer id) to its own partner_id
                 // via nano_partner_id, building its own mirror of the referral tree.
@@ -336,9 +336,8 @@ async function handlePostPartner(body, adminCtx) {
 async function syncGcnPartnerStatus(partner) {
     if (!partner.gcn_partner_id) return null;
     try {
-        const chRes = await pool.query(`SELECT key_name FROM channels WHERE id = $1`, [partner.channel_id]);
-        const channelKey = chRes.rows[0]?.key_name;
-        if (!GCN_LINKED_CHANNEL_KEYS.has(channelKey)) return null;
+        const sector = await resolveGcnSector(partner.channel_id);
+        if (!sector) return null;
         await gcnFetch('/api/auth/partners/nano/provision', {
             method: 'POST',
             body: {
@@ -347,7 +346,7 @@ async function syncGcnPartnerStatus(partner) {
                 tier: partner.tier,
                 real_name: partner.real_name,
                 status: NANO_TO_GCN_STATUS[partner.status] || 'active',
-                sector_id: 'aeviva',
+                sector_id: sector,
                 // Phase 3 — keep GCN's mirror of the tree edge current across edits too, not
                 // just at first provisioning (handlePutPartner allows an admin to rewrite
                 // referred_by_partner_id on an already-active partner at any time).

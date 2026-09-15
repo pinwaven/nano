@@ -57,10 +57,10 @@ const { messageAsksAboutFoodSensitivity } = require('../prompts/chat/foodSensiti
 const { messageAsksForMealPlan } = require('../prompts/chat/mealPlanRequest');
 const { fetchWearableDaily, messageAsksAboutWearable } = require('../lib/wearableDaily');
 
-// Channels with a GCN storefront behind them (mirrors handlers/login.js's own copy — the same
-// physically-duplicated-constant convention this codebase uses across handlers). Nothing else has
-// a catalog to recommend from, so the store fetch is gated on this rather than on persona alone.
-const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
+// Channels with a GCN storefront behind them resolve to their GCN sector through the channel
+// tree (lib/channels.js — aeviva and waven roots). Nothing else has a catalog to recommend
+// from, so the store fetch is gated on this rather than on persona alone.
+const { resolveGcnSector } = require('../lib/channels');
 
 // Suppress any product whose declared allergens/cautions collide with something the user has
 // already told us (user_memory_facts, CLAUDE.md §27). Deliberately a hard filter applied BEFORE
@@ -1403,11 +1403,13 @@ async function handlePostChat(body) {
     let channelPersonaType = 'nano';
     let channelSubAgeNames = null;
     let channelKeyName = null;
+    let gcnSector = null;
     if (user.channel_id) {
         try {
             const chRes = await pool.query('SELECT key_name, config FROM channels WHERE id = $1', [user.channel_id]);
             const chConfig = chRes.rows[0]?.config || {};
             channelKeyName = chRes.rows[0]?.key_name || null;
+            gcnSector = await resolveGcnSector(user.channel_id);
             channelPersonaType = chConfig.persona_type ?? 'nano';
             channelSubAgeNames = chConfig.sub_age_display_names || null;
         } catch (err) {
@@ -1600,8 +1602,8 @@ async function handlePostChat(body) {
             // another template in the same change.
             if (required_data.includes('store_products')
                 && intent === 'nutrition_question'
-                && GCN_LINKED_CHANNEL_KEYS.has(channelKeyName)) {
-                fetches.store_products = fetchAiCatalog(user_id);
+                && gcnSector) {
+                fetches.store_products = fetchAiCatalog(user_id, gcnSector);
             }
 
             // Always fetch the last 3 days per day, too: health_twin is 7-day averages, and
@@ -1720,7 +1722,7 @@ async function handlePostChat(body) {
                 // for get_formulation_packages, and a purchase question must never go unanswered
                 // because the classifier failed to emit a key. It carries no data, so the cost of
                 // it being present on a turn that doesn't need it is a few lines of prompt.
-                formulation_packages_available: GCN_LINKED_CHANNEL_KEYS.has(channelKeyName),
+                formulation_packages_available: !!gcnSector,
                 food_sensitivity_available: fetched.has_food_panel?.rows?.[0]?.present === true,
                 // Gates prompts/chat/outputFormat.js's ::: display-card syntax. Scoped to the
                 // miniapp because it's the only surface whose renderer understands the fences —

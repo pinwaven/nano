@@ -25,6 +25,7 @@ const {
     PACKAGE_STAGE_NARRATION,
 } = require('../handlers/dots');
 const { fetchFormulationTiers } = require('./gcnClient');
+const { resolveGcnSector } = require('./channels');
 // Pure, no DB — the class→window map is a transcription of the report's own 戒断方案 page.
 const { CLASS_WINDOWS } = require('./foodSensitivity');
 
@@ -531,7 +532,7 @@ function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_na
             const [packages, codes, tiers] = await Promise.all([
                 _fetchFormulationPackages(user_id),
                 _fetchFormulationCodes(user_id),
-                fetchFormulationTiers(),
+                fetchFormulationTiers(sector),
             ]);
 
             // DEGRADED IS NOT EMPTY. All three fetchers swallow every failure and return [], so
@@ -542,6 +543,13 @@ function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_na
             // conjunction matters: a nano-side 'proposed' plan still answers while GCN is dead,
             // which is the degradation §28d asks for.
             if (packages.length === 0 && codes.length === 0 && tiers.length === 0) {
+            // The catalog is per GCN sector; the user's channel tree says which (lib/channels.js).
+            // Best-effort: with no answer GCN serves aeviva's catalog, as it always did.
+            let sector = null;
+            try {
+                const r = await pool.query('SELECT channel_id FROM users WHERE user_id = $1', [user_id]);
+                sector = await resolveGcnSector(r.rows[0]?.channel_id ?? null, pool);
+            } catch (_) { sector = null; }
                 return {
                     ok: false,
                     reason: 'the order system could not be reached — tell the user their order status is temporarily unavailable, and do NOT tell them they have no packages',
