@@ -8,6 +8,20 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Added
 
+- **Email OTP login, alongside SMS, for the Waven channel** · 2026-09-15
+  - Sign in or sign up with an email code on the miniapp login page (phone/email toggle), the web
+    user-app (Email tab) and manage addresses in the new 邮箱管理 page (`pages/emails/`); the
+    admin panel gains an Emails tab and Add Email. Aeviva stays phone-only — the server refuses an
+    aeviva-tree account (`channel_not_supported`), judged on the channel tree's root.
+  - Backend: `user_emails` + `users.email_verified_at` (mirroring phones), `email_otp_codes` with a
+    per-address rate limit and 5-attempt cap, Aliyun DirectMail sender (`lib/email.js`,
+    `DM_ACCOUNT_NAME`; empty = code logged, nothing sent). Legacy `users.email` values are not
+    backfilled as login identities.
+  - GCN: `handleNanoSSO` accepts an email-verified nano user for a sector whose `login_methods`
+    lists `email`; native email OTP on `/api/auth/otp/{send,verify}`; `migration_0117` flips waven.
+    The waven channel tree is now GCN-linked like aeviva (store webview, chat catalog, provisioning,
+    admin console embed), resolved through the channel tree rather than a leaf-key set.
+
 - **MCP server for the data-analysis workshop** (`CLAUDE.md` §41, `docs/architecture/mcp-server.md`) · 2026-09-15
   - New FC function `src/functions/mcp/` (`nano-mcp-dev`, `https://nano-dev.gcn.net/mcp`): a
     stateless Streamable HTTP MCP endpoint exposing **both** dev databases (`nano_db_dev`,

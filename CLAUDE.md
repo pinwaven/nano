@@ -2016,7 +2016,10 @@ A user can hold more than one verified phone (`user_phones`, primary/secondary v
 - **Login (`handlePhoneOtpVerify`) matches through `user_phones`, not `users.phone`** — any verified phone, primary or secondary, logs into the same account (used by both the miniapp's phone-login screen and the web user-app). This also holds for an admin-added *unverified* phone the moment someone completes a real OTP check against it at login — it resolves to the existing account rather than forking a duplicate, though the login itself doesn't retroactively set that row's `verified_at` (known, un-fixed cosmetic gap — the phone still shows "Unverified" afterward even though possession was just proven).
 - **GCN identity bridge (`gcn/src/functions/auth/index.js`'s `handleNanoSSO`):** previously matched a GCN consumer account by phone alone, so switching primary phone on nano's side silently forked a second GCN account. Fixed to resolve by `nano_user_id` first (phone-match only as fallback for first-time/pre-migration accounts), and to mirror nano's **full** phone list (not just primary) into GCN's own `user_phones` on every login, reconciled exactly (stale/removed numbers dropped) — this is also what lets GCN's own native OTP login recognize any of a user's nano-verified phones. `partners.phone` (the separate, single-value cache for a *provisioned partner/store* record — unrelated to the consumer-account phone above) is now kept in sync via `syncPartnerPhoneFromUser`, called from every phone-changing call site rather than only partner-record edits.
 
-Full detail: `docs/architecture/multi-phone-system.md`.
+- **Email is a second login identity (2026-09-15), Waven-only.** `user_emails` mirrors `user_phones`; `handlers/email-otp.js` mirrors `phone-otp.js`; DirectMail (`lib/email.js`, `no-reply@mail.gcn.net`, sender set by `DM_ACCOUNT_NAME` — empty means the code is logged, not sent) only delivers, so nano owns the code lifecycle in `lib/email-otp.js` (`email_otp_codes`, per-address rate limit, 5-attempt cap). The allow-rule is the channel **root** (`lib/channels.js` `resolveRootChannelKey` — `waven-china-zj` is a Waven user), deliberately not `GCN_LINKED_CHANNEL_KEYS`. No backfill of legacy `users.email`. `WEBVIEW_USER_SELECT` now returns `email_verified`, `emails[]` and `channel.root_key_name` — the last one **arms GCN's already-deployed channel/sector guard** (`channel_sector_mismatch`), so verify an `aeviva-china` user still enters `aeviva.gcn.net` after deploying it.
+- **GCN linkage is resolved through the channel tree, not a leaf-key set (2026-09-15).** The six `GCN_LINKED_CHANNEL_KEYS` copies are gone: the worker uses `lib/channels.js` `resolveGcnSector` (`GCN_SECTOR_FOR_ROOT_CHANNEL = {aeviva, waven}`), the admin panel `shared.jsx` `gcnSectorForChannel`, the miniapp `main.js` `GCN_STORE_HOST_FOR_CHANNEL`. The waven tree is now GCN-linked exactly like aeviva (Store tab on `waven(-dev).gcn.net`, chat catalog, partner provisioning with `sector_id: 'waven'`, admin console embed at `/waven/dashboard-admin.html`); `fetchFormulationTiers(sector)` carries the sector so a waven user sees waven's packages.
+
+Full detail: `docs/architecture/multi-phone-system.md` (§6 for email).
 
 ## 34. Digital Twin Terminology & Layer Taxonomy (2026-08-21)
 
@@ -2566,7 +2569,7 @@ Every *other* pre-fetch in that bundle is unconditional precisely so a classifie
 the model — **here a miss is the desired failure mode.** With no catalog,
 `getProductRecommendBlock` returns `''`, the model is never taught the vocabulary, and the
 essential block's parenthetical collapses the rule back to Dots-only. Also gated on a GCN-linked
-channel (`GCN_LINKED_CHANNEL_KEYS` in `handlers/chat.js`, mirroring `handlers/login.js`'s copy).
+channel (`resolveGcnSector` from `lib/channels.js`, in `handlers/chat.js` — the channel tree's GCN sector, aeviva or waven).
 
 ### The model picks, the server writes
 
