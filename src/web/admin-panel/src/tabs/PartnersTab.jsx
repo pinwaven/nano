@@ -2,8 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Users, Coins, Settings2, Plus, Pencil, Trash2, X, Check, ChevronDown, Store, Link2 } from 'lucide-react';
 
-const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
-import { useLang, fmtDate, StatCard, Badge } from '../shared.jsx';
+import { useLang, fmtDate, StatCard, Badge, gcnSectorForChannel } from '../shared.jsx';
 
 function PartnersTab({ users = [], session }) {
   const { t } = useLang();
@@ -270,7 +269,7 @@ function PartnersTab({ users = [], session }) {
                       <button className="icon-btn" title={p.editPartner} onClick={() => openEdit(pt)}><Pencil size={14} /></button>
                       {pt.status !== 'inactive' &&
                         <button className="icon-btn" title={p.deactivatePartner} onClick={() => deactivatePartner(pt.id)}><Trash2 size={14} /></button>}
-                      {GCN_LINKED_CHANNEL_KEYS.has(pt.channel_key) && (
+                      {gcnSectorForChannel(pt.channel_key) && (
                         pt.gcn_partner_id
                           ? <Badge color="green" title={p.gcnProvisioned}>{p.gcnProvisioned}</Badge>
                           // GCN provisioning retired 2026-08-12 (gcn's partner-system-consolidation

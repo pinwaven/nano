@@ -373,6 +373,9 @@ function UserDetailModal({ user, onClose, session, onDeleted, initialTab }) {
   const [phones, setPhones]               = useState(null);
   const [phonesLoading, setPhonesLoading] = useState(false);
   const [phoneAddOpen, setPhoneAddOpen]   = useState(false);
+  const [emails, setEmails]               = useState(null);
+  const [emailsLoading, setEmailsLoading] = useState(false);
+  const [emailAddOpen, setEmailAddOpen]   = useState(false);
 
   const openid = user?.user_id || user?.id;
 
@@ -438,6 +441,26 @@ function UserDetailModal({ user, onClose, session, onDeleted, initialTab }) {
     fetchPhones();
   };
 
+  const fetchEmails = () => {
+    setEmailsLoading(true);
+    axios.get(`/api/email-otp/list?user_id=${encodeURIComponent(openid)}`)
+      .then(r => setEmails(r.data.emails || []))
+      .catch(() => setEmails([]))
+      .finally(() => setEmailsLoading(false));
+  };
+
+  const setEmailPrimary = async (email) => {
+    if (!window.confirm(t.userDetail.confirmSetPrimaryEmail)) return;
+    await axios.post('/api/email-otp/set-primary', { user_id: openid, email });
+    fetchEmails();
+  };
+
+  const removeEmailAddress = async (email) => {
+    if (!window.confirm(t.userDetail.confirmRemoveEmail)) return;
+    await axios.post('/api/email-otp/remove', { user_id: openid, email });
+    fetchEmails();
+  };
+
   const switchTab = (next) => {
     setTab(next);
     if (next === 'plans' && plans === null && !plansLoading) {
@@ -459,6 +482,9 @@ function UserDetailModal({ user, onClose, session, onDeleted, initialTab }) {
     }
     if (next === 'phones' && phones === null && !phonesLoading) {
       fetchPhones();
+    }
+    if (next === 'emails' && emails === null && !emailsLoading) {
+      fetchEmails();
     }
   };
 
@@ -504,6 +530,7 @@ function UserDetailModal({ user, onClose, session, onDeleted, initialTab }) {
     { id: 'chat',   label: t.userDetail.tabChat   },
     { id: 'facts',  label: t.userDetail.tabFacts || 'Facts' },
     { id: 'phones', label: t.userDetail.tabPhones || 'Phones' },
+    { id: 'emails', label: t.userDetail.tabEmails },
   ];
 
   return (
@@ -952,6 +979,57 @@ function UserDetailModal({ user, onClose, session, onDeleted, initialTab }) {
             </div>
           )}
 
+          {/* ── EMAILS ── */}
+          {tab === 'emails' && (
+            <div className="udm-chat-fill">
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                <button className="btn-primary" onClick={() => setEmailAddOpen(true)}>
+                  <Plus size={14} />{t.userDetail.addEmail}
+                </button>
+              </div>
+              {emailsLoading ? (
+                <div className="drawer-empty">{t.topbar.loading}</div>
+              ) : !emails || emails.length === 0 ? (
+                <div className="drawer-empty">{t.userDetail.noEmails}</div>
+              ) : (
+                <table className="data-table">
+                  <thead><tr>
+                    <th>{t.userDetail.emailHeader}</th>
+                    <th>{t.userDetail.factStatus || 'Status'}</th>
+                    <th>{t.userDetail.factLastMentioned || 'Verified'}</th>
+                    <th></th>
+                  </tr></thead>
+                  <tbody>
+                    {emails.map(e => (
+                      <tr key={e.email}>
+                        <td style={{ fontFamily: 'monospace', fontSize: 13 }}>{e.email}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {e.is_primary
+                              ? <Badge color="#10b981">{t.userDetail.primaryEmail}</Badge>
+                              : <Badge color="#94a3b8">{t.userDetail.secondaryEmail}</Badge>}
+                            {!e.verified_at && <Badge color="#f59e0b">{t.userDetail.unverifiedEmail}</Badge>}
+                          </div>
+                        </td>
+                        <td className="muted" style={{ fontSize: 11 }}>{e.verified_at ? new Date(e.verified_at).toLocaleDateString(isZh ? 'zh-CN' : 'en-US') : '—'}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            {!e.is_primary && (
+                              <button className="btn-secondary" style={{ fontSize: 11, padding: '4px 8px' }} onClick={() => setEmailPrimary(e.email)}>
+                                {t.userDetail.setPrimaryEmail}
+                              </button>
+                            )}
+                            <button className="icon-btn danger" onClick={() => removeEmailAddress(e.email)}><Trash2 size={14} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
         </div>
 
         {/* Detail Modal Overlay */}
@@ -1139,6 +1217,13 @@ function UserDetailModal({ user, onClose, session, onDeleted, initialTab }) {
         onSave={() => { setPhoneAddOpen(false); fetchPhones(); }}
       />
     )}
+    {emailAddOpen && (
+      <EmailAddModal
+        userId={openid}
+        onClose={() => setEmailAddOpen(false)}
+        onSave={() => { setEmailAddOpen(false); fetchEmails(); }}
+      />
+    )}
     </>
   );
 }
@@ -1268,6 +1353,66 @@ function PhoneAddModal({ userId, onClose, onSave }) {
           </div>
           <div className="drawer-empty" style={{ padding: '8px 0', textAlign: 'left', fontSize: 12 }}>
             {t.userDetail.addPhoneUnverifiedNote || 'Added with no OTP proof — stays unverified unless this is the account’s only phone.'}
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-footer">
+            <button type="button" className="btn-secondary" onClick={onClose}>{t.modal?.cancel || 'Cancel'}</button>
+            <button type="submit" className="btn-primary" disabled={busy}>{busy ? (t.modal?.saving || '…') : (t.modal?.save || 'Save')}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── EmailAddModal ─────────────────────────────────────────────────────────────
+// Admin-only "add email" — POST /admin-email-add (handleEmailOtpAdminAdd), the email twin of
+// PhoneAddModal: no code is sent or checked, the address is attached unverified unless it is
+// the account's only email. Same routing rule as phones: outside the bearer-exempt
+// /email-otp/ prefix, gated by requireAdminTab('users').
+
+function EmailAddModal({ userId, onClose, onSave }) {
+  const { t } = useLang();
+  const [email, setEmail] = useState('');
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!email.trim()) { setError(t.userDetail.emailRequired); return; }
+    setBusy(true);
+    try {
+      const res = await axios.post('/api/admin-email-add', { user_id: userId, email: email.trim() });
+      if (res.data?.success === false) {
+        const msg = res.data.error === 'email_in_use' ? t.userDetail.emailInUse
+          : res.data.error === 'invalid_email' ? t.userDetail.emailInvalid
+          : (res.data.error || t.modal.saveFailed);
+        setError(msg);
+        return;
+      }
+      onSave();
+    } catch (err) {
+      setError(err.response?.data?.error || t.modal.saveFailed);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay" style={{ zIndex: 120 }} onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{t.userDetail.addEmail}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-body">
+          <div className="form-grid">
+            <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+              <span>{t.modal.email || 'Email'}</span>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" autoFocus />
+            </label>
+          </div>
+          <div className="drawer-empty" style={{ padding: '8px 0', textAlign: 'left', fontSize: 12 }}>
+            {t.userDetail.addEmailUnverifiedNote}
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="modal-footer">

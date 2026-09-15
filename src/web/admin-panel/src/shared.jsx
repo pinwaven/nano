@@ -296,9 +296,42 @@ function UserPicker({ value, onChange, placeholder = 'Search by name, phone…',
   );
 }
 
+// ── GCN-linked channels ───────────────────────────────────────────────────────
+// Client-side copy of worker/lib/channels.js's GCN_SECTOR_FOR_ROOT_CHANNEL: channel trees with
+// a GCN sector, keyed on the ROOT channel key. aeviva since the integration began; waven since
+// GCN migration_0113 (2026-09-15). The panel's channel list carries parent_channel_id, so the
+// root is walked from it when the list is at hand; a bare key falls back to its first segment
+// (aeviva-china → aeviva, waven-china-zj → waven — every sub-channel key is prefixed by its
+// root's, by convention of migration_aeviva_parent_channel.sql).
+const GCN_SECTOR_FOR_ROOT_CHANNEL = Object.freeze({ aeviva: 'aeviva', waven: 'waven' });
+
+function rootChannelKey(channel, channels) {
+  if (!channel) return null;
+  if (Array.isArray(channels) && channels.length) {
+    let cur = channel;
+    for (let i = 0; i < 10 && cur && cur.parent_channel_id != null; i++) {
+      const parent = channels.find(c => String(c.id) === String(cur.parent_channel_id));
+      if (!parent) break;
+      cur = parent;
+    }
+    if (cur && cur.key_name) return cur.key_name;
+  }
+  const key = String(channel.key_name || '');
+  return key ? key.split('-')[0] : null;
+}
+
+// The GCN sector_id for a channel (object with key_name / parent_channel_id, or a bare key
+// string), or null when its tree has no GCN sector.
+function gcnSectorForChannel(channel, channels) {
+  const ch = typeof channel === 'string' ? { key_name: channel } : channel;
+  const root = rootChannelKey(ch, channels);
+  return (root && GCN_SECTOR_FOR_ROOT_CHANNEL[root]) || null;
+}
+
 export {
   T,
   PERMS, hasPermission,
+  GCN_SECTOR_FOR_ROOT_CHANNEL, gcnSectorForChannel,
   KINO_MACHINE_PAGE_LIMIT, normalizeKinoMachine, normalizeKinoMachinesPayload, buildKinoMachinesUrl,
   LoginScreen,
   LangCtx, useLang,

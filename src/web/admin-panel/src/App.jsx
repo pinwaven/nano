@@ -17,7 +17,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 
-import { T, LoginScreen, LangCtx, useLang, PERMS, hasPermission, StatCard, RichStatCard, Badge, normalizeKinoMachinesPayload, buildKinoMachinesUrl } from './shared.jsx';
+import { T, LoginScreen, LangCtx, useLang, PERMS, hasPermission, StatCard, RichStatCard, Badge, normalizeKinoMachinesPayload, buildKinoMachinesUrl, gcnSectorForChannel } from './shared.jsx';
 import { AIPersonaTab } from './tabs/AIPersonaTab.jsx';
 import { ContentTab } from './tabs/ContentTab.jsx';
 import { AdminAccountsTab } from './tabs/AdminAccountsTab.jsx';
@@ -132,9 +132,8 @@ function AdminPanel({ session, onLogout }) {
   // should say "GCN", not "Inventory" (which is inert for them). Superadmins switch between
   // channels inside the tab itself, so there's no single "current channel" to key off here —
   // their label stays generic.
-  const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
   const currentChannel = (data.channels || []).find(c => String(c.id) === String(session?.channelId));
-  const inventoryLabel = !isSuperadmin && GCN_LINKED_CHANNEL_KEYS.has(currentChannel?.key_name)
+  const inventoryLabel = !isSuperadmin && gcnSectorForChannel(currentChannel, data.channels)
     ? 'GCN'
     : t.nav.inventory;
 
