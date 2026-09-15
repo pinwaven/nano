@@ -1,8 +1,17 @@
 const app = getApp()
-const { BASE, CHANNEL_SLUG, CHANNEL_DISPLAY, IS_DEV, VERSION, WX_VERSION } = require('../../utils/config.js')
-const { maskPhone } = require('../../utils/phone.js')
+const { BASE, CHANNEL_SLUG, CHANNEL_DISPLAY, IS_DEV, VERSION, WX_VERSION, EMAIL_LOGIN_AVAILABLE } = require('../../utils/config.js')
+const { maskPhone, maskEmail } = require('../../utils/phone.js')
 
 const LOGIN_PHONE_RE = /^1\d{10}$/
+const LOGIN_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+
+// The channel object carries root_key_name (top of the channel tree) since the email-login
+// work; an older stored object has only key_name. Either way an aeviva-tree channel means
+// phone-only, matching the server's own rule (handlers/email-otp.js).
+function isAevivaChannel(ch) {
+  const key = String((ch && (ch.root_key_name || ch.key_name)) || '')
+  return key === 'aeviva' || key.startsWith('aeviva-')
+}
 
 Page({
   data: {
@@ -13,11 +22,16 @@ Page({
     codeLoading: false,
     channel: null,
     version: IS_DEV ? VERSION : WX_VERSION,
-    // Logged-out ("continue as previous") screen
+    // Logged-out ("continue as previous") screen. Holds the masked phone, or the masked
+    // email for an email-only account — display only, one slot so the logout snapshot
+    // (main.js/coach.js handleLogout) needs no second field.
     maskedPhone: '',
-    // Phone-entry ("use a different number") sub-flow
+    // Phone/email-entry ("use a different number") sub-flow
     phoneStep: 'phone', // 'phone' | 'code'
+    loginMethod: 'phone', // 'phone' | 'email' — which identifier the entry step collects
+    emailLoginAvailable: false,
     phone: '',
+    email: '',
     code: '',
     phoneError: '',
     phoneLoading: false,
@@ -67,7 +81,10 @@ Page({
       return
     }
     const storedChannel = wx.getStorageSync('nano_channel')
-    this.setData({ channel: storedChannel || CHANNEL_DISPLAY || null })
+    this.setData({
+      channel: storedChannel || CHANNEL_DISPLAY || null,
+      emailLoginAvailable: EMAIL_LOGIN_AVAILABLE && !isAevivaChannel(storedChannel),
+    })
 
     // Landed here from an explicit logout (main.js/coach.js handleLogout) — offer
     // "continue as previous" instead of silently re-authenticating right away.
@@ -165,9 +182,9 @@ Page({
     // available) and persisted alongside phoneSet/phone_verified, because raw
     // phone itself is deliberately never stored/kept past this point — see
     // _finishLogin below for why re-deriving it later doesn't work.
-    const maskedPhone = maskPhone(_ph)
+    const maskedPhone = maskPhone(_ph) || maskEmail(_em)
     user.maskedPhone = maskedPhone
-    wx.setStorageSync('nano_user', { ...userToStore, phoneSet: !!_ph, phone_verified: !!user.phone_verified, maskedPhone })
+    wx.setStorageSync('nano_user', { ...userToStore, phoneSet: !!_ph, phone_verified: !!user.phone_verified, email_verified: !!user.email_verified, maskedPhone })
     wx.setStorageSync('nano_channel', channel)
     wx.reLaunch({ url: '/pages/verify-phone/verify-phone?new=1' })
   },
@@ -188,9 +205,10 @@ Page({
     // restores app.globalData.user from this trimmed wx.storage copy, so without
     // persisting a masked form here, any logout after even a single app restart
     // (routine on mobile) would find no phone to show on the logged-out screen.
-    const maskedPhone = maskPhone(_ph)
+    // An email-only account (no phone) shows its masked email on the logged-out screen instead.
+    const maskedPhone = maskPhone(_ph) || maskEmail(_em)
     user.maskedPhone = maskedPhone
-    wx.setStorageSync('nano_user', { ...userToStore, phoneSet: !!_ph, phone_verified: !!user.phone_verified, maskedPhone })
+    wx.setStorageSync('nano_user', { ...userToStore, phoneSet: !!_ph, phone_verified: !!user.phone_verified, email_verified: !!user.email_verified, maskedPhone })
     wx.setStorageSync('nano_channel', channel)
     wx.setStorageSync('nano_coach', coach)
     wx.reLaunch({ url: '/pages/main/main' })
@@ -220,9 +238,20 @@ Page({
   useOtherNumber() {
     clearInterval(this._cooldownTimer)
     this.setData({
-      step: 'phoneEntry', phoneStep: 'phone', phone: '', code: '',
+      step: 'phoneEntry', phoneStep: 'phone', loginMethod: 'phone', phone: '', email: '', code: '',
       phoneError: '', phoneLoading: false, resendCooldown: 0, countryIndex: 0,
     })
+  },
+
+  // Phone ⇄ email switch on the entry step. Only rendered when emailLoginAvailable.
+  toggleLoginMethod() {
+    if (this.data.phoneStep !== 'phone' || this.data.phoneLoading) return
+    const loginMethod = this.data.loginMethod === 'email' ? 'phone' : 'email'
+    this.setData({ loginMethod, phoneError: '', code: '' })
+  },
+
+  onEmailInput(e) {
+    this.setData({ email: String(e.detail.value || '').trim().slice(0, 254), phoneError: '' })
   },
 
   backToLoggedOut() {
@@ -261,7 +290,63 @@ Page({
     }, 1000)
   },
 
-  async sendLoginCode() {
+  // The wxml's send / resend buttons call this on both steps; it routes by loginMethod.
+  sendLoginCode() {
+    return this.data.loginMethod === 'email' ? this._sendEmailLoginCode() : this._sendPhoneLoginCode()
+  },
+
+  verifyLoginCode() {
+    return this.data.loginMethod === 'email' ? this._verifyEmailLoginCode() : this._verifyPhoneLoginCode()
+  },
+
+  async _sendEmailLoginCode() {
+    const email = this.data.email.trim().toLowerCase()
+    if (!LOGIN_EMAIL_RE.test(email)) {
+      this.setData({ phoneError: '请输入正确的邮箱地址' })
+      return
+    }
+    if (this.data.resendCooldown > 0) return
+    this.setData({ phoneLoading: true, phoneError: '' })
+    try {
+      const res = await this._phoneReq(`${BASE}/api/email-otp/send`, { email, language: app.globalData.lang || 'zh' })
+      if (!res.data?.success) {
+        const err = res.data?.error
+        const msg = err === 'rate_limited' ? '发送过于频繁，请稍后再试'
+          : err === 'invalid_email' ? '请输入正确的邮箱地址'
+          : '验证码发送失败，请重试'
+        this.setData({ phoneLoading: false, phoneError: msg })
+        return
+      }
+      this.setData({ phoneStep: 'code', phoneLoading: false, code: '', email })
+      this._startCooldown()
+    } catch (e) {
+      this.setData({ phoneLoading: false, phoneError: '网络错误，请重试' })
+    }
+  },
+
+  async _verifyEmailLoginCode() {
+    const { email, code, phoneLoading } = this.data
+    if (!code || phoneLoading) return
+    this.setData({ phoneLoading: true, phoneError: '' })
+    try {
+      const res = await this._phoneReq(`${BASE}/api/email-otp/verify`, { email, code, language: app.globalData.lang || 'zh' })
+      if (!res.data?.success) {
+        const err = res.data?.error
+        const msg = err === 'invalid_code' ? '验证码不正确'
+          : err === 'too_many_attempts' ? '错误次数过多，请重新获取验证码'
+          : err === 'channel_not_supported' ? '该账号暂不支持邮箱登录，请使用手机号'
+          : '验证失败，请重试'
+        this.setData({ phoneLoading: false, phoneError: msg, code: '' })
+        return
+      }
+      clearInterval(this._cooldownTimer)
+      this._finishLogin(res.data)
+    } catch (e) {
+      this.setData({ phoneLoading: false, phoneError: '网络错误，请重试' })
+    }
+  },
+
+  async _sendPhoneLoginCode() {
     const phone = this.data.phone.trim()
     // Login-by-phone (/phone-otp/verify) only accepts China numbers — the picker
     // itself still lists every country for visual parity with the signup screen,
@@ -286,7 +371,7 @@ Page({
     }
   },
 
-  async verifyLoginCode() {
+  async _verifyPhoneLoginCode() {
     const { phone, code, phoneLoading } = this.data
     if (!code || phoneLoading) return
     this.setData({ phoneLoading: true, phoneError: '' })

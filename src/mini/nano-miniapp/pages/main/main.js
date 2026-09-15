@@ -10,6 +10,19 @@ const speechPlugin = requirePlugin('WechatSI')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
 
+// Which channel trees have a GCN storefront, keyed on the ROOT of the channel tree (the
+// server's channel.root_key_name — aeviva-china → aeviva, waven-china-zj → waven) and mapped
+// to the GCN site host slug (`<slug>(-dev).gcn.net`). Mirrors GCN_LINKED_CHANNEL_KEYS on the
+// worker. A stored channel object from before root_key_name existed carries only key_name;
+// _channelRootKey derives the root from the known two-level keys in that case.
+const GCN_STORE_HOST_FOR_CHANNEL = { aeviva: 'aeviva', waven: 'waven' }
+function _channelRootKey(channel) {
+  if (!channel) return null
+  if (channel.root_key_name) return channel.root_key_name
+  const key = String(channel.key_name || '')
+  return key ? key.split('-')[0] : null
+}
+
 const CART_SETS = [
   {
     key: 'set-foundation',
@@ -360,6 +373,7 @@ const T = {
     kinoSimMenu: 'Kino 模拟器',
     referralMenu: '邀请好友',
     phonesMenu: '手机号管理',
+    emailsMenu: '邮箱管理',
     vivaRedeemMenu: '兑换订阅码',
     vivaRedeemTitle: '兑换 Viva 订阅码',
     vivaRedeemPlaceholder: '请输入订阅激活码',
@@ -709,6 +723,7 @@ const T = {
     kinoSimMenu: 'Kino Simulator',
     referralMenu: 'Invite Friends',
     phonesMenu: 'Manage Phone Numbers',
+    emailsMenu: 'Manage Emails',
     vivaRedeemMenu: 'Redeem Subscription Code',
     vivaRedeemTitle: 'Redeem Viva Subscription Code',
     vivaRedeemPlaceholder: 'Enter your subscription code',
@@ -1299,6 +1314,8 @@ Page({
     // Channel
     channel: null,
     isAeviva: false,
+    gcnStoreSlug: null,
+    emailLoginAllowed: false,
 
     // Viva subscription (see _loadVivaSubscriptionStatus)
     personaType: 'nano',
@@ -1519,8 +1536,16 @@ Page({
     const t = { ...T[lang], subAgeLabels: buildSubAgeLabels(T[lang].subAgeLabels, channelOverrides, lang) }
     const sandboxMode = !!app.globalData.sandboxMode
     const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', user.nickname || '—') : ''
-    const isAeviva = channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china'
-    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, textScale, isGuest, isAeviva, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
+    // `isAeviva` is the historical name for "this channel has a GCN storefront" — every Store
+    // tab / packages / redeem-code / formulation CTA in main.js and main.wxml keys on it. Since
+    // the waven sector shipped in GCN (2026-09-15) it is true for the waven tree as well;
+    // gcnStoreSlug is the host that storefront lives on. The channel ROOT decides, so
+    // sub-channels inherit it. Email login availability is the complement (emailLoginAllowed).
+    const channelRoot = _channelRootKey(channel)
+    const gcnStoreSlug = GCN_STORE_HOST_FOR_CHANNEL[channelRoot] || null
+    const isAeviva = !!gcnStoreSlug
+    const emailLoginAllowed = !channelRoot || channelRoot === 'waven'
+    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, textScale, isGuest, isAeviva, gcnStoreSlug, emailLoginAllowed, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
     if (isGuest) {
       this.setData({ messages: [this._makeMsg({ id: 'init', role: 'ai', content: T[lang].initMsg })], obStep: null, storeLoading: true })
       this._loadGuestStore(lang)
@@ -1642,17 +1667,22 @@ Page({
   // restores `user.phone_verified` straight from local storage (app.js onLaunch) and never
   // re-syncs it against the server, so a pre-migration account whose cache still says `true`
   // from before phone verification existed would otherwise sail past this gate.
+  //
+  // A verified email satisfies the gate too where the channel offers email login (waven tree):
+  // GCN's handleNanoSSO accepts email_verified for a sector whose login_methods lists email.
   async _openAevivaStoreGated(context = null) {
-    const verified = await this._checkPhoneVerified()
+    const { phone, email } = await this._checkIdentityVerified()
+    const verified = phone || (email && this.data.emailLoginAllowed)
     if (!verified) {
-      const { lang } = this.data
+      const { lang, emailLoginAllowed } = this.data
+      const zh = lang === 'zh'
       wx.showModal({
-        title: lang === 'zh' ? '需要验证手机号' : 'Phone verification needed',
-        content: lang === 'zh'
-          ? '进入商城前，请先验证您的手机号码'
-          : 'Please verify your phone number before entering the store.',
-        confirmText: lang === 'zh' ? '去验证' : 'Verify',
-        cancelText: lang === 'zh' ? '取消' : 'Cancel',
+        title: zh ? (emailLoginAllowed ? '需要验证手机号或邮箱' : '需要验证手机号') : (emailLoginAllowed ? 'Verification needed' : 'Phone verification needed'),
+        content: zh
+          ? (emailLoginAllowed ? '进入商城前，请先验证您的手机号码或邮箱' : '进入商城前，请先验证您的手机号码')
+          : (emailLoginAllowed ? 'Please verify your phone number or email before entering the store.' : 'Please verify your phone number before entering the store.'),
+        confirmText: zh ? '去验证' : 'Verify',
+        cancelText: zh ? '取消' : 'Cancel',
         success: (r) => {
           if (r.confirm) wx.navigateTo({ url: '/pages/verify-phone/verify-phone' })
         },
@@ -2514,6 +2544,11 @@ Page({
     wx.navigateTo({ url: '/pages/phones/phones' })
   },
 
+  openEmails() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/emails/emails' })
+  },
+
   // ── Viva subscription redeem sheet ──────────────────────────────────────────
   // Modeled on openGuestSheet/submitGuestInvite (same server-validated code-entry
   // pattern), but a plain text input rather than a 6-digit grid — subscription codes
@@ -2611,8 +2646,11 @@ Page({
   // was never verified and 不支持打开's with it. Mirror BASE's own develop-vs-trial/release
   // split (CLAUDE.md §"Miniapp Backend Selection") rather than IS_DEV, which also covers
   // trial builds.
+  // The slug is the channel root's GCN sector (GCN_STORE_HOST_FOR_CHANNEL) — waven(-dev).gcn.net
+  // is served by GCN as an overlay of the aeviva site, so the path is the same on both.
   _openAevivaStore(context = null) {
-    const host = BASE.includes('-dev.') ? 'https://aeviva-dev.gcn.net' : 'https://aeviva.gcn.net'
+    const slug = this.data.gcnStoreSlug || 'aeviva'
+    const host = BASE.includes('-dev.') ? `https://${slug}-dev.gcn.net` : `https://${slug}.gcn.net`
     this.openUserApp(`${host}/dashboard.html`, context)
   },
 
@@ -2900,7 +2938,9 @@ Page({
     // login.js's _finishNewUser comment). Shown client-side only (not persisted to
     // chat_messages) so it naturally reappears every session until phone_verified flips
     // true, without accumulating duplicate rows in chat history.
-    if (!user.phone_verified) {
+    // An email-verified account (email sign-up, waven tree) has a proven identity already —
+    // no phone nudge for it.
+    if (!user.phone_verified && !user.email_verified) {
       this._addMsg('ai', t.verifyPhonePrompt)
       this._addActionMsg('verify_phone', t.verifyPhoneCta)
     }
@@ -5321,18 +5361,25 @@ Page({
   // wx.getStorageSync('nano_user')) never re-syncs it. Falls back to the cached value on
   // a network error so a flaky connection doesn't block store access outright.
   async _checkPhoneVerified() {
+    return (await this._checkIdentityVerified()).phone
+  },
+
+  // Same server round-trip, both flags — phone_verified and email_verified are cached side
+  // by side in nano_user and the store gate needs both.
+  async _checkIdentityVerified() {
     const user = this.data.user
-    if (!user || user.guest) return false
+    if (!user || user.guest) return { phone: false, email: false }
     try {
       const res = await this._req(`${BASE}/api/users/${user.user_id}`)
-      const verified = !!res.data?.user?.phone_verified
-      this.setData({ 'user.phone_verified': verified })
-      if (app.globalData.user) app.globalData.user.phone_verified = verified
+      const phone = !!res.data?.user?.phone_verified
+      const email = !!res.data?.user?.email_verified
+      this.setData({ 'user.phone_verified': phone, 'user.email_verified': email })
+      if (app.globalData.user) { app.globalData.user.phone_verified = phone; app.globalData.user.email_verified = email }
       const cached = wx.getStorageSync('nano_user')
-      if (cached) wx.setStorageSync('nano_user', { ...cached, phone_verified: verified })
-      return verified
+      if (cached) wx.setStorageSync('nano_user', { ...cached, phone_verified: phone, email_verified: email })
+      return { phone, email }
     } catch (e) {
-      return !!user.phone_verified
+      return { phone: !!user.phone_verified, email: !!user.email_verified }
     }
   },
 })

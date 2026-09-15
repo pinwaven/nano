@@ -28,7 +28,7 @@ switch (envVersion) {
 // uploads — no build pipeline exists, so this is the only way to confirm WeChat DevTools
 // is actually running the latest code rather than a stale cached compile. See CLAUDE.md
 // "Miniapp VERSION Marker". Format: MMDD-N (month+day, build number that day).
-const VERSION = '0915-1';
+const VERSION = '0915-5';
 const WX_VERSION = accountInfo.miniProgram.version || '';
 const IS_DEV = envVersion === 'develop' || envVersion === 'trial';
 
@@ -44,5 +44,10 @@ const APPID_TO_CHANNEL = {
 const _channelCfg = APPID_TO_CHANNEL[accountInfo.miniProgram.appId] || null;
 const CHANNEL_SLUG = _channelCfg ? _channelCfg.slug : null;
 const CHANNEL_DISPLAY = _channelCfg ? { logo_url: _channelCfg.logo, name: _channelCfg.name } : null;
+// Email login is a Waven-channel feature (server: handlers/email-otp.js refuses aeviva-tree
+// accounts). A brand-specific build (an appid mapped above) is by definition not the root
+// Waven app, so the login page never offers the email tab there; the root build additionally
+// hides it once a stored aeviva channel is known (pages/login/login.js).
+const EMAIL_LOGIN_AVAILABLE = !CHANNEL_SLUG;
 
-module.exports = { BASE, VERSION, WX_VERSION, IS_DEV, CHANNEL_SLUG, CHANNEL_DISPLAY };
+module.exports = { BASE, VERSION, WX_VERSION, IS_DEV, CHANNEL_SLUG, CHANNEL_DISPLAY, EMAIL_LOGIN_AVAILABLE };

@@ -175,6 +175,14 @@
   width: auto;
 }
 
+/* Email entry reuses the phone row without the country picker; the number keyboard's
+   centred digit styling does not suit an address, so it left-aligns at the same height. */
+.email-input {
+  text-align: left;
+  letter-spacing: 0;
+  font-size: 30rpx;
+}
+
 .login-error {
   font-size: 24rpx;
   line-height: 1.5;

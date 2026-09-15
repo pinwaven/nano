@@ -9,6 +9,7 @@
     "pages/superadmin/superadmin",
     "pages/referral/referral",
     "pages/phones/phones",
+    "pages/emails/emails",
     "pages/webadmin/webadmin",
     "pages/appview/appview",
     "pages/qrlogin/qrlogin"
