@@ -5,13 +5,6 @@ const { maskPhone, maskEmail } = require('../../utils/phone.js')
 const LOGIN_PHONE_RE = /^1\d{10}$/
 const LOGIN_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
-// The channel object carries root_key_name (top of the channel tree) since the email-login
-// work; an older stored object has only key_name. Either way an aeviva-tree channel means
-// phone-only, matching the server's own rule (handlers/email-otp.js).
-function isAevivaChannel(ch) {
-  const key = String((ch && (ch.root_key_name || ch.key_name)) || '')
-  return key === 'aeviva' || key.startsWith('aeviva-')
-}
 
 Page({
   data: {
@@ -81,9 +74,14 @@ Page({
       return
     }
     const storedChannel = wx.getStorageSync('nano_channel')
+    // Gated on the BUILD only (the aeviva-branded appid never offers it), not on whichever
+    // channel was stored by the previous login: on the root app that is just who signed in
+    // last, and hiding the option behind it stranded anyone switching from an aeviva account
+    // to a Waven one. The server refuses an aeviva-tree account by itself
+    // (channel_not_supported), so nothing is lost by offering the entry.
     this.setData({
       channel: storedChannel || CHANNEL_DISPLAY || null,
-      emailLoginAvailable: EMAIL_LOGIN_AVAILABLE && !isAevivaChannel(storedChannel),
+      emailLoginAvailable: EMAIL_LOGIN_AVAILABLE,
     })
 
     // Landed here from an explicit logout (main.js/coach.js handleLogout) — offer
@@ -241,6 +239,12 @@ Page({
       step: 'phoneEntry', phoneStep: 'phone', loginMethod: 'phone', phone: '', email: '', code: '',
       phoneError: '', phoneLoading: false, resendCooldown: 0, countryIndex: 0,
     })
+  },
+
+  // Logged-out card → straight to the email entry (the phone card's toggle also reaches it).
+  useEmailLogin() {
+    this.useOtherNumber()
+    this.setData({ loginMethod: 'email' })
   },
 
   // Phone ⇄ email switch on the entry step. Only rendered when emailLoginAvailable.
