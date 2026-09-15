@@ -16,6 +16,7 @@
 const { formatQuestionnaireContext } = require('../handlers/questionnaires');
 const { formatToShanghai } = require('./time-utils');
 const { describeBioAge } = require('./subAgeLabels');
+const { fetchWearableDaily } = require('./wearableDaily');
 // Safe: handlers/dots.js requires nothing from lib/agentic*, so this closes no cycle in either
 // load order, and it adds no module to the cold path — handlers/chat.js already requires both.
 const {
@@ -137,6 +138,14 @@ const AGENTIC_TOOL_DEFS = [
                     limit: { type: 'integer', description: 'Max rows to return, 1-10 (default 10)' },
                 },
             },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_wearable_daily',
+            description: "Per-day wearable readings for the last N days (default 7, max 30): each night's sleep hours, deep/REM/light/awake minutes, onset and wake time; daily steps; HRV, resting HR, intraday HR range, SpO2, stress, breath rate. Use this for 'last night', 'today', 'this week' or any question about a specific day or a day-to-day trend — get_health_twin only has 7-day averages.",
+            parameters: { type: 'object', properties: { days: { type: 'integer', description: 'How many days back, 1-30 (default 7).' } } },
         },
     },
     {
@@ -627,6 +636,21 @@ function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_na
                 ok: true,
                 data: rows.map(r => ({ weight_kg: r.data?.actual?.weight ?? null, tested_at: formatToShanghai(r.tested_at) })),
             };
+        },
+
+        async get_wearable_daily(args = {}) {
+            // Flat array, one row per day, `date` as YYYY-MM-DD — extractToolGroundTruth harvests
+            // `date` so a cited day is allow-listed rather than rewritten as a fabrication.
+            const rows = await fetchWearableDaily(pool, user_id, args.days);
+            if (rows.length === 0) {
+                return { ok: true, data: [{
+                    kind: 'no_wearable_data',
+                    note: language === 'zh'
+                        ? '最近没有任何穿戴设备同步的数据（睡眠、步数、心率等）。如实说没有记录，不要用均值或猜测代替。'
+                        : 'No wearable data (sleep, steps, heart rate…) has been synced recently. Say so plainly; do not substitute averages or guesses.',
+                }] };
+            }
+            return { ok: true, data: rows };
         },
 
         async get_health_twin() {

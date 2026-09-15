@@ -40,7 +40,7 @@ const vivaSystemHealthAdviceTemplate = require('../prompts/viva/systemHealthAdvi
 const { getCurrentSolarTerm } = require('../lib/solarTerms');
 const { detectAllRisks } = require('../lib/factCheck');
 const systemHealthReportTemplate = require('../prompts/nano/systemHealthReport');
-const { runAgenticTurn } = require('../lib/agenticChat');
+const { runAgenticTurn, contextDates } = require('../lib/agenticChat');
 const { attachTierCopy } = require('../lib/tierCopy');
 const { checkFormulationQuality } = require('../lib/formulationQuality');
 const { v4: uuidv4 } = require('uuid');
@@ -55,6 +55,7 @@ const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock')
 const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
 const { messageAsksAboutFoodSensitivity } = require('../prompts/chat/foodSensitivityBlock');
 const { messageAsksForMealPlan } = require('../prompts/chat/mealPlanRequest');
+const { fetchWearableDaily, messageAsksAboutWearable } = require('../lib/wearableDaily');
 
 // Channels with a GCN storefront behind them (mirrors handlers/login.js's own copy — the same
 // physically-duplicated-constant convention this codebase uses across handlers). Nothing else has
@@ -1501,6 +1502,12 @@ async function handlePostChat(body) {
             // formulation tool on prod (2026-09-14) — 订制+营养 is one character from 定制营养素.
             // Only formulate_dots is demoted here: casual_chat can already answer "what should I
             // eat this week" from its own template and needs no tool.
+            // A wearable question classified casual_chat has no tools and no per-day block —
+            // 「我昨晚睡得怎么样」 would be answered from a 7-day average or from nothing.
+            if (messageAsksAboutWearable(message) && intent === 'casual_chat') {
+                console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_wearable_question', user_id, from: intent }));
+                intent = 'biomarker_question';
+            }
             if (messageAsksForMealPlan(message) && intent === 'formulate_dots') {
                 console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_meal_plan_question', user_id, from: intent }));
                 intent = 'nutrition_question';
@@ -1597,6 +1604,12 @@ async function handlePostChat(body) {
                 fetches.store_products = fetchAiCatalog(user_id);
             }
 
+            // Always fetch the last 3 days per day, too: health_twin is 7-day averages, and
+            // 「昨晚睡得怎么样」 has no dated fact to point at without this (lib/wearableDaily.js).
+            fetches.wearable_daily = fetchWearableDaily(pool, user_id, 3).catch(err => {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'wearable_daily_fetch_failed', user_id, error: err.message }));
+                return [];
+            });
             // Always fetch health_twin — provides wearable/sleep/activity context for all intents
             fetches.health_twin = pool.query(
                 `SELECT avg_hrv_ms, avg_resting_hr, avg_spo2,
@@ -1674,6 +1687,7 @@ async function handlePostChat(body) {
                 plan: fetched.plan?.rows[0]?.content || null,
                 last_weight: fetched.weight?.rows[0]?.data?.actual?.weight ?? null,
                 health_twin: twinRow,
+                wearable_daily: Array.isArray(fetched.wearable_daily) ? fetched.wearable_daily : [],
                 now_iso: getNowShanghai().toISO(),
                 questionnaire_context: formatQuestionnaireContext(
                     fetched.questionnaire_responses?.rows || [],
@@ -1804,7 +1818,9 @@ async function handlePostChat(body) {
             }
 
             let rawReply = '';
-            let extraValidDates = [];
+            // The per-day wearable block is in every template, so its dates are citable on the
+            // non-agentic path too (the agentic path merges them inside runAgenticTurn).
+            let extraValidDates = contextDates(llmContext);
             let extraValidValues = {};
             if (useAgenticLoop) {
                 const agenticResult = await runAgenticTurn({

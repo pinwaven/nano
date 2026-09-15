@@ -26,6 +26,7 @@ const judgeTemplate = require('../prompts/viva/judgeTemplate');
 const { findRelevantEntries } = require('./knowledgeBase');
 const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
 const { messageAsksAboutFoodSensitivity } = require('../prompts/chat/foodSensitivityBlock');
+const { messageAsksAboutWearable } = require('./wearableDaily');
 
 const GENERATE_MAX_ITERS = 3;
 const REVISE_MAX_ROUNDS = 2;
@@ -58,6 +59,10 @@ function buildForcedToolQueue(plan, message, validToolNames, maxForced) {
         ...(messageNeedsBiomarkerHistory(message) ? ['get_biomarker_history'] : []),
         ...(messageAsksAboutFormulationPackage(message) ? ['get_formulation_packages'] : []),
         ...(messageAsksAboutFoodSensitivity(message) ? ['get_food_sensitivity'] : []),
+        // 「昨晚睡得怎么样」 needs a dated row, and get_health_twin has only averages. The 3-day
+        // context block covers the common case; the tool is forced so 「这周」「最近」 get the
+        // full window rather than the model extrapolating from three days.
+        ...(messageAsksAboutWearable(message) ? ['get_wearable_daily'] : []),
     ];
     const queue = Array.from(new Set([
         ...deterministic,
@@ -106,7 +111,7 @@ async function callJson(client, model, prompt, temperature, logContext, stepName
 // 'ordered_at'/'shipped_at'/'sold_at' come from get_formulation_packages: a reply that correctly
 // names the day an order was placed must not be flagged as a fabrication. extraValidDates is a
 // permissive allowlist, so widening it can only ever reduce false positives.
-const DATE_FIELDS = ['tested_at', 'report_date', 'scheduled_date', 'scheduled_for', 'start_date', 'ended_at', 'last_dispensed_at', 'ordered_at', 'shipped_at', 'sold_at', 'sampled_at', 'avoid_until'];
+const DATE_FIELDS = ['tested_at', 'report_date', 'scheduled_date', 'scheduled_for', 'start_date', 'ended_at', 'last_dispensed_at', 'ordered_at', 'shipped_at', 'sold_at', 'sampled_at', 'avoid_until', 'date'];
 function extractToolGroundTruth(toolCallLog) {
     const dates = new Set();
     const values = {};
@@ -136,6 +141,11 @@ function extractToolGroundTruth(toolCallLog) {
         }
     }
     return { dates: Array.from(dates), values };
+}
+
+// Dates carried by the pre-fetched context rather than by a tool call (see extraValidDates).
+function contextDates(llmContext) {
+    return (llmContext?.wearable_daily || []).map(r => r && r.date).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d || ''));
 }
 
 // A dimension is "elevated" the same way every prompt template already computes and shows it
@@ -605,11 +615,15 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     }
 
     console.log(JSON.stringify({ level: 'INFO', msg: 'turn_budget_used', context: logContext, budget }));
-    const { dates: extraValidDates, values: extraValidValues } = extractToolGroundTruth(toolCallLog);
+    const { dates: toolDates, values: extraValidValues } = extractToolGroundTruth(toolCallLog);
+    // Dates the system prompt itself handed the model (the per-day wearable block) are as valid
+    // to cite as a tool result's; without this a correct 「2026-09-14 睡了5.4小时」 is rewritten
+    // away as a fabricated date by verifyBiomarkerGrounding.
+    const extraValidDates = Array.from(new Set([...toolDates, ...contextDates(llmContext)]));
     return { reply: rawReply, extraValidDates, extraValidValues };
 }
 
 // extractToolGroundTruth and buildForcedToolQueue are exported for tests: both are pure, and both
 // guard a failure mode that is invisible until it ships (a correct date rewritten as a
 // fabrication; a turn that spends every iteration on tool calls and replies with nothing).
-module.exports = { runAgenticTurn, sanitizeJudgeVerdict, extractToolGroundTruth, buildForcedToolQueue };
+module.exports = { runAgenticTurn, sanitizeJudgeVerdict, extractToolGroundTruth, buildForcedToolQueue, contextDates };

@@ -1,9 +1,10 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getWearableDailyBlock } = require('../../chat/wearableDailyBlock');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 const { getScopeGuardBlock } = require('../../chat/scopeGuard');
 
-module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, user_facts, now_iso }) => {
+module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, user_facts, now_iso, wearable_daily }) => {
   const isZh = user_profile.language === 'zh';
   const name = user_profile.nickname || (isZh ? '你' : 'there');
 
@@ -14,6 +15,8 @@ module.exports = ({ user_profile, questionnaire_context, active_health_plans, es
     : '';
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
+
+${getWearableDailyBlock(wearable_daily, isZh, now_iso)}
 
 ${getCurrentDateBlock(now_iso, isZh)}
 

@@ -4,7 +4,11 @@ Classify the user message into exactly one intent, and list only the data that i
 
 INTENTS:
 - casual_chat        — greetings, small talk, off-topic, general non-health questions
-- biomarker_question — asking about their test results, bio age, what their numbers mean, health trends
+- biomarker_question — asking about their test results, bio age, what their numbers mean, health trends.
+  ALSO anything about their WEARABLE data — last night's sleep, today's steps, heart rate, HRV,
+  SpO2, stress, breathing, or a trend in any of these ("我昨晚睡得怎么样", "今天走了多少步",
+  "我的HRV正常吗", "how did I sleep", "is my resting heart rate high") — these are answered from
+  dated per-day readings and are NOT casual_chat.
 - nutrition_question — asking about dots, supplements, nutrition plan, what to take, timing, dosing, or what product/item might help a health concern ("anything that helps my sleep?", "is there a product for stress?", "what else can I buy?").
   ALSO anything about a 原粒 package they have bought or ordered: what they bought, an order's
   status, payment, shipping, tracking, a redeem code, or which packages exist ("我的订单到哪了",
