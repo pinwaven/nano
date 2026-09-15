@@ -30,6 +30,38 @@ Every tool takes `database: "nano" | "gcn"` and is annotated `readOnlyHint: true
 Cross-database joins are not possible in SQL — the client queries each side and joins the results
 itself using the keys in the data map.
 
+## Access scope — what an analyst can actually read
+
+**Everything in both dev databases.** The server connects as the same accounts the applications
+use — `nano_admin` on `nano_db_dev`, `gcn_admin` on `gcn_db_dev` — and there is no per-table
+allowlist and no column masking. Verified live (2026-09-15) through the endpoint itself:
+`has_table_privilege(current_user, …, 'SELECT')` is true for all 73 `public` tables in
+`gcn_db_dev` and all 116 relations in `nano_db_dev`. Views, `information_schema`, `pg_catalog`
+and the PolarDB extension schemas (`cron`, `polar_catalog`) are readable too. That includes the
+sensitive columns: `users.phone`, WeChat openids (`external_id`), chat text, biomarker values,
+`ledger`, `sku_activation_codes`, `partner_bindings`.
+
+Neither account is a superuser (`rolsuper = false`), so the exposure is bounded by the database,
+not the cluster: the nano pool cannot reach `gcn_db_dev`, the GCN pool cannot reach
+`nano_db_dev`, and neither can reach any prod database (see the dev-only guard below).
+
+What "full read" does **not** include, by design:
+
+| Not possible | Enforced by |
+|---|---|
+| Any write — INSERT/UPDATE/DELETE, DDL, `CREATE TEMP TABLE`, `SELECT INTO` | `SET TRANSACTION READ ONLY` on every call (Postgres refuses; verified) |
+| More than one statement per call; anything not starting `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` | `lib/sql-guard.js` |
+| `FOR UPDATE`/`FOR SHARE`, `COPY`, `pg_sleep`, `pg_read_file`, `lo_*`, `dblink`, `pg_notify`, `set_config`, `nextval`, advisory locks | `lib/sql-guard.js` — side effects a read-only transaction would still allow |
+| More than 2000 rows per call (default 200); statements over 60 s (default 15 s) | `LIMIT n+1` wrapper; `SET LOCAL statement_timeout` |
+| Cross-database joins | Two separate databases — the client joins on the keys in the data map |
+| Any `_prod` database | `lib/db.js` refuses the pool at construction |
+
+**If the scope ever needs narrowing** (hide `users.phone` or `ledger` from the analyst, say), do
+it with a dedicated read-only Postgres role and column-level `GRANT`s, pointed at by
+`NANO_DB_USER`/`GCN_DB_USER` in `s.yaml` — not with more regexes in the guard. The guard's job
+is to enforce *read-only*; deciding *which* data is readable belongs to the database's own
+privilege system, which cannot be argued around by a cleverly written query.
+
 ## Safety model
 
 Three independent layers; any one of them alone would keep the server read-only.
@@ -54,8 +86,8 @@ Other constraints worth knowing:
 
 - **Pools are capped at 2 connections each** (`max: 2`, `idleTimeoutMillis: 10000`). The
   cluster is shared with GCN prod and was exhausted once by uncapped nano pools (CLAUDE.md §32).
-- No PII masking — the analyst sees phones, openids and chat text. This is a dev-data,
-  trusted-internal-user decision; revisit before pointing anything like this at prod.
+- No PII masking — see "Access scope" above. A dev-data, trusted-internal-user decision;
+  revisit before pointing anything like this at prod.
 - The token is checked with `crypto.timingSafeEqual`; an **unset** `MCP_API_TOKEN` means every
   request is 401, never "open".
 - `DATE` / `TIMESTAMP` (without tz) columns are returned as the literal text (`2026-08-16`), not

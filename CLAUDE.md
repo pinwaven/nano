@@ -3035,6 +3035,11 @@ Three rules, each load-bearing:
   `FOR UPDATE`/`pg_sleep`/`lo_*`/…); Postgres is the one that actually refuses writes.
 - **Pools stay at `max: 2`.** Same cluster as GCN prod (§32).
 
+**Scope is the whole of each dev database.** It connects as `nano_admin` / `gcn_admin` — the
+application accounts — so every table, including `users.phone`, openids, chat text and GCN's
+`ledger`, is readable; there is no allowlist and no masking. Narrowing it, if ever wanted, means a
+read-only Postgres role with column-level `GRANT`s, not more regexes in the guard.
+
 `lib/data-map.md` is what the model reads first — the cross-database join keys
 (`gcn.users.nano_user_id` ↔ `nano.users.user_id`, `order_item_custom_formulations.nano_nutrition_plan_id`
 ↔ `nutrition_plans.id`, `partners.nano_partner_id`, `sectors.owner_nano_channel_id` ↔
