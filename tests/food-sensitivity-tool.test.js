@@ -153,9 +153,16 @@ test('a food the panel never covered is reported as untested, never as safe', as
     assert.match(row.note, /不要据此说它安全/);
 });
 
-test('no panel yields an empty array — nano owns this table, so empty is knowable', async () => {
+test('no panel yields one explicit no_panel row, never an empty array', async () => {
+    // Handed `[]`, the model narrated a report that does not exist — 「根据你最新的慢性食物
+    // 敏感性检测报告，鸡蛋未被纳入检测项目」 for a user with no panel (dev, 2026-09-15). A
+    // sentence saying there is no record is not an invitation to fill it in; `[]` was.
     const r = await tool({ panels: [] });
-    assert.deepStrictEqual(r, { ok: true, data: [] });
+    assert.equal(r.ok, true);
+    assert.ok(Array.isArray(r.data) && r.data.length === 1, 'still a flat array, per §40');
+    assert.equal(r.data[0].kind, 'no_panel');
+    assert.match(r.data[0].note, /没有上传过/);
+    assert.match(r.data[0].note, /未被纳入检测/); // the exact phrasing it must not use is named
 });
 
 test('panel dates survive the round trip through extractToolGroundTruth', async () => {

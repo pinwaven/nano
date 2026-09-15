@@ -380,7 +380,18 @@ function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_na
                   LIMIT 1`,
                 [user_id]
             );
-            if (panels.length === 0) return { ok: true, data: [] };
+            // Not an empty array. Handed `[]`, the model narrated a report that does not exist —
+            // 「根据你最新的慢性食物敏感性检测（IgG）报告，鸡蛋未被纳入检测项目」 for a user with no
+            // panel (dev, 2026-09-15). Same lesson as §28g's formula_status: a null is an
+            // invitation to fill it in, a sentence is not. Flat row with a `kind`, per §40.
+            if (panels.length === 0) {
+                return { ok: true, data: [{
+                    kind: 'no_panel',
+                    note: language === 'zh'
+                        ? '这位用户没有上传过慢性食物过敏（IgG）检测报告，系统中没有任何食物的检测结果。不要描述任何报告内容，也不要说某种食物"未被纳入检测"或"未检出"——只能如实说没有这类检测记录，然后按一般营养原则回答。'
+                        : 'This user has never uploaded a chronic food-sensitivity (IgG) panel; there are no food results on file. Do not describe any report, and do not say a food was "not tested" or "not detected" — say plainly that there is no such record, then answer on general nutrition principles.',
+                }] };
+            }
             const panel = panels[0];
 
             const { rows: results } = await pool.query(
