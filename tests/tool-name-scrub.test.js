@@ -72,3 +72,14 @@ test('dropForeignLines removes an all-English line from a zh reply and nothing e
   assert.strictEqual(dropForeignLines(text, 'en'), text, 'an English user keeps everything');
   assert.strictEqual(dropForeignLines('Vitamin D3, HPMC', 'zh'), 'Vitamin D3, HPMC', 'short Latin runs are not a foreign line');
 });
+
+const { localizeStatusWords } = require('../src/functions/worker/lib/toolNameScrub');
+test('a bare English status label in a zh reply is localised, inside metric cards and prose; sentences are not', () => {
+  const text = ':::metric\nhsCRP | 1.16 | mg/L | elevated\nCD38 | 2.0 | x baseline | high\n睡眠 | 5.4 | h | 偏低\n:::\n您的 CD38 high（2.0倍基线）与 hsCRP elevated（1.16 mg/L）。\nThe high road is normal here, and that is good.\n海拔 high 的地方';
+  const out = localizeStatusWords(text, 'zh');
+  assert.match(out, /hsCRP \| 1\.16 \| mg\/L \| 偏高/);
+  assert.match(out, /CD38 \| 2\.0 \| 倍基线 \| 偏高/);
+  assert.match(out, /CD38 偏高（2\.0倍基线）与 hsCRP 偏高（1\.16 mg\/L）/);
+  assert.ok(out.includes('The high road is normal here, and that is good.'), 'an English sentence is left alone');
+  assert.strictEqual(localizeStatusWords(text, 'en'), text);
+});

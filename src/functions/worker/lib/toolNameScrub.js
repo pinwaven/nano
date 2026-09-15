@@ -88,4 +88,32 @@ function dropForeignLines(text, language = 'zh') {
     return kept.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
-module.exports = { scrubToolNames, dropForeignLines };
+
+/**
+ * Localise a bare English status label in a Chinese reply.
+ *
+ * JUDGE's ground truth classifies biomarkers as normal/elevated/high (lib/biomarkerStatus.js),
+ * so its correction hints say "hsCRP is elevated", and the model copies that word into the
+ * `:::metric` status column and into prose — 「hsCRP | 1.16 | mg/L | elevated」, 「CD38 high
+ * （2.0倍基线）」 on dev 2026-09-15. Fences are exempt from dropForeignLines on purpose (they are
+ * markup), so this is the one rewrite that runs inside them. Only a standalone label — bounded
+ * by pipes, CJK, parentheses or line ends — is touched; an English sentence is not.
+ */
+const STATUS_ZH = { normal: '正常', elevated: '偏高', high: '偏高', low: '偏低', good: '良好', watch: '关注', stable: '稳定' };
+const STATUS_WORD_RE = /(^|[\s|（(，,：:])(normal|elevated|high|low|good|watch|stable)(?=$|[\s|（()）,，。；;：:\u4e00-\u9fff])/gi;
+const UNIT_ZH = [[/x baseline/gi, '倍基线']];
+
+function localizeStatusWords(text, language = 'zh') {
+    if (!text || typeof text !== 'string' || language === 'en') return text;
+    return text.split('\n').map(line => {
+        if (!CJK_RE.test(line) && !/^\s*\|/.test(line) && !/\|/.test(line)) return line;
+        // A run of three or more English words is a sentence, not a label — leave it to
+        // dropForeignLines / the language pin rather than translating a word out of it.
+        if (/(?:\b[A-Za-z]{2,}\b[ ,]+){3,}/.test(line)) return line;
+        let out = line.replace(STATUS_WORD_RE, (m, pre, w) => pre + (STATUS_ZH[w.toLowerCase()] || w));
+        for (const [re, zh] of UNIT_ZH) out = out.replace(re, zh);
+        return out;
+    }).join('\n');
+}
+
+module.exports = { scrubToolNames, dropForeignLines, localizeStatusWords };
