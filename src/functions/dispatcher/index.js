@@ -153,7 +153,7 @@ exports.handler = async (event, context) => {
                               CASE
                                   WHEN u.persona_override_type IS NOT NULL AND u.persona_override_expires_at > NOW()
                                       THEN u.persona_override_type
-                                  ELSE COALESCE(c.config->>'persona_type', 'nano')
+                                  ELSE effective_persona_type(c.id)
                               END AS effective_persona_type
                        FROM users u
                        JOIN channels c ON c.id = u.channel_id
@@ -182,6 +182,53 @@ exports.handler = async (event, context) => {
             } catch (checkinErr) {
                 console.warn(JSON.stringify({ level: 'WARN', msg: 'daily_checkin scan skipped', error: checkinErr.message }));
             }
+        }
+
+        // Scan P: 打卡 programs (CLAUDE.md §42) — offer an ENROLLED user their next program day on
+        // their first app-open of a Shanghai calendar day. Enrollment only ever comes from a coach
+        // activating the program for a client (POST /programs/enroll, which also delivers Day 1
+        // inline) — there is no auto-enrollment by channel. A user qualifies when their enrollment
+        // and its program are active and:
+        //   - no OPEN day (a day offered but not completed blocks everything — a missed day
+        //     pauses, it never skips content),
+        //   - nothing offered today and nothing completed today (max one program-day per day),
+        //   - no 'program_day' notification claimed today (the worker's atomic slot).
+        // Every date is the Shanghai calendar date, in SQL, so this and the worker agree.
+        // Own try/catch: on an environment that has not run migration_programs.sql yet this
+        // degrades to a WARN instead of taking the rest of the tick down.
+        try {
+            const programResult = await pool.query(
+                `SELECT u.user_id, e.program_id,
+                        CASE
+                            WHEN u.persona_override_type IS NOT NULL AND u.persona_override_expires_at > NOW()
+                                THEN u.persona_override_type
+                            ELSE COALESCE(effective_persona_type(u.channel_id), 'nano')
+                        END AS persona_type
+                 FROM program_enrollments e
+                 JOIN users u ON u.user_id = e.user_id
+                 JOIN programs p ON p.id = e.program_id AND p.status = 'active'
+                 WHERE e.status = 'active'
+                   AND 'user' = ANY(u.roles)
+                   AND u.last_active_at > NOW() - INTERVAL '2 minutes'
+                   AND COALESCE((u.preferences->>'program_checkin_enabled')::boolean, true) = true
+                   AND NOT EXISTS (
+                         SELECT 1 FROM program_day_progress dp
+                         WHERE dp.enrollment_id = e.id
+                           AND (dp.completed_at IS NULL
+                                OR dp.offered_on = (NOW() AT TIME ZONE 'Asia/Shanghai')::date
+                                OR (dp.completed_at AT TIME ZONE 'Asia/Shanghai')::date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date))
+                   AND NOT EXISTS (
+                         SELECT 1 FROM notifications n
+                         WHERE n.user_id = u.user_id AND n.notification_type = 'program_day'
+                           AND n.checkin_date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date)`
+            );
+            console.log(JSON.stringify({ level: 'INFO', msg: `Coaching scan: ${programResult.rows.length} program_day` }));
+            for (const row of programResult.rows) {
+                checkinUserIds.add(row.user_id);
+                await dispatchToWorker({ user_id: row.user_id, program_id: row.program_id, persona_type: row.persona_type }, 'program.day', 'program_day');
+            }
+        } catch (programErr) {
+            console.warn(JSON.stringify({ level: 'WARN', msg: 'program_day scan skipped', error: programErr.message }));
         }
 
         // Scan 1: user_online — conversation-aware.

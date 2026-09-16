@@ -46,8 +46,8 @@ function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose,
   const ch = t.channels;
   const isEdit = !!channel?.id;
   const [form, setForm] = useState(isEdit
-    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '', parent_channel_id: channel.parent_channel_id || '', persona_type: channel.config?.persona_type ?? 'nano', locale: channel.config?.locale ?? 'zh', credit_exchange_rate: channel.config?.credit_exchange_rate ?? '1.0', currency: channel.config?.currency ?? 'CNY' }
-    : { ...EMPTY_CHANNEL, parent_channel_id: parentChannel?.id || '', persona_type: parentChannel?.config?.persona_type ?? 'nano', locale: parentChannel?.config?.locale ?? 'zh' });
+    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '', parent_channel_id: channel.parent_channel_id || '', persona_type: channel.config?.persona_type ?? channel.effective_persona_type ?? 'nano', locale: channel.config?.locale || channel.effective_locale || 'zh', credit_exchange_rate: channel.config?.credit_exchange_rate ?? '1.0', currency: channel.config?.currency ?? 'CNY' }
+    : { ...EMPTY_CHANNEL, parent_channel_id: parentChannel?.id || '', persona_type: parentChannel?.effective_persona_type ?? parentChannel?.config?.persona_type ?? 'nano', locale: parentChannel?.effective_locale || parentChannel?.config?.locale || 'zh' });
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -245,7 +245,7 @@ const CONFIGURABLE_TABS = [
 ];
 
 function ChannelAdminTabsModal({ channel, onClose, onSave }) {
-  const currentTabs = Array.isArray(channel.config?.admin_tabs) ? channel.config.admin_tabs : [];
+  const currentTabs = Array.isArray(channel.config?.admin_tabs) && channel.config.admin_tabs.length ? channel.config.admin_tabs : (channel.effective_admin_tabs || []);
   const [selected, setSelected] = useState(new Set(currentTabs));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -296,7 +296,7 @@ function ChannelAdminTabsModal({ channel, onClose, onSave }) {
 }
 
 function ChannelSubAgeLabelsModal({ channel, onClose, onSave }) {
-  const existing = channel.config?.sub_age_display_names || {};
+  const existing = (channel.config?.sub_age_display_names && Object.keys(channel.config.sub_age_display_names).length) ? channel.config.sub_age_display_names : (channel.effective_sub_age_display_names || {});
   const [labels, setLabels] = useState(
     Object.fromEntries(
       SUB_AGE_KEYS_CONFIG.map(({ key }) => [
@@ -658,7 +658,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
     key_name: channel.key_name,
     name: channel.name || '',
     logo_url: channel.logo_url || '',
-    persona_type: channel.config?.persona_type ?? 'nano',
+    persona_type: channel.config?.persona_type ?? channel.effective_persona_type ?? 'nano',
     credit_exchange_rate: channel.config?.credit_exchange_rate ?? '1.0',
     currency: channel.config?.currency ?? 'CNY',
   });
@@ -702,7 +702,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
   };
 
   // ── Admin Tabs ────────────────────────────────────────────────────────────────
-  const [selectedTabs, setSelectedTabs] = useState(new Set(Array.isArray(channel.config?.admin_tabs) ? channel.config.admin_tabs : []));
+  const [selectedTabs, setSelectedTabs] = useState(new Set(Array.isArray(channel.config?.admin_tabs) && channel.config.admin_tabs.length ? channel.config.admin_tabs : (channel.effective_admin_tabs || [])));
   const [tabsBusy, setTabsBusy] = useState(false);
   const [tabsError, setTabsError] = useState('');
   const toggleTab = (id) => setSelectedTabs(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -714,7 +714,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
   };
 
   // ── Sub-age Labels ────────────────────────────────────────────────────────────
-  const existing = channel.config?.sub_age_display_names || {};
+  const existing = (channel.config?.sub_age_display_names && Object.keys(channel.config.sub_age_display_names).length) ? channel.config.sub_age_display_names : (channel.effective_sub_age_display_names || {});
   const [labels, setLabels] = useState(
     Object.fromEntries(SUB_AGE_KEYS_CONFIG.map(({ key }) => [key, { zh: existing[key]?.zh || '', en: existing[key]?.en || '' }]))
   );
@@ -2078,7 +2078,7 @@ function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
 
   function renderRows(parentKey, indent) {
     return (childrenOf[parentKey] || []).flatMap(c => {
-      const persona = c.config?.persona_type || 'nano';
+      const persona = c.effective_persona_type || c.config?.persona_type || 'nano';
       const personaColor = persona === 'viva' ? '#8b5cf6' : '#6366f1';
       const hasChildren = !!(childrenOf[c.id]?.length);
       const isOpen = expanded.has(c.id);

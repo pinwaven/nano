@@ -5380,6 +5380,77 @@ button.consent-row::after { border: none; }
   line-height: 1;
 }
 
+/* :::lesson / :::checkin — a 打卡 program day (CLAUDE.md §42). Both are server-written cards;
+   the lesson mounts a native <video> in the bubble only after a tap, so the transcript never
+   holds more than one live player. Colours are the chat accent variables, so light/dark follow. */
+.lcard {
+  margin: 14rpx 0 18rpx;
+  border-radius: 20rpx;
+  overflow: hidden;
+  background: rgba(var(--blue-rgb), 0.10);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.26);
+}
+.lcard-video {
+  display: block;
+  width: 100%;
+  height: 340rpx;
+  background: #000;
+}
+.lcard-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200rpx;
+  background: rgba(var(--blue-rgb), 0.14);
+}
+.lcard-cover:active { opacity: 0.7; }
+.lcard-play {
+  font-size: var(--fs-26, 26rpx);
+  font-weight: 600;
+  color: var(--chat-accent);
+  letter-spacing: 1rpx;
+}
+.lcard-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
+  padding: 16rpx 22rpx;
+}
+.lcard-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-25, 25rpx);
+  font-weight: 600;
+}
+.lcard-done {
+  font-size: var(--fs-21, 21rpx);
+  color: var(--chat-accent);
+  white-space: nowrap;
+}
+.ccard { margin: 6rpx 0 10rpx; }
+.ccard-cta {
+  padding: 18rpx 24rpx;
+  border-radius: 16rpx;
+  text-align: center;
+  font-size: var(--fs-24, 24rpx);
+  font-weight: 600;
+  color: var(--chat-accent);
+  background: rgba(var(--blue-rgb), 0.16);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.40);
+}
+.ccard-cta:active { opacity: 0.7; }
+.ccard-cta-off { opacity: 0.45; }
+.ccard-done {
+  padding: 14rpx 24rpx;
+  border-radius: 16rpx;
+  text-align: center;
+  font-size: var(--fs-24, 24rpx);
+  color: var(--chat-accent);
+  background: rgba(var(--blue-rgb), 0.08);
+  border: 1rpx dashed rgba(var(--blue-rgb), 0.30);
+}
+
 /* ── 营养定制 focus sheet ─────────────────────────────────────────────────────
    Auto-height rather than .overlay-panel's fixed 82vh: this asks one short question and a
    half-empty screen would read as a page that failed to load. Shares .overlay-mask, the

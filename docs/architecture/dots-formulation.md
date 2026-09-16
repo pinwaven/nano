@@ -14,6 +14,11 @@ The product model itself — 28 days, ≤ 72 dots per capsule, `DOT-N7` isolated
 in one place, `worker/lib/dotsProductModel.js`, and binds three consumers: this pipeline, the
 validator, and §8 of `worker/docs/viva-ag-api.md`. **Change a constant there and all three change.**
 
+**Where the code is (since 2026-09-16).** Everything below the handler is `worker/lib/formulation.js`
+— pure, no DB, no LLM — and the `:::formula` card is `worker/lib/chatCards.js`. `handlers/dots.js`
+keeps the I/O: the fetches, the model call, the plan rows, delivery. Function names are unchanged;
+where this file says `handlers/dots.js` for one of the pure functions, read `lib/formulation.js`.
+
 ---
 
 ## 1. The chain

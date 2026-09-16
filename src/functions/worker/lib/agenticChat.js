@@ -138,6 +138,13 @@ function extractToolGroundTruth(toolCallLog) {
             if (!row || typeof row !== 'object') continue;
             for (const field of DATE_FIELDS) addDate(row[field]);
             addValues(row.validated);
+            // get_lab_history rows: an external lab value for a Kino-named key (hsCRP, GA,
+            // CystatinC…) is a second real number for that key. Without this,
+            // verifyBiomarkerGrounding compares the reply against the Kino `validated` value
+            // alone and rewrites a correct citation of the uploaded report as a fabrication.
+            if (row.kind === 'lab_result' && row.key_name && typeof row.value === 'number') {
+                addValues({ [row.key_name]: row.value });
+            }
         }
     }
     return { dates: Array.from(dates), values };

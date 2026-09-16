@@ -17,13 +17,14 @@ const { formatQuestionnaireContext } = require('../handlers/questionnaires');
 const { formatToShanghai } = require('./time-utils');
 const { describeBioAge } = require('./subAgeLabels');
 const { fetchWearableDaily } = require('./wearableDaily');
-// Safe: handlers/dots.js requires nothing from lib/agentic*, so this closes no cycle in either
-// load order, and it adds no module to the cold path — handlers/chat.js already requires both.
+// Safe: handlers/formulation_orders.js requires nothing from lib/agentic*, so this closes no cycle
+// in either load order, and it adds no module to the cold path — handlers/chat.js already
+// requires both.
 const {
     _fetchFormulationPackages,
     _fetchFormulationCodes,
     PACKAGE_STAGE_NARRATION,
-} = require('../handlers/dots');
+} = require('../handlers/formulation_orders');
 const { fetchFormulationTiers } = require('./gcnClient');
 const { resolveGcnSector } = require('./channels');
 // Pure, no DB — the class→window map is a transcription of the report's own 戒断方案 page.
@@ -111,11 +112,25 @@ const AGENTIC_TOOL_DEFS = [
         type: 'function',
         function: {
             name: 'get_health_reports',
-            description: "Fetch metadata (date, institution, report type) for external lab/health reports the user has uploaded — not their full content. Use for questions like how many reports they've submitted or when their last one was.",
+            description: "Fetch metadata (date, institution, report type, how many analytes it holds) for external lab/health reports and uploaded health documents the user has — not their values. Use for questions like how many reports they've submitted or when their last one was. For the VALUES of a lab marker over time, use get_lab_history instead.",
             parameters: {
                 type: 'object',
                 properties: {
                     limit: { type: 'integer', description: 'Max rows to return, 1-20 (default 10)' },
+                },
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_lab_history',
+            description: "Per-marker history of the user's EXTERNAL lab results — values read from uploaded 体检报告 / lab PDFs / photographed reports (twin layer 医疗记录), newest first, each with its date, unit, reference range and source. Use for 'what was my LDL last time', 'is my vitamin D improving', 'what did my NAD+ test say', or any question about a lab marker that is not a Kino chip biomarker. Pass key_name to fetch one marker; omit it for the latest few values of every marker. Kino chip biomarkers live in get_biomarkers / get_biomarker_history, not here.",
+            parameters: {
+                type: 'object',
+                properties: {
+                    key_name: { type: 'string', description: 'A biomarker_catalog key such as LDL, VitaminD, Hcy, NAD, AMH. Omit for all markers.' },
+                    limit: { type: 'integer', description: 'Max values per marker, 1-24 (default 6)' },
                 },
             },
         },
@@ -215,7 +230,7 @@ function dateOnly(value) {
 // separately since it doesn't depend on user_id/language.
 function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_names = null }) {
     // What a package stage means, and what the user does next, in their language — authored in
-    // handlers/dots.js beside PACKAGE_STAGES itself. The model narrates these rather than
+    // handlers/formulation_orders.js beside PACKAGE_STAGES itself. The model narrates these rather than
     // deriving them, so the chat prompt never has to learn a stage string (§28g).
     const zh = language === 'zh';
     const narrate = (stage, fulfillment) => {
@@ -529,6 +544,13 @@ function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_na
         },
 
         async get_formulation_packages() {
+            // The catalog is per GCN sector; the user's channel tree says which (lib/channels.js).
+            // Best-effort: with no answer GCN serves aeviva's catalog, as it always did.
+            let sector = null;
+            try {
+                const r = await pool.query('SELECT channel_id FROM users WHERE user_id = $1', [user_id]);
+                sector = await resolveGcnSector(r.rows[0]?.channel_id ?? null, pool);
+            } catch (_) { sector = null; }
             const [packages, codes, tiers] = await Promise.all([
                 _fetchFormulationPackages(user_id),
                 _fetchFormulationCodes(user_id),
@@ -543,13 +565,6 @@ function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_na
             // conjunction matters: a nano-side 'proposed' plan still answers while GCN is dead,
             // which is the degradation §28d asks for.
             if (packages.length === 0 && codes.length === 0 && tiers.length === 0) {
-            // The catalog is per GCN sector; the user's channel tree says which (lib/channels.js).
-            // Best-effort: with no answer GCN serves aeviva's catalog, as it always did.
-            let sector = null;
-            try {
-                const r = await pool.query('SELECT channel_id FROM users WHERE user_id = $1', [user_id]);
-                sector = await resolveGcnSector(r.rows[0]?.channel_id ?? null, pool);
-            } catch (_) { sector = null; }
                 return {
                     ok: false,
                     reason: 'the order system could not be reached — tell the user their order status is temporarily unavailable, and do NOT tell them they have no packages',
@@ -611,11 +626,51 @@ function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_na
 
         async get_health_reports(args = {}) {
             const limit = clampInt(args.limit, 10, 1, 20);
+            // report_date::text — a bare DATE is parsed at local midnight and re-serialised as
+            // a UTC instant, which the grounding allowlist then reads a day off (CLAUDE.md §28g).
+            // item_count is the number of printed analytes kept under the report (mapped and
+            // unmapped), so a NAD+ report with no catalogued marker still reads as having content.
             const { rows } = await pool.query(
-                `SELECT report_date, source, institution, report_type, status FROM health_reports WHERE user_id = $1 ORDER BY report_date DESC LIMIT $2`,
+                `SELECT r.report_date::text AS report_date, r.source, r.institution, r.report_type, r.status,
+                        (SELECT COUNT(*)::int FROM health_report_items i WHERE i.report_id = r.id) AS item_count
+                   FROM health_reports r WHERE r.user_id = $1 ORDER BY r.report_date DESC LIMIT $2`,
                 [user_id, limit]
             );
             return { ok: true, data: rows };
+        },
+
+        // Values of external lab markers over time, flat rows (CLAUDE.md §28g's rule: never a
+        // {series} wrapper — extractToolGroundTruth harvests dates and values row by row, and a
+        // wrapper would leave every real date unallowlisted and the reply rewritten as a
+        // fabrication). The date field is named `date` so it is harvested as one, and the value
+        // is harvested under its key_name so a lab hsCRP that differs from the Kino hsCRP is a
+        // second legitimate value, not a mismatch.
+        async get_lab_history(args = {}) {
+            const { fetchLabHistory } = require('./labHistory');
+            const limit = clampInt(args.limit, 6, 1, 24);
+            const keyName = args.key_name ? String(args.key_name).trim() : null;
+            const rows = await fetchLabHistory(pool, user_id, { keyName, limitPerKey: limit });
+            if (rows.length === 0) {
+                return { ok: true, data: [{ kind: 'no_lab_history', note: keyName
+                    ? `no external lab result for ${keyName} — it may be a Kino biomarker (get_biomarkers) or not yet uploaded`
+                    : 'no external lab results on file — the user has not uploaded a lab report, or none has been read yet' }] };
+            }
+            return {
+                ok: true,
+                data: rows.map(r => ({
+                    kind: 'lab_result',
+                    key_name: r.key_name,
+                    name: language === 'en' ? r.display_name : r.display_name_zh,
+                    value: r.value,
+                    unit: r.unit,
+                    date: r.data_date,
+                    ref_low: r.ref_low,
+                    ref_high: r.ref_high,
+                    status: r.ref_high != null && r.value > r.ref_high ? 'high'
+                          : r.ref_low != null && r.value < r.ref_low ? 'low' : 'normal',
+                    source: r.source,
+                })),
+            };
         },
 
         async get_questionnaire_responses() {

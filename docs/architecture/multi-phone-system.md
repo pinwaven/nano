@@ -166,3 +166,26 @@ possible. Per-IP rate limiting needs the client IP threaded from `index.js`.
 - `src/functions/auth/index.js` — `handleNanoSSO`
 
 Full cross-repo contract (webview-token exchange, provisioning, admin-panel embed): `gcn-integration` skill.
+
+---
+
+# Appendix: the `CLAUDE.md` §33 record (moved here verbatim 2026-09-15)
+
+The project-rules entry as it stood before being condensed; the rules that must hold are now
+summarised in `CLAUDE.md`. Kept because it records decisions and live findings in the words they
+were made in.
+
+## 33. Multi-Phone System (2026-08-19)
+
+A user can hold more than one verified phone (`user_phones`, primary/secondary via `is_primary`), switch which is primary, remove one, and log in with **any** of them — not just the primary. `users.phone`/`phone_verified_at` are a denormalized cache of whichever row is currently primary, kept in sync by every phone-changing code path (`syncPrimaryPhone` in `handlers/users.js`, `handlers/phone-otp.js`'s bind/set-primary/remove, `login.js`'s WeChat bind/resolve), never a second source of truth.
+
+- **Self-service (miniapp):** `GET/POST /phone-otp/{list,bind,set-primary,remove}` (`handlers/phone-otp.js`), new page `pages/phones/` reached from the main menu.
+- **Admin panel:** the Phones tab (in the tabbed user-detail drawer, `UserDetailModal` — click the user's row, not the pencil icon) has full list/set-primary/remove plus an **Add Phone** action (`POST /admin-phone-add` → `handlePhoneOtpAdminAdd`, attaches an unverified number with no OTP proof, for staff use). That endpoint is deliberately **not** under `/phone-otp/`'s bearer-auth exemption — it's gated by `requireAdminTab(adminCtx, 'users')` like every other admin user-write endpoint, since it lets the caller attach an arbitrary number to an arbitrary account with zero ownership proof. The older pencil-icon "编辑用户" modal (`UserModal`) now shows the real phone list read-only (with a "Manage in Phones tab" handoff) instead of its own separate, single-value phone input — it can no longer mutate phone data at all.
+- **Login (`handlePhoneOtpVerify`) matches through `user_phones`, not `users.phone`** — any verified phone, primary or secondary, logs into the same account (used by both the miniapp's phone-login screen and the web user-app). This also holds for an admin-added *unverified* phone the moment someone completes a real OTP check against it at login — it resolves to the existing account rather than forking a duplicate, though the login itself doesn't retroactively set that row's `verified_at` (known, un-fixed cosmetic gap — the phone still shows "Unverified" afterward even though possession was just proven).
+- **GCN identity bridge (`gcn/src/functions/auth/index.js`'s `handleNanoSSO`):** previously matched a GCN consumer account by phone alone, so switching primary phone on nano's side silently forked a second GCN account. Fixed to resolve by `nano_user_id` first (phone-match only as fallback for first-time/pre-migration accounts), and to mirror nano's **full** phone list (not just primary) into GCN's own `user_phones` on every login, reconciled exactly (stale/removed numbers dropped) — this is also what lets GCN's own native OTP login recognize any of a user's nano-verified phones. `partners.phone` (the separate, single-value cache for a *provisioned partner/store* record — unrelated to the consumer-account phone above) is now kept in sync via `syncPartnerPhoneFromUser`, called from every phone-changing call site rather than only partner-record edits.
+
+- **Email is a second login identity (2026-09-15), Waven-only.** `user_emails` mirrors `user_phones`; `handlers/email-otp.js` mirrors `phone-otp.js`; DirectMail (`lib/email.js`, `no-reply@mail.gcn.net`, sender set by `DM_ACCOUNT_NAME` — empty means the code is logged, not sent) only delivers, so nano owns the code lifecycle in `lib/email-otp.js` (`email_otp_codes`, per-address rate limit, 5-attempt cap). The allow-rule is the channel **root** (`lib/channels.js` `resolveRootChannelKey` — `waven-china-zj` is a Waven user), deliberately not `GCN_LINKED_CHANNEL_KEYS`. No backfill of legacy `users.email`. `WEBVIEW_USER_SELECT` now returns `email_verified`, `emails[]` and `channel.root_key_name` — the last one **arms GCN's already-deployed channel/sector guard** (`channel_sector_mismatch`), so verify an `aeviva-china` user still enters `aeviva.gcn.net` after deploying it.
+- **GCN linkage is resolved through the channel tree, not a leaf-key set (2026-09-15).** The six `GCN_LINKED_CHANNEL_KEYS` copies are gone: the worker uses `lib/channels.js` `resolveGcnSector` (`GCN_SECTOR_FOR_ROOT_CHANNEL = {aeviva, waven}`), the admin panel `shared.jsx` `gcnSectorForChannel`, the miniapp `main.js` `GCN_STORE_HOST_FOR_CHANNEL`. The waven tree is now GCN-linked exactly like aeviva (Store tab on `waven(-dev).gcn.net`, chat catalog, partner provisioning with `sector_id: 'waven'`, admin console embed at `/waven/dashboard-admin.html`); `fetchFormulationTiers(sector)` carries the sector so a waven user sees waven's packages.
+
+Full detail: `docs/architecture/multi-phone-system.md` (§6 for email).
+

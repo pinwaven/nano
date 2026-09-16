@@ -20,7 +20,8 @@ const ROOT = path.join(__dirname, '..');
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 
 const MIGRATION = read('src', 'schemas', 'migration_health_plan_recommended_dot_keys.sql');
-const dotsJs = read('src', 'functions', 'worker', 'handlers', 'dots.js');
+// The two pure functions live in lib/formulation.js, which has no DB and no env — require them.
+const { _resolveCandidateDotKeys, _fallbackCountForDot } = require(path.join(ROOT, 'src', 'functions', 'worker', 'lib', 'formulation.js'));
 
 // The real formulary, as the current lineup defines it (migration_dots_new_lineup.sql).
 const LINEUP = Array.from({ length: 18 }, (_, i) => ({
@@ -29,24 +30,6 @@ const LINEUP = Array.from({ length: 18 }, (_, i) => ({
     target_dots_min: 10,
     target_dots_max: 30,
 }));
-
-// dots.js is a live handler module; pull the two pure functions out of the source rather than
-// requiring it, so the test needs no DB and no env.
-function extract(name) {
-    const start = dotsJs.indexOf(`function ${name}(`);
-    assert.notStrictEqual(start, -1, `${name} is gone from dots.js`);
-    let depth = 0, i = dotsJs.indexOf('{', start);
-    for (let j = i; j < dotsJs.length; j++) {
-        if (dotsJs[j] === '{') depth++;
-        else if (dotsJs[j] === '}' && --depth === 0) {
-            // eslint-disable-next-line no-new-func
-            return new Function(`${dotsJs.slice(start, j + 1)}; return ${name};`)();
-        }
-    }
-    throw new Error(`could not close ${name}`);
-}
-const _resolveCandidateDotKeys = extract('_resolveCandidateDotKeys');
-const _fallbackCountForDot = extract('_fallbackCountForDot');
 
 // ── the mapping itself ────────────────────────────────────────────────────────
 

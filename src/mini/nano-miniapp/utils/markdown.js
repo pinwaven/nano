@@ -281,7 +281,7 @@ function _zeroLastMargin (block) {
   })
 }
 
-var DIRECTIVE_NAMES = { metric: 1, takeaway: 1, dots: 1, formula: 1, product: 1 }
+var DIRECTIVE_NAMES = { metric: 1, takeaway: 1, dots: 1, formula: 1, product: 1, lesson: 1, checkin: 1 }
 
 // "1-9,12-28" -> "1\u20139 \u00b7 12\u201328". Digits, '-' and ',' only: this string is rendered next
 // to the page's own localised day word, and anything else in it came from somewhere it shouldn't.
@@ -328,7 +328,7 @@ function _buildDirective (name, inner) {
   }
 
   // :::formula — the Formulate-Dots proposal chart. Rows are key|name|color|am|pm, written by
-  // the SERVER from an already-validated allocation (handlers/dots.js's
+  // the SERVER from an already-validated allocation (worker lib/chatCards.js's
   // _buildFormulaChartBlock), never by the model — so the bars can't disagree with the numbers.
   // Every total is derived here rather than sent, so there is one place the arithmetic lives.
   //
@@ -583,7 +583,7 @@ function _buildDirective (name, inner) {
   }
 
   // :::product — a store recommendation card. Rows are sku|name|price|reason, written by the
-  // SERVER from the catalog snapshot the turn was built on (handlers/dots.js's
+  // SERVER from the catalog snapshot the turn was built on (worker lib/chatCards.js's
   // _buildProductCardBlock), never by the model — same rule as :::formula above, so the price
   // shown can never disagree with what the store will actually charge. The sku is carried
   // through only as a tap target; it is never displayed.
@@ -596,6 +596,27 @@ function _buildDirective (name, inner) {
       pitems.push({ sku: pp[0], name: pp[1], price: pp[2] || '', reason: pp[3] || '' })
     }
     return pitems.length ? { t: 'product', items: pitems } : null
+  }
+
+  // :::lesson — a 打卡 program day's lesson (CLAUDE.md §42). One row: lesson_id|title. Written by
+  // the server only. The card carries just the Academy lesson id: main.js fetches a fresh
+  // presigned URL on tap (url/poster are runtime state, never in the message) and stamps `done`
+  // from /api/programs/my. A non-numeric id is not a lesson — fall back to prose.
+  if (name === 'lesson') {
+    var lp = rows[0].split('|')
+    var lessonId = (lp[0] || '').trim()
+    if (!/^[0-9]{1,18}$/.test(lessonId)) return null
+    return { t: 'lesson', lessonId: lessonId, title: (lp[1] || '').trim(), url: '', poster: '', loading: false, done: false }
+  }
+
+  // :::checkin — the same day's 开始打卡 button. One row: program_id|day_index|label. `done`,
+  // `lessonDone` and `active` are stamped at runtime like the lesson card's `done`.
+  if (name === 'checkin') {
+    var cp = rows[0].split('|')
+    var programId = (cp[0] || '').trim()
+    var dayIndex = (cp[1] || '').trim()
+    if (!/^[0-9]{1,18}$/.test(programId) || !/^[0-9]{1,4}$/.test(dayIndex)) return null
+    return { t: 'checkin', programId: programId, dayIndex: dayIndex, label: (cp[2] || '').trim(), done: false, lessonDone: true, active: false }
   }
 
   return null

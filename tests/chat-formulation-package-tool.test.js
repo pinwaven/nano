@@ -25,9 +25,10 @@ const ROOT = path.join(__dirname, '..');
 const WORKER = path.join(ROOT, 'src', 'functions', 'worker');
 const MINIAPP = path.join(ROOT, 'src', 'mini', 'nano-miniapp');
 
-// Stub lib/db and lib/gcnClient BEFORE handlers/dots.js is required, so the real fetchers run
-// against controllable data (tests/formulation-codes.test.js:20-48's idiom). Reassign the mutable
-// bindings per test rather than re-stubbing — dots.js captures the exports object at require time.
+// Stub lib/db and lib/gcnClient BEFORE handlers/formulation_orders.js is required, so the real
+// fetchers run against controllable data (tests/formulation-codes.test.js's idiom). Reassign the
+// mutable bindings per test rather than re-stubbing — the handler captures the exports object at
+// require time.
 const stub = (rel, exports) => {
     const full = require.resolve(path.join(WORKER, rel));
     require.cache[full] = { id: full, filename: full, loaded: true, exports };
@@ -60,7 +61,7 @@ stub('lib/gcnClient.js', {
     gcnFetch: async () => ({}),
 });
 
-const D = require(path.join(WORKER, 'handlers', 'dots.js'));
+const D = require(path.join(WORKER, 'handlers', 'formulation_orders.js'));
 const { AGENTIC_TOOL_DEFS, createAgenticToolHandlers } = require(path.join(WORKER, 'lib', 'agenticTools.js'));
 const { extractToolGroundTruth, buildForcedToolQueue } = require(path.join(WORKER, 'lib', 'agenticChat.js'));
 const pkgBlock = require(path.join(WORKER, 'prompts', 'chat', 'formulationPackageBlock.js'));

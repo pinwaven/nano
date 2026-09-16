@@ -61,6 +61,10 @@ const CATALOG = [
     { key_name: 'hsCRP', loinc_code: '71426-1', unit: 'mg/L', ref_low: null, ref_high: 1.0 },
     { key_name: 'ALT', loinc_code: '1742-6', unit: 'U/L', ref_low: null, ref_high: 40 },
 ];
+const TAG_CATALOG = [
+    { tag_key: 'allergy:shellfish', category: 'allergy', name_zh: '海鲜过敏', name_en: 'Shellfish allergy', aliases: [], values: null },
+    { tag_key: 'medication:metformin', category: 'medication', name_zh: '二甲双胍', name_en: 'Metformin', aliases: [], values: null },
+];
 const CLAIMED_JOB = {
     id: 7, job_uid: 'job-1', document_id: 412, user_id: 'u-1', status: 'claimed',
     result_token: 'good-token', persona_type: 'viva', language: 'zh',
@@ -72,6 +76,7 @@ function reset(overrides = {}) {
     rows = {
         'FROM doc_extraction_jobs WHERE job_uid': [CLAIMED_JOB],
         'FROM biomarker_catalog': CATALOG,
+        'FROM tag_catalog\\s': TAG_CATALOG,
         'FROM health_documents WHERE id': [{ id: 412, oss_key: 'health-documents/u-1/abc.pdf', doc_type: 'other' }],
         ...overrides,
     };
@@ -150,11 +155,14 @@ test('a result writes the document metadata, the panel and the findings, then re
     assert.equal(reportCalls[0].source_document_id, 412);
     assert.equal(reportCalls[0].observations.length, 1);
 
-    // Tier 3 — user_memory_facts, never users.bio_data (whose writes are a shallow || merge that
-    // would replace the user's own onboarding checklist wholesale).
-    const factWrite = queries.find(q => /INSERT INTO user_memory_facts/.test(q.sql));
-    assert.ok(factWrite, 'the finding was never written');
-    assert.match(factWrite.sql, /'document_extracted'/);
+    // Tier 3 — contract 3: a `finding` is stored as a DESCRIPTOR on health_document_tags and
+    // reaches user_memory_facts no more (two live runs wrote six false allergies that way).
+    // Never users.bio_data either (whose writes are a shallow || merge that would replace the
+    // user's own onboarding checklist wholesale).
+    const tagWrite = queries.find(q => /INSERT INTO health_document_tags/.test(q.sql));
+    assert.ok(tagWrite, 'the finding was never stored as a descriptor');
+    assert.ok(tagWrite.params.includes('descriptor') && tagWrite.params.includes('青霉素过敏'));
+    assert.ok(!queries.some(q => /INSERT INTO user_memory_facts/.test(q.sql)), 'a keyless finding reached user_memory_facts');
     assert.ok(!queries.some(q => /UPDATE users SET bio_data/.test(q.sql)), 'extraction wrote bio_data');
 
     assert.deepEqual(twinRefreshes, ['u-1'], 'the twin was not refreshed exactly once');
@@ -171,6 +179,39 @@ test('an OCR read never moves the displayed BioAge', async () => {
     assert.ok(!CODE.includes('kino_chip'), 'the extraction handler writes a kino_chip row');
 });
 
+test('a fact with a catalog key is mirrored into user_memory_facts; a stopped one is not', async () => {
+    // The resolution query (lib/documentTags.js) is answered by the stub with what the write
+    // just stored: shellfish current, metformin stopped.
+    reset({
+        'FROM health_document_tags t\\s+JOIN tag_catalog': [
+            { id: 1, document_id: 412, tag_key: 'allergy:shellfish', category: 'allergy', text: '海鲜过敏', value: null,
+              status: 'current', since: '2026-08-12', source_ref: 's0.p1', confidence: 0.9, name_zh: '海鲜过敏', name_en: null, memory_category: 'allergy' },
+            { id: 2, document_id: 412, tag_key: 'medication:metformin', category: 'medication', text: '已停用二甲双胍', value: null,
+              status: 'stopped', since: '2026-08-12', source_ref: null, confidence: 0.9, name_zh: '二甲双胍', name_en: null, memory_category: 'medication' },
+        ],
+    });
+    const r = await dx.handlePostDocExtractResult({
+        ...RESULT, findings: [],
+        tags: [
+            { kind: 'fact', tag_key: 'allergy:shellfish', category: 'allergy', text: '海鲜过敏', source: 's0.p1', confidence: 0.9 },
+            { kind: 'fact', tag_key: 'medication:metformin', category: 'medication', text: '已停用二甲双胍', status: 'stopped', confidence: 0.9 },
+            { kind: 'fact', tag_key: 'allergy:mars_dust', category: 'allergy', text: '火星尘过敏', confidence: 0.9 },
+        ],
+    });
+    assert.equal(r.success, true);
+    assert.equal(r.accepted.facts_accepted, 2);
+    assert.equal(r.accepted.descriptors_accepted, 1, 'the unknown key was not demoted to a descriptor');
+    const tagWrite = queries.find(q => /INSERT INTO health_document_tags/.test(q.sql));
+    assert.ok(tagWrite.params.includes('unknown_tag'), 'the demotion reason is not on the row');
+    const factWrites = queries.filter(q => /INSERT INTO user_memory_facts/.test(q.sql));
+    assert.equal(factWrites.length, 1, 'exactly the CURRENT fact with a memory_category is mirrored');
+    assert.ok(factWrites[0].params.includes('allergy:shellfish') && factWrites[0].params.includes('海鲜过敏'));
+    assert.match(factWrites[0].sql, /'document_extracted'/);
+    // The mirror is the catalog's short name, never the document's sentence.
+    assert.ok(!factWrites[0].params.includes('已停用二甲双胍'));
+    assert.ok(delivered[0].text.includes('2 条个人健康信息'));
+});
+
 test('the twin is still refreshed when there is no panel to write', async () => {
     // handlePostHealthReport only refreshes the twin via its compute_bioage branch, which is off,
     // so this handler owns the refresh outright.
@@ -178,6 +219,82 @@ test('the twin is still refreshed when there is no panel to write', async () => 
     await dx.handlePostDocExtractResult({ ...RESULT, observations: [] });
     assert.equal(reportCalls.length, 0);
     assert.deepEqual(twinRefreshes, ['u-1']);
+});
+
+test('an unmapped-only document still gets a report, and every printed row lands in health_report_items', async () => {
+    // A NAD+ or organic-acid report has no catalogued key. Before this it left no report at all
+    // and its numbers survived only in the job JSON that nothing reads.
+    reset();
+    reportWritten = 0;
+    const r = await dx.handlePostDocExtractResult({
+        ...RESULT,
+        document: { doc_type: 'functional_test', doc_date: '2025-11-21' },
+        observations: [],
+        unmapped: [
+            { label: '烟酰胺腺嘌呤二核苷酸', value: '23.6', unit: 'umol/L', ref_text: '≥27.8', flag: 'L' },
+            { label: 'NAD+评分', value: 'D级' },
+        ],
+    });
+    assert.equal(r.success, true);
+    assert.equal(reportCalls.length, 1, 'no report was written for a dated document with printed rows');
+    assert.equal(reportCalls[0].report_type, 'functional');
+    assert.equal(reportCalls[0].observations.length, 0);
+    const items = queries.find(q => /INSERT INTO health_report_items/.test(q.sql));
+    assert.ok(items, 'the printed rows were not written');
+    // One row per printed analyte: a number stays a number, anything else is kept as text.
+    assert.ok(items.params.includes(23.6) && items.params.includes('D级'));
+    assert.ok(items.params.includes('low'), 'the printed flag was not normalised through');
+    assert.equal(r.accepted.items_written, 2);
+    assert.match(delivered[0].text, /已按报告原文保存/);
+});
+
+test('a mapped observation is written to items too, and the items share the report', async () => {
+    reset();
+    await dx.handlePostDocExtractResult({ ...RESULT, unmapped: [{ label: '血小板压积', value: '0.22', unit: '%' }] });
+    const items = queries.find(q => /INSERT INTO health_report_items/.test(q.sql));
+    assert.ok(items);
+    assert.ok(items.params.includes('hsCRP'), 'the mapped observation is missing from items');
+    assert.ok(items.params.includes('血小板压积'));
+    assert.equal(items.params[0], '8823', 'items are keyed on the report the pipeline just created');
+});
+
+test('the row date rescues a page with no printed date, and a user-set row is not overwritten', async () => {
+    // The document already carries a date (set by the user through PATCH) and user_edited_at.
+    reset({ 'FROM health_documents WHERE id': [{ id: 412, oss_key: 'health-documents/u-1/abc.pdf',
+        doc_type: 'lab_report', doc_date: '2026-05-01', institution: '用户填写', user_edited_at: new Date() }] });
+    const r = await dx.handlePostDocExtractResult({
+        ...RESULT,
+        document: { doc_type: 'other', institution: '机器读到的' },   // no date, a different type
+        observations: [{ key_name: 'hsCRP', value: 1.2, unit: 'mg/L', confidence: 0.95 }],
+    });
+    assert.equal(r.success, true);
+    assert.equal(reportCalls.length, 1, 'the row date did not rescue the read');
+    assert.equal(reportCalls[0].report_date, '2026-05-01');
+    assert.equal(reportCalls[0].observations[0].data_date, '2026-05-01');
+    // The user's type and institution win over the agent's for the report…
+    assert.equal(reportCalls[0].report_type, 'lab_panel');
+    assert.equal(reportCalls[0].institution, '用户填写');
+    // …and the document UPDATE is told the row is user-edited so it leaves those columns alone.
+    const docUpdate = queries.find(q => /UPDATE health_documents/.test(q.sql));
+    assert.equal(docUpdate.params[6], true, 'user_edited flag not passed to the guard');
+    assert.match(docUpdate.sql, /CASE WHEN \$7 THEN doc_date/);
+});
+
+test('the structured block is stored on the document and cleared with the rest', async () => {
+    reset();
+    await dx.handlePostDocExtractResult({
+        ...RESULT, observations: [], document: { doc_type: 'genetic', doc_date: '2026-01-10' },
+        structured: { kind: 'genetic', sections: [{ title: 'FTO', rows: [{ label: 'rs9939609', value: 'AT' }] }] },
+    });
+    const docUpdate = queries.find(q => /UPDATE health_documents/.test(q.sql));
+    assert.match(docUpdate.sql, /extracted_json = \$8::jsonb/);
+    assert.ok(String(docUpdate.params[7]).includes('rs9939609'));
+    assert.equal(reportCalls.length, 0, 'a structured-only document has no printed rows to make a report of');
+
+    reset({ 'FROM health_reports WHERE source_document_id': [] });
+    await dx.clearExtraction(412, 'u-1');
+    const clear = queries.find(q => /UPDATE health_documents/.test(q.sql));
+    assert.match(clear.sql, /extracted_json = NULL/);
 });
 
 test('with no readable date, metadata is kept but no report is written', async () => {

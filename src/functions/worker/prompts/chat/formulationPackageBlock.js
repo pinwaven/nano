@@ -17,7 +17,8 @@
  * be refunded, cancelled or fulfilled between two reads (§28d). The block only teaches the model
  * that the domain exists and that the tool is where the answer lives.
  *
- * IT NAMES NO STAGE. The 12 PACKAGE_STAGES values and their meanings live in handlers/dots.js
+ * IT NAMES NO STAGE. The 12 PACKAGE_STAGES values and their meanings live in
+ * handlers/formulation_orders.js
  * (PACKAGE_STAGE_NARRATION) and reach the model on the row itself as `stage_meaning`/`next_step`.
  * A prompt enumerating them would be a third definition of that vocabulary in the one medium
  * where drift is invisible. Do not add one here; a test asserts no stage string appears in this

@@ -34,9 +34,15 @@ const crypto = require('crypto');
 const { pool } = require('../lib/db');
 const ossLib = require('../lib/oss');
 
+// Must equal lib/docExtraction.js's copy (tests/doc-extraction-contract.test.js holds them
+// together): the agent classifies into this set and the user corrects within it.
 const VALID_DOC_TYPES = new Set([
-    'hospital_record', 'lab_report', 'imaging', 'discharge_summary', 'prescription', 'other',
+    'hospital_record', 'lab_report', 'imaging', 'discharge_summary', 'prescription',
+    'genetic', 'microbiome', 'functional_test', 'other',
 ]);
+
+const MAX_INSTITUTION_LENGTH = 200;
+const MAX_NOTE_LENGTH = 1000;
 
 // Matches the miniapp's own client-side cap. Enforced here too because the client-side check
 // is trivially bypassable and an unbounded blob is a cost problem, not just a UX one.
@@ -134,6 +140,10 @@ function _publicRow(row) {
         note: row.note,
         uploaded_by: row.uploaded_by,
         created_at: row.created_at,
+        user_edited_at: row.user_edited_at || null,
+        // The structured block itself rides on the row only when the caller asks for it; the
+        // list needs to know it exists to offer the expand.
+        has_structured: row.extracted_json != null,
     };
 }
 
@@ -263,6 +273,35 @@ async function handleGetHealthDocuments(query) {
              ORDER BY COALESCE(doc_date, created_at::date) DESC, id DESC LIMIT 200`,
             [owner.userId]
         );
+        const withJson = String(query?.include_structured || '') === '1';
+        // Contract 3: the document's tags ride along with the structured block, on the same
+        // flag — both are "what the document said", and the list needs them only to expand a
+        // row. Degrades to none rather than failing the list, like the extraction state below.
+        let tagsByDoc = new Map();
+        if (withJson) {
+            try {
+                const { rows: tagRows } = await pool.query(
+                    `SELECT t.document_id, t.id, t.kind, t.tag_key, t.category, t.text, t.value, t.status,
+                            t.since::text AS since, t.source_ref, t.reason, c.name_zh, c.name_en
+                       FROM health_document_tags t
+                       LEFT JOIN tag_catalog c ON c.tag_key = t.tag_key
+                      WHERE t.user_id = $1
+                      ORDER BY t.document_id, t.sort_order, t.id`,
+                    [owner.userId]
+                );
+                for (const t of tagRows) {
+                    const docId = Number(t.document_id);
+                    if (!tagsByDoc.has(docId)) tagsByDoc.set(docId, []);
+                    tagsByDoc.get(docId).push({
+                        id: Number(t.id), kind: t.kind, tag_key: t.tag_key, category: t.category, text: t.text,
+                        value: t.value, status: t.status, since: t.since, source_ref: t.source_ref, reason: t.reason,
+                        name_zh: t.name_zh || null, name_en: t.name_en || null,
+                    });
+                }
+            } catch (tagErr) {
+                console.error(JSON.stringify({ level: 'WARN', msg: 'document tags unavailable', error: tagErr.message }));
+            }
+        }
 
         // The extraction state, joined on the newest job per document. DISTINCT ON rather than a
         // correlated subquery because a re-run leaves the previous job in place as history.
@@ -290,17 +329,30 @@ async function handleGetHealthDocuments(query) {
             documents: rows.map(r => {
                 const pub = _publicRow(r);
                 pub.summary = r.summary || null;
+                if (withJson) {
+                    pub.structured = r.extracted_json || null;
+                    pub.tags = tagsByDoc.get(Number(r.id)) || [];
+                }
                 const job = byDoc.get(Number(r.id));
+                const rejected = Array.isArray(job?.rejected) ? job.rejected : [];
                 pub.extraction = job ? {
                     status: job.status,
                     // Counts only. The values themselves are already visible as the document's
                     // own metadata and in the Medical Records layer; repeating them here would be
                     // a second copy to keep in step.
                     accepted: job.result?.counts?.observations_accepted ?? 0,
-                    findings: job.result?.counts?.findings_accepted ?? 0,
+                    // Facts (contract 3) — what was actually mirrored; a v2 job's findings are
+                    // descriptors now and count for nothing here.
+                    findings: job.result?.counts?.facts_written ?? job.result?.counts?.facts_accepted ?? 0,
+                    descriptors: job.result?.counts?.descriptors_accepted ?? 0,
                     unmapped: job.result?.counts?.unmapped ?? 0,
-                    rejected: Array.isArray(job.rejected) ? job.rejected.length : 0,
+                    items: job.result?.counts?.items_written ?? 0,
+                    rejected: rejected.length,
+                    // The one rejection the user can fix themselves: set the report date and
+                    // re-run. Surfaced as its own flag so the row can say so.
+                    missing_date: rejected.some(x => x && x.reason === 'missing_date'),
                     has_report: job.health_report_id != null,
+                    report_id: job.health_report_id == null ? null : Number(job.health_report_id),
                 } : null;
                 return pub;
             }),
@@ -431,7 +483,81 @@ async function handleDeleteHealthDocumentExtraction(documentId, query) {
     }
 }
 
+/**
+ * PATCH /health-documents/:id — the owner corrects what the agent (or nobody) filled in.
+ *
+ * Exists for one measured failure: a photographed report with no printed date has every value
+ * refused as `missing_date` (dev job 15 lost six lipid/liver values), and the agent is right not
+ * to invent one. The person who took the photo knows the date. Setting it here stamps
+ * user_edited_at, after which the extraction result handler leaves doc_type / doc_date /
+ * institution alone — the correction must survive the re-run it exists to enable.
+ *
+ * `re_extract: true` clears the previous extraction and queues a fresh one in the same call, so
+ * "set the date, then re-run" is one tap. A job already in flight is reported as queued:false,
+ * exactly as POST /:id/extract does.
+ */
+async function handlePatchHealthDocument(documentId, body) {
+    try {
+        const refusal = _refuseCoach(body?.coach_id);
+        if (refusal) return refusal;
+        const owner = await _resolveOwner(body?.openid, null);
+        if (!owner.ok) return owner.error;
+
+        const { rows: [doc] } = await pool.query(
+            `SELECT id FROM health_documents WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+            [documentId, owner.userId]
+        );
+        if (!doc) return { success: false, reason: 'document_not_found', error: 'Document not found', statusCode: 404 };
+
+        const { toIsoDate, trim } = require('../lib/extractionPrimitives');
+        const sets = [];
+        const params = [doc.id];
+        const push = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+
+        if (body.doc_date !== undefined) {
+            if (body.doc_date === null || body.doc_date === '') push('doc_date', null);
+            else {
+                // toIsoDate refuses a future date and a non-calendar one — a report cannot have
+                // been taken tomorrow, and "2026-02-31" is a typo, not a date.
+                const iso = toIsoDate(String(body.doc_date));
+                if (!iso) return { success: false, reason: 'invalid_date', error: 'doc_date must be YYYY-MM-DD and not in the future' };
+                push('doc_date', iso);
+            }
+        }
+        if (body.doc_type !== undefined) {
+            const t = String(body.doc_type || '').trim();
+            if (!VALID_DOC_TYPES.has(t)) return { success: false, reason: 'invalid_doc_type', error: `doc_type must be one of ${[...VALID_DOC_TYPES].join(', ')}` };
+            push('doc_type', t);
+        }
+        if (body.institution !== undefined) push('institution', trim(body.institution, MAX_INSTITUTION_LENGTH));
+        if (body.note !== undefined) push('note', trim(body.note, MAX_NOTE_LENGTH));
+        if (sets.length === 0 && !body.re_extract) {
+            return { success: false, reason: 'nothing_to_update', error: 'No editable field supplied' };
+        }
+
+        if (sets.length > 0) {
+            sets.push('user_edited_at = NOW()');
+            await pool.query(`UPDATE health_documents SET ${sets.join(', ')} WHERE id = $1`, params);
+        }
+
+        let queued = null;
+        if (body.re_extract) {
+            const { clearExtraction, enqueueDocExtraction } = require('./doc_extraction');
+            await clearExtraction(doc.id, owner.userId);
+            queued = !!(await enqueueDocExtraction(doc.id, owner.userId, { language: owner.language }));
+        }
+
+        const { rows: [row] } = await pool.query(
+            `SELECT *, doc_date::text AS doc_date FROM health_documents WHERE id = $1`, [doc.id]);
+        return { success: true, document: _publicRow(row), ...(queued === null ? {} : { queued }) };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePatchHealthDocument failed', error: err.message }));
+        return { success: false, error: err.message };
+    }
+}
+
 module.exports = {
+    handlePatchHealthDocument,
     handlePostHealthDocumentExtract,
     handleDeleteHealthDocumentExtraction,
     handleGetHealthDocumentPresign,
@@ -443,4 +569,7 @@ module.exports = {
     VALID_DOC_TYPES,
     ALLOWED_EXTENSIONS,
     OFFICE_EXTENSIONS,
+    // Shared with handlers/lab_history.js so the coach-scoped read of a client's lab history
+    // uses the identical ownership check as their documents.
+    resolveOwner: _resolveOwner,
 };

@@ -11,7 +11,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { DateTime } = require('luxon');
 
-const D = require('../src/functions/worker/handlers/dots.js');
+const D = require('../src/functions/worker/handlers/formulation_orders.js');
 const { PLAN_DAYS } = require('../src/functions/worker/lib/dotsProductModel.js');
 
 const today = () => DateTime.now().setZone('Asia/Shanghai').toISODate();

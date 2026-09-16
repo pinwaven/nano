@@ -38,7 +38,7 @@ function loadT(src) {
 // The five handlers, and which of them may honour a coach_id.
 const READ_HANDLERS = ['handleGetHealthDocuments', 'handleGetHealthDocumentUrl'];
 const WRITE_HANDLERS = ['handleGetHealthDocumentPresign', 'handlePostHealthDocument',
-    'handleDeleteHealthDocument'];
+    'handleDeleteHealthDocument', 'handlePatchHealthDocument'];
 
 function bodyOf(name) {
     const i = handler.indexOf(`function ${name}(`);
@@ -86,6 +86,36 @@ test('the ownership check only runs when the caller names a coach', () => {
     assert.match(resolver, /if \(coachId\) \{/, 'the coach check is no longer conditional');
     assert.match(resolver, /WHERE user_id = \$1 AND coach_id = \$2/,
         'the ownership check no longer compares the client against the coach');
+});
+
+test('PATCH edits only the four user-correctable columns, stamps user_edited_at, and refuses a future date', () => {
+    const body = bodyOf('handlePatchHealthDocument');
+    for (const col of ['doc_date', 'doc_type', 'institution', 'note']) {
+        assert.match(body, new RegExp(`push\\('${col}'`), `${col} is no longer editable`);
+    }
+    // Nothing else: the agent's summary / extracted_json and the object's own oss_key must not
+    // be reachable from a client body.
+    assert.ok(!/push\('(summary|oss_key|extracted_json|user_id|status)'/.test(body), 'PATCH lets a client edit a column it must not');
+    assert.match(body, /user_edited_at = NOW\(\)/, 'a user edit is not stamped, so the next extraction run overwrites it');
+    // toIsoDate is the one date parser in the extraction path, and it refuses a future date.
+    assert.match(body, /toIsoDate\(/);
+    assert.match(body, /invalid_date/);
+    assert.match(body, /VALID_DOC_TYPES\.has\(/, 'doc_type is not validated against the shared enum');
+    // A re-extract must clear first — health_events dedupes on (user, source, external_id).
+    const clearAt = body.indexOf('clearExtraction(');
+    const queueAt = body.indexOf('enqueueDocExtraction(');
+    assert.ok(clearAt > -1 && queueAt > clearAt, 're_extract does not clear before queueing');
+});
+
+test('the extraction result handler honours a user edit', () => {
+    const dx = fs.readFileSync(path.join(ROOT, 'src', 'functions', 'worker', 'handlers', 'doc_extraction.js'), 'utf8');
+    const result = dx.slice(dx.indexOf('async function handlePostDocExtractResult'));
+    assert.match(result, /user_edited_at/);
+    assert.match(result, /CASE WHEN \$7 THEN doc_type ELSE/);
+    assert.match(result, /CASE WHEN \$7 THEN doc_date ELSE/);
+    assert.match(result, /CASE WHEN \$7 THEN institution ELSE/);
+    // The row date is the validator's fallback — set by the user, never today.
+    assert.match(result, /fallbackDocDate: doc\.doc_date/);
 });
 
 test('the twin subtab hosts the section, and a coach gets no upload button', () => {

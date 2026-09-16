@@ -11,7 +11,7 @@
 // the only check on a fast-track formula.
 const { test } = require('node:test');
 const assert = require('node:assert');
-const D = require('../src/functions/worker/handlers/dots');
+const D = require('../src/functions/worker/lib/formulation');
 const { validateAgFormulation } = require('../src/functions/worker/lib/agFormulation');
 const { MAX_DOTS_PER_CAPSULE } = require('../src/functions/worker/lib/dotsProductModel');
 

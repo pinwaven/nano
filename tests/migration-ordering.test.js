@@ -139,3 +139,14 @@ test('viva_ag_jobs is applied before the three migrations that build on it', () 
     assert.ok(at > jobs, `${dependent} must come after migration_viva_ag_jobs.sql`);
   }
 });
+
+test('migration_programs.sql is applied after every migration that redefines questionnaires_type_check', () => {
+  // It sorts alphabetically BEFORE migration_questionnaire_system.sql and
+  // migration_viva_ag_questionnaire.sql; without its @requires the later re-add of the CHECK
+  // would silently drop 'program_day' and the seed would fail on a fresh database.
+  const position = new Map(orderMigrations(realMigrations()).map((f, i) => [f.name, i]));
+  for (const dep of ['migration_questionnaire_system.sql', 'migration_questionnaire_dynamic_type.sql', 'migration_viva_ag_questionnaire.sql', 'migration_academy_lessons.sql', 'migration_checkin_dedup.sql']) {
+    assert.ok(position.get(dep) < position.get('migration_programs.sql'), `${dep} must run before migration_programs.sql`);
+  }
+  assert.ok(position.get('migration_programs.sql') < position.get('migration_programs_seed_viva7.sql'));
+});

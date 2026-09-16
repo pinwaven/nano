@@ -5,7 +5,10 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const D = require('../src/functions/worker/handlers/dots.js');
+// The engine, the card renderer, and the handler (for the label URL the parser must still
+// recognise from chat history) in one namespace.
+const D = { ...require('../src/functions/worker/lib/formulation.js'), ...require('../src/functions/worker/lib/chatCards.js'),
+    ...require('../src/functions/worker/handlers/dots.js') };
 const md = require('../src/mini/nano-miniapp/utils/markdown.js');
 const { PLAN_DAYS, MAX_DOTS_PER_CAPSULE, N7_KEY, N7_ISOLATION_DAY_INDEXES } =
     require('../src/functions/worker/lib/dotsProductModel.js');

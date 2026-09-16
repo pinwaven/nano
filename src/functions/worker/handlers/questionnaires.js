@@ -135,7 +135,7 @@ async function handleGetPendingQuestionnaires(openid) {
 // Saves one answer. If question has save_target, also writes to user profile.
 // Marks assignment completed when all questions answered.
 // saveChatMessage is passed as a dependency from index.js
-async function handlePostQuestionnaireResponse(body, saveChatMessage, fireQuestionnaireAnsweredFollowup, resumeVivaAgJob) {
+async function handlePostQuestionnaireResponse(body, saveChatMessage, fireQuestionnaireAnsweredFollowup, resumeVivaAgJob, completeProgramDayCheckin) {
     const { assignment_id, question_id, answer } = body || {};
     if (!assignment_id || !question_id || answer === undefined) {
         return { statusCode: 400, success: false, error: 'assignment_id, question_id and answer required' };
@@ -273,6 +273,19 @@ async function handlePostQuestionnaireResponse(body, saveChatMessage, fireQuesti
                     await resumeVivaAgJob(assignment_id);
                 } catch (e) {
                     console.log(JSON.stringify({ level: 'WARN', msg: 'viva_ag_resume_failed', user_id, assignment_id, error: e.message }));
+                }
+            }
+
+            // A 'program_day' questionnaire is one 打卡 of a multi-day program (§42). Its completion
+            // is what renders the day's recap from the answers and delivers it (plus one short
+            // comment) — and, once the lesson is also watched, closes the day. Injected and awaited
+            // for the same reasons as the two above; fails open (the answers are already saved, and
+            // the hook's own recap UPDATE is idempotent so a retry cannot double-post).
+            if (questionnaire_type === 'program_day' && typeof completeProgramDayCheckin === 'function') {
+                try {
+                    await completeProgramDayCheckin(assignment_id);
+                } catch (e) {
+                    console.log(JSON.stringify({ level: 'WARN', msg: 'program_day_checkin_failed', user_id, assignment_id, error: e.message }));
                 }
             }
         }

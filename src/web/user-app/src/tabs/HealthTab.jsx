@@ -257,7 +257,7 @@ function DigitalTwinSection({ user, lang }) {
               <div key={item.key} className="dt-lab-item">
                 <span className="dt-lab-name">{item.displayName}</span>
                 <span className="dt-lab-val" style={{ color: item.statusColor }}>{item.value}</span>
-                <span className="dt-lab-unit">{item.unit}</span>
+                <span className="dt-lab-unit">{item.unit}{item.dateShort ? ` · ${item.dateShort}` : ''}</span>
               </div>
             ))}
           </div>

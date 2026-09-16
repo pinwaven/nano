@@ -6,7 +6,125 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+### Changed
+
+- **`persona_type` inherits down the channel tree** · 2026-09-16
+  - `effective_persona_type(channel_id)` (`migration_channel_persona_inheritance.sql`), a sibling of
+    `effective_channel_logo`, walks `parent_channel_id` up to the nearest channel whose config sets
+    `persona_type` and returns `'nano'` only when no ancestor does. Every server-side channel-default
+    read — `handlePostChat`, the questionnaire follow-up, Formulate Dots, `loadUserForVivaAg`,
+    `resolveProgramPersona`, the Viva/persona subscription handlers, the formulation notifies, and
+    the dispatcher's check-in and program scans — now goes through it instead of
+    `COALESCE(c.config->>'persona_type','nano')`. A sub-channel created under `aeviva-china` with
+    `config = '{}'` (as `aeviva-china-sw` was, on prod) previously ran Nano.
+  - `GET /api/channels` returns `effective_persona_type`; the Channels tab badge and the Settings /
+    Add Channel forms show the inherited value rather than a misleading "nano" default.
+    `config->>'persona_type'` alone is now the channel's *own* setting, not its effective one.
+  - **`sub_age_display_names`, `admin_tabs` and `locale` inherit the same way** via the generic
+    `effective_channel_config(channel_id, key)` (`migration_channel_config_inheritance.sql`) —
+    NULL, `{}`, `[]` and `""` all mean "not set here, ask the parent", which matches how the
+    readers already treated an empty value. A scalar comes back as text with `#>> '{}'`. Rewritten readers: every login-response channel shape
+    (`login.js`, `phone-otp.js` → email-otp via `shapeUserRow`), `handlePostChat`'s
+    `channelSubAgeNames`, and `handleAdminLogin`'s feature-tab derivation. `GET /api/channels`
+    adds `effective_admin_tabs` / `effective_sub_age_display_names`, which the Channels tab's
+    Admin Tabs and Sub-age Labels forms use as their starting state for a channel that sets none.
+    `locale` is rewritten at the same six login-shape sites and exposed as `effective_locale`.
+
 ### Added
+
+- **`health-report` project skill** (`.claude/skills/health-report/`) · 2026-09-16
+  - Captures the workflow that produced Mary's 54-page 全维度健康分析报告: `scripts/extract.js`
+    (every user-scoped table + the Dots formulary → JSON, DATE columns kept as `YYYY-MM-DD`),
+    `scripts/download-docs.js` (all `health_documents` PDFs from OSS + `pdftotext`, duplicate and
+    scanned-file flags), `scripts/parse_igg.py` / `parse_exome.py` (量康 IgG grids and the 77
+    exome traits), `report/` (the A4 page scaffold, 15 SVG chart helpers, headless-Chrome build
+    driver, working-dir skeleton) and `scripts/publish.js` (upload + completed `viva_ag_jobs` row
+    → the 数字孪生 综合报告 card). `references/` hold the seven-part outline, the data-source map
+    with its traps, the analysis/Dots-recipe rules and the chart guide. User content never lives
+    in the repo — parts and data stay in a scratch working directory.
+
+- **Check-in programs (打卡计划) — multi-day curricula in the chat tab** · 2026-09-16
+  - New `program_*` tables (`migration_programs.sql`, `migration_programs_coach_activation.sql`):
+    a program is a per-day curriculum that a **coach activates for a client they manage** (coach
+    app → client → 方案 → 打卡计划 → 激活 / 暂停 / 继续); there is no auto-enrollment. Activation
+    delivers Day 1 into the client's chat immediately; the user then works through the days
+    **sequentially, one per Shanghai calendar day** (a missed day pauses, never skips). Channel
+    bindings only scope which coaches may offer a program (a bound channel covers its
+    sub-channels). Deliberately not built on `health_plans`, which is a week-scale focus with the
+    same three tasks every day.
+  - Each day is one server-built chat bubble: intro, a `:::lesson` card that plays the day's
+    **Academy** video inline (fresh presigned URL per tap, `bindended` → `POST /academy/progress`),
+    and a `:::checkin` button that starts the day's 打卡 through the existing **questionnaire**
+    engine — one question at a time in the chat tab. Completion renders the day's recap template
+    (`Day 1完成 …`) from the answers and adds one short qwen-plus comment. Nothing leaves the
+    chat tab.
+  - Seeded `viva_7day_v1` (7天生命能力打卡, `draft`) with Day 1 authored in full: 十年生命能力,
+    用餐/步行时间, 饱胀感 / 精力状态 / 身体舒适度 before→after, 最大提醒. Days 2–7 are placeholders.
+  - New questionnaire input type **`time_picker`** (`"HH:mm"`) and questionnaire type
+    **`program_day`** (server-assigned on tap; not coach-assignable).
+  - Admin panel: Content ▸ **Programs** — programs, per-day editor (Academy lesson picker,
+    questionnaire picker, recap template with placeholder legend), channel binding, read-only
+    roster. Dispatcher: new `program.day` scan. Worker: `handlers/programs.js`, `lib/programs.js`.
+  - Record: `docs/architecture/programs.md`; rules: CLAUDE.md §42. Tests: `tests/programs.test.js`.
+
+- **Doc-extract contract 3 — tables stay tables, facts carry a key** · 2026-09-16
+  - Requested by Curia ahead of moving its layout stage to a model. Dev now declares
+    `contract_version: 3`; every version stays a superset of the last (a v2 worker keeps working).
+  - `structured.version: 2` — sections of tables with named columns and verbatim cells, plus
+    label/value pairs; validated as a table model (`invalid_structured` with the offending path)
+    and rendered in the miniapp as real tables (horizontally scrollable). Depth cap 6 → 8. Sent on
+    every document with any table the analyte reader did not consume, not only the special kinds.
+  - `source` — a cell reference (`s0.t0.r3` / `s2.p1`) on every observation, unmapped row, food
+    item and tag; stored (`health_report_items.source_ref`, `health_events.data.source_ref`,
+    `health_document_tags.source_ref`), checked against the block, dropped with a `bad_source`
+    **warning** (new response field: a field dropped from an item that still landed).
+  - `unmapped[].suggested_key` — the agent's guess at a catalog key. Stored beside the row
+    (`suggested_key`/`suggested_confidence`), **never promoted**, shown as 「可能为 …」 on the
+    report sheet's 其他项目 rows, never as the marker's name.
+  - `tag_catalog` (new table, ~170 seeded rows across allergy / condition / medication / diet /
+    lifestyle / result / family_history / procedure, with aliases and admitted `values` for
+    keyed results) ships on every claim and at `GET /doc-extract/catalog`. `memory_category` —
+    which `user_memory_facts` category a fact is mirrored into — is nano's column and is never
+    sent; it is NULL for every `family_history` row by design.
+  - `tags` — `findings` with the three things a consumer needs to act on one: a key, a status
+    (`current`/`past`/`stopped`, newest `since` wins per key) and an anchor. A `fact` resolves in
+    `tag_catalog`; an unknown key is **demoted** to a `descriptor` (`unknown_tag`), not rejected. Stored
+    on the document in `health_document_tags`; `lib/documentTags.js` re-derives the user's managed
+    `user_memory_facts` rows (new `tag_key` column; `medication` joins the category CHECK) from the
+    resolved current facts — the catalog's short `name_zh`, never the document's sentence — and
+    deactivates a managed row when its key resolves away or its document is cleared. A user's own
+    chat/admin fact is never touched. **`findings` no longer reaches `user_memory_facts`**: it is
+    stored as descriptors, which nothing acts on (two live runs wrote six false allergies that way).
+  - Re-promotion (`lib/repromotion.js`, `temp/repromote-extractions.js --env dev [--user] [--dry-run]`):
+    when either catalog gains a key or an alias, unmapped items, descriptors and v2 table rows are
+    re-resolved by **exact** NFKC-folded match, through the same unit/conversion/plausibility rules
+    as a fresh observation; `suggested_key` is reported as the alias backlog and never used as a match.
+  - Miniapp: tag chips under each document (fact solid, descriptor outlined and labelled 仅记录,
+    stopped/past struck through); v2 tables; `include_structured=1` also returns `tags`. VERSION 0916-2.
+  - Contract md/OpenAPI updated throughout (§6 tag vocabulary, §7 shapes, §8 rules incl. per-document
+    reasons, §10 limits); `tests/doc-extraction-contract.test.js` pins the seeded tag catalog, both
+    worked examples, every validator reason and warning against the docs; new `tests/document-tags.test.js`.
+
+- **综合报告 card on the 数字孪生 subtab** · 2026-09-15
+  - A new card between the health hero (the BioAge number) and the four twin layers lists the
+    user's completed Viva AG report artifacts and opens the PDF with `wx.openDocument`; several
+    reports open an action sheet. It is deliberately not a fifth twin layer and not filed under
+    健康文档 (inputs) — a report is the interpretation of the twin, not twin data.
+  - Backend: `GET /api/twin-reports` and `GET /api/twin-reports/file` (`handlers/twin_reports.js`)
+    read completed `viva_ag_jobs` rows with result files. Gated on **ownership** (same coarse
+    `users.coach_id` check as other per-user reads), not on the Viva AG entitlement, so a
+    delivered report stays openable after the add-on lapses. Files are addressed by index; the
+    `oss_key` never leaves the server (`publicResultFiles` is now exported from `viva_ag.js`).
+  - Mary's 54-page 全维度健康分析报告 was published on dev as a completed `full_analysis` job
+    (`claimed_by = 'claude-code-analyst'`) so the card has content.
+  - `completed_date` on the card is the **Shanghai** calendar day (`formatToShanghai`), not the
+    UTC date — a report finished after midnight UTC+8 showed yesterday's date. Test pins it.
+  - 2026-09-16: the same analysis was run on dev for Pin and for the eight remaining
+    `platinum_store` partners (GCN `partners.partner_type`, joined through `users.nano_user_id`),
+    with length scaled to each user's data (11–32 pages). Every one of those users' Kino panels
+    except one turned out to be estimator-synthesized (J2 hsCRP-only chips with the raw reading
+    outside the 0.2–2.5 window), so each report says so on its own 「我到底几岁」 page and builds
+    its conclusions on the uploaded documents, ring data and self-measurements instead.
 
 - **Email OTP login, alongside SMS, for the Waven channel** · 2026-09-15
   - Sign in or sign up with an email code on the miniapp login page (phone/email toggle), the web
@@ -21,6 +139,92 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
     lists `email`; native email OTP on `/api/auth/otp/{send,verify}`; `migration_0117` flips waven.
     The waven channel tree is now GCN-linked like aeviva (store webview, chat catalog, provisioning,
     admin console embed), resolved through the channel tree rather than a leaf-key set.
+
+- **Medical Records are built from uploaded 健康文档** (doc-extract contract v2) · 2026-09-15
+  - Measured against dev user Mary (22 PDFs): no extraction had ever run (the documents predate
+    the queue and nothing backfilled), and once it did most of her data had nowhere to go —
+    `biomarker_catalog` held 25 clinical keys and everything else (`unmapped`) survived only in
+    `doc_extraction_jobs.result`, unread by the twin, chat, or Viva AG.
+  - **Backfill**: `temp/backfill-doc-extraction-enqueue.js --env dev|prod [--user] [--dry-run]`
+    queues a job for every active document that has none, through the real `enqueueDocExtraction`.
+    The miniapp row for a job-less document now says 尚未解析 and offers 解析; a `failed` one offers
+    重试解析.
+  - **Catalog v2** (`migration_biomarker_catalog_v2.sql`): ~50 keys — Hcy, insulin, B12, folate,
+    CBC differential, liver (ALP/LDH/CK/bilirubins/proteins), Lp(a)/ApoA1/ApoB, FT3/FT4/TPOAb,
+    AMH/E2/testosterone/cortisol, tumor markers, a hair ICP-MS element panel (`Hair*`, µg/g), NAD+,
+    telomere, SBP/DBP. All context-only (`nano_dimension NULL`, `is_kino_core FALSE`). Plus
+    `aliases TEXT[]` (`migration_biomarker_catalog_aliases.sql`) shipped on every claim — dev
+    extractions were dropping `⾎红蛋⽩ Hb` / `⽢油三酯 TG` / `空腹⾎葡萄糖 FBG` although the markers
+    were catalogued. New `UNIT_CONVERSIONS` pairs mirrored in the contract table.
+  - **`health_report_items`** (`migration_health_report_items.sql`): one row per printed analyte,
+    mapped and unmapped (`key_name` NULL), with `ref_text` / `flag` / `section` as printed. A
+    report row is now written for every dated document that carried any analyte — a NAD+ report
+    with no catalogued key used to leave no report at all. Items cascade with the report on
+    re-run / 解析有误. Read back by `GET /health-reports/:id` (`items`), the report list
+    (`item_count`), the chat tool `get_health_reports`, and the AG bundle.
+  - **`structured`** (`health_documents.extracted_json`,
+    `migration_health_documents_user_edit_and_json.sql`): a schema-less, capped (64 KB / depth 6 /
+    200 per array / 500 chars per string, `:::`-stripped) JSON block for content that is neither
+    an analyte nor a finding — gene variants, microbiome abundances, HPV subtypes, telomere /
+    immune-age verdicts. Stored verbatim, rendered as a generic key/value tree under the document
+    row, shipped to the AG bundle; nano derives nothing from it.
+  - **Missing-date recovery**: `PATCH /health-documents/:id` (owner only) sets `doc_date` /
+    `doc_type` / `institution` / `note`, stamps `user_edited_at` (after which the extraction result
+    no longer overwrites those three), and `re_extract: true` clears and re-queues in one call.
+    The validator takes the ROW's date as the fallback for a page with none printed (never
+    today) — dev job 15 had refused six lipid/liver values as `missing_date`. Miniapp: a hint and
+    a date picker on such a row; the type badge opens an action sheet.
+  - **Doc types** `genetic`, `microbiome`, `functional_test` (validator, PATCH enum, `DOC_LABEL`,
+    OpenAPI, miniapp labels, report-type labels/colours). `tests/doc-extraction-contract.test.js`
+    holds the three vocabularies together and now parses both catalog migrations.
+  - **Twin lab panel = latest value PER MARKER** (`lib/labHistory.js`, used by
+    `healthTwinUpdater`): each marker carries its own `data_date`, catalog names, category and
+    ranges; `latest_lab_date` is the newest of them; `marker_count` / `dates` added. It was "every
+    marker on the single newest date", which a Vitamin-D-only report collapsed to one tile. Legacy
+    `results`-shaped rows are expanded server-side. **The twin UPSERT no longer `COALESCE`s
+    `latest_lab_data`/`latest_lab_date`** — deleting the last report left a stale panel forever
+    while both callers claimed to recompute without it.
+  - **Lab history**: `GET /lab-history?openid=&key_name=&series=1&coach_id=`; chat tool
+    `get_lab_history` (flat `kind:'lab_result'` rows, `date` field, values harvested into the
+    grounding allowlist under their `key_name` so a lab hsCRP ≠ Kino hsCRP is not a false
+    mismatch); AG bundle v4 `medical_records.lab_history`, `health_reports[].items`,
+    `documents[].summary/structured` (the doc-extract claim deliberately omits the reading it is
+    about to redo). JUDGE told that `external_lab_panel` markers may carry different dates.
+  - Miniapp Medical Records: header "最近 {d} · N 项 · 来自 M 份报告", per-tile own date, tap a
+    tile with history → trend chart; report cards show item counts; the report sheet renders
+    catalogued markers with server names/ranges and 其他项目（按报告原文）; uploaded documents
+    count toward the twin's Medical Records layer. Web user-app `buildLabPanel` reads the same
+    server fields (rebuild `dist`).
+  - Contract v2 in `docs/doc-extract-api.md` + `doc-extract-openapi.json` (`contract_version: 2`,
+    additive — a v1 worker keeps working); AG docs `bundle_version 4`. Curia-side work order sent
+    to the session that owns the worker (unit lexicon, alias/NFKC matching, `doc_date` fallback,
+    `unmapped` extras + cap, doc types, `structured`).
+  - **Prose guard in the validator** (`implausible_label`, `implausible_finding`), after two live
+    dev runs on Mary's documents had the agent's text-layer path submit sentence fragments as data —
+    an Hcy of 10 lifted from "理想水平是小于10μmol/L" (the results were 12.6 / 8.7), "如果被检者年龄小于
+    40 ng/ml" as an analyte, and six `allergy` facts ("过敏：免疫", "过敏：个别病人") from a genomics
+    report's explanatory text at a constant 0.85 confidence. A label must be an analyte name, a
+    finding a statement about the person; both are shape checks and both are reported back.
+  - `utils/config.js` VERSION → `0915-4`.
+
+- **Store checkout: the 收款码 can be saved to the album from the miniapp** · 2026-09-15
+  - New miniapp page `pages/pay-qr/`. GCN's `dashboard.html` payment screen runs inside
+    `pages/appview`'s `<web-view>`, which cannot save an image, so its "save the QR and open it
+    from your album" instruction was impossible to follow. The page now hands the store's signed
+    收款码 URL over via `wx.miniProgram.navigateTo`, and the native page saves it in one tap
+    (`wx.downloadFile` → `wx.saveImageToPhotosAlbum`, `scope.writePhotosAlbum` declared in
+    `app.json`) with a WeChat/Alipay 「扫一扫 → 相册」 hint.
+  - **The scan step is the floor, measured.** `wx.previewImage`'s long-press menu in a Mini Program
+    recognises only 小程序码/公众号/群/名片 codes — the store's `wxp://` 收款码 decodes fine locally
+    but gets no 识别图中二维码 (dev, order `df25055b`) — and Alipay cannot be launched from inside
+    WeChat. Removing the scan needs a `wx.requestPayment` merchant integration, not a page.
+  - No backend, schema or 确认收款/receipt-OCR change.
+  - **MP console step:** add `https://waven-gcn-assets-sh.oss-cn-shanghai.aliyuncs.com` to the
+    miniapp's downloadFile 合法域名, or 保存到相册 fails on device.
+  - The signed OSS URL is decoded exactly once on the receiving side and only if its outer
+    encoding survived WeChat's unreliable query auto-decode — a second pass turns the
+    Signature's `%2B`/`%3D` into `+`/`=` and OSS refuses the image.
+  - `utils/config.js` VERSION → `0915-3`.
 
 - **MCP server for the data-analysis workshop** (`CLAUDE.md` §41, `docs/architecture/mcp-server.md`) · 2026-09-15
   - New FC function `src/functions/mcp/` (`nano-mcp-dev`, `https://nano-dev.gcn.net/mcp`): a
@@ -112,6 +316,13 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   - **Deploy order: migrate first, then the worker.** The document list degrades to no extraction state if `doc_extraction_jobs` is missing, so the wrong order is survivable rather than breaking a user's only view of their own records.
 
 ### Changed
+
+- **`handlers/dots.js` split into five modules — no behaviour change** · 2026-09-16 (`worker/lib/{formulation,chatCards}.js`, `worker/handlers/{formulation_orders,store}.js`, `worker/handlers/dots.js`, `worker/index.js`, `worker/handlers/{chat,users}.js`, `worker/lib/agenticTools.js`, 12 tests, 4 `temp/` scripts, comment pointers in `lib/dotsProductModel.js`, `prompts/chat/{formulationPackageBlock,productRecommendBlock}.js`, `utils/markdown.js`, `pages/main/main.{js,wxml}`, `CLAUDE.md` §28/§36, `docs/architecture/{dots-formulation,dots-formulation-lifecycle,store-product-recommendation}.md`)
+  - The file had grown to 4,294 lines and 89 functions across four unrelated concerns. It is now 1,290 lines and owns only the I/O side of 营养定制: `handlePostFormulaDots`/`_handleFormulaDotsAgentic`, `_runDeterministicFormulation`, the plan writes (`_commitProposedPlan`, `_activateProposedPlan`, `_commitAgFormulation`), `handleGetNutritionPlan`, the checkout/label/review snapshots and dots CRUD.
+  - `lib/formulation.js` (1,437 lines) is the arithmetic — ranking → doses → daily budget → capsule levelling → tier ladder → `_expandPlanDay` — and is **pure**: no DB, no LLM, no network. That is the point of the cut: §28's "single expansion rule set for four consumers" is now a property of a module with no I/O, and the eight test files that exercised these functions require it directly instead of loading a handler that pulls in `openai`, `luxon` prompts and the pool.
+  - `lib/chatCards.js` — `_buildFormulaChartBlock`, `_buildProductCardBlock`, `_tierPitch`, `_formatDayRanges`. `handlers/formulation_orders.js` — `PACKAGE_STAGES`/`PACKAGE_STAGE_NARRATION`, `_mergeFormulationPackages`, `_fetchFormulationPackages`/`_fetchFormulationCodes`, `_resolveOrderContext`, `_awaitingOrders`, `handleGetFormulationOrders`, `handlePostFormulationSubmit`, `handlePostFormulationRedeem` (`lib/agenticTools.js` and `handlers/users.js` now require it). `handlers/store.js` already existed (item/SKU CRUD, order listings); the storefront read, channel inventory, order placement and Neo cartridge handlers moved into it verbatim, so the store is now one module.
+  - Every function moved by line range with its comment block; three doc comments that had been stranded hundreds of lines from their functions by earlier insertions (`_splitDotTiming`, `_emphasisPosition`, `_applyTierLadder`/`_selectTierVariant`) were re-attached, and one superseded description of the formula card was dropped. A dead `debitUser` import went with it. `_formulationLabelUrl` stays in `dots.js` for the card-parser test that still recognises the URL shape from chat history.
+  - Verified: `npm test` 769/769; `tests/health-plan-focus-mapping.test.js` no longer has to `new Function()` two functions out of the handler's source text — it requires `lib/formulation.js`. Miniapp VERSION `0916-1` (comment-only changes there).
 
 - **The 营养定制 tool's own opening message says 原粒, not DOTS** (`pages/main/main.js`, `pages/coach/coach.js`, `src/web/user-app/src/i18n.js`)
   - Tapping the tool posts a user message on the user's behalf, and the zh copy read `请帮我配制我的 DOTS 方案` — the only zh string in that block still naming the product in Latin, everything else already says 原粒. It is `persist: true`, so it is written to `chat_messages` and becomes part of the history the model reads on later turns; it now matches the vocabulary every prompt, `humanizeDotCodes` and the formula card already use. English is unchanged — Dots is the product's English name.

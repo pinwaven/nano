@@ -143,6 +143,12 @@ const T = {
     bsHeight: '身高', bsWeight: '体重', bsCm: 'cm', bsKg: 'kg',
     male: '男', female: '女',
     selectBirthday: '选择出生日期',
+    selectTime: '选择时间',
+    programCheckinCta: '开始打卡',
+    programCheckinDone: '已完成打卡',
+    programLessonPlay: '观看课程',
+    programLessonDone: '已观看',
+    programLessonUnavailable: '课程暂时无法播放',
     dotsTitle: '营养方案',
     neoBindTitle: '请先绑定 Neo 分配器以管理原粒盒',
     neoBindBtn: '绑定 Neo 设备',
@@ -172,7 +178,7 @@ const T = {
     // Stage labels are keyed by the server's own stage string (t['pkgStage_' + p.stage]),
     // following the t['scanBoxErr_' + reason] convention already used below. A stage with no key
     // renders empty — WXML has no compile-time key checking — so every value in
-    // handlers/dots.js's PACKAGE_STAGES must have a line here AND in the en block.
+    // handlers/formulation_orders.js's PACKAGE_STAGES must have a line here AND in the en block.
     pkgSectionTitle: '我的原粒套餐',
     pkgStage_proposed: '待下单',
     pkgStage_pending_payment: '待付款',
@@ -522,6 +528,12 @@ const T = {
     bsHeight: 'Height', bsWeight: 'Weight', bsCm: 'cm', bsKg: 'kg',
     male: 'Male', female: 'Female',
     selectBirthday: 'Select Birthday',
+    selectTime: 'Select time',
+    programCheckinCta: 'Start check-in',
+    programCheckinDone: 'Checked in',
+    programLessonPlay: 'Watch lesson',
+    programLessonDone: 'Watched',
+    programLessonUnavailable: 'Lesson unavailable right now',
     dotsTitle: 'Nutrition Plan',
     neoBindTitle: 'Bind a Neo dispenser to manage your cartridges',
     neoBindBtn: 'Bind Neo Device',
@@ -847,6 +859,7 @@ const AI_ECHO_TYPES = new Set([
   'coach_message', 'morning_checkin', 'midday_checkin', 'evening_checkin',
   'viva_ag_result', 'viva_ag_failed', 'viva_ag_questionnaire',
   'doc_extraction_result',
+  'program_day', 'program_day_summary', 'program_day_comment',
 ])
 
 // How long _poll keeps the typing indicator up for a reply before giving up, by how the server
@@ -1107,7 +1120,8 @@ function mapCodes(rawCodes, t, lang) {
 }
 
 // One row per dots package, for Plans ▸ Dots. The server already merged the GCN order with
-// nano's own formula and derived the stage (handlers/dots.js, _mergeFormulationPackages); this
+// nano's own formula and derived the stage (handlers/formulation_orders.js,
+// _mergeFormulationPackages); this
 // only turns that into strings, because WXML cannot format or branch on a numeric day count.
 //
 // Every stage label is looked up as t['pkgStage_' + stage] rather than switched on here, so a new
@@ -1297,6 +1311,10 @@ Page({
     obSliderDisplay: {},   // { weight: '65.0' } formatted display values
     obName: '',
     obBirthday: '',
+    obTime: '',            // time_picker answer, 'HH:mm'
+    // 打卡 program card state (CLAUDE.md §42), from GET /api/programs/my — stamped onto
+    // :::lesson / :::checkin segments by _attachProgramState. Never written by the client.
+    programState: { lessons: {}, days: {} },
     obHeight: 165,
     obWeight: 65,
     obWeightDisplay: '65.0',
@@ -1905,6 +1923,141 @@ Page({
     const skuId = e.currentTarget.dataset.sku
     if (!this.data.isAeviva || !skuId) return
     this._openAevivaStoreGated({ intent: 'view_product', sku_id: skuId })
+  },
+
+  // ── 打卡 program cards (CLAUDE.md §42) ─────────────────────────────────────
+  //
+  // A program day arrives as one server-built bubble: intro prose, a :::lesson card (Academy
+  // lesson id + title) and a :::checkin card (program id + day index). Everything the cards
+  // show beyond that — watched / checked-in / still open — is runtime state from
+  // GET /api/programs/my, stamped in place here. A reloaded transcript therefore renders the
+  // right done-state, and a stale presigned video URL is never in the message at all.
+
+  // Stamps done-state onto lesson/checkin segments from this.data.programState. In place, like
+  // _attachSparks; reports whether anything changed so callers can skip a setData.
+  _attachProgramState(segments) {
+    const st = this.data.programState || { lessons: {}, days: {} }
+    let changed = false
+    for (const seg of segments || []) {
+      if (!seg) continue
+      if (seg.t === 'lesson') {
+        const done = !!(st.lessons && st.lessons[seg.lessonId])
+        if (seg.done !== done) { seg.done = done; changed = true }
+      } else if (seg.t === 'checkin') {
+        const d = st.days && st.days[`${seg.programId}:${seg.dayIndex}`]
+        const done = !!(d && d.checkin_done)
+        const lessonDone = !d || d.lesson_done
+        // Tappable only while the day is offered and its 打卡 is still open. A card from a day
+        // the server never offered (or a sandbox preview) stays inert.
+        const active = !!d && !d.checkin_done
+        if (seg.done !== done) { seg.done = done; changed = true }
+        if (seg.lessonDone !== lessonDone) { seg.lessonDone = lessonDone; changed = true }
+        if (seg.active !== active) { seg.active = active; changed = true }
+      }
+    }
+    return changed
+  },
+
+  // Re-reads the user's program state and patches only the segments whose flags changed.
+  // Called after history loads, when a program_day* notification lands, after a lesson ends
+  // and after a program questionnaire completes — never on a timer of its own.
+  async _refreshProgramState() {
+    const user = this.data.user
+    if (!user) return
+    try {
+      const res = await this._req(`${BASE}/api/programs/my?openid=${encodeURIComponent(user.user_id)}`)
+      const enrollments = res.data?.enrollments || []
+      const state = { lessons: {}, days: {} }
+      for (const e of enrollments) {
+        for (const d of (e.days || [])) {
+          state.days[`${e.program_id}:${d.day_index}`] = {
+            checkin_done: !!d.checkin_completed_at,
+            lesson_done: !d.lesson_id || !!d.lesson_completed_at,
+            completed: !!d.completed_at,
+          }
+          if (d.lesson_id && d.lesson_completed_at) state.lessons[String(d.lesson_id)] = true
+        }
+      }
+      this.data.programState = state
+      const messages = this.data.messages || []
+      const patch = {}
+      messages.forEach((m, mi) => {
+        if (!m || !Array.isArray(m.segments)) return
+        m.segments.forEach((seg, si) => {
+          if (!seg || (seg.t !== 'lesson' && seg.t !== 'checkin')) return
+          const before = { done: seg.done, lessonDone: seg.lessonDone, active: seg.active }
+          if (!this._attachProgramState([seg])) return
+          for (const k of ['done', 'lessonDone', 'active']) {
+            if (seg[k] !== before[k]) patch[`messages[${mi}].segments[${si}].${k}`] = seg[k]
+          }
+        })
+      })
+      if (Object.keys(patch).length) this.setData(patch)
+    } catch (e) { if (IS_DEV) console.error('program state refresh failed', e) }
+  },
+
+  // 观看课程 on a :::lesson card: fetch a fresh presigned URL and mount the <video> inline. Only
+  // one native <video> is kept alive in the transcript at a time — any other card's url is
+  // cleared first.
+  async handleLessonCardTap(e) {
+    const { mi, si, lesson } = e.currentTarget.dataset
+    const user = this.data.user
+    const seg = this.data.messages?.[mi]?.segments?.[si]
+    if (!user || !lesson || !seg || seg.t !== 'lesson' || seg.loading) return
+    const patch = {}
+    ;(this.data.messages || []).forEach((m, i) => (m.segments || []).forEach((sg, j) => {
+      if (sg && sg.t === 'lesson' && sg.url) { sg.url = ''; patch[`messages[${i}].segments[${j}].url`] = '' }
+    }))
+    seg.loading = true
+    patch[`messages[${mi}].segments[${si}].loading`] = true
+    this.setData(patch)
+    try {
+      const res = await this._req(`${BASE}/api/programs/lesson-url?openid=${encodeURIComponent(user.user_id)}&lesson_id=${encodeURIComponent(lesson)}`)
+      const d = res.data || {}
+      if (!d.success || !d.url) throw new Error(d.error || 'no url')
+      seg.url = d.url; seg.poster = d.poster_url || ''; seg.loading = false
+      this.setData({
+        [`messages[${mi}].segments[${si}].url`]: seg.url,
+        [`messages[${mi}].segments[${si}].poster`]: seg.poster,
+        [`messages[${mi}].segments[${si}].loading`]: false,
+      })
+    } catch (err) {
+      seg.loading = false
+      this.setData({ [`messages[${mi}].segments[${si}].loading`]: false })
+      wx.showToast({ title: this.data.t.programLessonUnavailable, icon: 'none' })
+    }
+  },
+
+  // The inline player reached the end: same write the Academy tab's ✓ button makes
+  // (POST /api/academy/progress), which the server also uses to stamp the program day.
+  async handleLessonEnded(e) {
+    const lessonId = Number(e.currentTarget.dataset.lesson)
+    if (!lessonId) return
+    await this._doMarkComplete(lessonId)
+    this._refreshProgramState()
+  },
+
+  // 开始打卡: ask the server for today's questionnaire assignment (created on demand — see
+  // handlers/programs.js for why never earlier), then start it through the ordinary pending-
+  // questionnaire flow. No questionnaire_ready notification is involved, so nothing else can
+  // start the same form a second time.
+  async handleCheckinStart(e) {
+    const { program, day } = e.currentTarget.dataset
+    const { user, obStep, typing } = this.data
+    if (!user || !program || !day || typing || obStep !== 'done') return
+    try {
+      const res = await this._req(`${BASE}/api/programs/day/start-checkin`, 'POST', {
+        openid: user.user_id, program_id: Number(program), day_index: Number(day),
+      })
+      const d = res.data || {}
+      if (!d.success) { wx.showToast({ title: d.error || this.data.t.errServer, icon: 'none' }); return }
+      // done: a day with no form completed on tap. sandbox: the superadmin preview short-circuit
+      // returns no assignment — nothing to start.
+      if (d.done || d.sandbox) { this._refreshProgramState(); return }
+      await this._checkForPendingQuestionnaire()
+    } catch (err) {
+      wx.showToast({ title: this.data.t.errServer, icon: 'none' })
+    }
   },
 
   // "Buy This Formulation" CTA in the plan-detail overlay — only rendered (see main.wxml) once
@@ -2924,9 +3077,17 @@ Page({
         const ids = history.map(m => m.id).filter(id => typeof id === 'number')
         this._lastMsgId = ids.length > 0 ? Math.max(...ids) : 0
         this._oldestDbId = ids.length > 0 ? Math.min(...ids) : 0
+        // Register every AI bubble history just rendered with the cross-channel de-dup. A
+        // dual-written message delivered while the app was closed (a daily check-in, an AG
+        // result, a coach-activated program day) is already in chat_messages AND still
+        // 'pending' in notifications — without this the first poll after launch renders it a
+        // second time. Found live 2026-09-16 on a program day activated from the coach page.
+        history.forEach(m => { if (m.role === 'ai' || m.role === 'assistant') this._markRenderedAi(m.content) })
         this.setData({ messages: msgs, hasMoreHistory: res.data?.has_more ?? false })
         this._scrollBottom()
         historyLoaded = true
+        // Program cards in history get their watched / checked-in state from the server.
+        this._refreshProgramState()
       } else {
         this._lastMsgId = 0
       }
@@ -2995,7 +3156,9 @@ Page({
   _startQuestionnaire(assignment, questions, firstIdx) {
     const { lang } = this.data
     const t = T[lang]
-    if (assignment.type !== 'onboarding') {
+    // A program day's 打卡 (§42) was introduced by its own card; the coach-questions intro would
+    // be wrong for it.
+    if (assignment.type !== 'onboarding' && assignment.type !== 'program_day') {
       this._addMsg('ai', t.questionnaireIntro, true)
     }
     this.setData({
@@ -3044,6 +3207,10 @@ Page({
 
     if (q.input_type === 'date_picker') {
       update.obBirthday = ''
+    }
+
+    if (q.input_type === 'time_picker') {
+      update.obTime = (q.config && q.config.default) || ''
     }
 
     if (q.input_type === 'text') {
@@ -3144,7 +3311,11 @@ Page({
       }
     } catch (e) {}
 
-    this._onAllQuestionnaireDone(this.data.user, obQuestionnaireType)
+    // A program day's recap + comment arrive via the poll within a tick, so no "thanks" bubble
+    // — and the card's 已完成打卡 state comes from the server, not from us.
+    const isProgramDay = obQuestionnaireType === 'program_day'
+    this._onAllQuestionnaireDone(this.data.user, obQuestionnaireType, isProgramDay)
+    if (isProgramDay) this._refreshProgramState()
   },
 
   _onAllQuestionnaireDone(user, completedType, silent = false) {
@@ -3219,7 +3390,7 @@ Page({
     const msg = { id, role: r, imageUrl: imageUrl || null, source: source || null, ts: createdAt ? +new Date(createdAt) : Date.now(), sep: '' }
     if (r === 'action') { msg.action = action; msg.label = label; return msg }
     if (r === 'coach') { msg.content = (content || '').replace(/\n+/g, ' '); return msg }
-    if (r === 'ai') { msg.segments = mdToSegments(content || ''); this._attachSparks(msg.segments); this._attachFormulaCta(msg.segments) }
+    if (r === 'ai') { msg.segments = mdToSegments(content || ''); this._attachSparks(msg.segments); this._attachFormulaCta(msg.segments); this._attachProgramState(msg.segments) }
     else msg.content = content || ''
     // Distinguishes an image-only bubble (which drops its padding via .msg-bubble-image) from an
     // image WITH text, which must keep it. The old wx:elif chain rendered the image and silently
@@ -3837,6 +4008,8 @@ Page({
           // only starts one if an unanswered question actually exists — so it's safe to call
           // unconditionally here even on a duplicate/racing notification.
           if (hasQuestionnaireReady) this._checkForPendingQuestionnaire()
+          // A program day / recap just landed: its card's flags come from the server.
+          if (realRows.some(n => typeof n.notification_type === 'string' && n.notification_type.indexOf('program_day') === 0)) this._refreshProgramState()
         }
       }
     } catch (e) {}
@@ -3932,6 +4105,14 @@ Page({
   },
 
   onBirthdayChange(e) { this.setData({ obBirthday: e.detail.value }) },
+
+  onObTimeChange(e) { this.setData({ obTime: e.detail.value }) },
+
+  async handleSubmitTime() {
+    const { obTime } = this.data
+    if (!obTime) return
+    await this._saveAnswer(obTime, obTime)
+  },
 
   async handleSubmitBirthday() {
     const { obBirthday } = this.data

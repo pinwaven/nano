@@ -19,7 +19,7 @@ async function handleGetChannels(adminCtx) {
                     JOIN subtree s ON c.parent_channel_id = s.id
                     WHERE s.depth < 20
                 )
-                SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at,
+                SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, effective_persona_type(c.id) AS effective_persona_type, effective_channel_config(c.id, 'admin_tabs') AS effective_admin_tabs, effective_channel_config(c.id, 'sub_age_display_names') AS effective_sub_age_display_names, effective_channel_config(c.id, 'locale') #>> '{}' AS effective_locale,
                        c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers, c.can_customize_partner_system, c.can_customize_store, c.can_manage_warehouses, c.autonomous,
                        st.depth,
                        COUNT(DISTINCT u.user_id) AS user_count,
@@ -39,7 +39,7 @@ async function handleGetChannels(adminCtx) {
             return { success: true, channels: result.rows };
         }
         const result = await pool.query(`
-            SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers, c.can_customize_store, c.can_manage_warehouses, c.autonomous,
+            SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, effective_persona_type(c.id) AS effective_persona_type, effective_channel_config(c.id, 'admin_tabs') AS effective_admin_tabs, effective_channel_config(c.id, 'sub_age_display_names') AS effective_sub_age_display_names, effective_channel_config(c.id, 'locale') #>> '{}' AS effective_locale, c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers, c.can_customize_store, c.can_manage_warehouses, c.autonomous,
                    COUNT(DISTINCT u.user_id) AS user_count,
                    COUNT(DISTINCT p.id) AS coach_count,
                    COUNT(DISTINCT kd.id) AS kino_device_count,

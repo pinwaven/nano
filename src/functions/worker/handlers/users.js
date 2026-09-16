@@ -883,7 +883,7 @@ async function _settleFastTrackPackage(user, { max_distinct_dots, package_name, 
     if (Number.isFinite(planId) && planId > 0) {
         try {
             // Required at call time for the same reason ./chat is below.
-            const { handlePostFormulationSubmit } = require('./dots');
+            const { handlePostFormulationSubmit } = require('./formulation_orders');
             const result = await handlePostFormulationSubmit({ openid: user.user_id, plan_id: planId });
             if (result?.success) {
                 console.log(JSON.stringify({ level: 'INFO', msg: 'fasttrack_auto_submitted',
@@ -925,7 +925,7 @@ async function _notifyFormulationAutoSubmitted(user, { package_name }) {
         const { deliverTerminalMessage } = require('./chat');
         const { resolveEffectivePersona } = require('../lib/persona');
         const { rows: [row] } = await pool.query(
-            `SELECT c.config->>'persona_type' AS channel_persona,
+            `SELECT effective_persona_type(c.id) AS channel_persona,
                     u.persona_override_type, u.persona_override_expires_at
              FROM users u LEFT JOIN channels c ON c.id = u.channel_id
              WHERE u.user_id = $1`,
@@ -964,7 +964,7 @@ async function _notifyFormulationPackagePaid(user, { max_distinct_dots, package_
         const { deliverTerminalMessage } = require('./chat');
         const { resolveEffectivePersona } = require('../lib/persona');
         const { rows: [row] } = await pool.query(
-            `SELECT c.config->>'persona_type' AS channel_persona,
+            `SELECT effective_persona_type(c.id) AS channel_persona,
                     u.persona_override_type, u.persona_override_expires_at
              FROM users u LEFT JOIN channels c ON c.id = u.channel_id
              WHERE u.user_id = $1`,

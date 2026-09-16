@@ -31,11 +31,12 @@ Index: `idx_channels_parent` on `parent_channel_id`.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `persona_type` | TEXT | `'nano'` | AI persona: `'nano'` or `'viva'` |
-| `admin_tabs` | TEXT[] | `[]` | Tabs visible to this channel's admin |
+| `persona_type` | TEXT | inherited | AI persona: `'nano'` or `'viva'`. **Inherits from the nearest ancestor that sets it** via `effective_persona_type(channel_id)` (`migration_channel_persona_inheritance.sql`, same walk as `effective_channel_logo`); `'nano'` only when no ancestor sets one. Server code must read the function, never `config->>'persona_type'` directly. |
+| `admin_tabs` | TEXT[] | inherited | Tabs visible to this channel's admin. Unset/`[]` inherits via `effective_channel_config(id, 'admin_tabs')` (`migration_channel_config_inheritance.sql`) |
 | `credit_exchange_rate` | FLOAT | `1.0` | Credits per CNY |
 | `currency` | TEXT | `'CNY'` | Display currency |
-| `sub_age_labels` | OBJECT | `{}` | Per-dimension display name overrides |
+| `locale` | TEXT | inherited | Channel locale (`'zh'`/`'en'`) returned in the login channel shape. Unset/`""` inherits via `effective_channel_config(id, 'locale') #>> '{}'` |
+| `sub_age_display_names` | OBJECT | inherited | Per-dimension display name overrides, `{Key: {zh, en}}`. Unset/`{}` inherits via `effective_channel_config(id, 'sub_age_display_names')` |
 
 ### `admin_accounts`
 

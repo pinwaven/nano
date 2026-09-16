@@ -23,7 +23,7 @@ const stub = (rel, exports) => {
 };
 
 // What the GCN half is told to do on the next call. Reassigned per test rather than rebuilt,
-// because handlers/dots.js captures these at require time.
+// because handlers/formulation_orders.js captures these at require time.
 let gcnCodes = async () => [];
 let gcnOrders = async () => [];
 let redeemImpl = async () => ({ order_id: 'ord-1' });
@@ -47,7 +47,12 @@ stub('lib/gcnClient.js', {
     submitFastTrackFormulation: async () => ({ order_id: 'ord-1' }),
 });
 
-const D = require(path.join(WORKER, 'handlers', 'dots.js'));
+// The package list and the redeem action live in formulation_orders.js; the Dots subtab read
+// that embeds them is still dots.js. Both capture the stubs above at require time.
+const D = {
+    ...require(path.join(WORKER, 'handlers', 'formulation_orders.js')),
+    ...require(path.join(WORKER, 'handlers', 'dots.js')),
+};
 
 const proposal = (recipe) => ({
     id: 38860, status: 'proposed', created_at: '2026-09-07T04:17:38.414Z',

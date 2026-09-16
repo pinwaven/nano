@@ -54,6 +54,7 @@ test('every notification type written to BOTH chat_messages and notifications is
         'chat_reply', 'formulation_proposal', 'nutrition_plan', 'formulation_order_paid',
         'coach_message',           // agent/index.js
         'morning_checkin', 'midday_checkin', 'evening_checkin',   // handlers/checkin.js
+        'program_day',             // handlers/programs.js (claim row + saveChatMessage, §42)
     ];
     for (const t of knownDual) assert.ok(echo.has(t), `${t} is dual-written but not in AI_ECHO_TYPES`);
 

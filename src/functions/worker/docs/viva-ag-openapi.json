@@ -635,7 +635,8 @@
                             "button_select",
                             "multi_select",
                             "slider_group",
-                            "date_picker"
+                            "date_picker",
+                            "time_picker"
                           ]
                         },
                         "prompt_zh": {
@@ -649,7 +650,7 @@
                         },
                         "config": {
                           "type": "object",
-                          "description": "Per input_type: options[] for button_select/multi_select (max 12, an option keyed \"other\" is rejected); sliders[] for slider_group (max 6); min_date/max_date for date_picker; placeholder_zh/_en for text."
+                          "description": "Per input_type: options[] for button_select/multi_select (max 12, an option keyed \"other\" is rejected); sliders[] for slider_group (max 6); min_date/max_date for date_picker; default/start/end (HH:mm) for time_picker; placeholder_zh/_en for text."
                         }
                       }
                     }

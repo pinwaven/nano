@@ -337,6 +337,28 @@ module.exports.c = function (hex, theme) {
         </view>
       </view>
 
+      <!-- 综合报告: the interpretation OF the twin, so it sits between the hero (the number) and
+           the four layers (the data) rather than inside any layer — see CLAUDE.md §34's rule that
+           a surface must declare a layer or question itself; a derived report is neither. Backed by
+           completed viva_ag_jobs artifacts via /api/twin-reports (ownership-gated, not
+           entitlement-gated, so a report stays openable after the add-on lapses). The PDF opens
+           with wx.openDocument exactly as the AG panel does; .md/.txt fall back to the AG panel. -->
+      <view wx:if="{{twinReportLatest}}" class="health-section">
+        <view class="section-title-row">
+          <text class="section-title">{{t.reportsTitle}}</text>
+          <text wx:if="{{twinReports.length > 1}}" class="tr-count" bindtap="onTwinReportListTap">{{t.reportsCount}} {{twinReports.length}} ›</text>
+        </view>
+        <view class="tr-card" bindtap="onTwinReportTap" data-uid="{{twinReportLatest.job_uid}}" data-index="{{twinReportLatest.primary_index}}">
+          <view class="tr-icon"><text>📄</text></view>
+          <view class="tr-body">
+            <text class="tr-title">{{twinReportLatest.title}}</text>
+            <text class="tr-meta">{{twinReportLatest.metaLine}}</text>
+            <text wx:if="{{twinReportLatest.summary}}" class="tr-summary">{{twinReportLatest.summary}}</text>
+          </view>
+          <view class="tr-open"><text>{{twinReportOpening ? t.reportsOpening : t.reportsOpen}}</text></view>
+        </view>
+      </view>
+
       <!-- Twin layer: Daily Monitoring -->
       <view class="health-section">
         <text class="section-title">{{t.layerDaily}}</text>
@@ -792,15 +814,19 @@ module.exports.c = function (hex, theme) {
         <view wx:if="{{labPanel.length > 0}}" class="ht-lab-snapshot-wrap">
           <view class="ht-lab-snapshot-header">
             <text class="ht-lab-snapshot-title">{{t.labPanel}}</text>
-            <text class="ht-lab-date">{{labPanelDate}}</text>
+            <text class="ht-lab-date">{{labPanelMeta || labPanelDate}}</text>
           </view>
+          <!-- Latest value PER MARKER across every report; a tile dated earlier than the
+               panel's newest date says so, and one with history opens its trend. -->
           <view class="ht-lab-grid">
-            <view wx:for="{{labPanel}}" wx:key="key" class="ht-lab-item {{item.status !== 'normal' ? 'ht-lab-item-abn' : ''}}" style="border-color: {{tc.c(item.statusColor, theme)}}22;">
+            <view wx:for="{{labPanel}}" wx:key="key" class="ht-lab-item {{item.status !== 'normal' ? 'ht-lab-item-abn' : ''}} {{item.hasTrend ? 'ht-lab-item-trend' : ''}}" style="border-color: {{tc.c(item.statusColor, theme)}}22;" bindtap="openLabChart" data-key="{{item.key}}">
               <text class="ht-lab-name" style="color: {{tc.c(item.status !== 'normal' ? item.statusColor : 'rgba(166,196,229,0.55)', theme)}}">{{item.displayName}}</text>
               <text class="ht-lab-val" style="color: {{tc.c(item.statusColor, theme)}};">{{item.value}}</text>
               <text class="ht-lab-unit">{{item.unit}}</text>
+              <text wx:if="{{item.dateShort || item.hasTrend}}" class="ht-lab-sub">{{item.dateShort}}{{item.dateShort && item.hasTrend ? ' · ' : ''}}{{item.hasTrend ? '↗' : ''}}</text>
             </view>
           </view>
+          <text class="ht-lab-hint">{{t.labPanelHint}}</text>
         </view>
         <view wx:if="{{reportsLoading}}" class="center-wrap" style="padding:32rpx 0;">
           <view class="pulse-dot"></view>
@@ -820,7 +846,7 @@ module.exports.c = function (hex, theme) {
                    data-url="{{item.image_url}}" />
             <view class="rpt-card-left" style="border-left-color: {{tc.c(item.type_color, theme)}};">
               <text class="rpt-institution">{{item.institution}}</text>
-              <text class="rpt-date">{{item.report_date}}</text>
+              <text class="rpt-date">{{item.report_date}}{{item.items_label ? ' · ' + item.items_label : ''}}</text>
             </view>
             <view class="rpt-type-badge" style="background: {{item.type_color}}18; border-color: {{tc.c(item.type_color, theme)}}44;">
               <text class="rpt-type-text" style="color: {{tc.c(item.type_color, theme)}};">{{item.report_type}}</text>
@@ -880,7 +906,8 @@ module.exports.c = function (hex, theme) {
            since the guest lock already replaces this whole body. -->
       <health-documents wx:if="{{!isGuest}}"
                         user-id="{{userId}}" lang="{{lang}}" theme="{{theme}}"
-                        can-upload="{{mode === 'self'}}" coach-id="{{coachId}}" />
+                        can-upload="{{mode === 'self'}}" coach-id="{{coachId}}"
+                        bindloaded="_onDocsLoaded" />
 
       <view style="height: 32px;"></view>
     </block>
@@ -993,7 +1020,7 @@ module.exports.c = function (hex, theme) {
 
           <!-- Lab Markers -->
           <view wx:if="{{activeReportEvents.length > 0}}" class="rpt-section">
-            <view wx:if="{{activeReport.hasDiag || activeReport.hasAdvice}}" class="rpt-section-header">
+            <view wx:if="{{activeReport.hasDiag || activeReport.hasAdvice || activeReportOtherItems.length > 0}}" class="rpt-section-header">
               <text class="rpt-section-icon">📊</text>
               <text class="rpt-section-title">{{t.rptMarkersTitle}}</text>
             </view>
@@ -1010,6 +1037,34 @@ module.exports.c = function (hex, theme) {
                   <text class="rpt-ev-val">{{item.value}}</text>
                   <text class="rpt-ev-unit"> {{item.unit}}</text>
                   <view class="rpt-ev-status" style="background: {{item.statusColor}}18; border-color: {{tc.c(item.statusColor, theme)}}44;">
+                    <text style="color: {{tc.c(item.statusColor, theme)}}; font-size: 18rpx; font-weight: 700;">{{item.statusLabel}}</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+          </view>
+
+          <!-- Everything else the report printed, kept by name (health_report_items with no
+               catalog key). No nano range for these, so the only verdict is the report's flag. -->
+          <view wx:if="{{activeReportOtherItems.length > 0}}" class="rpt-section">
+            <view class="rpt-section-header">
+              <text class="rpt-section-icon">📄</text>
+              <text class="rpt-section-title">{{t.rptOtherItemsTitle}}</text>
+            </view>
+            <view class="rpt-events-list">
+              <view wx:for="{{activeReportOtherItems}}" wx:key="index" class="rpt-ev-row">
+                <view class="rpt-ev-left">
+                  <view class="rpt-ev-dot" style="background: {{item.flagged ? item.statusColor : 'rgba(166,196,229,0.25)'}};"></view>
+                  <view class="rpt-ev-info">
+                    <text class="rpt-ev-name">{{item.key_name}}</text>
+                    <text wx:if="{{item.refText}}" class="rpt-ev-ref">{{t.rptRefRange}}  {{item.refText}}</text>
+                    <text wx:if="{{item.suggested}}" class="rpt-ev-ref rpt-ev-maybe">{{item.suggested}}</text>
+                  </view>
+                </view>
+                <view class="rpt-ev-right">
+                  <text class="rpt-ev-val">{{item.value}}</text>
+                  <text class="rpt-ev-unit"> {{item.unit}}</text>
+                  <view wx:if="{{item.flagged}}" class="rpt-ev-status" style="background: {{item.statusColor}}18; border-color: {{tc.c(item.statusColor, theme)}}44;">
                     <text style="color: {{tc.c(item.statusColor, theme)}}; font-size: 18rpx; font-weight: 700;">{{item.statusLabel}}</text>
                   </view>
                 </view>
@@ -1057,6 +1112,21 @@ module.exports.c = function (hex, theme) {
       <canvas canvas-id="uh-subage-chart" id="uh-subage-chart" class="weight-chart-full"
         style="width:{{subAgeChartW}}px;height:200px;"
         data-canvas-id="uh-subage-chart"
+        catchtouchstart="_onChartTouch" catchtouchmove="_onChartTouch" catchtouchend="_onChartTouchEnd"></canvas>
+    </view>
+  </view>
+
+  <!-- Lab Marker Chart Modal — a lab tile with more than one report behind it -->
+  <view wx:if="{{labChartOpen}}" class="wchart-overlay" bindtap="closeLabChart">
+    <view class="wchart-sheet" catchtap="noop">
+      <view class="wchart-handle"></view>
+      <view class="wchart-header">
+        <text class="wchart-title">{{labChartTitle}}{{labChartUnit ? ' (' + labChartUnit + ')' : ''}}</text>
+        <view class="wchart-close" bindtap="closeLabChart"><text>✕</text></view>
+      </view>
+      <canvas canvas-id="uh-lab-chart" id="uh-lab-chart" class="weight-chart-full"
+        style="width:{{labChartW}}px;height:200px;"
+        data-canvas-id="uh-lab-chart"
         catchtouchstart="_onChartTouch" catchtouchmove="_onChartTouch" catchtouchend="_onChartTouchEnd"></canvas>
     </view>
   </view>

@@ -454,6 +454,55 @@
                         <text class="pcard-arrow">›</text>
                       </view>
                     </view>
+                    <!-- :::lesson — a 打卡 program day's Academy lesson, played inline. The <video> is
+                         mounted only once the user taps (a fresh presigned URL per tap, never in the
+                         message) and reaching the end is what marks it watched. -->
+                    <view wx:elif="{{seg.t === 'lesson'}}" class="lcard">
+                      <video
+                        wx:if="{{seg.url}}"
+                        class="lcard-video"
+                        src="{{seg.url}}"
+                        poster="{{seg.poster}}"
+                        controls
+                        show-fullscreen-btn
+                        enable-progress-gesture
+                        object-fit="contain"
+                        bindended="handleLessonEnded"
+                        data-mi="{{mi}}"
+                        data-si="{{si}}"
+                        data-lesson="{{seg.lessonId}}"
+                      />
+                      <view
+                        wx:else
+                        class="lcard-cover"
+                        bindtap="handleLessonCardTap"
+                        data-mi="{{mi}}"
+                        data-si="{{si}}"
+                        data-lesson="{{seg.lessonId}}"
+                      >
+                        <text class="lcard-play">{{seg.loading ? t.loading : '▶  ' + t.programLessonPlay}}</text>
+                      </view>
+                      <view class="lcard-meta">
+                        <text class="lcard-title">{{seg.title}}</text>
+                        <text wx:if="{{seg.done}}" class="lcard-done">✓ {{t.programLessonDone}}</text>
+                      </view>
+                    </view>
+                    <!-- :::checkin — the same day's 开始打卡. Done-state is stamped from
+                         GET /api/programs/my; the button is inert until the server has offered the day. -->
+                    <view wx:elif="{{seg.t === 'checkin'}}" class="ccard">
+                      <view wx:if="{{seg.done}}" class="ccard-done">
+                        <text>✓ {{t.programCheckinDone}}</text>
+                      </view>
+                      <view
+                        wx:else
+                        class="ccard-cta {{seg.active ? '' : 'ccard-cta-off'}}"
+                        bindtap="handleCheckinStart"
+                        data-program="{{seg.programId}}"
+                        data-day="{{seg.dayIndex}}"
+                      >
+                        <text>{{seg.label || t.programCheckinCta}}</text>
+                      </view>
+                    </view>
                   </view>
                 </block>
                 <mp-html
@@ -526,6 +575,25 @@
           </view>
         </picker>
         <view class="ob-confirm {{obBirthday ? '' : 'ob-confirm-off'}}" bindtap="handleSubmitBirthday">
+          <text>{{t.confirm}}</text>
+        </view>
+      </view>
+
+      <!-- Questionnaire: time picker (用餐时间 / 步行时间 in a 打卡 program day) -->
+      <view wx:if="{{obQuestion && obQuestion.input_type === 'time_picker'}}" class="ob-bar birthday-bar">
+        <picker
+          mode="time"
+          value="{{obTime}}"
+          start="{{obQuestion.config.start || '00:00'}}"
+          end="{{obQuestion.config.end || '23:59'}}"
+          bindchange="onObTimeChange"
+        >
+          <view class="picker-row">
+            <text class="picker-val">{{obTime || t.selectTime}}</text>
+            <text class="picker-arrow">›</text>
+          </view>
+        </picker>
+        <view class="ob-confirm {{obTime ? '' : 'ob-confirm-off'}}" bindtap="handleSubmitTime">
           <text>{{t.confirm}}</text>
         </view>
       </view>
@@ -827,7 +895,7 @@
 
         <!-- ── My dots packages ────────────────────────────────────────────────────────────
              One row per journey, merged server-side from the GCN order and nano's own formula
-             (handlers/dots.js, _mergeFormulationPackages). This is the whole point of the
+             (handlers/formulation_orders.js, _mergeFormulationPackages). This is the whole point of the
              feature: where a user's capsules are, without opening the store webview.
              Above the order card, so "where are mine" reads before "buy another". -->
         <view wx:if="{{isAeviva && !isGuest && packages.length > 0}}" class="pkg-section">
@@ -864,7 +932,7 @@
         </view>
 
         <!-- ── 兑换码 ────────────────────────────────────────────────────────────────────
-             The unredeemed codes this user owns (handlers/dots.js, _fetchFormulationCodes),
+             The unredeemed codes this user owns (handlers/formulation_orders.js, _fetchFormulationCodes),
              below the packages so "where are mine" still reads before "what I can start".
 
              Only codes bought in-app carry a buyer and can be listed, so 输入兑换码 is not a

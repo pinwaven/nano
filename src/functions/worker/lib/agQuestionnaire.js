@@ -34,10 +34,11 @@
  * should ask a separate 'text' question, where the answer actually lands in the response record.
  */
 
-// The five values questionnaire_questions.input_type's CHECK constraint allows. The miniapp's
-// renderer (pages/main/main.wxml:325-440) has one widget per value and no default branch, so a
-// sixth would render as a question with no way to answer it.
-const INPUT_TYPES = new Set(['text', 'button_select', 'date_picker', 'slider_group', 'multi_select']);
+// The six values questionnaire_questions.input_type's CHECK constraint allows. The miniapp's
+// renderer (pages/main/main.wxml, the ob-bar blocks) has one widget per value and no default
+// branch, so a seventh would render as a question with no way to answer it. time_picker was added
+// for the 打卡 programs (migration_programs.sql): a bare "HH:mm" via <picker mode="time">.
+const INPUT_TYPES = new Set(['text', 'button_select', 'date_picker', 'slider_group', 'multi_select', 'time_picker']);
 
 const MAX_QUESTIONS = 12;
 const MAX_PROMPT_LENGTH = 500;
@@ -48,6 +49,7 @@ const MAX_PLACEHOLDER_LENGTH = 80;
 
 const KEY_RE = /^[a-z0-9_]{1,40}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
 
 // 'other' reveals a free-text input whose value never reaches questionnaire_responses (see the
@@ -211,6 +213,26 @@ function _buildDateConfig(rawConfig, idx, violations) {
     return config;
 }
 
+// {default?, start?, end?} as "HH:mm". A bad value is dropped rather than rejected — the widget
+// has sane defaults (00:00–23:59, empty) and none of these can mis-write anything.
+function _buildTimeConfig(rawConfig, idx, violations) {
+    const config = {};
+    for (const k of ['default', 'start', 'end']) {
+        const v = rawConfig && rawConfig[k];
+        if (v == null || v === '') continue;
+        if (!TIME_RE.test(String(v))) {
+            violations.push(_violation('invalid_time_bound', `Question ${idx + 1}: ${k} must be HH:mm (got ${JSON.stringify(v)}).`));
+            continue;
+        }
+        config[k] = String(v);
+    }
+    if (config.start && config.end && config.start > config.end) {
+        violations.push(_violation('invalid_time_bound', `Question ${idx + 1}: start is after end.`));
+        return null;
+    }
+    return config;
+}
+
 function _buildTextConfig(rawConfig) {
     const config = {};
     const zh = sanitizeDisplayText(rawConfig && rawConfig.placeholder_zh).slice(0, MAX_PLACEHOLDER_LENGTH);
@@ -293,6 +315,7 @@ function validateAgQuestions(rawQuestions) {
         if (inputType === 'button_select' || inputType === 'multi_select') config = _buildOptionConfig(rawConfig, idx, violations);
         else if (inputType === 'slider_group') config = _buildSliderConfig(rawConfig, idx, violations);
         else if (inputType === 'date_picker') config = _buildDateConfig(rawConfig, idx, violations);
+        else if (inputType === 'time_picker') config = _buildTimeConfig(rawConfig, idx, violations);
         else config = _buildTextConfig(rawConfig);
         if (config === null) continue;
 

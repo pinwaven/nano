@@ -251,11 +251,24 @@ export function buildLabPanel(twin, lang) {
   const items = [];
 
   if (labData.markers) {
+    // Since 2026-09-15 each marker is the LATEST value for that marker across every report
+    // (its own data_date) and carries the server's names and ranges; the client tables are
+    // only a fallback for a twin written before that.
+    const panelDate = String(labDate).substring(0, 10);
     for (const [key, info] of Object.entries(labData.markers)) {
       const v = parseFloat(info.value);
-      const status = bioStatus(key, v);
+      const lo = info.ref_low != null ? Number(info.ref_low) : null;
+      const hi = info.ref_high != null ? Number(info.ref_high) : null;
+      let status;
+      if (lo != null || hi != null) status = hi != null && v > hi ? 'high' : lo != null && v < lo ? 'low' : 'normal';
+      else status = bioStatus(key, v);
       const statusColor = status === 'high' ? '#ef4444' : status === 'low' ? '#60a5fa' : '#10b981';
-      items.push({ key, displayName: LAB_DISPLAY_NAME[key] || key, value: String(v), unit: info.unit || '', status, statusColor });
+      const date = info.data_date ? String(info.data_date).substring(0, 10) : panelDate;
+      const displayName = (lang || 'zh') !== 'en'
+        ? (info.display_name_zh || LAB_DISPLAY_NAME[key] || key)
+        : (LAB_DISPLAY_NAME[key] || info.display_name || key);
+      items.push({ key, displayName, value: String(v), unit: info.unit || '', status, statusColor,
+        date, dateShort: date !== panelDate ? date.substring(5) : '', category: info.category || '' });
     }
   } else if (labData.results) {
     for (const [legacyKey, info] of Object.entries(labData.results)) {

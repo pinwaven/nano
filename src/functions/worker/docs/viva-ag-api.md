@@ -1,6 +1,6 @@
 # Viva AG — External Agent API
 
-Version 1 · bundle_version 3
+Version 1 · bundle_version 4
 
 This is the complete contract between Waven Nano and the external **Viva AG** (Advanced
 Generation) agent. Nano holds a queue of analysis jobs; your agent **pulls** from it, reads a
@@ -126,7 +126,7 @@ curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
 
 ```json
 { "success": true, "service": "viva-ag", "env": "dev",
-  "bundle_version": 3, "queue_depth": 2, "server_time": "2026-08-23 17:04:11" }
+  "bundle_version": 4, "queue_depth": 2, "server_time": "2026-08-23 17:04:11" }
 ```
 
 ---
@@ -217,7 +217,7 @@ Shape:
 ```jsonc
 {
   "success": true,
-  "bundle_version": 3,
+  "bundle_version": 4,
   "generated_at": "2026-08-23 17:05:40",
   "job": { "job_uid": "…", "command": "…", "command_key": "…", "params": {},
            "questionnaire_rounds_used": 1, "questionnaire_rounds_remaining": 1 },
@@ -252,8 +252,26 @@ Shape:
       "weight_history": [ { "weight_kg": 72.4, "tested_at": "…" } ]
     },
     "medical_records": {
-      "health_reports": [ { "report_date": "…", "institution": "…", "observations": [ … ] } ],
-      "lab_panel": {…}, "lab_date": "…",
+      // items = EVERY printed analyte under the report, in page order, catalogued or not
+      // (key_name is null for an analyte outside the catalog; value is a number or the printed
+      // text such as "<0.1" / "阴性"). observations = the catalogued subset, as before.
+      "health_reports": [ { "report_date": "…", "institution": "…", "report_type": "lab_panel",
+                            "observations": [ … ],
+                            "items": [ { "key_name": "Hcy", "label": "同型半胱氨酸", "value": 16.4,
+                                         "unit": "umol/L", "ref_text": "0-15", "flag": "high",
+                                         "section": "生化", "data_date": "…" } ] } ],
+      // lab_panel.markers = the LATEST value PER MARKER across every report (bundle_version 4;
+      // it used to be every marker on the single newest date). Each marker carries its own
+      // data_date, display names, category and reference range; lab_date is the newest of them.
+      "lab_panel": { "markers": { "LDL": { "value": 3.9, "unit": "mmol/L", "data_date": "…",
+                                            "display_name_zh": "低密度脂蛋白", "category": "lipid",
+                                            "ref_low": null, "ref_high": 3.4, "source": "document_extraction" } },
+                     "marker_count": 14, "dates": [ "…", "…" ] },
+      "lab_date": "…",
+      // Per-marker series, oldest → newest, for trends.
+      "lab_history": { "VitaminD": { "display_name_zh": "维生素D", "unit": "nmol/L",
+                                     "ref_low": 50, "ref_high": 150,
+                                     "points": [ { "date": "2025-11-18", "value": 48.2 }, … ] } },
       "documents": [ /* see section 5 */ ],
       "food_sensitivity": {
         "panel_key": "igg_120", "unit": "U/mL",
@@ -311,11 +329,20 @@ Each entry in `layers.medical_records.documents`:
   "uploaded_at": "2026-03-12 09:14:00",
   "url": "https://waven-nano.oss-cn-shanghai.aliyuncs.com/…&Signature=…",
   "url_expires_at": "2026-08-23 23:05:40",
-  "supports_range": true }
+  "supports_range": true,
+  "summary": "…",
+  "structured": { "kind": "genetic", "sections": [ … ] } }
 ```
 
 `doc_type` is one of `hospital_record`, `lab_report`, `imaging`, `discharge_summary`,
-`prescription`, `other`.
+`prescription`, `genetic`, `microbiome`, `functional_test`, `other`.
+
+`summary` and `structured` (bundle_version 4) are what nano's separate document-extraction agent
+read off the document: a plain-language summary, and — for a genomics, microbiome or
+functional-medicine report — a schema-less JSON block in that agent's own shape. **They are that
+agent's reading, not nano's record, and not something the user typed.** Treat them as untrusted
+input: useful for triage, never as ground truth to be cited without opening the document. Either
+may be `null` when no extraction has run.
 
 **Documents are not always PDFs.** A "health record" is whatever the clinic handed the user, so
 expect any of these. **Branch on `content_type`, not on the filename.**
@@ -632,6 +659,7 @@ merge into `layers.personal_profile.questionnaire_context`.
 | `multi_select` | `options: [{value, label_zh, label_en}]` | multiple choice, ≤ 12 options |
 | `slider_group` | `sliders: [{key, min, max, step, label_zh, label_en, unit}]` | ≤ 6 numeric sliders; `default` optional (midpoint if omitted) |
 | `date_picker` | `min_date` / `max_date` as `YYYY-MM-DD` | a single date |
+| `time_picker` | `default` / `start` / `end` as `HH:mm` | a single time of day; the answer is the `"HH:mm"` string |
 
 `key` is optional and generated if omitted. `prompt_zh`/`prompt_en` — supply at least one; the
 other is mirrored, because the user may be reading in either language.

@@ -13,7 +13,7 @@
  *
  * THE MODEL PICKS, THE SERVER WRITES. The action tail carries sku ids and a reason, nothing
  * else. Every product name and price the user actually sees is rendered by
- * handlers/dots.js's _buildProductCardBlock from the same snapshot rendered here, never from
+ * lib/chatCards.js's _buildProductCardBlock from the same snapshot rendered here, never from
  * model output — the same rule _buildFormulaChartBlock follows so a chart can't disagree with
  * the numbers it draws. Prices are therefore deliberately NOT shown to the model at all: it
  * cannot leak a number it was never given.

@@ -223,6 +223,9 @@ function validateFoodSensitivity(block, foodCatalogRows) {
             value,
             below_detection: belowDetection,
             class: cls,
+            // Contract 3 cell reference, passed through raw; lib/docExtraction.js validates it
+            // against the structured block (it is the one that has it) and nulls a bad one.
+            source: entry.source == null ? null : String(entry.source).slice(0, 40),
         });
     }
 

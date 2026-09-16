@@ -7,7 +7,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const D = require('../src/functions/worker/handlers/dots.js');
+const D = require('../src/functions/worker/lib/formulation.js');
 const { N7_KEY } = require('../src/functions/worker/lib/dotsProductModel.js');
 
 const F = [

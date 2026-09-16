@@ -209,8 +209,8 @@ async function handleWxLogin(body) {
                 COALESCE((u.preferences->>'text_scale')::int, 0) AS text_scale,
                 cu.nickname AS coach_name,
                 c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
-                c.config->'sub_age_display_names' AS channel_sub_age_names,
-                c.config->>'locale' AS channel_locale
+                effective_channel_config(c.id, 'sub_age_display_names') AS channel_sub_age_names,
+                effective_channel_config(c.id, 'locale') #>> '{}' AS channel_locale
          FROM users u
          LEFT JOIN coaches p ON u.coach_id = p.id
          LEFT JOIN users cu ON p.user_id = cu.user_id
@@ -274,8 +274,8 @@ async function handleWxLogin(body) {
                                 u.referral_code, u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
                                 cu.nickname AS coach_name,
                                 c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
-                                c.config->'sub_age_display_names' AS channel_sub_age_names,
-                c.config->>'locale' AS channel_locale
+                                effective_channel_config(c.id, 'sub_age_display_names') AS channel_sub_age_names,
+                effective_channel_config(c.id, 'locale') #>> '{}' AS channel_locale
                          FROM users u
                          LEFT JOIN coaches p ON u.coach_id = p.id
                          LEFT JOIN users cu ON p.user_id = cu.user_id
@@ -322,7 +322,7 @@ async function handleWxLogin(body) {
         // channel_slug fallback: brand-level default when no invite/referral resolved a channel
         if (!existingRow.channel_id && channel_slug) {
             const slugRes = await pool.query(
-                `SELECT id, name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_names, config->>'locale' AS locale FROM channels WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+                `SELECT id, name, effective_channel_logo(id) AS logo_url, effective_channel_config(id, 'sub_age_display_names') AS sub_age_names, effective_channel_config(id, 'locale') #>> '{}' AS locale FROM channels WHERE LOWER(name) = LOWER($1) LIMIT 1`,
                 [channel_slug]
             );
             if (slugRes.rows.length > 0) {
@@ -360,8 +360,8 @@ async function handleWxLogin(body) {
                     (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
                     cu.nickname AS coach_name,
                     c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
-                    c.config->'sub_age_display_names' AS channel_sub_age_names,
-                c.config->>'locale' AS channel_locale
+                    effective_channel_config(c.id, 'sub_age_display_names') AS channel_sub_age_names,
+                effective_channel_config(c.id, 'locale') #>> '{}' AS channel_locale
              FROM users u
              LEFT JOIN coaches p ON u.coach_id = p.id
              LEFT JOIN users cu ON p.user_id = cu.user_id
@@ -499,7 +499,7 @@ async function handleWxLogin(body) {
     let channel = null;
     if (channelId) {
         const chanRes = await pool.query(
-            `SELECT name, key_name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
+            `SELECT name, key_name, effective_channel_logo(id) AS logo_url, effective_channel_config(id, 'sub_age_display_names') AS sub_age_display_names FROM channels WHERE id = $1`,
             [channelId]
         );
         if (chanRes.rows.length > 0) channel = {
@@ -541,7 +541,7 @@ async function handleWxAppLogin(body) {
                u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
                cu.nickname AS coach_name,
                c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
-               c.config->'sub_age_display_names' AS channel_sub_age_names
+               effective_channel_config(c.id, 'sub_age_display_names') AS channel_sub_age_names
         FROM users u
         LEFT JOIN coaches p ON u.coach_id = p.id
         LEFT JOIN users cu ON p.user_id = cu.user_id
@@ -682,7 +682,7 @@ async function handleWxAppLogin(body) {
     let channel = null;
     if (channelId) {
         const chanRes = await pool.query(
-            `SELECT name, key_name, effective_channel_logo(id) AS logo_url, config->'sub_age_display_names' AS sub_age_display_names FROM channels WHERE id = $1`,
+            `SELECT name, key_name, effective_channel_logo(id) AS logo_url, effective_channel_config(id, 'sub_age_display_names') AS sub_age_display_names FROM channels WHERE id = $1`,
             [channelId]
         );
         if (chanRes.rows.length > 0) channel = {
@@ -820,8 +820,8 @@ async function handleExchangeWebviewToken(body) {
                     (u.email_verified_at IS NOT NULL AND u.email IS NOT NULL) AS email_verified, b.bio_age,
                     cu.nickname AS coach_name, p.user_id AS coach_user_id,
                     c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
-                    c.config->'sub_age_display_names' AS channel_sub_age_names,
-                    c.config->>'locale' AS channel_locale,
+                    effective_channel_config(c.id, 'sub_age_display_names') AS channel_sub_age_names,
+                    effective_channel_config(c.id, 'locale') #>> '{}' AS channel_locale,
                     (SELECT COALESCE(json_agg(json_build_object('phone', up.phone, 'is_primary', up.is_primary, 'verified_at', up.verified_at)
                                                ORDER BY up.is_primary DESC, up.verified_at DESC NULLS LAST), '[]'::json)
                      FROM user_phones up WHERE up.user_id = u.user_id) AS phones,

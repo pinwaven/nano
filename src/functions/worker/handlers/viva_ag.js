@@ -1368,6 +1368,9 @@ module.exports = {
     // Injected into handlers/questionnaires.js from index.js, so that module never has to
     // require this one — the same pattern saveChatMessage already uses there.
     resumeVivaAgJobForAssignment,
+    // Shared with handlers/twin_reports.js (the 数字孪生 综合报告 card), which lists the same
+    // completed-job artifacts by INDEX so the oss_key never leaves the server there either.
+    publicResultFiles: _publicResultFiles,
     // Exported for tests / the docs endpoint
     VALID_COMMAND_KEYS,
     MAX_JOBS_PER_DAY,

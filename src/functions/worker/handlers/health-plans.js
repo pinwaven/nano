@@ -516,10 +516,17 @@ async function handleGetHealthReports(query) {
         if (!openid && !user_id) return { statusCode: 400, success: false, error: 'openid or user_id required' };
         const uid = user_id || (await pool.query('SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid])).rows[0]?.user_id;
         if (!uid) return { statusCode: 404, success: false, error: 'User not found' };
+        // report_date::text: node-postgres turns a DATE into a JS Date at local midnight, which
+        // serializes to a UTC instant and can read as the previous day on the client (CLAUDE.md
+        // §35). item_count lets a report with no catalogued marker — a NAD+ or organic-acid
+        // panel — still show what it holds instead of reading as an empty card.
         const result = await pool.query(
-            `SELECT id, report_date, source, institution, report_type, status, created_at,
-                    oss_key, raw_data->>'image_url' AS image_url
-             FROM health_reports WHERE user_id = $1 ORDER BY report_date DESC LIMIT 50`,
+            `SELECT r.id, r.report_date::text AS report_date, r.source, r.institution, r.report_type,
+                    r.status, r.created_at, r.oss_key, r.raw_data->>'image_url' AS image_url,
+                    r.source_document_id,
+                    (SELECT COUNT(*)::int FROM health_report_items i WHERE i.report_id = r.id) AS item_count,
+                    (SELECT COUNT(*)::int FROM health_report_items i WHERE i.report_id = r.id AND i.key_name IS NOT NULL) AS mapped_count
+             FROM health_reports r WHERE r.user_id = $1 ORDER BY r.report_date DESC, r.id DESC LIMIT 50`,
             [uid]
         );
         return { success: true, reports: result.rows };
@@ -531,16 +538,62 @@ async function handleGetHealthReports(query) {
 
 async function handleGetHealthReport(reportId, query) {
     try {
+        // Ownership is in the predicate when the caller identifies itself, exactly as the DELETE
+        // beside it does. `openid` is optional only because the admin panel reads reports without
+        // one; a miniapp caller always sends it.
+        let uid = null;
+        if (query?.openid) {
+            const userRes = await pool.query(
+                'SELECT user_id FROM users WHERE external_id = $1 OR user_id = $1 LIMIT 1', [query.openid]);
+            if (userRes.rows.length === 0) return { statusCode: 404, success: false, error: 'User not found' };
+            uid = userRes.rows[0].user_id;
+        }
         const reportRes = await pool.query(
-            'SELECT * FROM health_reports WHERE id = $1',
-            [reportId]
+            `SELECT *, report_date::text AS report_date FROM health_reports
+              WHERE id = $1 AND ($2::text IS NULL OR user_id = $2)`,
+            [reportId, uid]
         );
         if (reportRes.rows.length === 0) return { statusCode: 404, success: false, error: 'Report not found' };
         const eventsRes = await pool.query(
-            'SELECT id, category, data_date, data FROM health_events WHERE report_id = $1 ORDER BY data_date',
+            `SELECT e.id, e.category, e.data_date::text AS data_date, e.data,
+                    c.display_name, c.display_name_zh, c.category AS marker_category, c.ref_low, c.ref_high
+               FROM health_events e
+               LEFT JOIN biomarker_catalog c ON c.key_name = e.data->>'key_name'
+              WHERE e.report_id = $1 ORDER BY e.data_date, e.id`,
             [reportId]
         );
-        return { success: true, report: reportRes.rows[0], events: eventsRes.rows };
+        // Every printed row, mapped and unmapped, in page order — the record of what the
+        // document said (migration_health_report_items.sql). Degrades to [] if the table is not
+        // there yet, so a worker deployed ahead of its migration still serves the report.
+        let items = [];
+        try {
+            const itemsRes = await pool.query(
+                // suggested_key is joined to ITS OWN catalog row for a display name, so the client
+                // can say 「可能为 发锌」 beside the printed label — and it is served as
+                // `suggested_name_zh`, never as the row's display_name: a guess must not render as
+                // the marker (migration_health_report_items_source.sql).
+                `SELECT i.id, i.key_name, i.label, i.value_num, i.value_text, i.unit, i.ref_text, i.flag,
+                        i.section, i.data_date::text AS data_date, i.sort_order,
+                        i.source_ref, i.suggested_key, i.suggested_confidence,
+                        c.display_name, c.display_name_zh, c.category AS marker_category, c.ref_low, c.ref_high,
+                        sc.display_name_zh AS suggested_name_zh, sc.display_name AS suggested_name
+                   FROM health_report_items i
+                   LEFT JOIN biomarker_catalog c ON c.key_name = i.key_name
+                   LEFT JOIN biomarker_catalog sc ON sc.key_name = i.suggested_key
+                  WHERE i.report_id = $1 ORDER BY i.sort_order, i.id`,
+                [reportId]
+            );
+            items = itemsRes.rows.map(r => ({
+                ...r,
+                value_num: r.value_num == null ? null : Number(r.value_num),
+                ref_low: r.ref_low == null ? null : Number(r.ref_low),
+                ref_high: r.ref_high == null ? null : Number(r.ref_high),
+                suggested_confidence: r.suggested_confidence == null ? null : Number(r.suggested_confidence),
+            }));
+        } catch (itemErr) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'health_report_items unavailable', error: itemErr.message }));
+        }
+        return { success: true, report: reportRes.rows[0], events: eventsRes.rows, items };
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetHealthReport', error: err.message }));
         return { statusCode: 500, success: false, error: err.message };
@@ -606,8 +659,10 @@ async function handlePostHealthReport(body, deps = {}) {
         if (fhir_bundle && fhir_bundle.resourceType === 'Bundle') {
             obs = extractObservationsFromFhir(fhir_bundle);
         }
-        // Allow a photo-only report (no parseable observations) as long as we have an image.
-        if (obs.length === 0 && !oss_key) return { statusCode: 400, success: false, error: 'No observations provided' };
+        // Allow a report with no catalogued observations as long as it is backed by something:
+        // a photo (oss_key) or an uploaded document (source_document_id — whose printed rows
+        // land in health_report_items even when none of them is a catalog marker).
+        if (obs.length === 0 && !oss_key && !source_document_id) return { statusCode: 400, success: false, error: 'No observations provided' };
 
         // Resolve catalog metadata by LOINC code AND by canonical key_name (chat-uploaded
         // reports come from the vision model keyed by key_name, lab imports by loinc_code).
@@ -650,6 +705,8 @@ async function handlePostHealthReport(body, deps = {}) {
                         unit:           o.unit || catalog.unit,
                         nano_dimension: catalog.nano_dimension,
                         is_kino_core:   catalog.is_kino_core,
+                        // Contract 3: the cell of the document's structured block it was read from.
+                        ...(o.source ? { source_ref: String(o.source).slice(0, 40) } : {}),
                     }),
                     reportId, externalId,
                 ]

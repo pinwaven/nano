@@ -14,7 +14,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const D = require('../src/functions/worker/handlers/dots.js');
+// The engine and the card renderer, in one namespace: this file exercises the ladder end to end,
+// from the trim to the #tier lines the miniapp parses.
+const D = { ...require('../src/functions/worker/lib/formulation.js'), ...require('../src/functions/worker/lib/chatCards.js') };
 const { N7_KEY, PLAN_WEEKS } = require('../src/functions/worker/lib/dotsProductModel.js');
 const { mdToSegments } = require('../src/mini/nano-miniapp/utils/markdown.js');
 

@@ -48,7 +48,10 @@ const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { resolveEffectivePersona, hasActiveVivaAccess } = require('../lib/persona');
 const { grantSignupTrial } = require('../lib/personaOverride');
-const { _runDeterministicFormulation, _buildFormulaChartBlock, _commitProposedPlan, _resolveOrderContext, _applyTierLadder, _padCandidatesFor, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _balanceCapsules, _buildProductCardBlock, _countForLevel, _doseFromRanking, _rankDotsBySeverity } = require('./dots');
+const { _runDeterministicFormulation, _commitProposedPlan } = require('./dots');
+const { _resolveOrderContext } = require('./formulation_orders');
+const { _applyTierLadder, _padCandidatesFor, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _balanceCapsules, _countForLevel, _doseFromRanking, _rankDotsBySeverity } = require('../lib/formulation');
+const { _buildFormulaChartBlock, _buildProductCardBlock } = require('../lib/chatCards');
 const { fetchAiCatalog } = require('../lib/gcnClient');
 const { PLAN_WEEKS, N7_KEY } = require('../lib/dotsProductModel');
 const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock');
@@ -1291,8 +1294,8 @@ async function _fireQuestionnaireAnsweredFollowup(userId, assignmentId) {
     let channelPersonaType = 'nano';
     if (user.channel_id) {
         try {
-            const chRes = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
-            channelPersonaType = chRes.rows[0]?.config?.persona_type ?? 'nano';
+            const chRes = await pool.query('SELECT effective_persona_type($1) AS persona_type', [user.channel_id]);
+            channelPersonaType = chRes.rows[0]?.persona_type ?? 'nano';
         } catch (e) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'questionnaire_answered_followup_persona_lookup_failed', user_id: userId, error: e.message }));
         }
@@ -1406,11 +1409,11 @@ async function handlePostChat(body) {
     let gcnSector = null;
     if (user.channel_id) {
         try {
-            const chRes = await pool.query('SELECT key_name, config FROM channels WHERE id = $1', [user.channel_id]);
-            const chConfig = chRes.rows[0]?.config || {};
+            const chRes = await pool.query(`SELECT key_name, effective_persona_type(id) AS persona_type, effective_channel_config(id, 'sub_age_display_names') AS sub_age_display_names FROM channels WHERE id = $1`, [user.channel_id]);
+            const chConfig = chRes.rows[0] || {};
             channelKeyName = chRes.rows[0]?.key_name || null;
             gcnSector = await resolveGcnSector(user.channel_id);
-            channelPersonaType = chConfig.persona_type ?? 'nano';
+            channelPersonaType = chRes.rows[0]?.persona_type ?? 'nano';
             channelSubAgeNames = chConfig.sub_age_display_names || null;
         } catch (err) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'Failed to fetch channel persona, defaulting to nano', error: err.message }));
@@ -2626,8 +2629,8 @@ async function handlePostHealthAdvice(body) {
         let channelPersonaType = 'nano';
         if (user.channel_id) {
             try {
-                const chResult = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
-                channelPersonaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
+                const chResult = await pool.query('SELECT effective_persona_type($1) AS persona_type', [user.channel_id]);
+                channelPersonaType = chResult.rows[0]?.persona_type ?? 'nano';
             } catch (_) {}
         }
         const personaType = resolveEffectivePersona({

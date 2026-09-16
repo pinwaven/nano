@@ -47,12 +47,23 @@ const ossLib = require('../lib/oss');
 const { presignDocuments, DEFAULT_DOC_URL_TTL_SECONDS, clampInt } = require('../lib/twinBundle');
 const { validateExtraction, MAX_SUMMARY_LENGTH } = require('../lib/docExtraction');
 const { deriveFoodGuideline } = require('../lib/foodSensitivity');
+const { writeDocumentTags, clearDocumentTags, syncMemoryFactsFromTags } = require('../lib/documentTags');
 const { handlePostHealthReport } = require('./health-plans');
 const { updateHealthTwin } = require('../lib/healthTwinUpdater');
 const { deliverTerminalMessage } = require('./chat');
 const { formatToShanghai, calculateAge } = require('../lib/time-utils');
 
-const CONTRACT_VERSION = 1;
+// 2 (2026-09-15): catalog[].aliases; document.doc_date may be user-set and is the fallback date;
+// unmapped.{ref_text,flag,section}; the `structured` block; three more doc types; a report row
+// (and health_report_items) for every dated document whether or not a marker was catalogued.
+// Purely additive — a v1 worker keeps working.
+// 3 (2026-09-16): `structured.version: 2` keeps tables as tables; a `source` cell reference on
+// every item; `unmapped[].suggested_key` (stored, never promoted); a third catalog
+// (`tag_catalog`) and `tags` — facts with a key, a status and an anchor — which replace
+// `findings` as the path into user_memory_facts. `findings` is still accepted and stored as
+// descriptors, which nothing acts on. A v2 worker keeps working; its findings just stop
+// reaching product filtering and formulation.
+const CONTRACT_VERSION = 3;
 
 const DEFAULT_LEASE_SECONDS = 600;
 const MIN_LEASE_SECONDS = 60;
@@ -170,7 +181,7 @@ async function fetchCatalog() {
         // missing here silently becomes null on every stored observation. Caught live on dev —
         // the unit test's fixture carried loinc_code and the real query did not.
         `SELECT key_name, loinc_code, display_name, display_name_zh, unit, category, nano_dimension,
-                is_kino_core, ref_low, ref_high
+                is_kino_core, ref_low, ref_high, aliases
            FROM biomarker_catalog
           WHERE is_active = TRUE
           ORDER BY is_kino_core DESC, key_name`
@@ -184,6 +195,9 @@ async function fetchCatalog() {
         category: r.category,
         ref_low: r.ref_low == null ? null : Number(r.ref_low),
         ref_high: r.ref_high == null ? null : Number(r.ref_high),
+        // Alternate printed spellings (migration_biomarker_catalog_aliases.sql). For the agent's
+        // matcher; the validator never reads them — key_name stays the only identifier.
+        aliases: Array.isArray(r.aliases) ? r.aliases : [],
     }));
 }
 
@@ -211,6 +225,32 @@ async function fetchFoodCatalog() {
         common_sources_zh: r.common_sources_zh || [],
         substitutes_zh: r.substitutes_zh || [],
     }));
+}
+
+// The tag vocabulary (contract 3). memory_category is NOT sent: which user_memory_facts
+// category a fact is mirrored into is nano's decision about what acts on it, not the agent's.
+async function fetchTagCatalog() {
+    const { rows } = await pool.query(
+        `SELECT tag_key, category, name_zh, name_en, aliases, values
+           FROM tag_catalog
+          WHERE is_active = TRUE
+          ORDER BY category, sort_order, tag_key`
+    );
+    return rows.map(r => ({
+        tag_key: r.tag_key,
+        category: r.category,
+        name_zh: r.name_zh,
+        name_en: r.name_en,
+        aliases: Array.isArray(r.aliases) ? r.aliases : [],
+        values: Array.isArray(r.values) && r.values.length > 0 ? r.values : null,
+    }));
+}
+
+// The validator reads tag_catalog rows with memory_category absent — it never needs it — so
+// the same rows serve both the claim response and validation.
+async function fetchAllCatalogs() {
+    const [catalog, foodCatalog, tagCatalog] = await Promise.all([fetchCatalog(), fetchFoodCatalog(), fetchTagCatalog()]);
+    return { catalog, foodCatalog, tagCatalog };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -268,6 +308,15 @@ async function clearExtraction(documentId, userId) {
         'DELETE FROM user_memory_facts WHERE source_document_id = $1 AND user_id = $2',
         [documentId, userId]
     );
+    // The document's tags go with it, and the user's managed facts are re-derived from whatever
+    // other documents still say — a shellfish allergy two documents stated survives clearing one.
+    let tagsRemoved = 0;
+    try {
+        tagsRemoved = await clearDocumentTags(pool, documentId, userId);
+        await syncMemoryFactsFromTags(pool, userId);
+    } catch (tagErr) {
+        _logError('clearExtraction tags failed', tagErr, { document_id: documentId });
+    }
     // A food-sensitivity panel lives in its own tables, so it has to be dropped explicitly.
     // food_sensitivity_results cascades off the panel. This is mandatory, not tidy: a re-run
     // inserts a fresh panel, and leaving the old one would leave the user reading two
@@ -276,13 +325,19 @@ async function clearExtraction(documentId, userId) {
         'DELETE FROM food_sensitivity_panels WHERE source_document_id = $1 AND user_id = $2',
         [documentId, userId]
     );
+    // health_report_items cascade off the report rows deleted above. extracted_json is the
+    // agent's reading too, so it goes with the rest; doc_type/doc_date/institution stay — a
+    // user-corrected date must survive a re-run, and an agent-read one is still the best guess
+    // the next run can start from.
     await pool.query(
-        `UPDATE health_documents SET summary = NULL, summary_generated_at = NULL WHERE id = $1 AND user_id = $2`,
+        `UPDATE health_documents
+            SET summary = NULL, summary_generated_at = NULL, extracted_json = NULL, extracted_json_at = NULL
+          WHERE id = $1 AND user_id = $2`,
         [documentId, userId]
     );
     // The lab panel came out of health_events, so the twin has to be recomputed without it.
     await updateHealthTwin(userId, pool);
-    return { reports_removed: reportIds.length, facts_removed: factsRemoved, panels_removed: panelsRemoved };
+    return { reports_removed: reportIds.length, facts_removed: factsRemoved, panels_removed: panelsRemoved, tags_removed: tagsRemoved };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -310,8 +365,8 @@ async function handleGetDocExtractPing() {
 // extraction prompt before a single job exists.
 async function handleGetDocExtractCatalog() {
     try {
-        const [catalog, foodCatalog] = await Promise.all([fetchCatalog(), fetchFoodCatalog()]);
-        return { success: true, contract_version: CONTRACT_VERSION, catalog, food_catalog: foodCatalog };
+        const { catalog, foodCatalog, tagCatalog } = await fetchAllCatalogs();
+        return { success: true, contract_version: CONTRACT_VERSION, catalog, food_catalog: foodCatalog, tag_catalog: tagCatalog };
     } catch (err) {
         _logError('handleGetDocExtractCatalog failed', err);
         return _fail(REASONS.INTERNAL_ERROR, err.message);
@@ -328,12 +383,13 @@ async function handleGetDocExtractCatalog() {
  */
 async function handlePostDocExtractValidate(body) {
     try {
-        const [catalog, foodCatalog] = await Promise.all([fetchCatalog(), fetchFoodCatalog()]);
-        const validated = validateExtraction(body || {}, catalog, foodCatalog);
+        const { catalog, foodCatalog, tagCatalog } = await fetchAllCatalogs();
+        const validated = validateExtraction(body || {}, catalog, foodCatalog, { tagCatalogRows: tagCatalog });
         return {
             success: true,
             contract_version: CONTRACT_VERSION,
             would_accept: validated.observations.length > 0 || validated.findings.length > 0
+                || validated.tags.length > 0 || validated.unmapped.length > 0 || !!validated.structured
                 || (validated.food_sensitivity?.items.length || 0) > 0
                 || !!validated.summary || !!validated.document.doc_date,
             ...validated,
@@ -401,7 +457,9 @@ async function handlePostDocExtractClaim(body) {
         const { rows: [user] } = await pool.query(
             'SELECT birth_date, gender, language FROM users WHERE user_id = $1', [job.user_id]);
 
-        const [document] = presignDocuments([doc], DEFAULT_DOC_URL_TTL_SECONDS);
+        // includeReading:false — the agent is about to READ this document; handing it its own
+        // previous summary would anchor a re-run on the reading the user is trying to correct.
+        const [document] = presignDocuments([doc], DEFAULT_DOC_URL_TTL_SECONDS, { includeReading: false });
 
         console.log(JSON.stringify({ level: 'INFO', msg: 'doc_extraction job claimed', job_uid: job.job_uid, worker_id: workerId, attempt: job.attempts }));
         return {
@@ -424,6 +482,8 @@ async function handlePostDocExtractClaim(body) {
                 // Shipped on every claim, not only for panels we already know are food ones: the
                 // agent cannot tell what kind of report it holds until it has read the page.
                 food_catalog: await fetchFoodCatalog(),
+                // Contract 3: the vocabulary a `tags[].tag_key` must come from.
+                tag_catalog: await fetchTagCatalog(),
             },
         };
     } catch (err) {
@@ -460,7 +520,8 @@ async function handlePostDocExtractHeartbeat(body) {
 // ---------------------------------------------------------------------------------------
 
 function _resultMessage(language, { docLabel, accepted, findings, unmapped, hasDate,
-                                   foodItems = 0, foodRestrictions = [] }) {
+                                   foodItems = 0, foodRestrictions = [], itemsWritten = 0,
+                                   acceptedObservations = 0, structured = false }) {
     const isZh = (language || 'zh') !== 'en';
     // Names the restricted foods rather than counting them: three names are shorter than the
     // sentence describing them, and the whole point of the panel is which foods.
@@ -477,12 +538,23 @@ function _resultMessage(language, { docLabel, accepted, findings, unmapped, hasD
                 parts.push('没有一项达到慢性食物过敏分级。');
             }
         }
+        // Three tiers of "what got kept": catalogued markers (twin panel), the rest of the
+        // printed rows (kept by name, in the report), and the structured block. Only when a
+        // date could not be resolved is anything actually lost, and that says so — and says
+        // what fixes it, because setting the date and re-running is now something the user can do.
+        // itemsWritten counts mapped AND unmapped rows; the mapped ones are the validator's
+        // accepted count (a deduped event still has its item row), so the remainder is what was
+        // kept by name only.
+        const unmappedKept = Math.max(0, itemsWritten - acceptedObservations);
         if (accepted > 0) parts.push(`其中 ${accepted} 项指标已记入你的数字孪生「医疗记录」。`);
         else if (foodItems > 0) { /* the panel is the content; saying "no lab markers" would read as a failure */ }
-        else if (!hasDate) parts.push('没有找到可识别的报告日期，所以这次只保存了文档信息，没有记录指标。');
+        else if (!hasDate) parts.push('没有找到可识别的报告日期，所以这次只保存了文档信息，没有记录指标。你可以在健康文档里为这份文档设置报告日期后重新解析。');
+        else if (unmappedKept > 0) { /* said below */ }
+        else if (structured) parts.push('这份文档的内容已按原文结构保存在「医疗记录」里。');
         else parts.push('这份文档里没有可以记录的化验指标。');
-        if (findings > 0) parts.push(`另外记录了 ${findings} 条个人健康信息（如过敏史）。`);
-        if (unmapped > 0) parts.push(`还有 ${unmapped} 项暂时不在我们的指标库里，没有记录。`);
+        if (unmappedKept > 0) parts.push(`另有 ${unmappedKept} 项暂不在我们的指标库里，已按报告原文保存在这份报告下。`);
+        else if (unmapped > 0 && !hasDate) parts.push(`还有 ${unmapped} 项暂不在我们的指标库里，同样需要报告日期才能保存。`);
+        if (findings > 0) parts.push(`另外记录了 ${findings} 条个人健康信息（如过敏史、诊断、用药）。`);
         parts.push('如果读取有误，可以在健康文档里重新解析或删除。');
         return parts.join('');
     }
@@ -495,20 +567,63 @@ function _resultMessage(language, { docLabel, accepted, findings, unmapped, hasD
             parts.push(' None of them reached a chronic food-sensitivity class.');
         }
     }
+    const unmappedKept = Math.max(0, itemsWritten - acceptedObservations);
     if (accepted > 0) parts.push(` ${accepted} marker${accepted === 1 ? '' : 's'} were added to your digital twin's Medical Records.`);
     else if (foodItems > 0) { /* the panel is the content here */ }
-    else if (!hasDate) parts.push(" I couldn't find a readable report date, so I saved the document details but recorded no markers.");
+    else if (!hasDate) parts.push(" I couldn't find a readable report date, so I saved the document details but recorded no markers. You can set the report date in Health Records and re-run.");
+    else if (unmappedKept > 0) { /* said below */ }
+    else if (structured) parts.push(' Its contents were saved as read into your Medical Records.');
     else parts.push(' There were no lab markers in it to record.');
+    if (unmappedKept > 0) parts.push(` ${unmappedKept} more item${unmappedKept === 1 ? ' is' : 's are'} not in our marker library yet and ${unmappedKept === 1 ? 'was' : 'were'} kept as printed under this report.`);
+    else if (unmapped > 0 && !hasDate) parts.push(` ${unmapped} item${unmapped === 1 ? '' : 's'} outside our marker library also need${unmapped === 1 ? 's' : ''} a report date to be kept.`);
     if (findings > 0) parts.push(` I also noted ${findings} personal health detail${findings === 1 ? '' : 's'} (such as an allergy).`);
-    if (unmapped > 0) parts.push(` ${unmapped} item${unmapped === 1 ? ' is' : 's are'} not in our marker library yet and were not recorded.`);
     parts.push(' If anything looks wrong, you can re-run or remove it from Health Records.');
     return parts.join('');
 }
 
 const DOC_LABEL = {
-    zh: { lab_report: '检验报告', hospital_record: '就医记录', imaging: '影像报告', discharge_summary: '出院小结', prescription: '处方', other: '健康文档' },
-    en: { lab_report: 'lab report', hospital_record: 'hospital record', imaging: 'imaging report', discharge_summary: 'discharge summary', prescription: 'prescription', other: 'health record' },
+    zh: { lab_report: '检验报告', hospital_record: '就医记录', imaging: '影像报告', discharge_summary: '出院小结', prescription: '处方',
+          genetic: '基因检测报告', microbiome: '肠道菌群检测报告', functional_test: '功能医学检测报告', other: '健康文档' },
+    en: { lab_report: 'lab report', hospital_record: 'hospital record', imaging: 'imaging report', discharge_summary: 'discharge summary', prescription: 'prescription',
+          genetic: 'genetic test report', microbiome: 'microbiome test report', functional_test: 'functional test report', other: 'health record' },
 };
+
+// health_reports.report_type for an extracted document. lab_report keeps the historical
+// 'lab_panel' value the report list has always keyed its badge on; the rest are their own type.
+const REPORT_TYPE_BY_DOC_TYPE = { lab_report: 'lab_panel', functional_test: 'functional' };
+
+// One health_report_items row per printed analyte, mapped and unmapped alike, in page order.
+// Multi-row VALUES in a single statement: a 74-item panel must not cost 74 round trips.
+async function _writeReportItems(reportId, userId, documentId, observations, unmapped, reportDate) {
+    const rows = [];
+    for (const o of observations) {
+        rows.push([o.key_name, o.label || o.key_name, o.value, null, o.unit, o.ref_text || null,
+            o.flag || null, o.section || null, o.data_date || reportDate, o.source || null, null, null]);
+    }
+    for (const u of unmapped) {
+        const num = u.value == null ? null : Number(u.value);
+        const isNum = u.value != null && /^-?\d+(\.\d+)?$/.test(String(u.value).trim()) && Number.isFinite(num);
+        rows.push([null, u.label, isNum ? num : null, isNum ? null : (u.value == null ? null : String(u.value)),
+            u.unit || null, u.ref_text || null, u.flag || null, u.section || null, reportDate,
+            u.source || null, u.suggested_key || null, u.suggested_confidence == null ? null : u.suggested_confidence]);
+    }
+    if (rows.length === 0) return 0;
+    const params = [reportId, userId, documentId];
+    const tuples = rows.map((r, i) => {
+        const base = params.length;
+        params.push(...r, i);
+        return `($1, $2, $3, $${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}::date, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
+    });
+    // One statement, all-or-nothing: it either inserted every row or threw.
+    await pool.query(
+        `INSERT INTO health_report_items
+            (report_id, user_id, source_document_id, key_name, label, value_num, value_text, unit,
+             ref_text, flag, section, data_date, source_ref, suggested_key, suggested_confidence, sort_order)
+         VALUES ${tuples.join(', ')}`,
+        params
+    );
+    return rows.length;
+}
 
 /**
  * POST /doc-extract/jobs/result — the agent's submission, validated and written.
@@ -531,45 +646,63 @@ async function handlePostDocExtractResult(body) {
         }
 
         const { rows: [doc] } = await pool.query(
-            `SELECT id, oss_key, doc_type FROM health_documents WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+            `SELECT id, oss_key, doc_type, doc_date::text AS doc_date, institution, user_edited_at
+               FROM health_documents WHERE id = $1 AND user_id = $2 AND status = 'active'`,
             [job.document_id, job.user_id]
         );
         if (!doc) return _fail(REASONS.DOCUMENT_NOT_FOUND);
 
-        const [catalog, foodCatalog] = await Promise.all([fetchCatalog(), fetchFoodCatalog()]);
-        const validated = validateExtraction(body, catalog, foodCatalog);
-        const { document, summary, observations, findings, unmapped, rejected, counts } = validated;
+        const { catalog, foodCatalog, tagCatalog } = await fetchAllCatalogs();
+        // The row's own date is the fallback for a page with none printed — it is either what
+        // the user told us (PATCH) or what an earlier run read. Never today.
+        const validated = validateExtraction(body, catalog, foodCatalog,
+            { fallbackDocDate: doc.doc_date, tagCatalogRows: tagCatalog });
+        const { document, summary, observations, findings, tags, unmapped, structured, rejected, warnings, counts } = validated;
 
         // ── Tier 1: the document row. Four columns nothing has ever written, so this alone is
         //    what makes the list show 检验报告 / 出院小结 badges and real dates.
+        //
+        //    A user-edited row keeps its type, date and institution: the agent's reading fills a
+        //    blank, it does not out-vote the person who set the date so this run could succeed.
+        //    summary and extracted_json are the agent's own and are always replaced.
+        const userEdited = doc.user_edited_at != null;
         await pool.query(
             `UPDATE health_documents
-                SET doc_type = $2,
-                    doc_date = COALESCE($3::date, doc_date),
-                    institution = COALESCE($4, institution),
+                SET doc_type = CASE WHEN $7 THEN doc_type ELSE $2 END,
+                    doc_date = CASE WHEN $7 THEN doc_date ELSE COALESCE($3::date, doc_date) END,
+                    institution = CASE WHEN $7 THEN institution ELSE COALESCE($4, institution) END,
                     note = COALESCE($5, note),
                     summary = $6,
-                    summary_generated_at = CASE WHEN $6::text IS NULL THEN NULL ELSE NOW() END
+                    summary_generated_at = CASE WHEN $6::text IS NULL THEN NULL ELSE NOW() END,
+                    extracted_json = $8::jsonb,
+                    extracted_json_at = CASE WHEN $8::jsonb IS NULL THEN NULL ELSE NOW() END
               WHERE id = $1`,
-            [doc.id, document.doc_type, document.doc_date, document.institution, document.note, summary]
+            [doc.id, document.doc_type, document.doc_date, document.institution, document.note, summary,
+             userEdited, structured ? JSON.stringify(structured) : null]
         );
+        const effectiveDocType = userEdited ? (doc.doc_type || document.doc_type) : document.doc_type;
 
-        // ── Tier 2: the lab panel, through the pipeline that already exists.
-        const reportDate = document.doc_date || (observations[0] && observations[0].data_date) || null;
+        // ── Tier 2: the report — the record of what this document said — through the pipeline
+        //    that already exists. Written whenever a date resolved and ANYTHING was read: a
+        //    catalogued marker, or a printed row outside the catalog. Before this a NAD+ report
+        //    (no catalogued key) left no report at all, and its numbers lived only in the job
+        //    JSON that nothing reads.
+        const reportDate = document.doc_date || (observations[0] && observations[0].data_date) || doc.doc_date || null;
         let reportId = null;
+        let itemsWritten = 0;
         // What the validator ACCEPTED and what was actually PERSISTED are different numbers.
         // health_events dedupes on (user_id, source, external_id), so a marker already recorded for
         // the same day and source is a silent no-op — re-reading the same report, or two documents
         // covering one panel, writes fewer rows than it accepts. The user is told what was
         // recorded, not what was parsed, or a re-upload claims to have added values it did not.
         let written = 0;
-        if (observations.length > 0 && reportDate) {
+        if (reportDate && (observations.length > 0 || unmapped.length > 0)) {
             const reportRes = await handlePostHealthReport({
                 user_id: job.user_id,
                 report_date: reportDate,
                 source: EXTRACTION_SOURCE,
-                institution: document.institution,
-                report_type: document.doc_type === 'lab_report' ? 'lab_panel' : document.doc_type,
+                institution: userEdited ? (doc.institution || document.institution) : document.institution,
+                report_type: REPORT_TYPE_BY_DOC_TYPE[effectiveDocType] || effectiveDocType,
                 observations,
                 oss_key: doc.oss_key,
                 source_document_id: doc.id,
@@ -583,24 +716,34 @@ async function handlePostDocExtractResult(body) {
                 // qualify for formulation.
                 compute_bioage: false,
             }, {});
-            if (reportRes?.success) { reportId = reportRes.report_id; written = reportRes.observations_written ?? observations.length; }
+            if (reportRes?.success) {
+                reportId = reportRes.report_id;
+                written = reportRes.observations_written ?? observations.length;
+                // The printed rows, verbatim, mapped and unmapped alike. A failure here must not
+                // roll back the report: the twin feed is already committed and is worth keeping.
+                try {
+                    itemsWritten = await _writeReportItems(reportId, job.user_id, doc.id, observations, unmapped, reportDate);
+                } catch (itemErr) {
+                    _logError('doc_extraction items write failed', itemErr, { job_uid: job.job_uid, report_id: reportId });
+                }
+            }
             else _logError('doc_extraction report write failed', new Error(reportRes?.error || 'unknown'), { job_uid: job.job_uid });
         }
 
-        // ── Tier 3: findings → user_memory_facts. Never users.bio_data: those writes are a
-        //    shallow `||` merge, so health_conditions would be replaced wholesale by OCR output.
-        for (const f of findings) {
-            try {
-                await pool.query(
-                    `INSERT INTO user_memory_facts (user_id, category, fact_zh, source, source_document_id)
-                     VALUES ($1, $2, $3, 'document_extracted', $4)
-                     ON CONFLICT (user_id, category, fact_zh) WHERE status = 'active'
-                     DO UPDATE SET last_mentioned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP`,
-                    [job.user_id, f.category, f.text, doc.id]
-                );
-            } catch (factErr) {
-                _logError('doc_extraction fact write failed', factErr, { job_uid: job.job_uid, category: f.category });
-            }
+        // ── Tier 3: tags → health_document_tags, then the user's managed memory facts are
+        //    re-derived (lib/documentTags.js). Under contract 2 `findings` went straight into
+        //    user_memory_facts and two live runs wrote six false allergies that way; now only a
+        //    FACT — a key in tag_catalog, status current, catalog row with a memory_category —
+        //    reaches a prompt or a filter. A finding is a descriptor: stored, shown, inert.
+        //    Never users.bio_data: those writes are a shallow `||` merge.
+        let tagsWritten = 0;
+        let factsWritten = 0;
+        try {
+            tagsWritten = await writeDocumentTags(pool, { userId: job.user_id, documentId: doc.id, tags });
+            factsWritten = tags.filter(t => t.kind === 'fact').length;
+            await syncMemoryFactsFromTags(pool, job.user_id);
+        } catch (tagErr) {
+            _logError('doc_extraction tags write failed', tagErr, { job_uid: job.job_uid });
         }
 
         // ── Tier 4: a chronic food-sensitivity (IgG) panel and the guideline derived from it
@@ -703,10 +846,12 @@ async function handlePostDocExtractResult(body) {
                 SET status = 'completed', completed_at = NOW(), result = $2, rejected = $3,
                     health_report_id = $4, result_token = NULL, updated_at = NOW()
               WHERE id = $1`,
-            [job.id, JSON.stringify({ document, summary, observations, findings, unmapped,
+            [job.id, JSON.stringify({ document, summary, observations, findings, tags, unmapped,
+                structured, warnings,
                 food_sensitivity: validated.food_sensitivity,
                 food_restrictions: foodRestrictions,
-                counts: { ...counts, observations_written: written, food_panel_id: foodPanelId } }),
+                counts: { ...counts, observations_written: written, items_written: itemsWritten,
+                          tags_written: tagsWritten, facts_written: factsWritten, food_panel_id: foodPanelId } }),
                 JSON.stringify(rejected), reportId]
         );
 
@@ -715,13 +860,16 @@ async function handlePostDocExtractResult(body) {
         try {
             const lang = (job.language || 'zh') === 'en' ? 'en' : 'zh';
             const text = _resultMessage(job.language, {
-                docLabel: DOC_LABEL[lang][document.doc_type] || DOC_LABEL[lang].other,
+                docLabel: DOC_LABEL[lang][effectiveDocType] || DOC_LABEL[lang].other,
                 accepted: written,
-                findings: findings.length,
+                findings: factsWritten,
                 unmapped: unmapped.length,
                 hasDate: !!reportDate,
                 foodItems: validated.food_sensitivity?.items.length || 0,
                 foodRestrictions,
+                itemsWritten,
+                acceptedObservations: observations.length,
+                structured: !!structured,
             });
             const ids = await deliverTerminalMessage(job.user_id, job.persona_type || 'viva', NOTIFY_RESULT, text, CHAT_SOURCE);
             await pool.query(
@@ -737,9 +885,11 @@ async function handlePostDocExtractResult(body) {
             success: true,
             job_uid: job.job_uid,
             report_id: reportId == null ? null : Number(reportId),
-            accepted: { ...counts, observations_written: written, food_panel_id: foodPanelId,
-                        food_restrictions: foodRestrictions.length },
+            accepted: { ...counts, observations_written: written, items_written: itemsWritten,
+                        tags_written: tagsWritten, facts_written: factsWritten,
+                        food_panel_id: foodPanelId, food_restrictions: foodRestrictions.length },
             rejected,
+            warnings,
         };
     } catch (err) {
         _logError('handlePostDocExtractResult failed', err, { job_uid: body?.job_uid });
@@ -782,6 +932,7 @@ module.exports = {
     enqueueDocExtraction,
     clearExtraction,
     fetchCatalog,
+    fetchTagCatalog,
     // For tests and docs
     REASONS,
     EXTRACTION_SOURCE,

@@ -41,7 +41,9 @@ const T = {
     extPending: '正在解析…',
     extFailed: '解析未完成',
     extRejected: '已标记为解析有误',
-    extNone: '',
+    extNone: '尚未解析',
+    extRun: '解析',
+    extRetry: '重试解析',
     extRerun: '重新解析',
     extWrong: '解析有误',
     extRerunOk: '已重新排队',
@@ -49,10 +51,22 @@ const T = {
     extClearedTitle: '清除这次解析？',
     extClearedBody: '会删除本次从这份文档读取的指标和健康信息，文档本身保留。',
     extCleared: '已清除',
+    extMissingDateHint: '报告上没有读到日期，指标未能保存。设置报告日期后会自动重新解析。',
+    setDate: '设置报告日期',
+    dateSaved: '已设置，重新解析中',
+    changeTypeTitle: '这份文档是',
+    typeSaved: '已更新',
+    structuredShow: '查看读取到的内容',
+    structuredHide: '收起',
+    tagsTitle: '文档记载',
+    tagDescriptor: '仅记录',
+    tagStatus: { past: '既往', stopped: '已停用' },
+    tagCategory: { allergy: '过敏', condition: '诊断', medication: '用药', diet: '饮食', lifestyle: '生活方式', result: '结果', family_history: '家族史', procedure: '手术史', other: '其他' },
     summaryLabel: '摘要',
     deleteConfirm: '删除后不可恢复，确定删除吗？',
     typeHospital: '就医记录', typeLab: '检验报告', typeImaging: '影像报告',
     typeDischarge: '出院小结', typePrescription: '处方', typeOther: '文档',
+    typeGenetic: '基因检测', typeMicrobiome: '肠道菌群', typeFunctional: '功能医学检测',
   },
   en: {
     documents: 'Health Records',
@@ -84,7 +98,9 @@ const T = {
     extPending: 'Reading…',
     extFailed: "Couldn't read this one",
     extRejected: 'Marked as misread',
-    extNone: '',
+    extNone: 'Not read yet',
+    extRun: 'Read',
+    extRetry: 'Try again',
     extRerun: 'Read again',
     extWrong: 'Misread',
     extRerunOk: 'Queued again',
@@ -92,10 +108,22 @@ const T = {
     extClearedTitle: 'Clear this reading?',
     extClearedBody: 'Removes the markers and health details read from this document. The document itself is kept.',
     extCleared: 'Cleared',
+    extMissingDateHint: "No report date could be read, so its values were not saved. Set the date and it will be read again.",
+    setDate: 'Set report date',
+    dateSaved: 'Saved — reading again',
+    changeTypeTitle: 'This document is a',
+    typeSaved: 'Updated',
+    structuredShow: 'Show what was read',
+    structuredHide: 'Hide',
+    tagsTitle: 'Stated in this document',
+    tagDescriptor: 'noted only',
+    tagStatus: { past: 'past', stopped: 'stopped' },
+    tagCategory: { allergy: 'Allergy', condition: 'Condition', medication: 'Medication', diet: 'Diet', lifestyle: 'Lifestyle', result: 'Result', family_history: 'Family history', procedure: 'Procedure', other: 'Other' },
     summaryLabel: 'Summary',
     deleteConfirm: 'This cannot be undone. Delete this record?',
     typeHospital: 'Hospital record', typeLab: 'Lab report', typeImaging: 'Imaging',
     typeDischarge: 'Discharge summary', typePrescription: 'Prescription', typeOther: 'Record',
+    typeGenetic: 'Genetic test', typeMicrobiome: 'Microbiome', typeFunctional: 'Functional test',
   },
 }
 
@@ -115,6 +143,93 @@ const ALLOWED_EXTENSIONS = DOC_EXTENSIONS.concat(IMAGE_EXTENSIONS)
 const extOf = (name) => String(name || '').includes('.')
   ? String(name).split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '')
   : ''
+
+// The doc types a user may set. Order is the action sheet's order. Mirrors VALID_DOC_TYPES in
+// worker/handlers/health_documents.js; the server re-validates.
+const DOC_TYPES = ['lab_report', 'hospital_record', 'imaging', 'discharge_summary', 'prescription',
+  'genetic', 'microbiome', 'functional_test', 'other']
+
+// Flattens the agent's schema-less `structured` block into rows WXML can render without
+// recursion: {depth, key, value, isHead}. An object's keys become rows, an array's entries are
+// numbered, a leaf is key: value. Generic on purpose — the block has no schema (CLAUDE.md §39),
+// so the only honest rendering is the shape it arrived in. Bounded by the server's caps.
+// Contract 3's `structured.version: 2`: sections of tables (named columns, verbatim cells) and
+// pairs. Rendered as the tables they are — the column context is the reason the shape exists.
+function structuredV2Blocks(s) {
+  if (!s || s.version !== 2 || !Array.isArray(s.sections)) return []
+  return s.sections.slice(0, 50).map((sec, i) => ({
+    key: `s${i}`,
+    title: sec && sec.title ? String(sec.title) : '',
+    tables: (Array.isArray(sec && sec.tables) ? sec.tables : []).slice(0, 20).map((tbl, ti) => ({
+      key: `s${i}t${ti}`,
+      columns: (tbl.columns || []).map(c => String(c)),
+      rows: (tbl.rows || []).slice(0, 200).map(r => (r || []).map(c => (c === null || c === undefined) ? '' : String(c))),
+    })),
+    pairs: (Array.isArray(sec && sec.pairs) ? sec.pairs : []).slice(0, 200).map(p => ({
+      label: String(p.label || ''),
+      value: [p.value, p.note].filter(v => v !== undefined && v !== null && v !== '').map(String).join('  ') || '—',
+    })),
+  }))
+}
+
+// The document's tags (contract 3), as chips. A FACT resolved in nano's catalog and is acted on;
+// a DESCRIPTOR did not and is only shown — the chip says so, so a user never reads a
+// descriptor as something nano is doing something with.
+function tagChips(tags, t, lang) {
+  return (Array.isArray(tags) ? tags : []).slice(0, 60).map(x => {
+    const isFact = x.kind === 'fact' && !!x.tag_key
+    const name = isFact ? (lang === 'en' ? (x.name_en || x.name_zh || x.text) : (x.name_zh || x.text)) : x.text
+    const value = x.value ? ` ${x.value}` : ''
+    const status = x.status && t.tagStatus[x.status] ? t.tagStatus[x.status] : ''
+    return {
+      id: x.id,
+      isFact,
+      inactive: x.status === 'past' || x.status === 'stopped',
+      category: t.tagCategory[x.category] || t.tagCategory.other,
+      label: `${name}${value}`,
+      status,
+      text: isFact && x.text && x.text !== name ? x.text : '',
+    }
+  })
+}
+
+function flattenStructured(node, depth = 0, key = '', out = []) {
+  if (out.length >= 400) return out
+  if (node === null || node === undefined) { if (key) out.push({ depth, key, value: '—', isHead: false }); return out }
+  if (Array.isArray(node)) {
+    if (key) out.push({ depth, key, value: '', isHead: true })
+    node.forEach((n, i) => {
+      if (n && typeof n === 'object') {
+        // A row-like object ({label, value, …}) reads best as "label: value"; anything else
+        // gets its own numbered head.
+        const label = n.label || n.name || n.title || n.key
+        if (label && (n.value !== undefined || n.result !== undefined || n.note !== undefined)) {
+          const val = [n.value, n.result].find(v => v !== undefined && v !== null && v !== '')
+          const unit = n.unit ? ` ${n.unit}` : ''
+          const note = n.note ? `  ${n.note}` : ''
+          out.push({ depth: depth + 1, key: String(label), value: `${val === undefined ? '' : val}${unit}${note}`.trim() || '—', isHead: false })
+          for (const k of Object.keys(n)) {
+            if (['label', 'name', 'title', 'key', 'value', 'result', 'unit', 'note'].includes(k)) continue
+            flattenStructured(n[k], depth + 2, k, out)
+          }
+        } else {
+          flattenStructured(n, depth + 1, label ? String(label) : `#${i + 1}`, out)
+        }
+      } else {
+        out.push({ depth: depth + 1, key: `#${i + 1}`, value: String(n), isHead: false })
+      }
+    })
+    return out
+  }
+  if (typeof node === 'object') {
+    if (key) out.push({ depth, key, value: '', isHead: true })
+    const inner = key ? depth + 1 : depth
+    for (const k of Object.keys(node)) flattenStructured(node[k], inner, k, out)
+    return out
+  }
+  out.push({ depth, key: key || '', value: String(node), isHead: false })
+  return out
+}
 
 Component({
   properties: {
@@ -185,6 +300,7 @@ Component({
       return {
         hospital_record: t.typeHospital, lab_report: t.typeLab, imaging: t.typeImaging,
         discharge_summary: t.typeDischarge, prescription: t.typePrescription,
+        genetic: t.typeGenetic, microbiome: t.typeMicrobiome, functional_test: t.typeFunctional,
       }[docType] || t.typeOther
     },
 
@@ -202,6 +318,7 @@ Component({
           ...d,
           typeLabel: this._typeLabel(d.doc_type),
           extLabel: this._extLabel(d.extraction),
+          tagChips: tagChips(d.tags, this.data.t, this.properties.lang),
         })),
       })
     },
@@ -210,8 +327,10 @@ Component({
     // document's own metadata and the Medical Records layer, and a second copy here would be one
     // more thing to keep in step.
     _extLabel(ext) {
-      if (!ext) return ''
       const t = this.data.t
+      // No job at all: a document uploaded before extraction existed. It says so, and the
+      // actions row offers 解析 — before this the row was silent and there was no way to ask.
+      if (!ext) return this.properties.canUpload ? t.extNone : ''
       if (['queued', 'claimed', 'processing'].includes(ext.status)) return t.extPending
       if (ext.status === 'failed') return t.extFailed
       if (ext.status === 'rejected') return t.extRejected
@@ -219,9 +338,63 @@ Component({
       const isZh = this.properties.lang !== 'en'
       const bits = []
       if (ext.accepted > 0) bits.push(isZh ? `${ext.accepted} 项指标` : `${ext.accepted} marker${ext.accepted === 1 ? '' : 's'}`)
+      // Rows kept by printed name only — outside the catalog, but no longer thrown away.
+      const kept = Math.max(0, (ext.items || 0) - (ext.accepted || 0))
+      if (kept > 0) bits.push(isZh ? `${kept} 项按原文保存` : `${kept} item${kept === 1 ? '' : 's'} as printed`)
       if (ext.findings > 0) bits.push(isZh ? `${ext.findings} 条健康信息` : `${ext.findings} health detail${ext.findings === 1 ? '' : 's'}`)
       if (bits.length === 0) return isZh ? '未读取到指标' : 'No markers found'
       return isZh ? `已记录 ${bits.join('、')}` : `Recorded ${bits.join(', ')}`
+    },
+
+    // Two ways to correct a document the agent could not fully read, both through
+    // PATCH /health-documents/:id (owner only; stamps user_edited_at so the next run keeps it).
+    async _patch(id, body) {
+      const { userId } = this.properties
+      const res = await this._req(`${BASE}/api/health-documents/${id}`, 'PATCH', { openid: userId, ...body })
+      if (!res.data?.success) throw new Error(res.data?.error || 'failed')
+      return res.data
+    },
+
+    // The date picker's value lands here. re_extract rides along: a date is only ever set to
+    // rescue a read the missing date refused, so re-running is the point, not a second step.
+    async onPickDate(e) {
+      if (!this.properties.canUpload) return
+      const id = e.currentTarget.dataset.id
+      const t = this.data.t
+      try {
+        await this._patch(id, { doc_date: e.detail.value, re_extract: true })
+        this._toast(t.dateSaved, 'success')
+        this._loadDocuments()
+      } catch (err) { this._toast(t.errGeneric) }
+    },
+
+    // Tapping the type badge: an action sheet over the doc types. No re-run — the type is a
+    // badge on the row and the report, not something the extraction depends on.
+    changeType(e) {
+      if (!this.properties.canUpload) return
+      const id = e.currentTarget.dataset.id
+      const t = this.data.t
+      const labels = DOC_TYPES.map(k => this._typeLabel(k))
+      wx.showActionSheet({
+        itemList: labels,
+        success: async (r) => {
+          const docType = DOC_TYPES[r.tapIndex]
+          if (!docType) return
+          try {
+            await this._patch(id, { doc_type: docType })
+            this._toast(t.typeSaved, 'success')
+            this._loadDocuments()
+          } catch (err) { this._toast(t.errGeneric) }
+        },
+        fail: () => {},
+      })
+    },
+
+    toggleStructured(e) {
+      const id = Number(e.currentTarget.dataset.id)
+      this.setData({
+        documents: this.data.documents.map(d => d.id === id ? { ...d, structuredOpen: !d.structuredOpen } : d),
+      })
     },
 
     // Re-run. The server clears the previous extraction BEFORE queueing, which is mandatory
@@ -267,7 +440,8 @@ Component({
       if (!userId) return
       try {
         const res = await this._req(
-          `${BASE}/api/health-documents?openid=${encodeURIComponent(userId)}${this._scope()}`)
+          `${BASE}/api/health-documents?openid=${encodeURIComponent(userId)}&include_structured=1${this._scope()}`)
+        const open = new Set(this.data.documents.filter(d => d.structuredOpen).map(d => d.id))
         const docs = (res.data?.documents || []).map(d => ({
           ...d,
           typeLabel: this._typeLabel(d.doc_type),
@@ -275,8 +449,20 @@ Component({
           extLabel: this._extLabel(d.extraction),
           extBusy: !!d.extraction && ['queued', 'claimed', 'processing'].includes(d.extraction.status),
           extDone: !!d.extraction && d.extraction.status === 'completed',
+          extNone: !d.extraction,
+          extFailed: !!d.extraction && d.extraction.status === 'failed',
+          extMissingDate: !!d.extraction && d.extraction.status === 'completed' && !!d.extraction.missing_date && !d.doc_date,
+          structuredRows: d.structured && d.structured.version !== 2 ? flattenStructured(d.structured) : [],
+          structuredBlocks: structuredV2Blocks(d.structured),
+          hasStructured: !!d.structured,
+          structuredOpen: open.has(d.id),
+          tagChips: tagChips(d.tags, T[this.properties.lang] || T.zh, this.properties.lang),
         }))
-        this.setData({ documents: docs, docsLoading: false })
+        this.setData({ documents: docs, docsLoading: false, today: new Date().toISOString().slice(0, 10) })
+        // The host counts documents toward the twin's Medical Records layer (user-health's
+        // _recomputeTwinLayers). Uploaded records are that layer even before extraction runs.
+        const dates = docs.map(d => d.doc_date || (d.created_at ? String(d.created_at).slice(0, 10) : null)).filter(Boolean).sort()
+        this.triggerEvent('loaded', { count: docs.length, latestDate: dates.length ? dates[dates.length - 1] : null })
       } catch (e) {
         this.setData({ docsLoading: false })
       }

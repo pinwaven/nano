@@ -52,6 +52,20 @@ const T = {
     planSecondary: '辅方案',
     planWeeks: '周',
     planCheckins: '打卡',
+    clientPrograms: '打卡计划',
+    noClientPrograms: '当前渠道暂无可激活的打卡计划',
+    programDays: '天',
+    programActivate: '激活',
+    programPause: '暂停',
+    programResume: '继续',
+    programActivated: '已激活，Day 1 已发送',
+    programResumed: '已继续',
+    programPaused: '已暂停',
+    programStatusActive: '进行中',
+    programStatusPaused: '已暂停',
+    programStatusCompleted: '已完成',
+    programStatusNotStarted: '未开始',
+    programDayProgress: (done, total, open) => `已完成 ${done}/${total} 天${open ? ` · Day ${open} 进行中` : ''}`,
     customPlanName: '方案名称',
     customPlanGoal: '方案目标',
     customPlanDuration: '计划周期（周）',
@@ -191,6 +205,20 @@ const T = {
     planSecondary: 'Secondary',
     planWeeks: 'wks',
     planCheckins: 'check-ins',
+    clientPrograms: 'Check-in Programs',
+    noClientPrograms: 'No programs available for this channel',
+    programDays: 'days',
+    programActivate: 'Activate',
+    programPause: 'Pause',
+    programResume: 'Resume',
+    programActivated: 'Activated — Day 1 sent',
+    programResumed: 'Resumed',
+    programPaused: 'Paused',
+    programStatusActive: 'In progress',
+    programStatusPaused: 'Paused',
+    programStatusCompleted: 'Completed',
+    programStatusNotStarted: 'Not started',
+    programDayProgress: (done, total, open) => `${done}/${total} days done${open ? ` · Day ${open} open` : ''}`,
     customPlanName: 'Plan Name',
     customPlanGoal: 'Plan Goal',
     customPlanDuration: 'Duration (weeks)',
@@ -447,6 +475,9 @@ Page({
     topImprovers: [],
     // Plans tab (inside client detail)
     detailPlans: [],
+    // 打卡 programs (§42) the coach may activate for this client, with the client's state on each.
+    detailPrograms: [],
+    programActionBusy: false,
     detailPlansLoading: false,
     planTemplates: [],
     planRecommendOpen: false,
@@ -886,6 +917,61 @@ Page({
       })
     } catch {
       this.setData({ detailPlansLoading: false })
+    }
+    this._loadClientPrograms()
+  },
+
+  // ── 打卡 programs (CLAUDE.md §42) ───────────────────────────────────────────
+  //
+  // A program is switched on by the coach, here, for one client — there is no auto-enrollment.
+  // Activation delivers Day 1 into the client's chat immediately; later days arrive on the
+  // client's own first app-open of each day.
+  async _loadClientPrograms() {
+    const { detailClient } = this.data
+    if (!detailClient || !this._coachId) return
+    try {
+      const res = await this._req(`${BASE}/api/programs/coach?coach_id=${this._coachId}&openid=${encodeURIComponent(detailClient.user_id)}`)
+      const t = this.data.t
+      const programs = (res.data?.programs || []).map(p => {
+        const e = p.enrollment
+        const status = e ? e.status : 'not_started'
+        const statusLabel = { active: t.programStatusActive, paused: t.programStatusPaused, completed: t.programStatusCompleted }[status] || t.programStatusNotStarted
+        return {
+          ...p,
+          status,
+          statusLabel,
+          progressLabel: e ? t.programDayProgress(e.days_completed, p.duration_days, e.open_day) : '',
+          // One button per state: activate / pause / resume; a completed program has none.
+          action: status === 'not_started' ? 'activate' : status === 'active' ? 'pause' : status === 'paused' ? 'resume' : '',
+          actionLabel: status === 'not_started' ? t.programActivate : status === 'active' ? t.programPause : status === 'paused' ? t.programResume : '',
+        }
+      })
+      this.setData({ detailPrograms: programs })
+    } catch (e) {
+      console.error('load client programs failed', e)
+    }
+  },
+
+  async handleProgramAction(e) {
+    const { program, action } = e.currentTarget.dataset
+    const { detailClient, t } = this.data
+    if (!detailClient || !program || !action || this.data.programActionBusy) return
+    this.setData({ programActionBusy: true })
+    try {
+      let res
+      if (action === 'activate' || action === 'resume') {
+        res = await this._req(`${BASE}/api/programs/enroll`, 'POST', { coach_id: this._coachId, openid: detailClient.user_id, program_id: Number(program) })
+      } else {
+        res = await this._req(`${BASE}/api/programs/enrollment`, 'PUT', { coach_id: this._coachId, openid: detailClient.user_id, program_id: Number(program), status: 'paused' })
+      }
+      const d = res.data || {}
+      if (!d.success && !d.sandbox) throw new Error(d.error || 'Error')
+      wx.showToast({ title: action === 'activate' ? t.programActivated : action === 'resume' ? t.programResumed : t.programPaused, icon: 'success' })
+      await this._loadClientPrograms()
+    } catch (err) {
+      wx.showToast({ title: err.message || 'Error', icon: 'none' })
+    } finally {
+      this.setData({ programActionBusy: false })
     }
   },
 

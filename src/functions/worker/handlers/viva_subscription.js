@@ -23,7 +23,7 @@ async function handleGetVivaSubscriptionStatus(openid) {
         const result = await pool.query(
             `SELECT u.viva_subscription_expires_at, u.persona_override_type, u.persona_override_expires_at,
                     u.viva_ag_expires_at,
-                    COALESCE(c.config->>'persona_type', 'nano') AS channel_persona_type
+                    effective_persona_type(c.id) AS channel_persona_type
              FROM users u LEFT JOIN channels c ON c.id = u.channel_id
              WHERE u.user_id = $1 OR u.external_id = $1 LIMIT 1`,
             [openid]
@@ -134,7 +134,7 @@ async function grantFoodPanelReviewAccess(userId, durationDays = 30) {
     try {
         const { rows: [row] } = await client.query(
             `SELECT u.user_id, u.persona_override_type, u.persona_override_expires_at,
-                    c.config->>'persona_type' AS channel_persona_type
+                    effective_persona_type(c.id) AS channel_persona_type
                FROM users u LEFT JOIN channels c ON c.id = u.channel_id
               WHERE u.user_id = $1`,
             [userId]

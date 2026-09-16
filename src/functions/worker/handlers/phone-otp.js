@@ -38,8 +38,8 @@ const USER_SELECT = `
            (u.email_verified_at IS NOT NULL AND u.email IS NOT NULL) AS email_verified, b.bio_age,
            cu.nickname AS coach_name,
            c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
-           c.config->'sub_age_display_names' AS channel_sub_age_names,
-           c.config->>'locale' AS channel_locale
+           effective_channel_config(c.id, 'sub_age_display_names') AS channel_sub_age_names,
+           effective_channel_config(c.id, 'locale') #>> '{}' AS channel_locale
     FROM users u
     LEFT JOIN coaches p ON u.coach_id = p.id
     LEFT JOIN users cu ON p.user_id = cu.user_id
