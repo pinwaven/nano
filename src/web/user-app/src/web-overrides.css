@@ -1,0 +1,42 @@
+/* Web-only adjustments layered over the generated mini-css: scrolling (the miniapp's
+   <scroll-view> scrolled itself), native inputs standing in for <picker>/<slider>, and the
+   phone frame that hosts .main on desktop. Keep this small — everything else is the twin's. */
+
+.phone-frame { display: flex; flex-direction: column; }
+.main { flex: 1; min-height: 0; height: 100%; }
+.tab-content { position: relative; flex: 1; min-height: 0; }
+.tab-pane { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.tab-pane > * { flex: 1; min-height: 0; }
+.chat-scroll, .uh-scroll, .tab-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.chat-tab, .health-tab, .plans-tab, .learn-tab, .store-tab { position: relative; }
+.menu-dropdown { top: 54px; z-index: 50; }
+.menu-mask { position: absolute; inset: 0; z-index: 49; }
+.app-header { cursor: pointer; user-select: none; }
+.tab-btn, .menu-item, .msg-action-card, .fcard-cta, .ccard-cta, .lcard-cover, .pcard-row, .quick-btn, .cond-chip, .ob-confirm, .tool-item, .plus-btn, .send-btn, .mic-btn { cursor: pointer; }
+.chat-textarea { resize: none; border: none; outline: none; background: transparent; color: inherit; font-family: inherit; }
+.picker-native { background: transparent; border: none; color: inherit; font: inherit; outline: none; flex: 1; color-scheme: dark; }
+.theme-light .picker-native { color-scheme: light; }
+.slider-input { flex: 1; accent-color: #6375EC; }
+.slider-val-input { background: transparent; border: none; color: inherit; font: inherit; outline: none; text-align: right; width: 64px; }
+.ob-input { border: none; outline: none; background: transparent; color: inherit; font: inherit; }
+.msg-html a { color: inherit; text-decoration: underline; }
+.msg-html img { max-width: 100%; }
+.lcard-video { width: 100%; display: block; }
+.msg-image { max-width: 100%; display: block; }
+a.menu-item { text-decoration: none; color: inherit; }
+/* The miniapp's overlays/sheets are position:fixed. A transform on the frame makes them position
+   against the phone silhouette on desktop instead of the whole browser viewport. */
+.phone-frame { transform: translateZ(0); position: relative; }
+.q-row { display: flex; align-items: center; gap: 10px; }
+.q-val { min-width: 16px; text-align: right; font-size: var(--fs-26); color: var(--text-sub); }
+.modal-input { width: 100%; }
+/* Full-screen routes (pages/phones, pages/emails, pages/referral) layered over the tabs. */
+.route-layer { position: absolute; inset: 0; z-index: 40; background: var(--navy); display: flex; flex-direction: column; }
+.route-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.route-page .app-header { cursor: default; align-items: center; gap: 10px; overflow: visible; min-height: auto; }
+.route-page .header-title { white-space: nowrap; }
+.phones-content, .emails-content { overflow-y: auto; }
+.route-page .back-btn { cursor: pointer; }
+.pin-capture { position: absolute; opacity: 0; left: 0; top: 0; width: 100%; height: 100%; }
+.pin-field { position: relative; }
+.login-btn--ghost { background: transparent; border: 1px solid var(--navy-border); color: var(--text-sub); box-shadow: none; }

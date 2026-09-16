@@ -1,0 +1,116 @@
+/* ── Waven Design System — User App ──
+   Theme + text-scale tokens are GENERATED from src/mini/nano-miniapp/app.wxss (rpx ÷ 2 = px)
+   so the web twin uses the miniapp's exact palette and type curve. `.theme-light` and
+   `.fs-1/.fs-2/.fs-3` go on <html> (see store/AppContext.jsx). Regenerate with
+   scripts/sync-theme-from-miniapp.mjs after an app.wxss change. */
+
+:root {
+  --blue:        #6375EC;
+  --blue-glow:   rgba(99, 117, 236, 0.45);
+  --blue-dim:    rgba(99, 117, 236, 0.12);
+  --wave:        #A6C4E5;
+  --navy:        #0B1C2E;
+  --navy-card:   #0F2540;
+  --navy-lift:   #162E4A;
+  --navy-border: rgba(99, 117, 236, 0.18);
+  --text:        #EEF2FF;
+  --text-sub:    #A6C4E5;
+  --text-muted:  rgba(166, 196, 229, 0.4);
+  --blue-rgb:    99, 117, 236;
+  --wave-rgb:    166, 196, 229;
+  --bg-gradient: radial-gradient(ellipse at 50% 0%, #142847 0%, #0B1C2E 70%);
+  --bg-surface:  rgba(11, 28, 46, 0.85);
+  --bg-input:    rgba(11, 28, 46, 0.92);
+  --bg-tabbar:   rgba(8, 18, 32, 0.92);
+  --bg-sheet:    #0D1E35;
+  --bg-hero:     radial-gradient(ellipse at 50% 0%, rgba(99, 117, 236, 0.18) 0%, transparent 70%);
+  --success:      #34d399;
+  --success-deep: #10b981;
+  --warn:         #f59e0b;
+  --danger:       #ef4444;
+  --danger-soft:  #f87171;
+  --danger-muted: #E86060;
+  --danger-pale:  #FFB3B3;
+  --info:         #818cf8;
+  --info-pale:    #8B9FFF;
+  --gold:         #F5C56A;
+  --steel:        #7A9ABF;
+  --fs-11: 5.5px;   --fs-13: 6.5px;   --fs-23: 11.5px;   --fs-80: 40px;
+  --fs-14: 7px;   --fs-15: 7.5px;   --fs-16: 8px;   --fs-17: 8.5px;
+  --fs-18: 9px;   --fs-19: 9.5px;   --fs-20: 10px;   --fs-21: 10.5px;
+  --fs-22: 11px;   --fs-24: 12px;   --fs-25: 12.5px;   --fs-26: 13px;
+  --fs-27: 13.5px;   --fs-28: 14px;   --fs-30: 15px;   --fs-32: 16px;
+  --fs-34: 17px;   --fs-36: 18px;   --fs-40: 20px;   --fs-44: 22px;
+  --fs-48: 24px;   --fs-52: 26px;   --fs-60: 30px;   --fs-72: 36px;
+  --fs-88: 44px;
+
+  --frame-w: 390px;
+  --frame-h: 844px;
+}
+
+:root.theme-light {
+  --blue:        #985F33;
+  --blue-glow:   rgba(152, 95, 51, 0.35);
+  --blue-dim:    rgba(152, 95, 51, 0.1);
+  --wave:        #796044;
+  --navy:        #FAF7F2;
+  --navy-card:   #FFFFFF;
+  --navy-lift:   #F5EDE3;
+  --navy-border: rgba(152, 95, 51, 0.22);
+  --text:        #2C2C2C;
+  --text-sub:    #796044;
+  --text-muted:  #856C47;
+  --blue-rgb:    152, 95, 51;
+  --wave-rgb:    121, 96, 68;
+  --success:      #0F7A52;
+  --success-deep: #0A7350;
+  --warn:         #8A5A06;
+  --danger:       #C0392B;
+  --danger-soft:  #CE3B32;
+  --danger-muted: #C0392B;
+  --danger-pale:  #C0392B;
+  --info:         #4F46E5;
+  --info-pale:    #4F46E5;
+  --gold:         #8A5D0A;
+  --steel:        #4E74A1;
+  --bg-gradient: radial-gradient(ellipse at 50% 0%, #F5EDE3 0%, #FAF7F2 70%);
+  --bg-surface:  rgba(250, 247, 242, 0.92);
+  --bg-input:    rgba(250, 247, 242, 0.97);
+  --bg-tabbar:   rgba(250, 247, 242, 0.97);
+  --bg-sheet:    #FFFFFF;
+  --bg-hero:     radial-gradient(ellipse at 50% 0%, rgba(201, 149, 106, 0.12) 0%, transparent 70%);
+  color: var(--text);
+}
+
+:root.fs-1 {
+  --fs-11: 6.5px;   --fs-13: 7.5px;   --fs-23: 13px;   --fs-80: 42px;
+  --fs-14: 8px;   --fs-15: 8.5px;   --fs-16: 9px;   --fs-17: 10px;
+  --fs-18: 10.5px;   --fs-19: 11px;   --fs-20: 11.5px;   --fs-21: 12px;
+  --fs-22: 12.5px;   --fs-24: 13.5px;   --fs-25: 14px;   --fs-26: 15px;
+  --fs-27: 15.5px;   --fs-28: 16px;   --fs-30: 17px;   --fs-32: 18px;
+  --fs-34: 19px;   --fs-36: 20px;   --fs-40: 22px;   --fs-44: 24px;
+  --fs-48: 26px;   --fs-52: 28px;   --fs-60: 32px;   --fs-72: 38px;
+  --fs-88: 46px;
+}
+
+:root.fs-2 {
+  --fs-11: 7px;   --fs-13: 8.5px;   --fs-23: 15px;   --fs-80: 44px;
+  --fs-14: 9px;   --fs-15: 10px;   --fs-16: 10.5px;   --fs-17: 11px;
+  --fs-18: 11.5px;   --fs-19: 12.5px;   --fs-20: 13px;   --fs-21: 13.5px;
+  --fs-22: 14.5px;   --fs-24: 15.5px;   --fs-25: 16px;   --fs-26: 16.5px;
+  --fs-27: 17px;   --fs-28: 17.5px;   --fs-30: 18.5px;   --fs-32: 20px;
+  --fs-34: 21px;   --fs-36: 22px;   --fs-40: 24px;   --fs-44: 26px;
+  --fs-48: 28px;   --fs-52: 30px;   --fs-60: 34px;   --fs-72: 40px;
+  --fs-88: 48px;
+}
+
+:root.fs-3 {
+  --fs-11: 8.5px;   --fs-13: 10px;   --fs-23: 17px;   --fs-80: 46.5px;
+  --fs-14: 10.5px;   --fs-15: 11.5px;   --fs-16: 12px;   --fs-17: 13px;
+  --fs-18: 13.5px;   --fs-19: 14.5px;   --fs-20: 15px;   --fs-21: 16px;
+  --fs-22: 16.5px;   --fs-24: 17.5px;   --fs-25: 18px;   --fs-26: 19px;
+  --fs-27: 19.5px;   --fs-28: 20px;   --fs-30: 21px;   --fs-32: 22.5px;
+  --fs-34: 23.5px;   --fs-36: 24.5px;   --fs-40: 26.5px;   --fs-44: 28.5px;
+  --fs-48: 30.5px;   --fs-52: 32.5px;   --fs-60: 36.5px;   --fs-72: 42.5px;
+  --fs-88: 50.5px;
+}

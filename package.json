@@ -46,7 +46,12 @@
     "upload:waven": "node scripts/upload-miniapp.js waven",
     "upload:aeviva": "node scripts/upload-miniapp.js aeviva",
     "upload:fusion": "node scripts/upload-miniapp.js fusion",
-    "update:changelog": "node scripts/update-changelog.js"
+    "update:changelog": "node scripts/update-changelog.js",
+    "check:i18n": "node src/web/user-app/scripts/sync-i18n-from-miniapp.mjs",
+    "sync:i18n": "node src/web/user-app/scripts/sync-i18n-from-miniapp.mjs --write",
+    "sync:theme": "node src/web/user-app/scripts/sync-theme-from-miniapp.mjs",
+    "sync:css": "node src/web/user-app/scripts/sync-css-from-miniapp.mjs",
+    "sync:health": "node src/web/user-app/scripts/sync-health-helpers-from-miniapp.mjs"
   },
   "dependencies": {
     "@alicloud/eventbridge": "^1.3.2",
