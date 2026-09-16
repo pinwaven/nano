@@ -77,10 +77,10 @@ function ProgramModal({ program, channels, onClose, onSave }) {
             <option value="active">active — coaches can activate it for their clients</option>
             <option value="archived">archived — no new activations; existing enrollments stay</option>
           </select>
-          <label>Channels <span style={{ color: '#64748b', fontWeight: 400, fontSize: 11 }}>— where coaches may activate it: a bound channel and all its sub-channels; leave empty for every channel</span></label>
+          <label>Channels <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 11 }}>— where coaches may activate it: a bound channel and all its sub-channels; leave empty for every channel</span></label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
             {(channels || []).map(c => (
-              <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 6, background: form.channel_ids.includes(c.id) ? '#1e3a5f' : '#1e293b', cursor: 'pointer', fontSize: 12 }}>
+              <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 6, background: form.channel_ids.includes(c.id) ? '#dbeafe' : 'var(--bg)', border: '1px solid var(--border)', cursor: 'pointer', fontSize: 12 }}>
                 <input type="checkbox" checked={form.channel_ids.includes(c.id)} onChange={() => toggleChannel(c.id)} />
                 {c.name}
               </label>
@@ -141,13 +141,13 @@ function DayEditor({ program, day, courses, questionnaires, onSaved }) {
   const placeholders = questionKeys.flatMap(q => q.sliders.length ? q.sliders.map(s => `{{${q.key}.${s}}}`) : [`{{${q.key}}}`]);
 
   return (
-    <div style={{ padding: '12px 14px', background: '#0f172a', borderRadius: 8, marginTop: 8 }}>
+    <div className="modal-body" style={{ padding: '12px 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, marginTop: 8 }}>
       {error && <div className="error-banner">{error}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div><label>Title (中文)</label><input className="form-input" value={form.title_zh} onChange={e => setForm(f => ({ ...f, title_zh: e.target.value }))} /></div>
         <div><label>Title (EN)</label><input className="form-input" value={form.title_en} onChange={e => setForm(f => ({ ...f, title_en: e.target.value }))} /></div>
       </div>
-      <label>Intro (中文, markdown) <span style={{ color: '#64748b', fontWeight: 400, fontSize: 11 }}>— the prose above the lesson card; falls back to the title</span></label>
+      <label>Intro (中文, markdown) <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 11 }}>— the prose above the lesson card; falls back to the title</span></label>
       <textarea className="form-input" rows={3} value={form.intro_md_zh} onChange={e => setForm(f => ({ ...f, intro_md_zh: e.target.value }))} />
       <label>Intro (EN, markdown)</label>
       <textarea className="form-input" rows={2} value={form.intro_md_en} onChange={e => setForm(f => ({ ...f, intro_md_en: e.target.value }))} />
@@ -169,15 +169,15 @@ function DayEditor({ program, day, courses, questionnaires, onSaved }) {
         </div>
       </div>
 
-      <label>打卡 questionnaire <span style={{ color: '#64748b', fontWeight: 400, fontSize: 11 }}>— type program_day; author it under Content ▸ Questionnaires</span></label>
+      <label>打卡 questionnaire <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 11 }}>— type program_day; author it under Content ▸ Questionnaires</span></label>
       <select className="form-input" value={form.questionnaire_id} onChange={e => setForm(f => ({ ...f, questionnaire_id: e.target.value }))}>
         <option value="">(no 打卡 — the day completes on tap)</option>
         {questionnaires.map(q => <option key={q.id} value={q.id}>{q.name_zh || q.name} · {q.question_count} questions{q.is_active ? '' : ' (inactive)'}</option>)}
       </select>
 
-      <label>Recap template (中文) <span style={{ color: '#64748b', fontWeight: 400, fontSize: 11 }}>— posted after the 打卡; placeholders resolve from the answers</span></label>
+      <label>Recap template (中文) <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 11 }}>— posted after the 打卡; placeholders resolve from the answers</span></label>
       {placeholders.length > 0 && (
-        <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6, fontFamily: 'monospace', lineHeight: 1.8 }}>{placeholders.join('  ')}</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, fontFamily: 'monospace', lineHeight: 1.8, wordBreak: 'break-all' }}>{placeholders.join('  ')}</div>
       )}
       <textarea className="form-input code-input" rows={7} value={form.summary_template_zh} onChange={e => setForm(f => ({ ...f, summary_template_zh: e.target.value }))} />
       <label>Recap template (EN)</label>
@@ -205,16 +205,16 @@ function DaysPanel({ program, courses, questionnaires }) {
   }, [program.id]);
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <div style={{ color: '#64748b', padding: 12 }}>Loading days…</div>;
+  if (loading) return <div style={{ color: 'var(--muted)', padding: 12 }}>Loading days…</div>;
   return (
     <div style={{ marginTop: 8 }}>
       {days.map(d => (
-        <div key={d.day_index} style={{ borderTop: '1px solid #1e293b', padding: '8px 0' }}>
+        <div key={d.day_index} style={{ borderTop: '1px solid var(--border)', padding: '8px 0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => setOpenDay(openDay === d.day_index ? null : d.day_index)}>
             <span style={{ fontWeight: 600, minWidth: 56 }}>Day {d.day_index}</span>
             <span style={{ flex: 1 }}>{d.title_zh}</span>
-            <span style={{ fontSize: 11, color: d.lesson_id ? '#93c5fd' : '#64748b' }}>{d.lesson_id ? `▶ ${d.lesson_title}` : 'no lesson'}</span>
-            <span style={{ fontSize: 11, color: d.questionnaire_id ? '#6ee7b7' : '#64748b' }}>{d.questionnaire_id ? `☑ ${d.questionnaire_name_zh || d.questionnaire_name}` : 'no 打卡'}</span>
+            <span style={{ fontSize: 11, color: d.lesson_id ? '#2563eb' : 'var(--muted)' }}>{d.lesson_id ? `▶ ${d.lesson_title}` : 'no lesson'}</span>
+            <span style={{ fontSize: 11, color: d.questionnaire_id ? '#059669' : 'var(--muted)' }}>{d.questionnaire_id ? `☑ ${d.questionnaire_name_zh || d.questionnaire_name}` : 'no 打卡'}</span>
             {openDay === d.day_index ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </div>
           {openDay === d.day_index && (
@@ -232,11 +232,12 @@ function EnrollmentsPanel({ program }) {
   useEffect(() => {
     axios.get(`/api/programs/${program.id}/enrollments`).then(r => setRows(r.data.enrollments || [])).catch(() => setRows([])).finally(() => setLoading(false));
   }, [program.id]);
-  if (loading) return <div style={{ color: '#64748b', padding: 12 }}>Loading…</div>;
-  if (!rows.length) return <div style={{ color: '#64748b', padding: 12 }}>No one enrolled yet — a coach activates the program for a client from the coach app (client → 方案 → 打卡计划).</div>;
+  if (loading) return <div style={{ color: 'var(--muted)', padding: 12 }}>Loading…</div>;
+  if (!rows.length) return <div style={{ color: 'var(--muted)', padding: 12 }}>No one enrolled yet — a coach activates the program for a client from the coach app (client → 方案 → 打卡计划).</div>;
   const n = program.duration_days;
   return (
-    <table className="data-table" style={{ marginTop: 8 }}>
+    <div style={{ overflowX: 'auto', marginTop: 8 }}>
+    <table className="data-table" style={{ minWidth: 520 + n * 36 }}>
       <thead>
         <tr><th>User</th><th>Activated by</th><th>Status</th><th>Started</th><th>Next day</th>{Array.from({ length: n }, (_, i) => <th key={i} style={{ textAlign: 'center' }}>{i + 1}</th>)}</tr>
       </thead>
@@ -246,7 +247,7 @@ function EnrollmentsPanel({ program }) {
           return (
             <tr key={e.id}>
               <td>{e.nickname || e.user_id}</td>
-              <td style={{ color: '#94a3b8' }}>{e.activated_by_name || '—'}</td>
+              <td style={{ color: 'var(--muted)' }}>{e.activated_by_name || '—'}</td>
               <td><span style={{ color: STATUS_COLOR[e.status === 'completed' ? 'active' : 'draft'] }}>{e.status}</span></td>
               <td>{e.started_on}</td>
               <td>{e.status === 'completed' ? '—' : e.current_day}</td>
@@ -260,6 +261,7 @@ function EnrollmentsPanel({ program }) {
         })}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -297,7 +299,7 @@ function ProgramsTab({ channels }) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ color: '#94a3b8', fontSize: 12 }}>
+        <div style={{ color: 'var(--muted)', fontSize: 12 }}>
           Multi-day 打卡 programs delivered in the chat tab: one lesson + one check-in per day, one day per calendar day. A coach activates a program for a client from the coach app.
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -306,18 +308,18 @@ function ProgramsTab({ channels }) {
         </div>
       </div>
 
-      {loading && <div style={{ color: '#64748b' }}>Loading…</div>}
-      {!loading && programs.length === 0 && <div style={{ color: '#64748b' }}>No programs yet.</div>}
+      {loading && <div style={{ color: 'var(--muted)' }}>Loading…</div>}
+      {!loading && programs.length === 0 && <div style={{ color: 'var(--muted)' }}>No programs yet.</div>}
 
       {programs.map(p => (
         <div key={p.id} className="card" style={{ marginBottom: 12, padding: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: 15 }}>
-                {p.title_zh} <span style={{ color: '#64748b', fontWeight: 400, fontSize: 12 }}>{p.title_en}</span>
+                {p.title_zh} <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>{p.title_en}</span>
                 <span style={{ marginLeft: 10, fontSize: 11, padding: '2px 6px', borderRadius: 4, background: (STATUS_COLOR[p.status] || '#475569') + '22', color: STATUS_COLOR[p.status] || '#94a3b8' }}>{p.status}</span>
               </div>
-              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
                 <code>{p.key_name}</code> · {p.duration_days} days · {(p.channels || []).length ? (p.channels || []).map(c => c.name).join(', ') : <span style={{ color: '#f59e0b' }}>no channel bound</span>} · {p.enrollment_count} enrolled, {p.completed_count} completed
               </div>
             </div>
