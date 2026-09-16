@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import wavenLogo from '../../../shared/assets/waven-logo-icon.png';
-import { useLang } from '../i18n.js';
+import { useLang } from '../i18n/index.js';
 import { LangToggle } from './Widgets.jsx';
+import { STORAGE_KEYS as K, emailLoginAllowedFor } from '../config.js';
+import { storage } from '../store/AppContext.jsx';
 
 const API = '/api';
 const QR_POLL_INTERVAL = 2500; // ms
@@ -12,8 +14,15 @@ const QR_POLL_INTERVAL = 2500; // ms
 // login time, so the tab is always offered here and the refusal is surfaced as a message.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-export default function LoginScreen({ onLogin, lang, onLangChange }) {
+export default function LoginScreen({ onLogin, lang, onLangChange, onContinue }) {
   const { t } = useLang();
+  // pages/login/login.js: the logged-out card offers an instant, no-OTP "continue as previous"
+  // restore from the logout snapshot; the channel/logo/name come from the last session's
+  // channel; email login is only offered on the Waven tree (or with no channel known yet).
+  const lastSession = storage.get(K.lastSession);
+  const lastChannel = storage.get(K.channel) || lastSession?.channel || null;
+  const emailAllowed = emailLoginAllowedFor(lastChannel);
+  const [showLoggedOut, setShowLoggedOut] = useState(!!(lastSession && lastSession.user && lastSession.maskedPhone));
   const [tab, setTab] = useState('qr'); // 'phone' | 'email' | 'qr'
 
   // ── Phone / email + OTP login ─────────────────────────────────
@@ -88,7 +97,7 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
           : t.errInvalidCode);
         return;
       }
-      onLogin(r.data.user, r.data.channel || null);
+      onLogin(r.data);
     } catch {
       setError(t.errNetwork);
     } finally {
@@ -148,7 +157,7 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
           if (s === 'confirmed' && p.data.user) {
             stopPolling();
             setQrStatus('confirmed');
-            setTimeout(() => onLogin(p.data.user, p.data.channel || null), 800);
+            setTimeout(() => onLogin(p.data), 800);
           } else if (s === 'expired') {
             stopPolling();
             setQrStatus('expired');
@@ -185,36 +194,45 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
       </div>
       <div className="login-brand">
         <div className="login-logo-ring">
-          <img src={wavenLogo} className="login-logo" alt="Waven" />
+          <img src={lastChannel?.logo_url || wavenLogo} className="login-logo" alt="" />
         </div>
-        <div className="login-title">NANO</div>
+        <div className="login-title">{lastChannel?.name || 'NANO'}</div>
         <div className="login-subtitle">{t.subtitle}</div>
       </div>
 
+      {showLoggedOut && (
+        <div className="login-card">
+          <div className="login-card-label">{t.welcomeBack}</div>
+          <button className="login-btn" onClick={() => onContinue?.()}>{t.continueAs(lastSession.maskedPhone)}</button>
+          <button className="login-btn login-btn--ghost" style={{ marginTop: 10 }} onClick={() => { setShowLoggedOut(false); setTab('phone'); }}>{t.useOtherPhone}</button>
+          {emailAllowed && <button className="login-btn login-btn--ghost" style={{ marginTop: 10 }} onClick={() => { setShowLoggedOut(false); setTab('email'); }}>{t.useEmailLogin}</button>}
+        </div>
+      )}
+
       {/* Tab switcher */}
-      <div className="login-tab-bar">
+      {!showLoggedOut && <div className="login-tab-bar">
         <button
           className={`login-tab-btn${tab === 'phone' ? ' login-tab-btn--active' : ''}`}
           onClick={() => switchTab('phone')}
         >
           {t.loginTabPhone}
         </button>
-        <button
+        {emailAllowed && <button
           className={`login-tab-btn${tab === 'email' ? ' login-tab-btn--active' : ''}`}
           onClick={() => switchTab('email')}
         >
           {t.loginTabEmail}
-        </button>
+        </button>}
         <button
           className={`login-tab-btn${tab === 'qr' ? ' login-tab-btn--active' : ''}`}
           onClick={() => switchTab('qr')}
         >
           {t.loginTabQr}
         </button>
-      </div>
+      </div>}
 
       {/* Phone / email + OTP login card */}
-      {(tab === 'phone' || tab === 'email') && (
+      {!showLoggedOut && (tab === 'phone' || tab === 'email') && (
         <div className="login-card">
           <div className="login-card-label">{t.signIn}</div>
 
@@ -264,7 +282,7 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
                   type="text"
                   inputMode="numeric"
                   maxLength={6}
-                  placeholder={t.codePlaceholder}
+                  placeholder={t.otpCodePlaceholder}
                   value={code}
                   onChange={e => { setCode(e.target.value.replace(/\D/g, '')); setError(''); }}
                   onKeyDown={e => { if (e.key === 'Enter') handleVerifyCode(); }}
@@ -292,7 +310,7 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
       )}
 
       {/* QR login card */}
-      {tab === 'qr' && (
+      {!showLoggedOut && tab === 'qr' && (
         <div className="login-card login-card--qr">
           <div className="login-card-label">{t.qrTitle}</div>
           <div className="login-qr-desc">{t.qrDesc}</div>
@@ -339,9 +357,7 @@ export default function LoginScreen({ onLogin, lang, onLangChange }) {
       )}
 
       <div className="login-footer">
-        <span>{t.footerBrand}</span>
-        <span className="login-footer-dot">·</span>
-        <span>{t.footerTag}</span>
+        <span>{t.loginFooter}</span>
       </div>
     </div>
   );

@@ -1,42 +1,49 @@
-import { useState, useEffect } from 'react';
-import axios from 'axios';
-import wavenLogo from '../../shared/assets/waven-logo-icon.png';
-import { T, LangContext } from './i18n.js';
+// The app shell — pages/main/main.wxml's root: header (tap → logo menu), banners, the five
+// always-mounted tabs, the bottom tab bar, and the full-screen routes (phones / emails).
+import { useEffect, useState } from 'react';
+import { api } from './api.js';
+import { VERSION, IS_DEV_BACKEND, STORAGE_KEYS as K } from './config.js';
+import { asset } from './assets.js';
+import { useApp, storage } from './store/AppContext.jsx';
+import { openGcnStoreGated } from './gcn.js';
 import LoginScreen from './components/LoginScreen.jsx';
-import ChatTab from './tabs/ChatTab.jsx';
-import HealthTab from './tabs/HealthTab.jsx';
-import PlansTab from './tabs/PlansTab.jsx';
-import StoreTab from './tabs/StoreTab.jsx';
-import AcademyTab from './tabs/AcademyTab.jsx';
-import ReferralTab from './tabs/ReferralTab.jsx';
+import LogoMenu from './shell/LogoMenu.jsx';
+import UiHost from './components/ui/UiHost.jsx';
+import ChatTab from './chat/ChatTab.jsx';
+import HealthTab from './health/HealthTab.jsx';
+import PlansTab from './plans/PlansTab.jsx';
+import CodeRedeemSheet from './plans/CodeRedeemSheet.jsx';
+import StoreTab from './store/StoreTab.jsx';
+import LearnTab from './learn/LearnTab.jsx';
+import IdentityPage from './shell/IdentityPage.jsx';
+import ReferralPage from './shell/ReferralPage.jsx';
+import { GuestJoinSheet, VivaRedeemSheet } from './shell/Sheets.jsx';
+import wavenLogo from '../../shared/assets/waven-logo-icon.png';
 
-const API = '/api';
+const TAB_ICON = { chat: 'chat', health: 'health', plans: 'plans', learn: 'training', store: 'store' };
 
 function App() {
-  const [user, setUser] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem('nano_user') || 'null'); } catch { return null; }
-  });
-  const [tab, setTab] = useState('chat');
-  const [lang, setLang] = useState(() => user?.language || 'zh');
+  const app = useApp();
+  const { user, channel, t, lang, tab, setTab, isGuest, isAeviva, login, toggleLang, sandboxMode, theme, textScale,
+    personaType, vivaSubscriptionExpired, exitSandbox } = app;
   const [wvtLoading, setWvtLoading] = useState(false);
-  const [showReferral, setShowReferral] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [guestSheet, setGuestSheet] = useState(false);
+  const [vivaSheet, setVivaSheet] = useState(false);
+  const { route, setRoute } = app;
 
-  const t = T[lang] || T.zh;
-
+  // pages/appview → web: a one-time `?wvt=` signs the miniapp user in here.
   useEffect(() => {
     if (user) return;
     const params = new URLSearchParams(window.location.search);
+    if (params.get('ref')) storage.set(K.ref, params.get('ref'));
     const wvt = params.get('wvt');
     if (!wvt) return;
     setWvtLoading(true);
-    axios.post(`${API}/exchange-webview-token`, { wvt })
+    api.post('/exchange-webview-token', { wvt })
       .then(r => {
-        if (r.data.success && r.data.user) {
-          const u = r.data.user;
-          sessionStorage.setItem('nano_user', JSON.stringify(u));
-          try { sessionStorage.setItem('nano_channel', JSON.stringify(r.data.channel || null)); } catch { /* ignore */ }
-          setUser(u);
-          setLang(u.language === 'en' ? 'en' : 'zh');
+        if (r?.success && r.user) {
+          login(r);
           const url = new URL(window.location.href);
           url.searchParams.delete('wvt');
           window.history.replaceState({}, '', url.toString());
@@ -46,158 +53,87 @@ function App() {
       .finally(() => setWvtLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // `channel` is the login response's channel object (key_name / root_key_name / …). It was
-  // discarded before; kept alongside the user so a tab can gate on the channel tree rather
-  // than a bare channel_id.
-  const handleLogin = (u, channel = null) => {
-    sessionStorage.setItem('nano_user', JSON.stringify(u));
-    try { sessionStorage.setItem('nano_channel', JSON.stringify(channel)); } catch { /* ignore */ }
-    setUser(u);
-    setLang(u.language === 'en' ? 'en' : 'zh');
-  };
-
-  const handleUserUpdate = updates => {
-    setUser(prev => {
-      const next = { ...prev, ...updates };
-      sessionStorage.setItem('nano_user', JSON.stringify(next));
-      return next;
-    });
-  };
-
-  const handleLogout = () => {
-    sessionStorage.removeItem('nano_user');
-    sessionStorage.removeItem('nano_channel');
-    setUser(null);
-    setTab('chat');
-    setLang('zh');
+  // main.js:switchTab — the Store tab on a GCN-linked channel opens the storefront and does NOT
+  // switch tabs; other tabs tell their owners to refresh when stale.
+  const switchTab = async next => {
+    if (next === 'store' && isAeviva && !isGuest) { await openGcnStoreGated(app); return; }
+    setTab(next);
+    app.emit('tab:switch', next);
   };
 
   if (!user) {
     return (
-      <LangContext.Provider value={{ lang, t }}>
-        <div className="shell">
-          {wvtLoading ? (
-            <div className="wvt-loading">
-              <div className="login-glow" />
-              <div className="login-brand">
-                <div className="login-logo-ring">
-                  <img src={wavenLogo} className="login-logo" alt="Waven" />
-                </div>
-                <div className="login-title">NANO</div>
-              </div>
-            </div>
-          ) : (
-            <LoginScreen onLogin={handleLogin} lang={lang} onLangChange={setLang} />
-          )}
-        </div>
-      </LangContext.Provider>
+      <div className="shell">
+        {wvtLoading ? (
+          <div className="wvt-loading">
+            <div className="login-glow" />
+            <div className="login-brand"><div className="login-logo-ring"><img src={wavenLogo} className="login-logo" alt="Waven" /></div><div className="login-title">NANO</div></div>
+          </div>
+        ) : <LoginScreen onLogin={login} lang={lang} onLangChange={toggleLang} onContinue={app.continueAsPrevious} />}
+        <UiHost />
+      </div>
     );
   }
 
-  const TABS = [
-    {
-      id: 'chat', label: t.tabChat,
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-      ),
-    },
-    {
-      id: 'health', label: t.tabHealth,
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-        </svg>
-      ),
-    },
-    {
-      id: 'plans', label: t.tabPlans,
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-          <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
-          <line x1="3" y1="10" x2="21" y2="10"/>
-          <line x1="8" y1="14" x2="16" y2="14"/>
-        </svg>
-      ),
-    },
-    {
-      id: 'learn', label: t.tabLearn,
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
-        </svg>
-      ),
-    },
-    {
-      id: 'store', label: t.tabStore,
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
-          <line x1="3" y1="6" x2="21" y2="6"/>
-          <path d="M16 10a4 4 0 0 1-8 0"/>
-        </svg>
-      ),
-    },
-  ];
+  const tabs = ['chat', 'health', 'plans', ...(isGuest ? [] : ['learn', 'store'])];
+  const tabLabel = { chat: t.tabChat, health: t.tabHealth, plans: t.tabPlans, learn: t.tabLearn, store: t.tabStore };
+  const sandboxBannerText = sandboxMode ? String(t.sandboxBanner || '').replace('{name}', user.nickname || '—') : '';
 
   return (
-    <LangContext.Provider value={{ lang, t }}>
-      <div className="shell">
-        <div className="phone-frame">
-          <div className="app-header">
-            <div className="header-brand">
-              <img src={wavenLogo} className="header-logo" alt="Waven" />
-              <span className="header-title">NANO</span>
+    <div className="shell">
+      <div className="phone-frame">
+        <div className={`main fs-${textScale}${theme === 'light' ? ' theme-light' : ''}`}>
+          <div className="app-header" onClick={() => setMenuOpen(o => !o)}>
+            <div className="header-logo-btn">
+              <img className="header-logo-img" src={channel?.logo_url || asset('/assets/waven-logo-icon.png')} alt="" />
+              <span className="header-title">{channel?.name || 'NANO'}</span>
             </div>
-            <div className="header-right">
-              <div className="header-user">{user.nickname || 'User'}</div>
-              <button className="referral-header-btn" onClick={() => setShowReferral(true)} title={t.referralTitle}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <line x1="19" y1="8" x2="19" y2="14" /><line x1="16" y1="11" x2="22" y2="11" />
-                </svg>
-              </button>
-              <button className="logout-btn" onClick={handleLogout} title="Sign out">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                  <polyline points="16 17 21 12 16 7" />
-                  <line x1="21" y1="12" x2="9" y2="12" />
-                </svg>
-              </button>
-            </div>
+            <div className="header-divider" />
+            <span className="header-user">{isGuest ? t.guestHeaderName : (user.nickname || 'User')}</span>
+            {IS_DEV_BACKEND && <span className="header-version">v{VERSION}</span>}
           </div>
 
-          <div className="tab-content">
-            <div style={{ display: tab === 'chat'   ? 'contents' : 'none' }}><ChatTab user={user} onUserUpdate={handleUserUpdate} onNavigateTab={setTab} /></div>
-            <div style={{ display: tab === 'health' ? 'contents' : 'none' }}><HealthTab user={user} /></div>
-            <div style={{ display: tab === 'plans'  ? 'contents' : 'none' }}><PlansTab user={user} /></div>
-            <div style={{ display: tab === 'learn'  ? 'contents' : 'none' }}><AcademyTab user={user} /></div>
-            <div style={{ display: tab === 'store'  ? 'contents' : 'none' }}><StoreTab user={user} /></div>
-          </div>
-
-          {showReferral && (
-            <ReferralTab user={user} lang={lang} onClose={() => setShowReferral(false)} />
+          {sandboxMode && (
+            <div className="sandbox-banner" onClick={exitSandbox}>
+              <span className="sandbox-banner-text">{sandboxBannerText}</span><span className="sandbox-banner-exit">{t.exitSandbox}</span>
+            </div>
+          )}
+          {!sandboxMode && personaType === 'viva' && vivaSubscriptionExpired && (
+            <div className="viva-expired-banner" onClick={() => openGcnStoreGated(app, { intent: 'buy_viva_subscription' })}>
+              <span className="viva-expired-banner-text">{t.vivaSubscriptionExpiredBanner}</span><span className="viva-expired-banner-btn">{t.vivaSubscriptionRenewBtn}</span>
+            </div>
           )}
 
-          <nav className="tab-bar">
-            {TABS.map(tb => (
-              <button
-                key={tb.id}
-                className={`tab-btn${tab === tb.id ? ' active' : ''}`}
-                onClick={() => setTab(tb.id)}
-              >
-                {tb.icon}
-                <span>{tb.label}</span>
-              </button>
+          <LogoMenu open={menuOpen} onClose={() => setMenuOpen(false)} onReferral={() => setRoute('referral')} onVivaRedeem={() => setVivaSheet(true)} onGuestJoin={() => setGuestSheet(true)} />
+
+          <div className="tab-content">
+            <div className={`tab-pane${tab === 'chat' ? '' : ' tab-hidden'}`}><ChatTab onGuestTap={() => setGuestSheet(true)} /></div>
+            <div className={`tab-pane${tab === 'health' ? '' : ' tab-hidden'}`}><HealthTab visible={tab === 'health'} onGuestTap={() => setGuestSheet(true)} /></div>
+            <div className={`tab-pane${tab === 'plans' ? '' : ' tab-hidden'}`}><PlansTab visible={tab === 'plans'} onGuestTap={() => setGuestSheet(true)} /></div>
+            {!isGuest && <div className={`tab-pane${tab === 'learn' ? '' : ' tab-hidden'}`}><LearnTab /></div>}
+            {!isGuest && <div className={`tab-pane${tab === 'store' ? '' : ' tab-hidden'}`}><StoreTab onGuestTap={() => setGuestSheet(true)} /></div>}
+          </div>
+
+          {route === 'phones' && <div className="route-layer"><IdentityPage kind="phone" /></div>}
+          {route === 'emails' && <div className="route-layer"><IdentityPage kind="email" /></div>}
+          {route === 'referral' && <div className="route-layer"><ReferralPage /></div>}
+          <GuestJoinSheet open={guestSheet} onClose={() => setGuestSheet(false)} />
+          <VivaRedeemSheet open={vivaSheet} onClose={() => setVivaSheet(false)} />
+
+          <CodeRedeemSheet />
+          <UiHost />
+          <div className="tab-bar">
+            {tabs.map(id => (
+              <div key={id} className={`tab-btn${tab === id ? ' tab-active' : ''}`} onClick={() => switchTab(id)}>
+                {tab === id && <div className="tab-line" />}
+                <img className="tab-icon-img" src={asset(`/assets/icons/${TAB_ICON[id]}.svg`)} alt="" />
+                <span className="tab-label">{tabLabel[id]}</span>
+              </div>
             ))}
-          </nav>
+          </div>
         </div>
       </div>
-    </LangContext.Provider>
+    </div>
   );
 }
 
