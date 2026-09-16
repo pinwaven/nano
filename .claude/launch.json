@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "user-app",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "5178", "--no-open"],
+      "cwd": "src/web/user-app",
+      "port": 5178
+    }
+  ]
+}
