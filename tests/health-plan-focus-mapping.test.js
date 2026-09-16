@@ -187,11 +187,12 @@ test('both prompts still resolve a legacy context, and render it identically', (
 
 test('neither plan-detail surface prints an internal dot identifier', () => {
     const wxml = read('src', 'mini', 'nano-miniapp', 'pages', 'main', 'main.wxml');
-    const jsx = read('src', 'web', 'user-app', 'src', 'components', 'PlanDetailSheet.jsx');
+    // The web plan-detail overlay lives inside plans/PlansTab.jsx since the web twin (2026-09-16).
+    const jsx = read('src', 'web', 'user-app', 'src', 'plans', 'PlansTab.jsx');
     assert.ok(!/DOT\{\{item\}\}/.test(wxml), 'main.wxml still renders a raw recommended_dot_ids entry');
-    assert.ok(!/DOT\{id\}/.test(jsx), 'PlanDetailSheet.jsx still renders a raw recommended_dot_ids entry');
+    assert.ok(!/DOT\{id\}/.test(jsx), 'PlansTab.jsx still renders a raw recommended_dot_ids entry');
     assert.ok(/planDetailData\.recommendedDots/.test(wxml), 'main.wxml does not read the resolved list');
-    assert.ok(/detail\.recommended_dots/.test(jsx), 'PlanDetailSheet.jsx does not read the resolved list');
+    assert.ok(/recommendedDots: res\?\.recommended_dots/.test(jsx), 'PlansTab.jsx does not read the resolved list');
 });
 
 test('the server resolves the names, and keeps the raw field for the admin panel', () => {
