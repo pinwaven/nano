@@ -559,9 +559,10 @@ personas**, reshaping its fetches into the same `llmContext` contract `handlePos
 `publishChatGenerateEvent`/`handleChatGenerateEvent`/`finalizeChatReply` with no new event type.
 Record: [docs/ai-persona/06-chat-pipeline.md](docs/ai-persona/06-chat-pipeline.md).
 
-- **Only `pages/main/main.js` is wired async** (`opts.async:true`) — it has `_poll`.
-  `pages/coach/coach.js` and the web user-app have no polling and stay synchronous; `coach.js`'s
-  `_req` takes a `timeoutMs` and `runHealthAdvice` requests 180s (the loop measured ~167s).
+- **`pages/main/main.js` and the web user-app's `chat/useChat.js` are wired async** (`opts.async:true`) —
+  both run the two-channel poll (`hooks/useNotificationPoll.js` on the web). `pages/coach/coach.js`
+  has no polling and stays synchronous; `coach.js`'s `_req` takes a `timeoutMs` and
+  `runHealthAdvice` requests 180s (the loop measured ~167s).
 - The synchronous tail is `finalizeHealthAdviceReply()` — same grounding-with-one-retry, returns
   `{success, message}` inline instead of writing `notifications`.
 - `/health-advice` is exempt from `index.js`'s sandbox short-circuit alongside `/chat`; without
@@ -956,7 +957,7 @@ data source. Canonical definition: [docs/architecture/digital-twin.md](docs/arch
 - **Coupling rule** — these names change in four places together: `TWIN_LAYER_LABELS` + the
   `t.layer*` keys in both language blocks of `components/user-health/user-health.js` (WXML has no
   key checking — a renamed key renders empty), `prompts/chat/twinVocabulary.js`'s
-  `getTwinVocabBlock()`, `src/web/user-app/src/i18n.js`, and the layer table in
+  `getTwinVocabBlock()`, `src/web/user-app/src/i18n/health.js` (generated — `npm run sync:i18n`), and the layer table in
   `digital-twin.md`. The miniapp keeps the `KINO` brand in the layer-1 label.
 - Ring/BP/weight data must render **ungated** by `subAgeList.length` — a bound ring with no Kino
   scan previously showed none of the user's own data.

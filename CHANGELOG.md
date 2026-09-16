@@ -8,6 +8,50 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **Web user-app rebuilt as a twin of the Mini Program** · 2026-09-16
+  - Every end-user surface the miniapp has now exists at `/app/`, against the same endpoints and
+    copy: the async chat with the two-channel delivery contract (`hooks/useNotificationPoll.js`
+    — notifications + `chat-history?since_id&roles=coach,ai`, `chat_status` captions,
+    `AI_ECHO_TYPES` de-dup, 285s/30s wait budgets, load-earlier), all seven `:::` chat cards, the
+    server-driven questionnaire engine (six input types) in place of the hardcoded onboarding,
+    the 4-tool toolbox with the focus sheet, 打卡 program cards, formula-card CTAs (pay / redeem /
+    buy → GCN); the Health tab as the 数字孪生 (avatar + mood, edit profile, four-layer strip,
+    body figure + BioAge canvas chart, cross-layer strips, 综合报告, ring summary + charts from
+    server events, KINO trends, lab snapshot + chart, report detail sheet, food IgG, memory facts,
+    健康文档 upload/extract) and the Viva AG panel (jobs, quota, needs-input hand-off, in-app
+    md viewer); Plans with reminders, the full detail overlay, packages / 兑换码 / redeem sheet /
+    box claim / formulate-first card on the Dots subtab; Learn (Academy + 魔盒) and the native
+    Store (batch orders, cancel, cart persistence) with the GCN storefront handoff on linked
+    channels; the logo menu (theme, text scale, language, Viva redeem, phones/emails, referral),
+    banners, guest mode, and the logged-out "continue as" card.
+  - Shared logic is **imported from the miniapp** (`@mini` alias + `vite-plugin-commonjs`:
+    `markdown.js`, `biomarker-series.js`, `mood.js`, `phone.js`, `signal-smoothing.js`) and
+    everything else is **generated from it** by script — the i18n tables (`npm run sync:i18n` /
+    `check:i18n`), the theme + text-scale tokens (`sync:theme`), every stylesheet (`sync:css`,
+    rpx ÷ 2) and `user-health.js`'s pure prelude (`sync:health`). Ported components use the
+    miniapp's class names verbatim. Record: `docs/user-app-ui-style.md`.
+  - Deliberate web differences: ring data renders from the server with a "sync in the WeChat
+    app" notice on the BLE buttons (no Web Bluetooth); QR scans use `BarcodeDetector` + a manual
+    code field; voice input via the Web Speech API where available; the GCN storefront opens in a
+    new tab with the same `webview-token` context intents; files open from presigned URLs.
+  - Two live bugs fixed en route: the events sign-up called `POST/DELETE /events/:id/signups`,
+    which the worker routes to **create / delete an event** (now `/event-signups`), and the
+    library viewer called `/academy/library/:id` (the list route) instead of `/:id/content`.
+  - Dev proxy now targets `nano-dev.gcn.net` by default (`NANO_USER_APP_API_TARGET` overrides);
+    `react-markdown`, `lucide-react` and the hand-ported `utils.js` are gone. No worker changes.
+
+- **`diamond_store` (大区联盟中心) partner tier mirror** · 2026-09-16
+  - `migration_partner_types_diamond_store.sql` seeds nano's `partner_types` mirror row
+    (`managed_by_gcn = TRUE`, sort_order 4) for GCN's new fourth aeviva wholesale tier
+    (GCN `migration_0118_diamond_store_tier.sql`, 70% wholesale discount). Needed because
+    `partners.tier` is validated against this table and GCN's `partner-types-gcn-sync` push only
+    fires from its Wholesale Rules panel, never from a migration. No nano code change — the Partners
+    tab reads the table.
+  - Coach 胡樱桃 (`baff07cb`) and her 58 coached users, 16 invite codes and Kino device moved from
+    `aeviva-china` to the new `aeviva-china-sw` sub-channel (`temp/move-coach-to-subchannel.js`,
+    rehearsed on dev, applied to prod); she gained the `admin` role there. She is provisioned to GCN
+    as a `diamond_store` house partner (no upline).
+
 - **`persona_type` inherits down the channel tree** · 2026-09-16
   - `effective_persona_type(channel_id)` (`migration_channel_persona_inheritance.sql`), a sibling of
     `effective_channel_logo`, walks `parent_channel_id` up to the nearest channel whose config sets

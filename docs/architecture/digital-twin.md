@@ -372,36 +372,16 @@ followed by the four layers:
 
 ---
 
-## Health Score Computation — web user-app only
+## Health Score Computation — retired (2026-09-16)
 
-**File:** `src/web/user-app/src/utils.js` (`buildTwinVisuals`), rendered by `tabs/HealthTab.jsx`.
-
-> The miniapp has a near-identical `_buildTwinVisuals()` in
-> `components/user-health/user-health.js`, but its output is **computed and discarded** — no
-> `.wxml` references `healthScore` / `healthDomains` / `vitalGauges`. The miniapp shows live
-> ring charts instead. Don't delete the miniapp copy without checking it against the web
-> version first; it is also called on a ring-derived `virtualTwin`.
-
-Six scoring functions map raw metric values to 0–100:
-
-```js
-_scoreSleep(hours)     // 7–9h = 80–100; <6h or >10h = red zone
-_scoreHrv(ms)          // ≥80ms = 100; scales linearly from 0
-_scoreRestHr(bpm)      // ≤52 = 100; degraded above 65; sharp drop >90
-_scoreSpo2(pct)        // ≥98% = 100; <95% = below 70
-_scoreSteps(steps)     // 10 000+ = 100; 7 500 = 75; 5 000 = 50
-_scoreBmi(bmi)         // 18.5–24.9 = 100; degrades outside this range
-```
-
-Domain composites:
-- **Recovery** = avg(sleepScore, hrvScore)
-- **Cardio** = avg(restHrScore, spo2Score)
-- **Activity** = avg(stepsScore)
-- **Body** = avg(bmiScore)
-
-**Overall Health Score** = avg of available domain scores. Domains with no data are excluded (not zeroed).
-
----
+The web user-app used to render a composite "health score" (`buildTwinVisuals` in a
+hand-ported `utils.js`) that the miniapp never showed. Since the web app became a twin of the
+miniapp it renders the same Daily Monitoring section the miniapp does — the ring summary and
+charts built by `_buildRingDisplayData` / `_buildReadingLineCharts`, now imported by both
+clients from one source (`src/web/user-app/src/health/helpers.js` is generated from the pure
+prelude of `components/user-health/user-health.js`; see `docs/user-app-ui-style.md`). The
+miniapp's own `_buildTwinVisuals()` still exists and is still computed-and-discarded except for
+`twinBodyBar`, which both clients render as the body-composition bar.
 
 ## Demo Seed Script
 
@@ -506,7 +486,8 @@ four call sites together:
 2. `src/functions/worker/prompts/chat/twinVocabulary.js` — `getTwinVocabBlock()`, injected by the
    six heavyweight prompts; the light prompts carry an inline `数字孪生 · 日常监测` /
    `TWIN · DAILY MONITORING` prefix instead.
-3. `src/web/user-app/src/i18n.js` — both language blocks.
+3. `src/web/user-app/src/i18n/health.js` — generated from the miniapp table by
+   `npm run sync:i18n`; never hand-edited, so this site follows site 1 automatically.
 4. The layer table in `docs/architecture/digital-twin.md`, which is the canonical definition.
 
 **Any new health data surface must declare which layer it belongs to.** If it doesn't fit one of
