@@ -1,4 +1,5 @@
 const { pool } = require('../lib/db');
+const { resolveEffectivePersona } = require('../lib/persona');
 const OpenAI = require('openai');
 const { getPersonaSettings } = require('./personaSettings');
 
@@ -163,15 +164,29 @@ async function handlePostQuestionnaireResponse(body, saveChatMessage, fireQuesti
         if (!qRes.rows.length) return { statusCode: 404, success: false, error: 'Question not found' };
         const { save_target, save_field, save_biomarker_type, prompt_zh, prompt_en } = qRes.rows[0];
 
-        // Get user language to pick the right question prompt
-        const userLangRes = await pool.query(`SELECT language FROM users WHERE user_id = $1`, [user_id]);
-        const userLang = userLangRes.rows[0]?.language || 'zh';
+        // Get user language to pick the right question prompt, and the effective persona so the
+        // question/answer bubbles land in the SAME history the chat tab reloads and the LLM reads
+        // (§16 — history is persona-scoped; these rows used to default to 'nano' on every channel,
+        // which made a Viva client's 打卡 answers invisible to Viva's own context).
+        const userLangRes = await pool.query(
+            `SELECT language, persona_override_type, persona_override_expires_at,
+                    COALESCE(effective_persona_type(channel_id), 'nano') AS channel_persona_type
+             FROM users WHERE user_id = $1`,
+            [user_id]
+        );
+        const userRow = userLangRes.rows[0] || {};
+        const userLang = userRow.language || 'zh';
         const questionText = userLang === 'en' ? prompt_en : prompt_zh;
+        const personaType = resolveEffectivePersona({
+            channelPersonaType: userRow.channel_persona_type,
+            personaOverrideType: userRow.persona_override_type,
+            personaOverrideExpiresAt: userRow.persona_override_expires_at,
+        });
 
         // Save question + answer to chat history
-        await saveChatMessage(user_id, 'ai', questionText);
+        await saveChatMessage(user_id, 'ai', questionText, null, personaType);
         const answerDisplay = body.answer_display != null ? String(body.answer_display) : JSON.stringify(answer);
-        await saveChatMessage(user_id, 'user', answerDisplay);
+        await saveChatMessage(user_id, 'user', answerDisplay, null, personaType);
 
         // Upsert response
         await pool.query(

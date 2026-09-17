@@ -1289,8 +1289,19 @@ through sequentially, at most one day per Shanghai calendar day, entirely in the
   carries the Academy lesson id and nothing else; the URL is presigned per tap and the done-state
   is runtime (`_attachProgramState` ← `GET /programs/my`), so no signed URL or stale flag ever
   sits in `chat_messages`.
-- `program_day`, `program_day_summary`, `program_day_comment` are dual-written and **must stay
-  in `AI_ECHO_TYPES`** (`tests/static-invariants.test.js`). The recap is deterministic
+- **An open day is nudged, not skipped.** Scan N sends one `program_day_nudge` per Shanghai
+  date (same `checkin_date` claim) while a day offered on an *earlier* date stays open, capped at
+  `MAX_NUDGES` per day-row (`program_day_progress.nudge_count`); the coach sees `stalled_days`.
+  Deterministic text + a fresh copy of the card — no LLM.
+- **`min_watch_seconds` is enforced for the program stamp only.** `<video bindended>` fires after
+  a seek, so the card accumulates real playback from `timeupdate` (deltas > 1.5 s are seeks) and
+  reports `time_spent_seconds` on pause/end; `POST /academy/progress` GREATEST-merges it and
+  `markLessonWatched` (and the offer-time backfill) require it to reach the lesson's threshold.
+  The Academy's own binary "completed" row is unchanged.
+- Questionnaire Q/A bubbles are saved under the **effective persona** (`resolveEffectivePersona`
+  in `handlePostQuestionnaireResponse`) — they used to default to `'nano'` on every channel.
+- `program_day`, `program_day_summary`, `program_day_comment`, `program_day_nudge` are
+  dual-written and **must stay in `AI_ECHO_TYPES`** (`tests/static-invariants.test.js`). The recap is deterministic
   (`renderSummaryTemplate`, `{{key}}` / `{{key.before}}`, values sanitized); the comment is one
   `qwen-plus` completion, no agentic loop, no JUDGE, and its failure costs only the comment.
 - `tryCompleteDay` is the **only** thing that closes a day and advances `current_day` — one

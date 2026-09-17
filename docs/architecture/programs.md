@@ -163,17 +163,29 @@ Notification types `program_day`, `program_day_summary`, `program_day_comment` a
 
 Deactivate a question rather than deleting it while users are mid-form.
 
+## Nudges and the watch-time gate (2026-09-17)
+
+- **Scan N** (dispatcher): an enrolled, online user whose open day was `offered_on` an earlier
+  date gets `program.nudge` → `handleProgramNudgeEvent`: same `(user, 'program_day_nudge',
+  today)` claim as the card, one `UPDATE … SET nudge_count + 1 … WHERE nudge_count < MAX_NUDGES
+  RETURNING` that re-reads the day (it may have been finished since the scan), then a
+  deterministic "Day N 还没完成 · 还差：看完今天的课程、完成打卡" plus a fresh copy of the card's
+  `:::lesson` / `:::checkin` blocks so the buttons sit under the reminder. Never on the day the
+  card arrived; never after `MAX_NUDGES` (5). Coach app and admin roster show `stalled_days`
+  and `nudge_count`.
+- **Watch time**: `handleLessonCardTap` seeds a per-lesson counter from the server's
+  `watched_seconds`; `bindtimeupdate` accumulates only deltas ≤ 1.5 s (a seek is not watching);
+  `bindpause`/`bindended` POST `time_spent_seconds` to `/academy/progress`, which merges with
+  GREATEST. `markLessonWatched` and the offer-time backfill stamp `lesson_completed_at` only when
+  `academy_lessons.min_watch_seconds` is NULL or reached. On `ended` below the threshold the
+  card toasts 请完整观看课程（还差约 N 秒）. The Academy tab's ✓ still writes its binary row.
+
 ## Known limits (v1)
 
 - The claim key is `(user, 'program_day', date)`, so a user of a channel bound to **two** active
   programs gets at most one program-day per day, whichever tick wins.
-- `bindended` does not fire if the user backgrounds mid-play, and does fire after seeking to the
-  end; `academy_lessons.min_watch_seconds` is not enforced (nor is it anywhere else). The Academy
-  tab remains an alternate path since `markLessonWatched` hooks `POST /academy/progress` regardless
-  of origin.
-- No "you still have an open day" nudge; a user who never finishes Day 1 simply sees nothing new.
-- `handlePostQuestionnaireResponse` saves the question/answer bubbles with the default persona
-  `'nano'` (pre-existing); history display is not persona-filtered so they render, but they are
-  invisible to a Viva user's LLM history context.
+- `bindended` does not fire if the user backgrounds mid-play (the pause report still lands);
+  the Academy tab's ✓ button writes the binary row without watch time, so a lesson with a
+  threshold can only be satisfied from the chat card's player.
 - `academy.js`'s `handleGetAcademyCourseProgressAll` still references `p.coach_user_id`, renamed by
   `migration_academy_rename_coach_user_id.sql` — pre-existing, unrelated, not fixed here.

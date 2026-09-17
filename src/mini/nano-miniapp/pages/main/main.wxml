@@ -468,6 +468,8 @@
                         enable-progress-gesture
                         object-fit="contain"
                         bindended="handleLessonEnded"
+                        bindtimeupdate="onLessonTimeUpdate"
+                        bindpause="onLessonPause"
                         data-mi="{{mi}}"
                         data-si="{{si}}"
                         data-lesson="{{seg.lessonId}}"

@@ -427,3 +427,73 @@ test('coach list: programs of the channel tree with the client\'s enrollment att
     assert.strictEqual(r.programs[0].enrollment.days_completed, 1);
     assert.deepStrictEqual(sqlOf(/WITH RECURSIVE up AS/)[0].params, [2], 'walks the tree from the client\'s own channel');
 });
+
+// ── nudge (item 1a) ─────────────────────────────────────────────────────────────────────
+
+const OPEN_DAY = {
+    day_index: 1, offered_on: '2026-09-15', lesson_completed_at: null, checkin_completed_at: null,
+    title_zh: 'Day 1 · 我的十年生命能力', intro_md_zh: 'x', lesson_id: 12, lesson_title: '课一', checkin_label_zh: '开始打卡',
+    program_title_zh: '7天', stalled_days: 2,
+};
+
+test('nudge: losing the per-day claim does nothing', async () => {
+    reset({ 'INSERT INTO notifications': [] });
+    const r = await handlers.handleProgramNudgeEvent({ user_id: 'u-1', program_id: 3 });
+    assert.deepStrictEqual(r, { delivered: false, reason: 'already_claimed_today' });
+    assert.strictEqual(saved.length, 0);
+});
+
+test('nudge: names what is still missing and re-sends the day card; counter bumped under the cap', async () => {
+    reset({ 'INSERT INTO notifications': [{ id: 91 }], 'SET nudge_count = dp.nudge_count \\+ 1': [OPEN_DAY] });
+    const r = await handlers.handleProgramNudgeEvent({ user_id: 'u-1', program_id: 3 });
+    assert.deepStrictEqual(r, { delivered: true, day_index: 1 });
+    const bump = sqlOf(/SET nudge_count = dp\.nudge_count \+ 1/)[0];
+    assert.deepStrictEqual(bump.params, ['u-1', 3, handlers.MAX_NUDGES]);
+    assert.match(bump.sql, /dp\.offered_on < \(NOW\(\) AT TIME ZONE 'Asia\/Shanghai'\)::date/, 'never on the day the card arrived');
+    assert.strictEqual(saved.length, 1);
+    assert.match(saved[0].content, /^\*\*Day 1 还没完成\*\*/);
+    assert.match(saved[0].content, /看完今天的课程、完成打卡/);
+    assert.match(saved[0].content, /:::lesson\n12\|课一\n:::/);
+    assert.match(saved[0].content, /:::checkin\n3\|1\|开始打卡\n:::/);
+    assert.strictEqual(saved[0].persona, 'viva');
+    const flip = sqlOf(/UPDATE notifications SET content = \$1, status = 'pending'/)[0];
+    assert.strictEqual(flip.params[0], saved[0].content, 'same text on both channels (AI_ECHO de-dup)');
+});
+
+test('nudge: only the missing half is named once the lesson is watched', async () => {
+    reset({ 'INSERT INTO notifications': [{ id: 92 }], 'SET nudge_count = dp.nudge_count \\+ 1': [{ ...OPEN_DAY, lesson_completed_at: new Date() }] });
+    await handlers.handleProgramNudgeEvent({ user_id: 'u-1', program_id: 3 });
+    assert.match(saved[0].content, /还差：完成打卡。/);
+    assert.doesNotMatch(saved[0].content, /看完今天的课程/);
+});
+
+test('nudge: nothing open (finished between scan and event, or cap reached) → slot failed, nothing sent', async () => {
+    reset({ 'INSERT INTO notifications': [{ id: 93 }], 'SET nudge_count = dp.nudge_count \\+ 1': [] });
+    const r = await handlers.handleProgramNudgeEvent({ user_id: 'u-1', program_id: 3 });
+    assert.deepStrictEqual(r, { delivered: false, reason: 'nothing_open' });
+    assert.strictEqual(saved.length, 0);
+    assert.ok(sqlOf(/UPDATE notifications SET status = 'failed'/).length === 1);
+});
+
+// ── watch-time gate (item 1b) ───────────────────────────────────────────────────────────
+
+test('markLessonWatched honours academy_lessons.min_watch_seconds in the stamp itself', async () => {
+    reset({ 'SET lesson_completed_at = NOW': [] });
+    await lib.markLessonWatched('u-1', 12);
+    const q = sqlOf(/SET lesson_completed_at = NOW/)[0];
+    assert.match(q.sql, /JOIN academy_lessons l ON l\.id = d\.lesson_id/);
+    assert.match(q.sql, /l\.min_watch_seconds IS NULL OR COALESCE\(acp\.time_spent_seconds, 0\) >= l\.min_watch_seconds/);
+});
+
+test('the offer-time backfill from academy_coach_progress applies the same threshold', async () => {
+    reset({
+        'INSERT INTO notifications': [{ id: 94 }],
+        'FROM program_enrollments e JOIN programs p': [ENROLL],
+        'FROM program_day_progress WHERE enrollment_id': [],
+        'FROM program_days d LEFT JOIN academy_lessons': [DAY1],
+        'INSERT INTO program_day_progress': [{ id: 700 }],
+    });
+    await handlers.handleProgramDayEvent({ user_id: 'u-1', program_id: 3 });
+    const ins = sqlOf(/^INSERT INTO program_day_progress/)[0];
+    assert.match(ins.sql, /l\.min_watch_seconds IS NULL OR COALESCE\(acp\.time_spent_seconds, 0\) >= l\.min_watch_seconds/);
+});

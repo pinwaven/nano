@@ -110,3 +110,21 @@ user turn; quote sparingly.
 - A value that appears inside another report's *model* (the gut report prints an hsCRP "3.84" that
   is inferred, not measured) must not be plotted beside a measured one.
 - Report dates vs sample dates vs upload dates — plot by sample date.
+
+## Traps found in the premier-partner batch (2026-09-16, 41 users)
+- **`lab_import` / `health_reports(source='manual_upload', institution IN ('KINO','Aeviva'))` are usually App
+  screenshots** of the user's own 健康 page re-uploaded as a "lab result" — the estimated Kino panel written back
+  as if measured. Open the image; if it shows the Aeviva header and the six tiles, grade C and exclude.
+- **The photo extractor (`biomarkers.data.extracted`) misreads**: a liver-glycan "NA2F 13.40%" became
+  "HbA1c 13.4%"; "乙肝表面抗体阳性" became "HBsAg 阳性"; "甲状腺未见异常" became "甲状腺结节". Never cite
+  `extracted` without looking at the photo (`scripts/batch/collect_images.js` downloads them).
+- **A ring serial can appear in several accounts** (`health_events.wearable_name`): Pin's `X3B 53687` showed up
+  in two other users' data on the same nights. Exclude the foreign device (`EXCLUDE_DEV` in `wearable.py`).
+- **Demo seeds are not only `annual_lab legacy`**: look for `external_id` like `<name>-lab-2026` /
+  `<name>-sleep-dNN` (Apple Health 14-night blocks), `health_reports` ids ending `PIN01`, and a Kino row with a
+  full six-item `actual` at 2026-05-06 12:3x with no device — all written the day the account was created.
+- **Platform-wide, 700 / 757 Kino scans carry only an hsCRP reading** (J2 readers) and most readings are outside
+  0.2–2.5 mg/L. For those users the BioAge and every sub-age are estimator output; count the in-window readings
+  (`0.2 ≤ actual.hsCRP ≤ 2.5`) — they are the only B-grade blood numbers such a user has.
+- **Chats hold the clinical facts** for users with no documents: medications (阿立哌唑, 安博维 + 洛活喜, 二甲双胍,
+  GLP-1 intent), pregnancy, POI, HBV carriage, home BP readings, pasted CBCs. Read every user turn.

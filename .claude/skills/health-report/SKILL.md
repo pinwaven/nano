@@ -97,6 +97,16 @@ session; sandbox-login as the user by setting `nano_user`/`nano_sandbox_active` 
   labels colliding at 14 points — all only visible by rendering. Look.
 - `<block>` inside `<text>` and `bindtap` on a bare `<text>` don't work in WXML; the card's
   meta line is composed in JS.
+- Trusting `biomarkers.data.extracted` from a photo (it turned a glycan fraction into HbA1c 13.4%), or a
+  "KINO lab_panel" upload (an App screenshot of the estimated panel). Open every image.
+
+## Many users at once
+For a roster (e.g. every premier partner) use `scripts/batch/`: `digest.py <workdir>` prints everything to
+read per user, `collect_images.js` pulls the report photos, `wearable.py <workdir>` recomputes ring stats
+(`EXCLUDE_DEV=` to drop a foreign ring serial), and `gen.py <workdir>` renders a 16–27 page report from a
+per-user `notes.py` (start from `common.minimal(...)` for users with no documents; set `MODE='full'` and add
+`DATA_PAGES` / `WEAR_PAGES` / a real Dots recipe when there are documents and ≥12 nights). The review index
+and publishing commands live in the batch folder's README.
 
 ## Files
 - `scripts/extract.js`, `scripts/download-docs.js`, `scripts/publish.js`, `scripts/parse_igg.py`,

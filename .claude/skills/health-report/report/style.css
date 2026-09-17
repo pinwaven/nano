@@ -25,6 +25,7 @@ li { margin-bottom: 3px; }
 b, strong { font-weight: 600; }
 
 .cols { display: grid; gap: 14px; margin: 6px 0 10px; align-items: start; }
+.cols > div { min-width: 0; }  /* a fixed-width SVG or a wide table must not expand its column and crush the other */
 .card { background: #fff; border: 1px solid #e8e7e1; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; break-inside: avoid; }
 .card-t { font-weight: 600; font-size: 10.5pt; margin-bottom: 6px; color: #0b0b0b; }
 

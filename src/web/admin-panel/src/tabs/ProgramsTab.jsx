@@ -254,7 +254,9 @@ function EnrollmentsPanel({ program }) {
               {Array.from({ length: n }, (_, i) => {
                 const d = byDay[i + 1];
                 const mark = !d ? '' : d.completed ? '✓' : (d.lesson_done || d.checkin_done) ? '◐' : '○';
-                return <td key={i} style={{ textAlign: 'center', color: d?.completed ? '#10b981' : '#94a3b8' }} title={d ? `offered ${d.offered_on}` : ''}>{mark}</td>;
+                const stalled = d && !d.completed && d.stalled_days > 0;
+                const title = !d ? '' : `offered ${d.offered_on}${stalled ? ` · open for ${d.stalled_days}d · nudged ${d.nudge_count}×` : ''}`;
+                return <td key={i} style={{ textAlign: 'center', color: d?.completed ? '#10b981' : stalled ? '#f59e0b' : 'var(--muted)', fontWeight: stalled ? 700 : 400 }} title={title}>{mark}{stalled ? d.stalled_days : ''}</td>;
               })}
             </tr>
           );

@@ -277,10 +277,12 @@ async function handlePostAcademyProgress(body) {
             [user_id, lesson_id]
         );
         if (existing.rows.length > 0) {
+            // Monotonic: a second report can only raise the recorded watch time, never lower it
+            // (the program card re-reports on every pause/end).
             if (time_spent_seconds != null) {
                 await pool.query(
-                    'UPDATE academy_coach_progress SET time_spent_seconds = $1 WHERE user_id = $2 AND lesson_id = $3',
-                    [time_spent_seconds, user_id, lesson_id]
+                    'UPDATE academy_coach_progress SET time_spent_seconds = GREATEST(COALESCE(time_spent_seconds, 0), $1) WHERE user_id = $2 AND lesson_id = $3',
+                    [Math.max(0, parseInt(time_spent_seconds, 10) || 0), user_id, lesson_id]
                 );
             }
             await _notifyProgramLessonWatched(user_id, lesson_id);

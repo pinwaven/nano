@@ -174,9 +174,16 @@ async function tryCompleteDay(client, progressId) {
 
 /**
  * Called from handlers/academy.js's POST /academy/progress — wherever the lesson was watched
- * (the chat card's inline <video> or the Academy tab), any open program day built on it is
+ * (the chat card's inline player or the Academy tab), any open program day built on it is
  * stamped and, if its 打卡 is already in, closed. Idempotent: a second call finds nothing to
  * stamp.
+ *
+ * The stamp honours academy_lessons.min_watch_seconds: the Academy's own progress row is a
+ * binary "completed" that <video bindended> (and the tab's ✓ button) writes regardless of how
+ * much was watched — seeking to the end satisfies it — so a program day would otherwise count
+ * a lesson nobody watched. When the lesson sets a threshold, the recorded
+ * academy_coach_progress.time_spent_seconds (the card reports it on every pause/end, GREATEST-
+ * merged) must reach it. No threshold → the old binary rule.
  */
 async function markLessonWatched(user_id, lesson_id) {
     if (!user_id || !lesson_id) return [];
@@ -185,11 +192,14 @@ async function markLessonWatched(user_id, lesson_id) {
          SET lesson_completed_at = NOW()
          FROM program_enrollments e
          JOIN program_days d ON d.program_id = e.program_id
+         JOIN academy_lessons l ON l.id = d.lesson_id
+         LEFT JOIN academy_coach_progress acp ON acp.user_id = e.user_id AND acp.lesson_id = l.id
          WHERE dp.enrollment_id = e.id
            AND d.day_index = dp.day_index
            AND e.user_id = $1
            AND d.lesson_id = $2
            AND dp.lesson_completed_at IS NULL
+           AND (l.min_watch_seconds IS NULL OR COALESCE(acp.time_spent_seconds, 0) >= l.min_watch_seconds)
          RETURNING dp.id`,
         [user_id, lesson_id]
     );

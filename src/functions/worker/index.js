@@ -115,7 +115,7 @@ const { CHAT_EVENT_SOURCE } = require('./lib/chatEventBridge');
 const LAB_EVENT_SOURCE = 'acs.lab' + (process.env.EVENT_SOURCE_SUFFIX || '');
 const DISPATCHER_EVENT_SOURCE = 'acs.dispatcher' + (process.env.EVENT_SOURCE_SUFFIX || '');
 const { handleDailyCheckinEvent } = require('./handlers/checkin');
-const { handleProgramDayEvent, handleGetProgramsMy, handleGetProgramLessonUrl, handlePostProgramDayStartCheckin, completeProgramDayCheckin, handleGetCoachPrograms, handlePostProgramEnroll, handlePutProgramEnrollment, handleGetPrograms, handlePostProgram, handlePutProgram, handleDeleteProgram, handleGetProgramDays, handlePutProgramDay, handleGetProgramEnrollments } = require('./handlers/programs');
+const { handleProgramDayEvent, handleProgramNudgeEvent, handleGetProgramsMy, handleGetProgramLessonUrl, handlePostProgramDayStartCheckin, completeProgramDayCheckin, handleGetCoachPrograms, handlePostProgramEnroll, handlePutProgramEnrollment, handleGetPrograms, handlePostProgram, handlePutProgram, handleDeleteProgram, handleGetProgramDays, handlePutProgramDay, handleGetProgramEnrollments } = require('./handlers/programs');
 const { handleGetVivaSubscriptionStatus, handleGetVivaSubscriptionPlans, handlePostVivaSubscriptionCheckoutConfirmed, handlePostVivaSubscriptionRedeem, handleGetVivaSubscriptionCodes, handlePutVivaSubscriptionCode } = require('./handlers/viva_subscription');
 
 
@@ -184,6 +184,13 @@ exports.handler = async (req, resp, context) => {
                 await handleProgramDayEvent(cloudData);
             } catch (err) {
                 console.error(JSON.stringify({ level: 'ERROR', msg: 'handleProgramDayEvent failed', error: err.message }));
+            }
+        } else if (event.source === DISPATCHER_EVENT_SOURCE && event.type === 'program.nudge') {
+            // 打卡 program: "Day N 还没完成" for an open day from an earlier date (§42).
+            try {
+                await handleProgramNudgeEvent(cloudData);
+            } catch (err) {
+                console.error(JSON.stringify({ level: 'ERROR', msg: 'handleProgramNudgeEvent failed', error: err.message }));
             }
         }
         // No 'nutrition.topup' case, deliberately: nothing may create a nutrition plan on a timer.

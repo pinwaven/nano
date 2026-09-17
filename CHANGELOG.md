@@ -8,6 +8,13 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **health-report skill: batch tooling + new data traps** · 2026-09-16
+  - `scripts/batch/` (gen.py, common.py, digest.py, collect_images.js, wearable.py): one-command per-user digests, photo
+    download, ring stats and a notes-driven report generator used to produce reports for 41 GCN premier partners
+    (output in gitignored `temp/health-report/`, review index there).
+  - `references/data-sources.md`: App-screenshot "lab_import" rows, photo-extractor misreads, shared ring serials,
+    `chenby-*` style demo seeds, J2 hsCRP-only scans; `SKILL.md`: batch section + two lessons.
+
 - **Web user-app rebuilt as a twin of the Mini Program** · 2026-09-16
   - Every end-user surface the miniapp has now exists at `/app/`, against the same endpoints and
     copy: the async chat with the two-channel delivery contract (`hooks/useNotificationPoll.js`
@@ -109,7 +116,13 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   - Admin panel: Content ▸ **Programs** — programs, per-day editor (Academy lesson picker,
     questionnaire picker, recap template with placeholder legend), channel binding, read-only
     roster. Dispatcher: new `program.day` scan. Worker: `handlers/programs.js`, `lib/programs.js`.
-  - Record: `docs/architecture/programs.md`; rules: CLAUDE.md §42. Tests: `tests/programs.test.js`.
+  - **Open-day nudge** (`migration_programs_nudge.sql`): one "Day N 还没完成" per calendar day
+    while a day stays open (max 5), with the card re-sent; coach app and admin roster show how
+    many days a client has stalled. **Watch-time gate**: the inline player reports real playback
+    seconds and `min_watch_seconds` is enforced before a program day counts the lesson.
+    Questionnaire Q/A bubbles now save under the effective persona.
+  - Record: `docs/architecture/programs.md`; rules: CLAUDE.md §42. Tests: `tests/programs.test.js`,
+    `tests/questionnaire-response-persona.test.js`.
 
 - **Doc-extract contract 3 — tables stay tables, facts carry a key** · 2026-09-16
   - Requested by Curia ahead of moving its layout stage to a model. Dev now declares

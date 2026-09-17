@@ -231,6 +231,37 @@ exports.handler = async (event, context) => {
             console.warn(JSON.stringify({ level: 'WARN', msg: 'program_day scan skipped', error: programErr.message }));
         }
 
+        // Scan N: 打卡 program nudge — an enrolled, online user whose current day was offered on an
+        // EARLIER date and is still open gets one "Day N 还没完成" per calendar day, up to the
+        // worker's MAX_NUDGES for that day-row. Claimed per day by the same notifications index
+        // (notification_type 'program_day_nudge'). Never fires on the day the card itself arrived.
+        try {
+            const nudgeResult = await pool.query(
+                `SELECT DISTINCT u.user_id, e.program_id
+                 FROM program_day_progress dp
+                 JOIN program_enrollments e ON e.id = dp.enrollment_id AND e.status = 'active'
+                 JOIN programs p ON p.id = e.program_id AND p.status = 'active'
+                 JOIN users u ON u.user_id = e.user_id
+                 WHERE dp.completed_at IS NULL
+                   AND dp.offered_on < (NOW() AT TIME ZONE 'Asia/Shanghai')::date
+                   AND dp.nudge_count < 5
+                   AND 'user' = ANY(u.roles)
+                   AND u.last_active_at > NOW() - INTERVAL '2 minutes'
+                   AND COALESCE((u.preferences->>'program_checkin_enabled')::boolean, true) = true
+                   AND NOT EXISTS (
+                         SELECT 1 FROM notifications n
+                         WHERE n.user_id = u.user_id AND n.notification_type = 'program_day_nudge'
+                           AND n.checkin_date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date)`
+            );
+            console.log(JSON.stringify({ level: 'INFO', msg: `Coaching scan: ${nudgeResult.rows.length} program_day_nudge` }));
+            for (const row of nudgeResult.rows) {
+                checkinUserIds.add(row.user_id);
+                await dispatchToWorker({ user_id: row.user_id, program_id: row.program_id }, 'program.nudge', 'program_day_nudge');
+            }
+        } catch (nudgeErr) {
+            console.warn(JSON.stringify({ level: 'WARN', msg: 'program_day_nudge scan skipped', error: nudgeErr.message }));
+        }
+
         // Scan 1: user_online — conversation-aware.
         // Only fire if the user has replied since the last agent message
         // (last chat message is not 'assistant', or no messages yet).

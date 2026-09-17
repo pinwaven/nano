@@ -22,6 +22,10 @@
 const NOTIFY_DAY = 'program_day';
 const NOTIFY_SUMMARY = 'program_day_summary';
 const NOTIFY_COMMENT = 'program_day_comment';
+const NOTIFY_NUDGE = 'program_day_nudge';
+// A client who has quietly dropped out is reminded this many times (one per calendar day the
+// day stays open), then left alone. The coach still sees the stall in their client view.
+const MAX_NUDGES = 5;
 
 const { pool } = require('../lib/db');
 const ossLib = require('../lib/oss');
@@ -118,11 +122,15 @@ async function handleProgramDayEvent({ user_id, program_id, persona_type }) {
         program = enrollment;
         lesson = day.lesson_id ? { id: day.lesson_id, title: day.lesson_title } : null;
 
-        // A lesson the user already watched (e.g. in the Academy tab) counts from the start.
+        // A lesson the user already watched (e.g. in the Academy tab) counts from the start —
+        // subject to the lesson's min_watch_seconds, same rule as markLessonWatched.
         const ins = await client.query(
             `INSERT INTO program_day_progress (enrollment_id, day_index, offered_on, notification_id, lesson_completed_at)
              VALUES ($1, $2, ${SHANGHAI_TODAY_SQL}, $3,
-                     (SELECT completed_at FROM academy_coach_progress WHERE user_id = $4 AND lesson_id = $5))
+                     (SELECT acp.completed_at
+                      FROM academy_coach_progress acp JOIN academy_lessons l ON l.id = acp.lesson_id
+                      WHERE acp.user_id = $4 AND acp.lesson_id = $5
+                        AND (l.min_watch_seconds IS NULL OR COALESCE(acp.time_spent_seconds, 0) >= l.min_watch_seconds)))
              ON CONFLICT (enrollment_id, day_index) DO NOTHING
              RETURNING id`,
             [enrollment.id, enrollment.current_day, notificationId, user_id, day.lesson_id]
@@ -151,6 +159,91 @@ async function handleProgramDayEvent({ user_id, program_id, persona_type }) {
         await pool.query(`UPDATE notifications SET status = 'failed' WHERE id = $1`, [notificationId]).catch(() => {});
         _log('ERROR', 'handleProgramDayEvent delivery failed', { user_id, program_id, error: err.message });
         return { delivered: false, reason: 'delivery_failed' };
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// CloudEvent: program.nudge — "Day N 还没完成"
+// ---------------------------------------------------------------------------------------
+
+/**
+ * Dispatched by the dispatcher's Scan N for an enrolled user who is online and has an OPEN day
+ * offered on an earlier date. Deterministic text (no LLM) naming what is still missing, followed
+ * by a fresh copy of the day's card so the buttons are right there. Same atomic
+ * (user, type, date) claim as the day card; capped at MAX_NUDGES per day-row.
+ */
+async function handleProgramNudgeEvent({ user_id, program_id }) {
+    if (!user_id || !program_id) return { delivered: false, reason: 'missing_args' };
+    let notificationId;
+    try {
+        const claim = await pool.query(
+            `INSERT INTO notifications (user_id, notification_type, checkin_date, content, status)
+             VALUES ($1, $2, ${SHANGHAI_TODAY_SQL}, '', 'claiming')
+             ON CONFLICT (user_id, notification_type, checkin_date) WHERE checkin_date IS NOT NULL DO NOTHING
+             RETURNING id`,
+            [user_id, NOTIFY_NUDGE]
+        );
+        if (!claim.rows.length) return { delivered: false, reason: 'already_claimed_today' };
+        notificationId = claim.rows[0].id;
+    } catch (err) {
+        _log('ERROR', 'handleProgramNudgeEvent claim failed', { user_id, program_id, error: err.message });
+        return { delivered: false, reason: 'claim_failed' };
+    }
+    try {
+        // The open day, re-read here rather than trusted from the event: the user may have
+        // finished it between the scan and this invocation.
+        const { rows } = await pool.query(
+            `UPDATE program_day_progress dp
+             SET nudge_count = dp.nudge_count + 1, last_nudged_on = ${SHANGHAI_TODAY_SQL}
+             FROM program_enrollments e
+             JOIN programs p ON p.id = e.program_id
+             JOIN program_days d ON d.program_id = e.program_id
+             LEFT JOIN academy_lessons l ON l.id = d.lesson_id
+             WHERE dp.enrollment_id = e.id
+               AND d.day_index = dp.day_index
+               AND e.user_id = $1 AND e.program_id = $2 AND e.status = 'active' AND p.status = 'active'
+               AND dp.completed_at IS NULL
+               AND dp.offered_on < ${SHANGHAI_TODAY_SQL}
+               AND dp.nudge_count < $3
+             RETURNING dp.day_index, dp.offered_on::text AS offered_on, dp.lesson_completed_at, dp.checkin_completed_at,
+                       d.title_zh, d.title_en, d.intro_md_zh, d.intro_md_en, d.lesson_id, d.checkin_label_zh, d.checkin_label_en,
+                       l.title AS lesson_title, p.title_zh AS program_title_zh, p.title_en AS program_title_en,
+                       (${SHANGHAI_TODAY_SQL} - dp.offered_on) AS stalled_days`,
+            [user_id, program_id, MAX_NUDGES]
+        );
+        const row = rows[0];
+        if (!row) {
+            await pool.query(`UPDATE notifications SET status = 'failed' WHERE id = $1`, [notificationId]).catch(() => {});
+            return { delivered: false, reason: 'nothing_open' };
+        }
+        const who = await resolveProgramPersona(user_id);
+        const personaType = who?.persona || 'nano';
+        const lang = who?.language || 'zh';
+        const zh = lang !== 'en';
+        const missing = [];
+        if (row.lesson_id && !row.lesson_completed_at) missing.push(zh ? '看完今天的课程' : "watch today's lesson");
+        if (!row.checkin_completed_at) missing.push(zh ? '完成打卡' : 'do the check-in');
+        const dayTitle = zh ? (row.title_zh || row.title_en) : (row.title_en || row.title_zh);
+        const head = zh
+            ? `**Day ${row.day_index} 还没完成** · ${dayTitle}\n\n还差：${missing.join('、')}。不用赶，今天补上就好——完成后明天的 Day ${row.day_index + 1} 才会开启。`
+            : `**Day ${row.day_index} is still open** · ${dayTitle}\n\nLeft to do: ${missing.join(' and ')}. No rush — finish it today and Day ${row.day_index + 1} unlocks tomorrow.`;
+        // A fresh copy of the card: same directives, so the lesson player and 开始打卡 button are
+        // right under the reminder instead of somewhere up in the history.
+        const card = buildProgramDayCard({
+            program: { id: program_id },
+            day: { ...row, intro_md_zh: null, intro_md_en: null },
+            lesson: row.lesson_id ? { id: row.lesson_id, title: row.lesson_title } : null,
+            lang,
+        });
+        const content = `${head}\n\n${card.replace(/^\*\*Day \d+ · [^\n]*\*\*\n\n/, '')}`;
+        await saveChatMessage(user_id, 'ai', content, null, personaType);
+        await pool.query(`UPDATE notifications SET content = $1, status = 'pending' WHERE id = $2`, [content, notificationId]);
+        _log('INFO', 'program nudge delivered', { user_id, program_id, day_index: row.day_index, stalled_days: row.stalled_days });
+        return { delivered: true, day_index: row.day_index };
+    } catch (err) {
+        await pool.query(`UPDATE notifications SET status = 'failed' WHERE id = $1`, [notificationId]).catch(() => {});
+        _log('ERROR', 'handleProgramNudgeEvent failed', { user_id, program_id, error: err.message });
+        return { delivered: false, reason: err.message };
     }
 }
 
@@ -198,7 +291,10 @@ async function handleGetCoachPrograms(query) {
                 `SELECT e.program_id, e.status, e.current_day, e.started_on::text AS started_on, e.completed_at,
                         e.activated_by_coach_id,
                         (SELECT COUNT(*) FROM program_day_progress dp WHERE dp.enrollment_id = e.id AND dp.completed_at IS NOT NULL)::int AS days_completed,
-                        (SELECT MAX(dp.day_index) FROM program_day_progress dp WHERE dp.enrollment_id = e.id AND dp.completed_at IS NULL) AS open_day
+                        (SELECT MAX(dp.day_index) FROM program_day_progress dp WHERE dp.enrollment_id = e.id AND dp.completed_at IS NULL) AS open_day,
+                        -- how many calendar days the open day has been sitting there (0 = offered today)
+                        (SELECT (${SHANGHAI_TODAY_SQL} - dp.offered_on) FROM program_day_progress dp WHERE dp.enrollment_id = e.id AND dp.completed_at IS NULL ORDER BY dp.day_index DESC LIMIT 1)::int AS stalled_days,
+                        (SELECT dp.nudge_count FROM program_day_progress dp WHERE dp.enrollment_id = e.id AND dp.completed_at IS NULL ORDER BY dp.day_index DESC LIMIT 1)::int AS nudge_count
                  FROM program_enrollments e WHERE e.user_id = $1`,
                 [user.user_id]
             ),
@@ -333,6 +429,7 @@ async function handleGetProgramLessonUrl(query) {
         const lesson = rows[0];
         if (!lesson) return { statusCode: 404, success: false, error: 'Lesson not found' };
         if (!lesson.oss_key) return { statusCode: 404, success: false, error: 'Lesson has no video' };
+        const watched = await pool.query(`SELECT time_spent_seconds FROM academy_coach_progress WHERE user_id = $1 AND lesson_id = $2`, [openid, lessonId]);
         return {
             success: true,
             lesson_id: lesson.id,
@@ -340,6 +437,7 @@ async function handleGetProgramLessonUrl(query) {
             url: ossLib.generatePresignedGetUrl(lesson.oss_key, 3600),
             poster_url: lesson.thumbnail_oss_key ? ossLib.generatePresignedGetUrl(lesson.thumbnail_oss_key, 3600) : null,
             min_watch_seconds: lesson.min_watch_seconds,
+            watched_seconds: watched.rows[0]?.time_spent_seconds || 0,
         };
     } catch (err) {
         return { success: false, error: err.message };
@@ -712,7 +810,9 @@ async function handleGetProgramEnrollments(id) {
                                 'day_index', dp.day_index, 'offered_on', dp.offered_on::text,
                                 'lesson_done', dp.lesson_completed_at IS NOT NULL,
                                 'checkin_done', dp.checkin_completed_at IS NOT NULL,
-                                'completed', dp.completed_at IS NOT NULL) ORDER BY dp.day_index)
+                                'completed', dp.completed_at IS NOT NULL,
+                                'stalled_days', CASE WHEN dp.completed_at IS NULL THEN (${SHANGHAI_TODAY_SQL} - dp.offered_on) ELSE NULL END,
+                                'nudge_count', dp.nudge_count) ORDER BY dp.day_index)
                               FROM program_day_progress dp WHERE dp.enrollment_id = e.id), '[]'::json) AS days
              FROM program_enrollments e
              LEFT JOIN users u ON u.user_id = e.user_id
@@ -728,8 +828,8 @@ async function handleGetProgramEnrollments(id) {
 }
 
 module.exports = {
-    NOTIFY_DAY, NOTIFY_SUMMARY, NOTIFY_COMMENT,
-    handleProgramDayEvent,
+    NOTIFY_DAY, NOTIFY_SUMMARY, NOTIFY_COMMENT, NOTIFY_NUDGE, MAX_NUDGES,
+    handleProgramDayEvent, handleProgramNudgeEvent,
     handleGetProgramsMy,
     handleGetProgramLessonUrl,
     handlePostProgramDayStartCheckin,

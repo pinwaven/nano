@@ -149,6 +149,7 @@ const T = {
     programLessonPlay: '观看课程',
     programLessonDone: '已观看',
     programLessonUnavailable: '课程暂时无法播放',
+    programLessonTooShort: (left) => `请完整观看课程（还差约 ${left} 秒）`,
     dotsTitle: '营养方案',
     neoBindTitle: '请先绑定 Neo 分配器以管理原粒盒',
     neoBindBtn: '绑定 Neo 设备',
@@ -534,6 +535,7 @@ const T = {
     programLessonPlay: 'Watch lesson',
     programLessonDone: 'Watched',
     programLessonUnavailable: 'Lesson unavailable right now',
+    programLessonTooShort: (left) => `Please watch the whole lesson (about ${left}s left)`,
     dotsTitle: 'Nutrition Plan',
     neoBindTitle: 'Bind a Neo dispenser to manage your cartridges',
     neoBindBtn: 'Bind Neo Device',
@@ -859,7 +861,7 @@ const AI_ECHO_TYPES = new Set([
   'coach_message', 'morning_checkin', 'midday_checkin', 'evening_checkin',
   'viva_ag_result', 'viva_ag_failed', 'viva_ag_questionnaire',
   'doc_extraction_result',
-  'program_day', 'program_day_summary', 'program_day_comment',
+  'program_day', 'program_day_summary', 'program_day_comment', 'program_day_nudge',
 ])
 
 // How long _poll keeps the typing indicator up for a reply before giving up, by how the server
@@ -2016,6 +2018,10 @@ Page({
       const d = res.data || {}
       if (!d.success || !d.url) throw new Error(d.error || 'no url')
       seg.url = d.url; seg.poster = d.poster_url || ''; seg.loading = false
+      // Watch-time accounting starts from what the server already knows (a previous session's
+      // partial watch), so the min_watch_seconds gate accumulates across sessions.
+      this._lessonWatch = this._lessonWatch || {}
+      this._lessonWatch[String(lesson)] = { seconds: Number(d.watched_seconds) || 0, last: null, min: d.min_watch_seconds || 0, reported: Number(d.watched_seconds) || 0 }
       this.setData({
         [`messages[${mi}].segments[${si}].url`]: seg.url,
         [`messages[${mi}].segments[${si}].poster`]: seg.poster,
@@ -2028,13 +2034,62 @@ Page({
     }
   },
 
-  // The inline player reached the end: same write the Academy tab's ✓ button makes
-  // (POST /api/academy/progress), which the server also uses to stamp the program day.
+  // Watch-time accounting for the inline player. `bindended` alone is not evidence of watching —
+  // it fires after a seek to the end — so the card accumulates real playback seconds from
+  // timeupdate (fires ~4×/s; a delta larger than 1.5s is a seek and is not counted) and reports
+  // them on every pause and on end. The server merges reports with GREATEST and stamps the
+  // program day only once academy_lessons.min_watch_seconds is reached.
+  onLessonTimeUpdate(e) {
+    const id = String(e.currentTarget.dataset.lesson)
+    const t = Number(e.detail && e.detail.currentTime)
+    if (!id || !Number.isFinite(t)) return
+    this._lessonWatch = this._lessonWatch || {}
+    const w = this._lessonWatch[id] || (this._lessonWatch[id] = { seconds: 0, last: null, min: 0, reported: 0 })
+    if (w.last != null) {
+      const d = t - w.last
+      if (d > 0 && d <= 1.5) w.seconds += d
+    }
+    w.last = t
+  },
+
+  async onLessonPause(e) {
+    const id = String(e.currentTarget.dataset.lesson)
+    if (this._lessonWatch && this._lessonWatch[id]) this._lessonWatch[id].last = null
+    const r = await this._reportLessonWatch(id)
+    // A pause can be the report that crosses min_watch_seconds — refresh so ✓ 已观看 appears
+    // without waiting for the user to reach the end.
+    if (r && !r.skipped) this._refreshProgramState()
+  },
+
+  // Same write the Academy tab's ✓ button makes (POST /api/academy/progress) plus the seconds
+  // actually watched; the server uses both to stamp the program day. Always POSTs (idempotent
+  // server-side) — unlike _doMarkComplete, which skips once a lesson is in trainingCompletedIds
+  // and would never carry a later, longer watch time.
+  async _reportLessonWatch(lessonId) {
+    const user = this.data.user
+    const w = this._lessonWatch && this._lessonWatch[String(lessonId)]
+    if (!user || !lessonId) return null
+    const seconds = Math.round(w ? w.seconds : 0)
+    if (w && seconds <= w.reported && w.reported > 0) return { skipped: true }
+    try {
+      const res = await this._req(`${BASE}/api/academy/progress`, 'POST', { user_id: user.user_id, lesson_id: Number(lessonId), time_spent_seconds: seconds })
+      if (w) w.reported = seconds
+      if (!this.data.trainingCompletedIds.includes(Number(lessonId))) this.setData({ trainingCompletedIds: [...this.data.trainingCompletedIds, Number(lessonId)] })
+      return res.data
+    } catch (e) { return null }
+  },
+
   async handleLessonEnded(e) {
     const lessonId = Number(e.currentTarget.dataset.lesson)
     if (!lessonId) return
-    await this._doMarkComplete(lessonId)
-    this._refreshProgramState()
+    const w = this._lessonWatch && this._lessonWatch[String(lessonId)]
+    if (w) w.last = null
+    await this._reportLessonWatch(lessonId)
+    await this._refreshProgramState()
+    // Not stamped: the lesson sets a threshold the watch time hasn't reached yet.
+    if (w && w.min && Math.round(w.seconds) < w.min && !(this.data.programState.lessons || {})[String(lessonId)]) {
+      wx.showToast({ title: this.data.t.programLessonTooShort(Math.max(1, w.min - Math.round(w.seconds))), icon: 'none', duration: 2500 })
+    }
   },
 
   // 开始打卡: ask the server for today's questionnaire assignment (created on demand — see
