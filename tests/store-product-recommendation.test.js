@@ -12,7 +12,7 @@ const WORKER = path.join(__dirname, '..', 'src', 'functions', 'worker');
 const MINIAPP = path.join(__dirname, '..', 'src', 'mini', 'nano-miniapp');
 
 const { _stripActionTails, _filterProductsByUserFacts, _validateProductRecommendations } = require(path.join(WORKER, 'handlers', 'chat.js'));
-const { _buildProductCardBlock } = require(path.join(WORKER, 'handlers', 'dots.js'));
+const { _buildProductCardBlock } = require(path.join(WORKER, 'lib', 'chatCards.js'));
 const { getProductRecommendBlock } = require(path.join(WORKER, 'prompts', 'chat', 'productRecommendBlock.js'));
 const { detectAllRisks, detectFakeStoreProduct } = require(path.join(WORKER, 'lib', 'factCheck.js'));
 const { mdToSegments } = require(path.join(MINIAPP, 'utils', 'markdown.js'));

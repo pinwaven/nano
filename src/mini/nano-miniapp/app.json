@@ -9,8 +9,10 @@
     "pages/superadmin/superadmin",
     "pages/referral/referral",
     "pages/phones/phones",
+    "pages/emails/emails",
     "pages/webadmin/webadmin",
     "pages/appview/appview",
+    "pages/pay-qr/pay-qr",
     "pages/qrlogin/qrlogin"
   ],
   "window": {
@@ -37,6 +39,9 @@
     },
     "scope.record": {
       "desc": "用于语音输入转文字"
+    },
+    "scope.writePhotosAlbum": {
+      "desc": "用于保存商家收款二维码，以便在支付宝中扫码付款"
     }
   }
 }

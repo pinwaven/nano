@@ -10,6 +10,19 @@ const speechPlugin = requirePlugin('WechatSI')
 
 const KINO_SIM_SERIAL = 'KNA2-00000'
 
+// Which channel trees have a GCN storefront, keyed on the ROOT of the channel tree (the
+// server's channel.root_key_name — aeviva-china → aeviva, waven-china-zj → waven) and mapped
+// to the GCN site host slug (`<slug>(-dev).gcn.net`). Mirrors GCN_LINKED_CHANNEL_KEYS on the
+// worker. A stored channel object from before root_key_name existed carries only key_name;
+// _channelRootKey derives the root from the known two-level keys in that case.
+const GCN_STORE_HOST_FOR_CHANNEL = { aeviva: 'aeviva', waven: 'waven' }
+function _channelRootKey(channel) {
+  if (!channel) return null
+  if (channel.root_key_name) return channel.root_key_name
+  const key = String(channel.key_name || '')
+  return key ? key.split('-')[0] : null
+}
+
 const CART_SETS = [
   {
     key: 'set-foundation',
@@ -130,6 +143,13 @@ const T = {
     bsHeight: '身高', bsWeight: '体重', bsCm: 'cm', bsKg: 'kg',
     male: '男', female: '女',
     selectBirthday: '选择出生日期',
+    selectTime: '选择时间',
+    programCheckinCta: '开始打卡',
+    programCheckinDone: '已完成打卡',
+    programLessonPlay: '观看课程',
+    programLessonDone: '已观看',
+    programLessonUnavailable: '课程暂时无法播放',
+    programLessonTooShort: (left) => `请完整观看课程（还差约 ${left} 秒）`,
     dotsTitle: '营养方案',
     neoBindTitle: '请先绑定 Neo 分配器以管理原粒盒',
     neoBindBtn: '绑定 Neo 设备',
@@ -159,7 +179,7 @@ const T = {
     // Stage labels are keyed by the server's own stage string (t['pkgStage_' + p.stage]),
     // following the t['scanBoxErr_' + reason] convention already used below. A stage with no key
     // renders empty — WXML has no compile-time key checking — so every value in
-    // handlers/dots.js's PACKAGE_STAGES must have a line here AND in the en block.
+    // handlers/formulation_orders.js's PACKAGE_STAGES must have a line here AND in the en block.
     pkgSectionTitle: '我的原粒套餐',
     pkgStage_proposed: '待下单',
     pkgStage_pending_payment: '待付款',
@@ -280,7 +300,19 @@ const T = {
     hrSaved: '已保存到您的健康档案（健康页 › 实验室）。',
     hrSavedBioage: '您的生物年龄也已更新。',
     hrSaveError: '保存失败，请重试。',
-    toolFormulaDotMsg: '请帮我配制我的 DOTS 方案',
+    toolFormulaDotMsg: '请帮我配制我的原粒方案',
+    // Focus sheet (see _startFormulaDots). Deliberately says what the direction DOES rather than
+    // just naming it — the point of asking is that the user knows the choice is theirs.
+    pkgPayBtn: '去支付',
+    focusTitle: '定制方向',
+    focusHasIntro: '将按你当前的健康方案方向定制：',
+    focusHasHint: '方案方向会影响配方偏重哪些原粒，其余仍按你的检测指标决定。',
+    focusNoneIntro: '你还没有选择健康方案。',
+    focusNoneHint: '健康方案会为配方定一个方向，比如深度睡眠或代谢健康。也可以先不设方向，只按检测指标定制。',
+    focusGo: '按此方向定制',
+    focusGoNoPlan: '直接定制',
+    focusChoose: '去选择方案',
+    focusSkip: '不设方向',
     toolTestChipMsg: '我想使用 Kino 芯片',
     toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
     healthAdviceGenerating: '正在分析您的健康数据，请稍候…',
@@ -303,15 +335,28 @@ const T = {
     formulaDaysUnit: '天',
     formulaCapsulesUnit: '粒胶囊',
     formulaOrderCta: '使用兑换码开始配制 →',
-    // The upgrade ladder on a 'buy'-mode formula card (:::formula's #rung lines). The hint is
-    // load-bearing, not decoration: a wider tier cannot be bought in the app, so telling the user
+    // The CTA on a card whose packages the user is choosing between. `formulaOwnedPkg` sits above
+    // the button so the reason it says 开始配制 rather than 购买 is stated, not inferred.
+    formulaOwnedPkg: (name) => `你已购买${name}`,
+    formulaOrderedPkg: (name) => `${name}订单待支付`,
+    formulaStartCta: '开始配制 →',
+    formulaBuyPkgCta: (name) => `购买${name} →`,
+    formulaPkgUnavailable: '您的门店暂未上架此套装，请联系门店。',
+    // The packages on a 'buy'-mode formula card (:::formula's #tier lines). The hint is
+    // load-bearing, not decoration: a package cannot be bought in the app, so telling the user
     // where the code comes from is the only actionable thing on the whole section.
+    formulaTierRecommended: '推荐',
+    // Deliberately NO dot count. What separates the packages is a product decision that is moving
+    // beyond "how many kinds", so a number here would be the first thing to go stale — and it is
+    // the one thing on this card the user cannot check for themselves. The formula below each name
+    // is the honest answer to "what do I get".
+    formulaTierHint: '每一款都是一份完整配方，各有侧重。对应的兑换码由门店提供，兑换后即按该款配方配制。',
+    // Retired with the upgrade ladder, kept for cards already in chat history (see main.wxml).
     formulaUpgradeTitle: '再往上一档',
     // A tier caps dots PER WEEK, so an upgrade can also be the same dot running more weeks.
     formulaWeekPrefix: '第',
     formulaWeekSuffix: '周',
     formulaUpgradeHint: '更宽的一档由门店提供对应的兑换码，兑换后即按该档配方配制。',
-    formulaLabelCta: '查看配方标签与二维码',
     formulaSubmitCta: '确认此方案，开始配制 →',
     formulaSubmitConfirmTitle: '确认配制方案',
     formulaSubmitConfirmBody: '确认后将按此 28 天方案为您配制并发货，配方不可再更改。如需调整，请先重新生成。',
@@ -335,6 +380,7 @@ const T = {
     kinoSimMenu: 'Kino 模拟器',
     referralMenu: '邀请好友',
     phonesMenu: '手机号管理',
+    emailsMenu: '邮箱管理',
     vivaRedeemMenu: '兑换订阅码',
     vivaRedeemTitle: '兑换 Viva 订阅码',
     vivaRedeemPlaceholder: '请输入订阅激活码',
@@ -386,6 +432,7 @@ const T = {
     guestInviteRequired: '请输入邀请码',
     guestInviteInvalid: '邀请码无效或已失效，请重新输入',
     guestSignupBtn: '注册',
+    guestLockMsg: '激活账户后即可查看健康计划',
     guestDotsCta: '激活账户后，获取您的专属营养方案',
     guestMenuSignUp: '注册账户',
     aiDisclaimer: '本服务为AI生成内容，结果仅供参考',
@@ -482,6 +529,13 @@ const T = {
     bsHeight: 'Height', bsWeight: 'Weight', bsCm: 'cm', bsKg: 'kg',
     male: 'Male', female: 'Female',
     selectBirthday: 'Select Birthday',
+    selectTime: 'Select time',
+    programCheckinCta: 'Start check-in',
+    programCheckinDone: 'Checked in',
+    programLessonPlay: 'Watch lesson',
+    programLessonDone: 'Watched',
+    programLessonUnavailable: 'Lesson unavailable right now',
+    programLessonTooShort: (left) => `Please watch the whole lesson (about ${left}s left)`,
     dotsTitle: 'Nutrition Plan',
     neoBindTitle: 'Bind a Neo dispenser to manage your cartridges',
     neoBindBtn: 'Bind Neo Device',
@@ -621,6 +675,16 @@ const T = {
     hrSavedBioage: 'Your BioAge has been updated too.',
     hrSaveError: 'Save failed. Please try again.',
     toolFormulaDotMsg: 'Please formulate my Dots plan',
+    pkgPayBtn: 'Pay now',
+    focusTitle: 'Formulation focus',
+    focusHasIntro: 'This will be formulated around your current focus:',
+    focusHasHint: 'A focus shifts which dots the formula emphasises; everything else is still decided by your biomarkers.',
+    focusNoneIntro: "You haven't chosen a health plan yet.",
+    focusNoneHint: 'A plan gives the formula a direction — better sleep, or metabolic health, for example. You can also skip it and formulate from your biomarkers alone.',
+    focusGo: 'Formulate with this focus',
+    focusGoNoPlan: 'Formulate anyway',
+    focusChoose: 'Choose a plan',
+    focusSkip: 'No focus',
     toolTestChipMsg: 'I want to use a Kino chip',
     toolHealthAdviceMsg: 'Please analyze my current health status and give me personalized health advice.',
     healthAdviceGenerating: 'Analyzing your health data, please wait…',
@@ -639,11 +703,17 @@ const T = {
     formulaDaysUnit: ' days',
     formulaCapsulesUnit: ' capsules',
     formulaOrderCta: 'Redeem a code to start →',
+    formulaOwnedPkg: (name) => `You already own ${name}`,
+    formulaOrderedPkg: (name) => `${name} — payment pending`,
+    formulaStartCta: 'Start compounding →',
+    formulaBuyPkgCta: (name) => `Buy ${name} →`,
+    formulaPkgUnavailable: 'Your store does not carry this package yet — please contact them.',
+    formulaTierRecommended: 'Recommended',
+    formulaTierHint: 'Each package is a complete formula with its own emphasis. Your store provides the matching redeem code.',
     formulaUpgradeTitle: 'One tier up',
     formulaWeekPrefix: 'wk ',
     formulaWeekSuffix: '',
     formulaUpgradeHint: "A wider tier comes as its own redeem code from your store — redeeming one formulates at that tier.",
-    formulaLabelCta: 'View formulation label & QR',
     formulaSubmitCta: 'Confirm and start compounding →',
     formulaSubmitConfirmTitle: 'Confirm this formulation',
     formulaSubmitConfirmBody: 'This 28-day formulation will be compounded and shipped to you. It cannot be changed afterwards — regenerate first if you want to adjust it.',
@@ -667,6 +737,7 @@ const T = {
     kinoSimMenu: 'Kino Simulator',
     referralMenu: 'Invite Friends',
     phonesMenu: 'Manage Phone Numbers',
+    emailsMenu: 'Manage Emails',
     vivaRedeemMenu: 'Redeem Subscription Code',
     vivaRedeemTitle: 'Redeem Viva Subscription Code',
     vivaRedeemPlaceholder: 'Enter your subscription code',
@@ -718,6 +789,7 @@ const T = {
     guestInviteRequired: 'Please enter an invite code',
     guestInviteInvalid: 'Invalid or expired invite code. Please try again.',
     guestSignupBtn: 'Sign up',
+    guestLockMsg: 'Activate your account to see your health plans',
     guestDotsCta: 'Activate your account to get your personalized nutrition plan',
     guestMenuSignUp: 'Sign Up',
     aiDisclaimer: 'AI-generated content — for reference only',
@@ -788,7 +860,18 @@ const AI_ECHO_TYPES = new Set([
   'formulation_order_paid', 'biological_report',
   'coach_message', 'morning_checkin', 'midday_checkin', 'evening_checkin',
   'viva_ag_result', 'viva_ag_failed', 'viva_ag_questionnaire',
+  'doc_extraction_result',
+  'program_day', 'program_day_summary', 'program_day_comment', 'program_day_nudge',
 ])
+
+// How long _poll keeps the typing indicator up for a reply before giving up, by how the server
+// acked the turn. Async ({processing:true}): the server's whole worst case — see the comment on
+// the timeout check in _poll. Sync ({success:true}): the reply was ALREADY written to
+// chat_messages and notifications when that ack arrived, so it is one poll tick away on either
+// channel; anything past this means both channels lost it (the LLM-failure fallback writes only
+// a notification, so a stolen one there genuinely has nothing to replay).
+const CHAT_WAIT_ASYNC_MS = 285000
+const CHAT_WAIT_SYNC_MS = 30000
 
 // Notification types delivered by the external Viva AG agent rather than by Viva itself. Drives
 // the "Viva AG" label on the bubble so the user can tell a deep analysis apart from a normal
@@ -996,6 +1079,23 @@ function _joinAddress(addr) {
   }, '')
 }
 
+// The full name of a dots package: the product plus the tier it was bought at, as one title —
+// 原粒 · 定制营养素 · 28天 · 臻选套装.
+//
+// Two rows of the same product differ ONLY in their tier, so a title that stops at the product
+// reads as a duplicate and the buyer has to hunt for the difference in secondary text. The tier
+// therefore leads with the name rather than sitting under it.
+//
+// One definition, used by the package rows, the code rows and the submit picker, because those
+// three name the same purchase and a user comparing them must not see three spellings of it.
+// GCN gives `tier_label` as the bare tier ("臻选套装") on all four of its endpoints, which is what
+// makes this a plain join — a label carrying the product name inside it would repeat it here.
+function pkgTitle(p, fallback) {
+  const name = (p && p.package_name) || ''
+  const tier = (p && p.tier_label) || ''
+  return [name, tier].filter(Boolean).join(' · ') || fallback
+}
+
 // One row per unredeemed code the user owns, for the 兑换码 section of Plans ▸ Dots. The codes
 // live entirely on GCN (§28e) and reach us through handleGetNutritionPlan's `codes` sibling; this
 // only turns them into strings.
@@ -1011,7 +1111,7 @@ function mapCodes(rawCodes, t, lang) {
     return {
       key: `${c.code}-${i}`,
       code: c.code,
-      name: c.package_name || c.tier_label || t.codeUnnamed,
+      name: pkgTitle(c, t.codeUnnamed),
       meta: bits.join(' · '),
       max_distinct_dots: c.max_distinct_dots || null,
       // An expert-review package is Viva AG's to formulate; the user does nothing after redeeming
@@ -1022,7 +1122,8 @@ function mapCodes(rawCodes, t, lang) {
 }
 
 // One row per dots package, for Plans ▸ Dots. The server already merged the GCN order with
-// nano's own formula and derived the stage (handlers/dots.js, _mergeFormulationPackages); this
+// nano's own formula and derived the stage (handlers/formulation_orders.js,
+// _mergeFormulationPackages); this
 // only turns that into strings, because WXML cannot format or branch on a numeric day count.
 //
 // Every stage label is looked up as t['pkgStage_' + stage] rather than switched on here, so a new
@@ -1031,14 +1132,15 @@ function mapCodes(rawCodes, t, lang) {
 function mapPackages(rawPackages, t, lang) {
   if (!Array.isArray(rawPackages) || !t) return []
   return rawPackages.map((p, i) => {
-    const name = p.package_name || t.pkgUnnamed
+    const name = pkgTitle(p, t.pkgUnnamed)
     const bits = []
-    // What the row says under its title, most specific fact first.
+    // What the row says under its title, most specific fact first. The tier NAME is in the title
+    // now, so this line carries the width instead — which is the thing the name stopped saying
+    // when the tiers were renamed off their dot counts (GCN migration_0107).
     if (p.stage === 'active' && p.day_index) {
       bits.push(t.pkgDay(p.day_index, p.total_days))
     } else {
-      if (p.tier_label) bits.push(p.tier_label)
-      else if (p.max_distinct_dots) bits.push(t.pkgTierUpTo(p.max_distinct_dots))
+      if (p.max_distinct_dots) bits.push(t.pkgTierUpTo(p.max_distinct_dots))
       if (p.ordered_at) bits.push(t.pkgOrderedOn(fmtDate(p.ordered_at, lang)))
     }
     return {
@@ -1050,6 +1152,9 @@ function mapPackages(rawPackages, t, lang) {
       name,
       meta: bits.join(' · '),
       order_id: p.order_id || null,
+      // The weekly width, as a field rather than only folded into `meta`: the formulation card
+      // matches its packages against this to decide whether a tier is already ordered.
+      max_distinct_dots: p.max_distinct_dots || null,
       plan_id: p.plan_id || null,
       // The formula a waiting package could be filled with — a DIFFERENT plan from plan_id, which
       // is what is already attached (nothing is bound until submit). Dropping this is what makes
@@ -1061,6 +1166,7 @@ function mapPackages(rawPackages, t, lang) {
       can_submit: !!p.can_submit,
       can_scan: !!p.can_scan,
       can_order: !!p.can_order,
+      can_pay: !!p.can_pay,
       tracking_number: p.tracking_number || null,
       // The courier's own status line when Kuaidi100 has pushed one, otherwise just the number.
       trackingLabel: [p.shipping_carrier, p.tracking_number, p.tracking_status_desc]
@@ -1207,6 +1313,10 @@ Page({
     obSliderDisplay: {},   // { weight: '65.0' } formatted display values
     obName: '',
     obBirthday: '',
+    obTime: '',            // time_picker answer, 'HH:mm'
+    // 打卡 program card state (CLAUDE.md §42), from GET /api/programs/my — stamped onto
+    // :::lesson / :::checkin segments by _attachProgramState. Never written by the client.
+    programState: { lessons: {}, days: {} },
     obHeight: 165,
     obWeight: 65,
     obWeightDisplay: '65.0',
@@ -1224,6 +1334,8 @@ Page({
     // Channel
     channel: null,
     isAeviva: false,
+    gcnStoreSlug: null,
+    emailLoginAllowed: false,
 
     // Viva subscription (see _loadVivaSubscriptionStatus)
     personaType: 'nano',
@@ -1325,6 +1437,11 @@ Page({
     planDetailData: null,
     planSubTab: 'overview',
     plansDotsSubTab: 'dots',
+    // Focus sheet, shown before 营养定制 runs. See _startFormulaDots.
+    formulaFocusOpen: false,
+    formulaFocusPlans: [],
+    formulaFocusOpts: null,
+    formulaFocusLoading: false,
     neoBound: false,
     // Kill switch for the whole Neo dispenser entry point — the hardware is not shipping yet, so
     // the bind card would offer something nobody can act on. Flip to true to bring it back.
@@ -1391,6 +1508,8 @@ Page({
   _dotsLoadedAt: 0,
   _plansLoadedAt: 0,
   _lastMsgId: null,
+  _chatWaitStartedAt: null,
+  _chatWaitBudgetMs: null,
   _touchX: 0,
   _touchY: 0,
 
@@ -1437,8 +1556,16 @@ Page({
     const t = { ...T[lang], subAgeLabels: buildSubAgeLabels(T[lang].subAgeLabels, channelOverrides, lang) }
     const sandboxMode = !!app.globalData.sandboxMode
     const sandboxBannerText = sandboxMode ? t.sandboxBanner.replace('{name}', user.nickname || '—') : ''
-    const isAeviva = channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china'
-    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, textScale, isGuest, isAeviva, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
+    // `isAeviva` is the historical name for "this channel has a GCN storefront" — every Store
+    // tab / packages / redeem-code / formulation CTA in main.js and main.wxml keys on it. Since
+    // the waven sector shipped in GCN (2026-09-15) it is true for the waven tree as well;
+    // gcnStoreSlug is the host that storefront lives on. The channel ROOT decides, so
+    // sub-channels inherit it. Email login availability is the complement (emailLoginAllowed).
+    const channelRoot = _channelRootKey(channel)
+    const gcnStoreSlug = GCN_STORE_HOST_FOR_CHANNEL[channelRoot] || null
+    const isAeviva = !!gcnStoreSlug
+    const emailLoginAllowed = !channelRoot || channelRoot === 'waven'
+    this.setData({ user: { ...user }, userAvatarLetter, channel, lang, t, statusBarHeight, capsuleRightPad, menuTop, menuOpen: false, isCoach, isAdmin, isSuperadmin, theme, textScale, isGuest, isAeviva, gcnStoreSlug, emailLoginAllowed, toolList: toolActions.getToolList(t), sandboxMode, sandboxBannerText })
     if (isGuest) {
       this.setData({ messages: [this._makeMsg({ id: 'init', role: 'ai', content: T[lang].initMsg })], obStep: null, storeLoading: true })
       this._loadGuestStore(lang)
@@ -1560,17 +1687,22 @@ Page({
   // restores `user.phone_verified` straight from local storage (app.js onLaunch) and never
   // re-syncs it against the server, so a pre-migration account whose cache still says `true`
   // from before phone verification existed would otherwise sail past this gate.
+  //
+  // A verified email satisfies the gate too where the channel offers email login (waven tree):
+  // GCN's handleNanoSSO accepts email_verified for a sector whose login_methods lists email.
   async _openAevivaStoreGated(context = null) {
-    const verified = await this._checkPhoneVerified()
+    const { phone, email } = await this._checkIdentityVerified()
+    const verified = phone || (email && this.data.emailLoginAllowed)
     if (!verified) {
-      const { lang } = this.data
+      const { lang, emailLoginAllowed } = this.data
+      const zh = lang === 'zh'
       wx.showModal({
-        title: lang === 'zh' ? '需要验证手机号' : 'Phone verification needed',
-        content: lang === 'zh'
-          ? '进入商城前，请先验证您的手机号码'
-          : 'Please verify your phone number before entering the store.',
-        confirmText: lang === 'zh' ? '去验证' : 'Verify',
-        cancelText: lang === 'zh' ? '取消' : 'Cancel',
+        title: zh ? (emailLoginAllowed ? '需要验证手机号或邮箱' : '需要验证手机号') : (emailLoginAllowed ? 'Verification needed' : 'Phone verification needed'),
+        content: zh
+          ? (emailLoginAllowed ? '进入商城前，请先验证您的手机号码或邮箱' : '进入商城前，请先验证您的手机号码')
+          : (emailLoginAllowed ? 'Please verify your phone number or email before entering the store.' : 'Please verify your phone number before entering the store.'),
+        confirmText: zh ? '去验证' : 'Verify',
+        cancelText: zh ? '取消' : 'Cancel',
         success: (r) => {
           if (r.confirm) wx.navigateTo({ url: '/pages/verify-phone/verify-phone' })
         },
@@ -1638,8 +1770,7 @@ Page({
     // second one on top of it would interleave two sets of bubbles. Landing on the tab still
     // helps — whatever is running is what the user wanted to see.
     if (typing || obStep !== 'done') return
-    toolActions.runFormulaDs(user.user_id, t, this._toolCtx())
-    this._scrollBottom()
+    this._startFormulaDots()
   },
 
   // ── 兑换码 sheet (Plans ▸ Dots) ───────────────────────────────────────────────
@@ -1796,6 +1927,194 @@ Page({
     this._openAevivaStoreGated({ intent: 'view_product', sku_id: skuId })
   },
 
+  // ── 打卡 program cards (CLAUDE.md §42) ─────────────────────────────────────
+  //
+  // A program day arrives as one server-built bubble: intro prose, a :::lesson card (Academy
+  // lesson id + title) and a :::checkin card (program id + day index). Everything the cards
+  // show beyond that — watched / checked-in / still open — is runtime state from
+  // GET /api/programs/my, stamped in place here. A reloaded transcript therefore renders the
+  // right done-state, and a stale presigned video URL is never in the message at all.
+
+  // Stamps done-state onto lesson/checkin segments from this.data.programState. In place, like
+  // _attachSparks; reports whether anything changed so callers can skip a setData.
+  _attachProgramState(segments) {
+    const st = this.data.programState || { lessons: {}, days: {} }
+    let changed = false
+    for (const seg of segments || []) {
+      if (!seg) continue
+      if (seg.t === 'lesson') {
+        const done = !!(st.lessons && st.lessons[seg.lessonId])
+        if (seg.done !== done) { seg.done = done; changed = true }
+      } else if (seg.t === 'checkin') {
+        const d = st.days && st.days[`${seg.programId}:${seg.dayIndex}`]
+        const done = !!(d && d.checkin_done)
+        const lessonDone = !d || d.lesson_done
+        // Tappable only while the day is offered and its 打卡 is still open. A card from a day
+        // the server never offered (or a sandbox preview) stays inert.
+        const active = !!d && !d.checkin_done
+        if (seg.done !== done) { seg.done = done; changed = true }
+        if (seg.lessonDone !== lessonDone) { seg.lessonDone = lessonDone; changed = true }
+        if (seg.active !== active) { seg.active = active; changed = true }
+      }
+    }
+    return changed
+  },
+
+  // Re-reads the user's program state and patches only the segments whose flags changed.
+  // Called after history loads, when a program_day* notification lands, after a lesson ends
+  // and after a program questionnaire completes — never on a timer of its own.
+  async _refreshProgramState() {
+    const user = this.data.user
+    if (!user) return
+    try {
+      const res = await this._req(`${BASE}/api/programs/my?openid=${encodeURIComponent(user.user_id)}`)
+      const enrollments = res.data?.enrollments || []
+      const state = { lessons: {}, days: {} }
+      for (const e of enrollments) {
+        for (const d of (e.days || [])) {
+          state.days[`${e.program_id}:${d.day_index}`] = {
+            checkin_done: !!d.checkin_completed_at,
+            lesson_done: !d.lesson_id || !!d.lesson_completed_at,
+            completed: !!d.completed_at,
+          }
+          if (d.lesson_id && d.lesson_completed_at) state.lessons[String(d.lesson_id)] = true
+        }
+      }
+      this.data.programState = state
+      const messages = this.data.messages || []
+      const patch = {}
+      messages.forEach((m, mi) => {
+        if (!m || !Array.isArray(m.segments)) return
+        m.segments.forEach((seg, si) => {
+          if (!seg || (seg.t !== 'lesson' && seg.t !== 'checkin')) return
+          const before = { done: seg.done, lessonDone: seg.lessonDone, active: seg.active }
+          if (!this._attachProgramState([seg])) return
+          for (const k of ['done', 'lessonDone', 'active']) {
+            if (seg[k] !== before[k]) patch[`messages[${mi}].segments[${si}].${k}`] = seg[k]
+          }
+        })
+      })
+      if (Object.keys(patch).length) this.setData(patch)
+    } catch (e) { if (IS_DEV) console.error('program state refresh failed', e) }
+  },
+
+  // 观看课程 on a :::lesson card: fetch a fresh presigned URL and mount the <video> inline. Only
+  // one native <video> is kept alive in the transcript at a time — any other card's url is
+  // cleared first.
+  async handleLessonCardTap(e) {
+    const { mi, si, lesson } = e.currentTarget.dataset
+    const user = this.data.user
+    const seg = this.data.messages?.[mi]?.segments?.[si]
+    if (!user || !lesson || !seg || seg.t !== 'lesson' || seg.loading) return
+    const patch = {}
+    ;(this.data.messages || []).forEach((m, i) => (m.segments || []).forEach((sg, j) => {
+      if (sg && sg.t === 'lesson' && sg.url) { sg.url = ''; patch[`messages[${i}].segments[${j}].url`] = '' }
+    }))
+    seg.loading = true
+    patch[`messages[${mi}].segments[${si}].loading`] = true
+    this.setData(patch)
+    try {
+      const res = await this._req(`${BASE}/api/programs/lesson-url?openid=${encodeURIComponent(user.user_id)}&lesson_id=${encodeURIComponent(lesson)}`)
+      const d = res.data || {}
+      if (!d.success || !d.url) throw new Error(d.error || 'no url')
+      seg.url = d.url; seg.poster = d.poster_url || ''; seg.loading = false
+      // Watch-time accounting starts from what the server already knows (a previous session's
+      // partial watch), so the min_watch_seconds gate accumulates across sessions.
+      this._lessonWatch = this._lessonWatch || {}
+      this._lessonWatch[String(lesson)] = { seconds: Number(d.watched_seconds) || 0, last: null, min: d.min_watch_seconds || 0, reported: Number(d.watched_seconds) || 0 }
+      this.setData({
+        [`messages[${mi}].segments[${si}].url`]: seg.url,
+        [`messages[${mi}].segments[${si}].poster`]: seg.poster,
+        [`messages[${mi}].segments[${si}].loading`]: false,
+      })
+    } catch (err) {
+      seg.loading = false
+      this.setData({ [`messages[${mi}].segments[${si}].loading`]: false })
+      wx.showToast({ title: this.data.t.programLessonUnavailable, icon: 'none' })
+    }
+  },
+
+  // Watch-time accounting for the inline player. `bindended` alone is not evidence of watching —
+  // it fires after a seek to the end — so the card accumulates real playback seconds from
+  // timeupdate (fires ~4×/s; a delta larger than 1.5s is a seek and is not counted) and reports
+  // them on every pause and on end. The server merges reports with GREATEST and stamps the
+  // program day only once academy_lessons.min_watch_seconds is reached.
+  onLessonTimeUpdate(e) {
+    const id = String(e.currentTarget.dataset.lesson)
+    const t = Number(e.detail && e.detail.currentTime)
+    if (!id || !Number.isFinite(t)) return
+    this._lessonWatch = this._lessonWatch || {}
+    const w = this._lessonWatch[id] || (this._lessonWatch[id] = { seconds: 0, last: null, min: 0, reported: 0 })
+    if (w.last != null) {
+      const d = t - w.last
+      if (d > 0 && d <= 1.5) w.seconds += d
+    }
+    w.last = t
+  },
+
+  async onLessonPause(e) {
+    const id = String(e.currentTarget.dataset.lesson)
+    if (this._lessonWatch && this._lessonWatch[id]) this._lessonWatch[id].last = null
+    const r = await this._reportLessonWatch(id)
+    // A pause can be the report that crosses min_watch_seconds — refresh so ✓ 已观看 appears
+    // without waiting for the user to reach the end.
+    if (r && !r.skipped) this._refreshProgramState()
+  },
+
+  // Same write the Academy tab's ✓ button makes (POST /api/academy/progress) plus the seconds
+  // actually watched; the server uses both to stamp the program day. Always POSTs (idempotent
+  // server-side) — unlike _doMarkComplete, which skips once a lesson is in trainingCompletedIds
+  // and would never carry a later, longer watch time.
+  async _reportLessonWatch(lessonId) {
+    const user = this.data.user
+    const w = this._lessonWatch && this._lessonWatch[String(lessonId)]
+    if (!user || !lessonId) return null
+    const seconds = Math.round(w ? w.seconds : 0)
+    if (w && seconds <= w.reported && w.reported > 0) return { skipped: true }
+    try {
+      const res = await this._req(`${BASE}/api/academy/progress`, 'POST', { user_id: user.user_id, lesson_id: Number(lessonId), time_spent_seconds: seconds })
+      if (w) w.reported = seconds
+      if (!this.data.trainingCompletedIds.includes(Number(lessonId))) this.setData({ trainingCompletedIds: [...this.data.trainingCompletedIds, Number(lessonId)] })
+      return res.data
+    } catch (e) { return null }
+  },
+
+  async handleLessonEnded(e) {
+    const lessonId = Number(e.currentTarget.dataset.lesson)
+    if (!lessonId) return
+    const w = this._lessonWatch && this._lessonWatch[String(lessonId)]
+    if (w) w.last = null
+    await this._reportLessonWatch(lessonId)
+    await this._refreshProgramState()
+    // Not stamped: the lesson sets a threshold the watch time hasn't reached yet.
+    if (w && w.min && Math.round(w.seconds) < w.min && !(this.data.programState.lessons || {})[String(lessonId)]) {
+      wx.showToast({ title: this.data.t.programLessonTooShort(Math.max(1, w.min - Math.round(w.seconds))), icon: 'none', duration: 2500 })
+    }
+  },
+
+  // 开始打卡: ask the server for today's questionnaire assignment (created on demand — see
+  // handlers/programs.js for why never earlier), then start it through the ordinary pending-
+  // questionnaire flow. No questionnaire_ready notification is involved, so nothing else can
+  // start the same form a second time.
+  async handleCheckinStart(e) {
+    const { program, day } = e.currentTarget.dataset
+    const { user, obStep, typing } = this.data
+    if (!user || !program || !day || typing || obStep !== 'done') return
+    try {
+      const res = await this._req(`${BASE}/api/programs/day/start-checkin`, 'POST', {
+        openid: user.user_id, program_id: Number(program), day_index: Number(day),
+      })
+      const d = res.data || {}
+      if (!d.success) { wx.showToast({ title: d.error || this.data.t.errServer, icon: 'none' }); return }
+      // done: a day with no form completed on tap. sandbox: the superadmin preview short-circuit
+      // returns no assignment — nothing to start.
+      if (d.done || d.sandbox) { this._refreshProgramState(); return }
+      await this._checkForPendingQuestionnaire()
+    } catch (err) {
+      wx.showToast({ title: this.data.t.errServer, icon: 'none' })
+    }
+  },
+
   // "Buy This Formulation" CTA in the plan-detail overlay — only rendered (see main.wxml) once
   // planDetailData.formulation is populated, i.e. a real committed nutrition_plans row exists
   // for this focus. Passes the specific plan id through the webview-token bridge so GCN's
@@ -1805,6 +2124,113 @@ Page({
     const nutritionPlanId = planDetailData?.formulation?.nutrition_plan_id
     if (!isAeviva || !nutritionPlanId) return
     this._openAevivaStoreGated({ intent: 'buy_custom_formulation', nutrition_plan_id: nutritionPlanId })
+  },
+
+  // What the card's call-to-action should say and do for ONE package.
+  //
+  // The CTA follows the package the user has OPEN, because that is the one they are deciding
+  // about. Until 2026-09-10 there was a single shared CTA on the reasoning that "which tier a user
+  // gets is decided by whichever redeem code they hold, not by what they tap, so a per-package
+  // button would offer a choice that does not exist". That is no longer true: a shopper can buy a
+  // specific tier's 兑换码 from their own bound store, and may already hold codes for several.
+  //
+  // EXACT tier match, deliberately. A wider code compounds ITS OWN variant — handlePostFormulationSubmit
+  // picks the widest variant the code covers (_selectTierVariant) — so offering 开始配制 on a
+  // narrower package while holding a wider code would compound a formula other than the one on
+  // screen. Holding a 尊享 code and opening 轻享 therefore still offers to buy 轻享; the user's own
+  // 尊享 card is where their code is waiting.
+  //
+  // Returns null for a card with no packages (a legacy card, or a user who already holds one), and
+  // the WXML then falls back to the generic redeem CTA exactly as before.
+  _formulaCtaFor(tier) {
+    const { t, codes } = this.data
+    if (!tier || !(Number(tier.width) > 0) || !tier.label) return null
+    const width = Number(tier.width)
+    // An expert-review code is Viva AG's to formulate; redeeming one here would hand the user a
+    // package this tool cannot fill (§28d).
+    // An order for this tier that is placed but NOT PAID. Sending them to buy it again is a dead
+    // end — GCN refuses a second one with `formulation_already_in_progress` — so the honest CTA is
+    // the one Plans ▸ Dots already offers for that row: go and pay it.
+    const unpaid = (this.data.packages || []).find(
+      p => p.stage === 'pending_payment' && p.order_id && Number(p.max_distinct_dots) === width)
+    if (unpaid) {
+      return {
+        mode: 'pay',
+        owned: t.formulaOrderedPkg(tier.label),
+        btn: t.pkgPayBtn,
+        code: '', max: null, orderId: unpaid.order_id, label: tier.label, width,
+      };
+    }
+    const held = (codes || []).find(c => c.fastTrack && Number(c.max_distinct_dots) === width)
+    if (held) {
+      return {
+        mode: 'redeem',
+        owned: t.formulaOwnedPkg(tier.label),
+        btn: t.formulaStartCta,
+        code: held.code,
+        max: held.max_distinct_dots || width,
+        orderId: '',
+        label: tier.label,
+        width,
+      };
+    }
+    return { mode: 'buy', owned: '', btn: t.formulaBuyPkgCta(tier.label), code: '', max: null, orderId: '', label: tier.label, width };
+  },
+
+  // Recomputes every formula card's CTA in place. Cheap and idempotent, so it runs whenever either
+  // input changes: the card is built, a package is opened, or the user's codes finish loading.
+  _attachFormulaCta(segments) {
+    for (const seg of segments || []) {
+      if (!seg || seg.t !== 'formula' || !Array.isArray(seg.tiers)) continue
+      seg.cta = this._formulaCtaFor(seg.tiers.find(x => x.open) || seg.tiers[0])
+    }
+  },
+
+  // Re-runs the above across the whole transcript. Called after _loadDots resolves, because a card
+  // delivered before the codes list arrived would otherwise offer to buy a package the user
+  // already holds a code for.
+  _refreshFormulaCtas() {
+    const messages = this.data.messages || []
+    let touched = false
+    for (const m of messages) {
+      if (!m || !Array.isArray(m.segments)) continue
+      if (!m.segments.some(sg => sg && sg.t === 'formula')) continue
+      this._attachFormulaCta(m.segments)
+      touched = true
+    }
+    if (touched) this.setData({ messages })
+  },
+
+  // Opens one package on a :::formula card and closes whichever was open. The card shows three
+  // complete formulas and only one at a time, so this is a radio, not a checkbox: two open charts
+  // in a chat bubble is the stacked layout this collapsing exists to avoid.
+  //
+  // Addressed by message index + segment index + tier index, because the flag lives inside the
+  // parsed segment rather than in page-level state — a chat transcript can hold several formula
+  // cards, and each has to remember its own open package independently.
+  handleFormulaTierToggle(e) {
+    const { mi, si, ti } = e.currentTarget.dataset
+    const msg = (this.data.messages || [])[mi]
+    const seg = msg && (msg.segments || [])[si]
+    const tiers = seg && seg.tiers
+    if (!tiers || !tiers[ti]) return
+    // A single package is the whole card (a legacy card, or a user who already holds a package);
+    // collapsing it would leave the bubble with nothing in it.
+    if (tiers.length < 2) return
+    const patch = {}
+    const nextOpen = []
+    for (let i = 0; i < tiers.length; i++) {
+      const open = i === Number(ti) ? !tiers[i].open : false
+      nextOpen.push(open)
+      if (open !== tiers[i].open) patch[`messages[${mi}].segments[${si}].tiers[${i}].open`] = open
+    }
+    if (!Object.keys(patch).length) return
+    // The CTA belongs to whichever package is now open, so it moves with the selection rather than
+    // being recomputed on tap by the handler that acts on it.
+    const openIdx = nextOpen.indexOf(true)
+    patch[`messages[${mi}].segments[${si}].cta`] =
+      this._formulaCtaFor(openIdx >= 0 ? tiers[openIdx] : null)
+    this.setData(patch)
   },
 
   // The order CTA on a :::formula card in chat. NOT on the Plans ▸ Dots proposal row any more —
@@ -1828,31 +2254,50 @@ Page({
     if (this.data.proposedDistinctDots === null) {
       try { await this._loadDots(user, lang) } catch (err) { /* the sheet still works unwarned */ }
     }
-    // Someone who already owns codes should tap one, not retype it — and the list only exists on
-    // Plans ▸ Dots, so land them there rather than opening a blank code field over the top of
-    // codes we could have named. Note the sub-tab key is plansDotsSubTab, not tab:'dots', which
-    // matches no WXML block and renders blank (real-device report, 2026-07-29).
+    const { mode, code, max, label, width } = e.currentTarget.dataset
+
+    // The user holds a code for exactly this package: go straight to redeeming THAT code against
+    // THIS formula. The sheet still collects shipping and still confirms, so nothing is spent on a
+    // single tap — it is prefilled, not skipped.
+    if (mode === 'redeem' && code) {
+      this._openCodeSheet({
+        code, manual: false,
+        max: Number(max) || null,
+        name: label || '',
+        planId: planId || null,
+      })
+      return
+    }
+
+    // Ordered but unpaid: land on that order's payment QR rather than starting a second checkout.
+    if (mode === 'pay' && e.currentTarget.dataset.order) {
+      this._openAevivaStoreGated({ intent: 'pay_order', order_id: e.currentTarget.dataset.order })
+      return
+    }
+
+    // No code for this package. The tier is bought as a 兑换码 from the user's own bound store, so
+    // hand GCN the WIDTH and let it resolve which sku that is — nano deliberately holds no sku ids
+    // (§28c: a stale client-side formulation sku is what broke both checkouts in the sandbox on
+    // 2026-08-22), and this card is a stored chat message that would freeze one for good.
+    if (mode === 'buy' && Number(width) > 0) {
+      this._openAevivaStoreGated({
+        intent: 'buy_formulation_package',
+        max_distinct_dots: Number(width),
+        nutrition_plan_id: planId || null,
+      })
+      return
+    }
+
+    // Legacy card, or a package list that never resolved. Someone who already owns codes should
+    // tap one, not retype it — and the list only exists on Plans ▸ Dots, so land them there rather
+    // than opening a blank code field over the top of codes we could have named. Note the sub-tab
+    // key is plansDotsSubTab, not tab:'dots', which matches no WXML block and renders blank
+    // (real-device report, 2026-07-29).
     if ((this.data.codes || []).length > 0) {
       this.setData({ tab: 'plans', plansDotsSubTab: 'dots' })
       return
     }
     this._openCodeSheet({ code: '', manual: true, max: null, name: '', planId: planId || null })
-  },
-
-  // Opens the formulation's label page — the GCN aeviva page that draws the QR, lists every dot
-  // with its ingredients, and is what gets printed on the box. Deliberately a webview rather than
-  // a QR drawn natively here: the user should be looking at the exact page the label is printed
-  // from, and there is then only one renderer to keep correct.
-  //
-  // The URL is written by the server into the card and scheme-checked by the markdown parser
-  // before it reaches this handler; it is never taken from model output.
-  handleFormulaLabel(e) {
-    const url = e.currentTarget.dataset.url
-    if (!url) return
-    wx.navigateTo({
-      url: `/pages/appview/appview?url=${encodeURIComponent(url)}`,
-      fail: () => wx.setClipboardData({ data: url }),
-    })
   },
 
   // The confirm CTA on a :::formula card, shown only when GCN reported a paid FAST-TRACK package
@@ -1891,6 +2336,19 @@ Page({
   // pick — tapping the row IS the choice, which is what makes selection work when more than one
   // package is waiting. Reports through a toast rather than a chat bubble; the user is not in the
   // chat tab, and dropping a message into a conversation they are not looking at reads as noise.
+  // 待付款 → the GCN order, with its payment QR already open. Payment is a manual scan-and-upload
+  // flow on GCN's side (the seller confirms receipt out of band), so there is nothing nano can
+  // settle itself — the whole job is landing the user on the right screen.
+  //
+  // The intent is routed by GCN's dashboard.html, which deploys independently of this miniapp: an
+  // older dashboard does not recognise 'pay_order' and falls through to its normal mall load, so
+  // the tap lands in the store rather than failing. Deploy GCN first.
+  handlePackagePay(e) {
+    const orderId = e.currentTarget.dataset.order
+    if (!orderId || !this.data.isAeviva) return
+    this._openAevivaStoreGated({ intent: 'pay_order', order_id: orderId })
+  },
+
   async handlePackageSubmit(e) {
     const { plan: planId, order: orderId } = e.currentTarget.dataset
     const { user, t } = this.data
@@ -1932,8 +2390,10 @@ Page({
     }
     if (packages.length <= 1) return packages.length === 1 ? packages[0].order_id : null
     const labels = packages.map(p => {
-      const tier = p.tier_label || (p.max_distinct_dots ? t.pkgTierUpTo(p.max_distinct_dots) : '')
-      return [p.package_name || t.pkgUnnamed, tier].filter(Boolean).join(' · ')
+      // Same title the Dots subtab shows, plus the width — the picker is where two packages are
+      // hardest to tell apart, so it is the one place worth spelling out both.
+      const width = p.max_distinct_dots ? t.pkgTierUpTo(p.max_distinct_dots) : ''
+      return [pkgTitle(p, t.pkgUnnamed), width].filter(Boolean).join(' · ')
     })
     return await new Promise(resolve => wx.showActionSheet({
       itemList: labels,
@@ -2009,9 +2469,11 @@ Page({
   async switchTab(e) {
     const tab = e.currentTarget.dataset.tab
     if (tab === 'store' && !this.data.isGuest) {
-      const { channel } = this.data
-      if (channel?.key_name === 'aeviva' || channel?.key_name === 'aeviva-china') {
-        // Aeviva's GCN store opens as a separate navigated page (pages/appview — its own
+      // isAeviva = "this channel tree has a GCN storefront" (aeviva or waven root, see onLoad);
+      // the host is gcnStoreSlug. A literal key check here once missed the waven tree and
+      // dropped its users onto the native Health Store instead.
+      if (this.data.isAeviva) {
+        // The GCN store opens as a separate navigated page (pages/appview — its own
         // header/back button, a plain page layout) rather than an inline tab section:
         // <web-view> doesn't reliably support any overlay button (cover-view is only
         // documented for map/video/canvas/camera, not web-view) when embedded inside this
@@ -2049,6 +2511,78 @@ Page({
       if (learnSubTab === 'academy' && this.data.trainingCourses.length === 0) this._loadAcademy()
       if (learnSubTab === 'wellness' && this.data.wellnessAssets.length === 0) this._loadWellness()
     }
+  },
+
+  // ── 营养定制 focus confirmation ───────────────────────────────────────────────
+  //
+  // A health-plan focus is not a hint: _rankDotsBySeverity's +0.15 decides which dots survive the
+  // weekly tier cap, and _fallbackCountForDot doses a listed dot toward the top of its range. On
+  // a 6种 package that effectively chooses the six dots the user receives. Until now the tool
+  // read the focus and never said so — a user with a plan was silently steered, one without was
+  // silently not, and neither was told which had happened.
+  //
+  // So it asks first. Deliberately NOT a gate like the BioAge one (which refuses because there is
+  // genuinely nothing to dose against): formulating from biomarkers alone is a correct result,
+  // and ~83% of users hold no focus at all. 不设方向 is always available.
+  //
+  // Every entry point routes through here — the toolbox button, the action chip, and the chat
+  // classifier's launch_tool — so there is one place the question is asked and one place it can
+  // be skipped.
+  async _startFormulaDots(opts = {}) {
+    const { user } = this.data
+    if (!user) return
+    this.setData({ formulaFocusLoading: true })
+    let plans = []
+    try {
+      // Fetched here rather than reused from `activePlans`: that is loaded by the Plans tab, and
+      // this runs in the chat tab, which the user may have opened without ever visiting it.
+      const res = await this._req(`${BASE}/api/health-plans?openid=${encodeURIComponent(user.user_id)}`)
+      plans = (res.data?.plans || []).map(p => ({
+        id: p.id,
+        plan_type: p.plan_type,
+        name: this.data.lang === 'zh' ? (p.name_zh || p.custom_name_zh || '') : (p.name_en || p.custom_name_en || ''),
+        goal: this.data.lang === 'zh' ? (p.goal_zh || p.custom_goal_zh || '') : (p.goal_en || p.custom_goal_en || ''),
+      }))
+    } catch {
+      // A focus we cannot read is not a reason to refuse the tool. Fall through with none, which
+      // shows the "pick a direction" sheet — the user can still choose 直接定制.
+    }
+    this.setData({ formulaFocusOpen: true, formulaFocusPlans: plans, formulaFocusOpts: opts, formulaFocusLoading: false })
+  },
+
+  // Proceed with whatever focus the user holds — the behaviour that has always applied, now
+  // stated rather than assumed. Also the path taken when they have none and choose 直接定制.
+  handleFormulaFocusGo() {
+    const opts = this.data.formulaFocusOpts || {}
+    this.setData({ formulaFocusOpen: false, formulaFocusOpts: null })
+    this._runFormulaDots(opts)
+  },
+
+  // 不设方向: formulate from biomarkers alone despite holding a focus. Only offered when there is
+  // a focus to ignore — with none, handleFormulaFocusGo already means exactly this.
+  handleFormulaFocusSkip() {
+    const opts = this.data.formulaFocusOpts || {}
+    this.setData({ formulaFocusOpen: false, formulaFocusOpts: null })
+    this._runFormulaDots({ ...opts, ignoreFocus: true })
+  },
+
+  // The Plans tab is `tab` state on this same page, not a separate route, so "go choose one" is a
+  // local switch. Routed through switchTab with a synthetic event so the staleness reloads it
+  // owns still run — duplicating them here is how the two drift.
+  handleFormulaFocusChoose() {
+    this.setData({ formulaFocusOpen: false, formulaFocusOpts: null })
+    this.switchTab({ currentTarget: { dataset: { tab: 'plans' } } })
+    this.setData({ plansDotsSubTab: 'plans' })
+  },
+
+  closeFormulaFocus() {
+    this.setData({ formulaFocusOpen: false, formulaFocusOpts: null })
+  },
+
+  _runFormulaDots(opts) {
+    const { user, t } = this.data
+    toolActions.runFormulaDs(user.user_id, t, this._toolCtx(), opts)
+    this._scrollBottom()
   },
 
   switchPlansDotsSubTab(e) {
@@ -2220,6 +2754,11 @@ Page({
     wx.navigateTo({ url: '/pages/phones/phones' })
   },
 
+  openEmails() {
+    this.setData({ menuOpen: false })
+    wx.navigateTo({ url: '/pages/emails/emails' })
+  },
+
   // ── Viva subscription redeem sheet ──────────────────────────────────────────
   // Modeled on openGuestSheet/submitGuestInvite (same server-validated code-entry
   // pattern), but a plain text input rather than a 6-digit grid — subscription codes
@@ -2317,8 +2856,11 @@ Page({
   // was never verified and 不支持打开's with it. Mirror BASE's own develop-vs-trial/release
   // split (CLAUDE.md §"Miniapp Backend Selection") rather than IS_DEV, which also covers
   // trial builds.
+  // The slug is the channel root's GCN sector (GCN_STORE_HOST_FOR_CHANNEL) — waven(-dev).gcn.net
+  // is served by GCN as an overlay of the aeviva site, so the path is the same on both.
   _openAevivaStore(context = null) {
-    const host = BASE.includes('-dev.') ? 'https://aeviva-dev.gcn.net' : 'https://aeviva.gcn.net'
+    const slug = this.data.gcnStoreSlug || 'aeviva'
+    const host = BASE.includes('-dev.') ? `https://${slug}-dev.gcn.net` : `https://${slug}.gcn.net`
     this.openUserApp(`${host}/dashboard.html`, context)
   },
 
@@ -2590,9 +3132,17 @@ Page({
         const ids = history.map(m => m.id).filter(id => typeof id === 'number')
         this._lastMsgId = ids.length > 0 ? Math.max(...ids) : 0
         this._oldestDbId = ids.length > 0 ? Math.min(...ids) : 0
+        // Register every AI bubble history just rendered with the cross-channel de-dup. A
+        // dual-written message delivered while the app was closed (a daily check-in, an AG
+        // result, a coach-activated program day) is already in chat_messages AND still
+        // 'pending' in notifications — without this the first poll after launch renders it a
+        // second time. Found live 2026-09-16 on a program day activated from the coach page.
+        history.forEach(m => { if (m.role === 'ai' || m.role === 'assistant') this._markRenderedAi(m.content) })
         this.setData({ messages: msgs, hasMoreHistory: res.data?.has_more ?? false })
         this._scrollBottom()
         historyLoaded = true
+        // Program cards in history get their watched / checked-in state from the server.
+        this._refreshProgramState()
       } else {
         this._lastMsgId = 0
       }
@@ -2606,7 +3156,9 @@ Page({
     // login.js's _finishNewUser comment). Shown client-side only (not persisted to
     // chat_messages) so it naturally reappears every session until phone_verified flips
     // true, without accumulating duplicate rows in chat history.
-    if (!user.phone_verified) {
+    // An email-verified account (email sign-up, waven tree) has a proven identity already —
+    // no phone nudge for it.
+    if (!user.phone_verified && !user.email_verified) {
       this._addMsg('ai', t.verifyPhonePrompt)
       this._addActionMsg('verify_phone', t.verifyPhoneCta)
     }
@@ -2659,7 +3211,9 @@ Page({
   _startQuestionnaire(assignment, questions, firstIdx) {
     const { lang } = this.data
     const t = T[lang]
-    if (assignment.type !== 'onboarding') {
+    // A program day's 打卡 (§42) was introduced by its own card; the coach-questions intro would
+    // be wrong for it.
+    if (assignment.type !== 'onboarding' && assignment.type !== 'program_day') {
       this._addMsg('ai', t.questionnaireIntro, true)
     }
     this.setData({
@@ -2708,6 +3262,10 @@ Page({
 
     if (q.input_type === 'date_picker') {
       update.obBirthday = ''
+    }
+
+    if (q.input_type === 'time_picker') {
+      update.obTime = (q.config && q.config.default) || ''
     }
 
     if (q.input_type === 'text') {
@@ -2808,7 +3366,11 @@ Page({
       }
     } catch (e) {}
 
-    this._onAllQuestionnaireDone(this.data.user, obQuestionnaireType)
+    // A program day's recap + comment arrive via the poll within a tick, so no "thanks" bubble
+    // — and the card's 已完成打卡 state comes from the server, not from us.
+    const isProgramDay = obQuestionnaireType === 'program_day'
+    this._onAllQuestionnaireDone(this.data.user, obQuestionnaireType, isProgramDay)
+    if (isProgramDay) this._refreshProgramState()
   },
 
   _onAllQuestionnaireDone(user, completedType, silent = false) {
@@ -2883,7 +3445,7 @@ Page({
     const msg = { id, role: r, imageUrl: imageUrl || null, source: source || null, ts: createdAt ? +new Date(createdAt) : Date.now(), sep: '' }
     if (r === 'action') { msg.action = action; msg.label = label; return msg }
     if (r === 'coach') { msg.content = (content || '').replace(/\n+/g, ' '); return msg }
-    if (r === 'ai') { msg.segments = mdToSegments(content || ''); this._attachSparks(msg.segments) }
+    if (r === 'ai') { msg.segments = mdToSegments(content || ''); this._attachSparks(msg.segments); this._attachFormulaCta(msg.segments); this._attachProgramState(msg.segments) }
     else msg.content = content || ''
     // Distinguishes an image-only bubble (which drops its padding via .msg-bubble-image) from an
     // image WITH text, which must keep it. The old wx:elif chain rendered the image and silently
@@ -3196,10 +3758,20 @@ Page({
       // agentic loop running async — see chat.generate) — mirrors _sendMessage's handling so the
       // same status-caption/safety-timeout machinery in _poll covers this path too.
       onAsyncStart: () => {
-        this._chatWaitStartedAt = Date.now()
+        this._beginChatWait(CHAT_WAIT_ASYNC_MS)
         this.setData({ typing: true, chatStatusText: this.data.t.chatThinking })
       },
     }
+  },
+
+  // Opens the "a reply is pending" window _poll works against: while it is open the
+  // chat_messages catch-up also replays ai rows (the durable backstop for the destructive
+  // notification read), and the typing indicator stays up until a reply lands or `budgetMs`
+  // elapses. Every wait goes through here so the budget can never be left over from a
+  // previous turn of the other kind.
+  _beginChatWait(budgetMs) {
+    this._chatWaitStartedAt = Date.now()
+    this._chatWaitBudgetMs = budgetMs
   },
 
   handleToolAction(e) {
@@ -3214,7 +3786,7 @@ Page({
       this._addMsg('ai', t.kinoScanPrompt)
       this.setData({ kinoScanPending: true })
     } else if (action === 'formula_dots') {
-      toolActions.runFormulaDs(user.user_id, t, ctx)
+      this._startFormulaDots()
     } else if (action === 'health_advice') {
       toolActions.runHealthAdvice(user.user_id, t, ctx, { async: true })
     } else if (action === 'upload_image') {
@@ -3380,7 +3952,7 @@ Page({
       // The user's own message already stands in the chat and was persisted server-side, hence
       // skipUserMsg — the tool must not append its own canned trigger line on top of it.
       if (res.data?.launch_tool === 'formula_dots') {
-        toolActions.runFormulaDs(user.user_id, t, this._toolCtx(), { skipUserMsg: true })
+        this._startFormulaDots({ skipUserMsg: true })
         return
       }
       if (res.data?.processing) {
@@ -3389,16 +3961,34 @@ Page({
         // status caption; _poll clears it when the actual reply (or the safety timeout)
         // arrives. Set an immediate local caption so there's no gap before the first
         // server-sent status notification lands on the next 3s poll tick.
-        this._chatWaitStartedAt = Date.now()
+        this._beginChatWait(CHAT_WAIT_ASYNC_MS)
         this.setData({ chatStatusText: t.chatThinking })
         return
       }
       // Sandbox sessions get the reply directly in the response (nothing was persisted
       // to notifications for polling to pick up).
-      if (app.globalData.sandboxMode && res.data?.reply) {
-        this._addMsg('ai', res.data.reply)
+      if (app.globalData.sandboxMode) {
+        if (res.data?.reply) this._addMsg('ai', res.data.reply)
+        this.setData({ typing: false, chatStatusText: '' })
+        return
       }
-      this.setData({ typing: false, chatStatusText: '' })
+      if (res.data?.success === false) {
+        this._addMsg('ai', t.errServer)
+        this.setData({ typing: false, chatStatusText: '' })
+        return
+      }
+      // Synchronous turn (casual_chat / emotional_support / the record_weight shortcut): the
+      // reply is already persisted server-side — chat_messages plus a notifications row — but it
+      // has NOT reached this page yet; it arrives through _poll. Until 2026-09-13 this branch
+      // dropped the typing indicator here and left delivery to the notification channel alone,
+      // which is a DESTRUCTIVE read: one poll response this page never receives (app backgrounded
+      // mid-request, a network blip, or in DevTools an orphaned poller from a hot reload) consumed
+      // the only copy, and the user watched the dots vanish with no reply — reproduced live on dev
+      // with "你好". Open the same wait window the async branch uses so _poll's chat_messages
+      // replay backstops this path too, keep the dots up until the reply actually lands, and poll
+      // right away instead of waiting up to 3s for the next tick.
+      this._beginChatWait(CHAT_WAIT_SYNC_MS)
+      this._poll(user)
     } catch (e) {
       this._addMsg('ai', this.data.t.errServer)
       this.setData({ typing: false, chatStatusText: '' })
@@ -3473,6 +4063,8 @@ Page({
           // only starts one if an unanswered question actually exists — so it's safe to call
           // unconditionally here even on a duplicate/racing notification.
           if (hasQuestionnaireReady) this._checkForPendingQuestionnaire()
+          // A program day / recap just landed: its card's flags come from the server.
+          if (realRows.some(n => typeof n.notification_type === 'string' && n.notification_type.indexOf('program_day') === 0)) this._refreshProgramState()
         }
       }
     } catch (e) {}
@@ -3534,7 +4126,11 @@ Page({
     // 285s also sits just past handleChatGenerateEvent's own 250s watchdog, which now guarantees
     // an honest server-side message before the worker's 300s FC ceiling — so reaching this line
     // means even that never made it, and "didn't finish" is the accurate thing to say.
-    if (this.data.typing && this._chatWaitStartedAt && Date.now() - this._chatWaitStartedAt > 285000) {
+    //
+    // A synchronous turn uses the much shorter CHAT_WAIT_SYNC_MS (see _beginChatWait): its reply
+    // was already persisted when the ack arrived, so there is nothing to wait 285s for.
+    const waitBudget = this._chatWaitBudgetMs || CHAT_WAIT_ASYNC_MS
+    if (this.data.typing && this._chatWaitStartedAt && Date.now() - this._chatWaitStartedAt > waitBudget) {
       this._chatWaitStartedAt = null
       this._addMsg('ai', this.data.t.chatTimedOut)
       this.setData({ typing: false, chatStatusText: '' })
@@ -3564,6 +4160,14 @@ Page({
   },
 
   onBirthdayChange(e) { this.setData({ obBirthday: e.detail.value }) },
+
+  onObTimeChange(e) { this.setData({ obTime: e.detail.value }) },
+
+  async handleSubmitTime() {
+    const { obTime } = this.data
+    if (!obTime) return
+    await this._saveAnswer(obTime, obTime)
+  },
 
   async handleSubmitBirthday() {
     const { obBirthday } = this.data
@@ -3739,8 +4343,15 @@ Page({
         dispenseStatus: '',
       })
       this._applyDotsWeek(0)
+      // A formula card delivered before this resolved would be offering to BUY a package the user
+      // already holds a code for. The codes are one of the two inputs to that decision, so the
+      // cards are re-resolved the moment they land.
+      this._refreshFormulaCtas()
     } catch (e) {
       this.setData({ dotsLoading: false, hasPlan: false, packages: [], hasPackageInFlight: false, hasProposedFormula: false, codes: [], proposedDistinctDots: null, proposedTierWidths: null })
+      // Same reason in reverse: a card must not keep offering 开始配制 against a codes list that
+      // has just been cleared.
+      this._refreshFormulaCtas()
     }
   },
 
@@ -4243,7 +4854,11 @@ Page({
         return { ...r, timeDisplay: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
       })
       const formulation = res.data?.formulation || null
-      this.setData({ planDetailData: { ...plan, ...detail, reminders, formulation } })
+      // Server-resolved names for the focus's recommended dots. The guidance tab used to render
+      // plan.recommended_dot_ids directly as "DOT7" — an internal id, in a format matching no
+      // current dot key. Defaults to [] so an older server response just hides the section.
+      const recommendedDots = res.data?.recommended_dots || []
+      this.setData({ planDetailData: { ...plan, ...detail, reminders, formulation, recommendedDots } })
     } catch { /* keep existing plan data if fetch fails */ }
   },
 
@@ -4984,18 +5599,25 @@ Page({
   // wx.getStorageSync('nano_user')) never re-syncs it. Falls back to the cached value on
   // a network error so a flaky connection doesn't block store access outright.
   async _checkPhoneVerified() {
+    return (await this._checkIdentityVerified()).phone
+  },
+
+  // Same server round-trip, both flags — phone_verified and email_verified are cached side
+  // by side in nano_user and the store gate needs both.
+  async _checkIdentityVerified() {
     const user = this.data.user
-    if (!user || user.guest) return false
+    if (!user || user.guest) return { phone: false, email: false }
     try {
       const res = await this._req(`${BASE}/api/users/${user.user_id}`)
-      const verified = !!res.data?.user?.phone_verified
-      this.setData({ 'user.phone_verified': verified })
-      if (app.globalData.user) app.globalData.user.phone_verified = verified
+      const phone = !!res.data?.user?.phone_verified
+      const email = !!res.data?.user?.email_verified
+      this.setData({ 'user.phone_verified': phone, 'user.email_verified': email })
+      if (app.globalData.user) { app.globalData.user.phone_verified = phone; app.globalData.user.email_verified = email }
       const cached = wx.getStorageSync('nano_user')
-      if (cached) wx.setStorageSync('nano_user', { ...cached, phone_verified: verified })
-      return verified
+      if (cached) wx.setStorageSync('nano_user', { ...cached, phone_verified: phone, email_verified: email })
+      return { phone, email }
     } catch (e) {
-      return !!user.phone_verified
+      return { phone: !!user.phone_verified, email: !!user.email_verified }
     }
   },
 })

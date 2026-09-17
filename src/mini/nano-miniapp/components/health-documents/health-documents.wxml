@@ -1,0 +1,96 @@
+<!-- 健康文档 — twin layer 3, Medical Records. Hosted by BOTH the 数字孪生 subtab and the
+     Viva AG subtab, which is why it lives here rather than inside either one. -->
+<view class="hd-root {{theme === 'light' ? 'theme-light' : ''}}">
+  <view class="hd-section">
+    <view class="hd-section-head">
+      <text class="hd-section-title">{{t.documents}}</text>
+      <text class="hd-section-count">{{documents.length}}</text>
+    </view>
+
+    <view wx:if="{{canUpload}}" class="hd-upload-btn {{uploading ? 'hd-btn-busy' : ''}}" bindtap="chooseDocument">
+      <text wx:if="{{!uploading}}">{{t.uploadBtn}}</text>
+      <text wx:else>{{uploadStatus}}</text>
+    </view>
+    <view wx:if="{{canUpload && uploading}}" class="hd-progress">
+      <view class="hd-progress-bar"></view>
+    </view>
+
+    <view wx:if="{{docsLoading}}" class="hd-muted">{{t.loading}}</view>
+    <view wx:elif="{{documents.length === 0}}" class="hd-empty">
+      <text class="hd-empty-title">{{canUpload ? t.noDocsTitle : t.noDocsOther}}</text>
+      <text wx:if="{{canUpload}}" class="hd-empty-hint">{{t.noDocsHint}}</text>
+    </view>
+    <view wx:else>
+      <view wx:for="{{documents}}" wx:key="id" class="hd-doc-wrap">
+        <view class="hd-doc">
+          <view class="hd-doc-main" bindtap="openDocument" data-id="{{item.id}}">
+            <text class="hd-doc-name">{{item.filename}}</text>
+            <view class="hd-doc-meta">
+              <!-- The badge is the type control for the owner: tap → action sheet (PATCH doc_type). -->
+              <text wx:if="{{canUpload}}" class="hd-doc-badge hd-doc-badge-tap" catchtap="changeType" data-id="{{item.id}}">{{item.typeLabel}} ⌄</text>
+              <text wx:else class="hd-doc-badge">{{item.typeLabel}}</text>
+              <text wx:if="{{item.doc_date}}" class="hd-doc-sub">{{item.doc_date}}</text>
+              <text class="hd-doc-sub">{{item.sizeLabel}}</text>
+            </view>
+            <text wx:if="{{item.extLabel}}" class="hd-doc-ext {{item.extBusy || item.extNone ? 'hd-doc-ext-busy' : ''}}">{{item.extLabel}}</text>
+            <text wx:if="{{item.summary}}" class="hd-doc-summary">{{item.summary}}</text>
+          </view>
+          <text wx:if="{{canUpload}}" class="hd-doc-del" catchtap="deleteDocument" data-id="{{item.id}}" data-name="{{item.filename}}">{{t.delete}}</text>
+        </view>
+        <!-- A read refused for want of a date is the one failure the owner can fix alone. -->
+        <view wx:if="{{canUpload && item.extMissingDate}}" class="hd-doc-fix">
+          <text class="hd-doc-fix-hint">{{t.extMissingDateHint}}</text>
+          <picker mode="date" end="{{today}}" bindchange="onPickDate" data-id="{{item.id}}">
+            <text class="hd-doc-action">{{t.setDate}}</text>
+          </picker>
+        </view>
+        <view wx:if="{{canUpload && (item.extDone || item.extNone || item.extFailed)}}" class="hd-doc-actions">
+          <text wx:if="{{item.extNone}}" class="hd-doc-action" catchtap="rerunExtraction" data-id="{{item.id}}">{{t.extRun}}</text>
+          <text wx:elif="{{item.extFailed}}" class="hd-doc-action" catchtap="rerunExtraction" data-id="{{item.id}}">{{t.extRetry}}</text>
+          <text wx:else class="hd-doc-action" catchtap="rerunExtraction" data-id="{{item.id}}">{{t.extRerun}}</text>
+          <text wx:if="{{item.extDone}}" class="hd-doc-action hd-doc-action-warn" catchtap="rejectExtraction" data-id="{{item.id}}">{{t.extWrong}}</text>
+          <text wx:if="{{item.hasStructured}}" class="hd-doc-action" catchtap="toggleStructured" data-id="{{item.id}}">{{item.structuredOpen ? t.structuredHide : t.structuredShow}}</text>
+        </view>
+        <view wx:elif="{{item.hasStructured}}" class="hd-doc-actions">
+          <text class="hd-doc-action" catchtap="toggleStructured" data-id="{{item.id}}">{{item.structuredOpen ? t.structuredHide : t.structuredShow}}</text>
+        </view>
+        <!-- What the document states about the person (contract 3 tags). A fact chip is
+             something nano acts on; a descriptor chip is only recorded, and says so. -->
+        <view wx:if="{{item.tagChips.length > 0}}" class="hd-tags">
+          <view wx:for="{{item.tagChips}}" wx:for-item="tag" wx:key="id" class="hd-tag {{tag.isFact ? 'hd-tag-fact' : 'hd-tag-desc'}} {{tag.inactive ? 'hd-tag-inactive' : ''}}">
+            <text class="hd-tag-cat">{{tag.category}}</text>
+            <text class="hd-tag-label">{{tag.label}}</text>
+            <text wx:if="{{tag.status}}" class="hd-tag-status">{{tag.status}}</text>
+            <text wx:if="{{!tag.isFact}}" class="hd-tag-status">{{t.tagDescriptor}}</text>
+          </view>
+        </view>
+        <!-- The agent's structured block (CLAUDE.md §39): version 2 as the tables it holds,
+             version 1 as the generic key/value tree it arrived as. -->
+        <view wx:if="{{item.structuredOpen}}" class="hd-struct">
+          <block wx:for="{{item.structuredBlocks}}" wx:for-item="sec" wx:key="key">
+            <view wx:if="{{sec.title}}" class="hd-struct-row hd-struct-head"><text class="hd-struct-key">{{sec.title}}</text></view>
+            <scroll-view wx:for="{{sec.tables}}" wx:for-item="tbl" wx:key="key" scroll-x class="hd-table-wrap">
+              <view class="hd-table">
+                <view class="hd-table-row hd-table-header">
+                  <text wx:for="{{tbl.columns}}" wx:for-item="col" wx:key="index" class="hd-table-cell">{{col}}</text>
+                </view>
+                <view wx:for="{{tbl.rows}}" wx:for-item="row" wx:key="index" class="hd-table-row">
+                  <text wx:for="{{row}}" wx:for-item="cell" wx:key="index" class="hd-table-cell">{{cell}}</text>
+                </view>
+              </view>
+            </scroll-view>
+            <view wx:for="{{sec.pairs}}" wx:for-item="pair" wx:key="index" class="hd-struct-row" style="padding-left: 24rpx">
+              <text class="hd-struct-key">{{pair.label}}</text>
+              <text class="hd-struct-val">{{pair.value}}</text>
+            </view>
+          </block>
+          <view wx:for="{{item.structuredRows}}" wx:for-item="row" wx:key="index" class="hd-struct-row {{row.isHead ? 'hd-struct-head' : ''}}" style="padding-left: {{row.depth * 24}}rpx">
+            <text class="hd-struct-key">{{row.key}}</text>
+            <text wx:if="{{!row.isHead}}" class="hd-struct-val">{{row.value}}</text>
+          </view>
+        </view>
+      </view>
+      <text wx:if="{{canUpload}}" class="hd-footnote">{{t.footnote}}</text>
+    </view>
+  </view>
+</view>

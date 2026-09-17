@@ -6,6 +6,8 @@
  * computes 30-day trends, and UPSERTs into health_twin.
  * Also syncs latest_bio_age / latest_sub_ages from the biomarkers table.
  */
+const { buildLabPanel } = require('./labHistory');
+
 async function updateHealthTwin(userId, pool) {
     try {
         // 7-day rolling aggregates across all categories in one pass
@@ -36,51 +38,11 @@ async function updateHealthTwin(userId, pool) {
             ORDER BY data_date DESC LIMIT 1
         `, [userId]);
 
-        // Latest lab_result event
-        // Latest lab panel: aggregate all events from the most recent lab date
-        // Handles two storage formats:
-        //   new  — one row per biomarker with data->>'key_name' set
-        //   legacy — single row with full panel already in data JSONB
-        const labDateRes = await pool.query(`
-            SELECT MAX(data_date) AS max_date FROM health_events
-            WHERE user_id = $1 AND category = 'lab_result'
-        `, [userId]);
-        const latestLabDate = labDateRes.rows[0]?.max_date || null;
-
-        let labResult = { rows: [] };
-        if (latestLabDate) {
-            const labEventsRes = await pool.query(`
-                SELECT data FROM health_events
-                WHERE user_id = $1 AND category = 'lab_result' AND data_date = $2
-            `, [userId, latestLabDate]);
-
-            const events = labEventsRes.rows.map(r => r.data);
-            const hasKeyName = events.some(e => e.key_name);
-            let panelData;
-
-            if (hasKeyName) {
-                // New per-biomarker format: build a markers map
-                const markers = {};
-                for (const ev of events) {
-                    if (ev.key_name) {
-                        markers[ev.key_name] = {
-                            value: parseFloat(ev.value),
-                            unit: ev.unit || '',
-                            nano_dimension: ev.nano_dimension || null,
-                            is_kino_core: ev.is_kino_core || false,
-                        };
-                    }
-                }
-                panelData = { markers };
-            } else {
-                // Legacy format: single event already contains the full panel
-                panelData = events[0] || null;
-            }
-
-            if (panelData) {
-                labResult = { rows: [{ data: panelData, data_date: latestLabDate }] };
-            }
-        }
+        // Latest lab panel: latest value PER MARKER across every lab_result event, each marker
+        // carrying its own date, joined to biomarker_catalog for names and ranges. lib/labHistory.js
+        // owns the query — the same module serves GET /lab-history and the chat tool, so the
+        // panel and the history can never disagree about what a user's latest LDL is.
+        const labPanel = await buildLabPanel(pool, userId);
 
         // Latest Kino scan from biomarkers table
         const kinoResult = await pool.query(`
@@ -111,7 +73,6 @@ async function updateHealthTwin(userId, pool) {
 
         const agg = aggResult.rows[0] || {};
         const body = bodyResult.rows[0]?.data || {};
-        const lab = labResult.rows[0] || null;
         const kino = kinoResult.rows[0] || null;
         const old = trendResult.rows[0] || {};
 
@@ -158,8 +119,12 @@ async function updateHealthTwin(userId, pool) {
                 latest_weight_kg      = COALESCE(EXCLUDED.latest_weight_kg,    health_twin.latest_weight_kg),
                 latest_bmi            = COALESCE(EXCLUDED.latest_bmi,          health_twin.latest_bmi),
                 latest_body_fat_pct   = COALESCE(EXCLUDED.latest_body_fat_pct, health_twin.latest_body_fat_pct),
-                latest_lab_data       = COALESCE(EXCLUDED.latest_lab_data,     health_twin.latest_lab_data),
-                latest_lab_date       = COALESCE(EXCLUDED.latest_lab_date,     health_twin.latest_lab_date),
+                -- NOT coalesced, unlike the other latest_* columns: the panel is recomputed from
+                -- scratch on every call, so NULL means "no lab events left". With COALESCE a user
+                -- whose last report was deleted (解析有误, DELETE /health-reports/:id) kept the
+                -- stale panel forever, while both callers claimed to recompute without it.
+                latest_lab_data       = EXCLUDED.latest_lab_data,
+                latest_lab_date       = EXCLUDED.latest_lab_date,
                 latest_bio_age        = COALESCE(EXCLUDED.latest_bio_age,      health_twin.latest_bio_age),
                 latest_sub_ages       = COALESCE(EXCLUDED.latest_sub_ages,     health_twin.latest_sub_ages),
                 latest_kino_scan_at   = COALESCE(EXCLUDED.latest_kino_scan_at, health_twin.latest_kino_scan_at),
@@ -179,8 +144,8 @@ async function updateHealthTwin(userId, pool) {
             body.weight_kg ?? null,
             body.bmi ?? null,
             body.body_fat_pct ?? null,
-            lab ? JSON.stringify(lab.data) : null,
-            lab?.data_date ?? null,
+            labPanel.data ? JSON.stringify(labPanel.data) : null,
+            labPanel.data_date ?? null,
             kino?.bio_age ?? null,
             kino?.sub_ages ? JSON.stringify(kino.sub_ages) : null,
             kino?.tested_at ?? null,

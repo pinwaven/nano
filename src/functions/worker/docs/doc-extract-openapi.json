@@ -1,0 +1,1506 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Nano — Document Extraction External Agent API",
+    "version": "3.0.0",
+    "description": "Pull queue for an external agent that turns uploaded health documents (体检报告 PDFs, photographed paper lab printouts, discharge summaries) into structured digital-twin data.\n\nEvery response is HTTP 200 with a JSON body, INCLUDING routine failures — branch on `reason`, never on a status code.\n\nSeparate service from the Viva AG API (`/viva-ag/*`): different token, different queue, no shared state. The prose contract, which is the authoritative one, is served at `GET /doc-extract/docs`.\n\nContract version 3 (2026-09-16): `structured.version: 2` keeps tables as tables; a `source` cell reference on every item; `unmapped[].suggested_key` (stored, never promoted); a third catalog `tag_catalog`; and `tags` — facts about the person with a key, a status and an anchor — the only path into what nano acts on. `findings` is still accepted and stored as descriptors. Every version is a superset of the one before."
+  },
+  "servers": [
+    {
+      "url": "https://nano-dev.gcn.net/api",
+      "description": "dev"
+    },
+    {
+      "url": "https://nano.gcn.net/api",
+      "description": "prod"
+    }
+  ],
+  "security": [
+    {
+      "serviceToken": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "discovery",
+      "description": "Version handshake, the contract, and the extraction vocabulary"
+    },
+    {
+      "name": "queue",
+      "description": "Claim, heartbeat, submit, fail"
+    },
+    {
+      "name": "testing",
+      "description": "Dry-run against the real validator, with no job and no write"
+    }
+  ],
+  "paths": {
+    "/doc-extract/ping": {
+      "get": {
+        "tags": [
+          "discovery"
+        ],
+        "summary": "Health check and contract version",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "env": {
+                      "type": "string",
+                      "enum": [
+                        "dev",
+                        "prod"
+                      ]
+                    },
+                    "contract_version": {
+                      "type": "integer"
+                    },
+                    "queue_depth": {
+                      "type": "integer"
+                    },
+                    "server_time": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/doc-extract/docs": {
+      "get": {
+        "tags": [
+          "discovery"
+        ],
+        "summary": "The full prose contract (Markdown)",
+        "description": "The authoritative document. Read this first — it is written to be sufficient on its own.",
+        "responses": {
+          "200": {
+            "description": "Markdown",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/doc-extract/openapi.json": {
+      "get": {
+        "tags": [
+          "discovery"
+        ],
+        "summary": "This specification",
+        "responses": {
+          "200": {
+            "description": "OpenAPI document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/doc-extract/catalog": {
+      "get": {
+        "tags": [
+          "discovery"
+        ],
+        "summary": "The extraction vocabulary",
+        "description": "Every biomarker nano can store, generated live from biomarker_catalog. A `key_name` outside this list is NOT accepted — send it in `unmapped` instead, never mapped onto a neighbouring marker. The same list ships with every claim; this endpoint exists so a prompt can be built and tuned before any job exists.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "contract_version": {
+                      "type": "integer"
+                    },
+                    "catalog": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CatalogEntry"
+                      }
+                    },
+                    "food_catalog": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FoodCatalogEntry"
+                      }
+                    },
+                    "tag_catalog": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TagCatalogEntry"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/doc-extract/validate": {
+      "post": {
+        "tags": [
+          "testing"
+        ],
+        "summary": "Dry-run a result payload against the real validator",
+        "description": "Runs the SAME pure validator the result path runs, with no job, no claim and no write. `job_uid` and `result_token` are ignored. Iterate here until `rejected` is empty before running a live job.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResultPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What would happen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationOutcome"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/doc-extract/jobs/claim": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Claim the head of the queue",
+        "description": "Atomic (FOR UPDATE SKIP LOCKED): two pollers get two different jobs, never the same one twice. An empty queue is `{\"success\":true,\"job\":null}` — not an error. Mints a fresh `result_token` and invalidates any previous holder's.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "worker_id": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "Free-form; log correlation only"
+                  },
+                  "lease_seconds": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 3600,
+                    "default": 600
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A job, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "job": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/Job"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/doc-extract/jobs/heartbeat": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Extend the lease",
+        "description": "Extends from now. Send one at least every `lease_seconds / 2`, from a separate timer rather than between processing steps.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "job_uid"
+                ],
+                "properties": {
+                  "job_uid": {
+                    "type": "string"
+                  },
+                  "result_token": {
+                    "type": "string",
+                    "description": "Or send it as the X-Doc-Extract-Job-Token header"
+                  },
+                  "extend_seconds": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 3600,
+                    "default": 600
+                  },
+                  "progress_note": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "lease_expires_at": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "$ref": "#/components/schemas/Reason"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/doc-extract/jobs/result": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Submit the extraction",
+        "description": "Validated then written: document metadata, the lab panel (as health_reports + health_events), findings (as personal memory facts), then one digital-twin refresh.\n\nNano REJECTS, never repairs — a rejected entry is not written, the rest of the submission still lands, and every refusal comes back in `rejected` with a reason. Always read it: it is the only signal that an extraction is systematically wrong.\n\nIdempotent: a repeat with the same token returns `already_completed` and writes nothing.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResultPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted, or a reason",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "job_uid": {
+                      "type": "string"
+                    },
+                    "already_completed": {
+                      "type": "boolean"
+                    },
+                    "report_id": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "null when no observations were stored — see the missing_date rule"
+                    },
+                    "accepted": {
+                      "$ref": "#/components/schemas/Counts"
+                    },
+                    "rejected": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Rejection"
+                      }
+                    },
+                    "reason": {
+                      "$ref": "#/components/schemas/Reason"
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Warning"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/doc-extract/jobs/fail": {
+      "post": {
+        "tags": [
+          "queue"
+        ],
+        "summary": "Report a failure",
+        "description": "`retryable: false` for anything a retry cannot fix — an encrypted PDF, a blank scan, a photo of something that is not a health document. A document with nothing extractable is NOT a failure: submit a result with metadata and a summary instead.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "job_uid"
+                ],
+                "properties": {
+                  "job_uid": {
+                    "type": "string"
+                  },
+                  "result_token": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "retryable": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "requeued": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "$ref": "#/components/schemas/Reason"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serviceToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "DOC_EXTRACT_API_TOKEN, minted as `dex_` + 32 hex. Issued per environment; the two are never interchangeable."
+      }
+    },
+    "parameters": {
+      "jobToken": {
+        "name": "X-Doc-Extract-Job-Token",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "The per-job fencing token from the claim. Rotated on every claim, so a stale one means the lease moved on. Never sent as a query parameter — query strings land in access logs and this gates a medical record."
+      }
+    },
+    "schemas": {
+      "Reason": {
+        "type": "string",
+        "enum": [
+          "missing_params",
+          "job_not_found",
+          "invalid_token",
+          "job_not_claimable",
+          "job_already_completed",
+          "lease_expired",
+          "document_not_found",
+          "result_too_large",
+          "nothing_extracted",
+          "internal_error"
+        ]
+      },
+      "CatalogEntry": {
+        "type": "object",
+        "properties": {
+          "key_name": {
+            "type": "string",
+            "description": "Use verbatim. The only identifier nano resolves."
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "display_name_zh": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string",
+            "description": "The unit values are stored in. Send the report's own unit; nano converts only the documented pairs."
+          },
+          "category": {
+            "type": "string"
+          },
+          "ref_low": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ref_high": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Nano's reference value, given for sanity-checking. Some are risk thresholds rather than physiological ceilings."
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Alternate printed spellings (abbreviations, lab variants). Match against these plus display_name / display_name_zh after NFKC-normalising CJK compatibility ideographs. A hint for your matcher, never an identity — send the key_name."
+          }
+        }
+      },
+      "Document": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "integer"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "doc_type": {
+            "$ref": "#/components/schemas/DocType"
+          },
+          "doc_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "institution": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "etag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uploaded_at": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "description": "Presigned, direct from object storage. Bytes never pass through nano."
+          },
+          "url_expires_at": {
+            "type": "string",
+            "description": "6 hours from the claim"
+          },
+          "supports_range": {
+            "type": "boolean",
+            "description": "HTTP Range works — chunk or resume a large file"
+          }
+        }
+      },
+      "DocType": {
+        "type": "string",
+        "enum": [
+          "lab_report",
+          "hospital_record",
+          "imaging",
+          "discharge_summary",
+          "prescription",
+          "genetic",
+          "microbiome",
+          "functional_test",
+          "other"
+        ],
+        "description": "On a claimed job this is almost always \"other\": no client asks the user to classify an upload, so filling it in is part of the extraction."
+      },
+      "Job": {
+        "type": "object",
+        "properties": {
+          "job_uid": {
+            "type": "string"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "max_attempts": {
+            "type": "integer"
+          },
+          "queued_at": {
+            "type": "string"
+          },
+          "lease_expires_at": {
+            "type": "string"
+          },
+          "result_token": {
+            "type": "string"
+          },
+          "document": {
+            "$ref": "#/components/schemas/Document"
+          },
+          "subject": {
+            "type": "object",
+            "description": "Enough to read an age- or sex-dependent reference range, and nothing more. Carries no user id, name or contact of any kind; `ref` is the job_uid.",
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "age": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "gender": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "language": {
+                "type": "string",
+                "description": "Write `summary` and finding `text` in this language"
+              }
+            }
+          },
+          "catalog": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogEntry"
+            }
+          },
+          "tag_catalog": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TagCatalogEntry"
+            }
+          }
+        }
+      },
+      "Observation": {
+        "type": "object",
+        "required": [
+          "key_name",
+          "value",
+          "unit"
+        ],
+        "properties": {
+          "key_name": {
+            "type": "string",
+            "description": "From the catalog, verbatim. Anything else belongs in `unmapped`."
+          },
+          "value": {
+            "type": "number",
+            "description": "A number — not a range, not \"<0.5\", not a string carrying the unit"
+          },
+          "unit": {
+            "type": "string",
+            "description": "As printed on the report. Case, spacing and µ/u are normalised."
+          },
+          "data_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Falls back to document.doc_date"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Below 0.6 is rejected"
+          },
+          "source_text": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The line it was read from. Not stored as data — it is what makes a wrong read diagnosable."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The analyte name as printed. Stored on the report row; falls back to the catalog's Chinese name."
+          },
+          "ref_text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 60,
+            "description": "The printed reference range, verbatim"
+          },
+          "flag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The report's own abnormal marker. high / low / null; H, L, ↑, ↓, 偏高, 偏低 are normalised."
+          },
+          "section": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 60,
+            "description": "Panel heading the row sat under"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 40,
+            "pattern": "^s\\d+(\\.t\\d+\\.r\\d+|\\.p\\d+)$",
+            "description": "Cell reference into `structured`: \"s0.t0.r3\" (section, table, row) or \"s2.p1\" (section, pair). Malformed or out of range → dropped with a `bad_source` warning; the item still lands."
+          }
+        }
+      },
+      "Finding": {
+        "type": "object",
+        "required": [
+          "category",
+          "text",
+          "confidence"
+        ],
+        "description": "A durable personal fact the document asserts about the patient. SINCE CONTRACT 3 a finding is stored as a descriptor (tag_key null) — shown under the document, never acted on. Send `tags` instead; a finding no longer reaches product filtering or formulation. The ingest rules are unchanged.",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "allergy",
+              "condition",
+              "dietary_restriction",
+              "preference",
+              "goal",
+              "other"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Short, in the subject's language"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Required. Below 0.8 is rejected, and an absent confidence is rejected outright."
+          }
+        }
+      },
+      "Unmapped": {
+        "type": "object",
+        "description": "An analyte read off the report that is not in the catalog. KEPT, not discarded: since contract version 2 every entry becomes a row of the user's report under its printed name, so send all of them (cap 200).",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "value": {
+            "type": [
+              "string",
+              "number",
+              "null"
+            ],
+            "description": "As printed — \"0.22\", \"<0.1\", \"阴性\". A number is kept as a number, anything else as text."
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ref_text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 60,
+            "description": "The printed reference range, verbatim"
+          },
+          "flag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The report's own abnormal marker. high / low / null; H, L, ↑, ↓, 偏高, 偏低 are normalised."
+          },
+          "section": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 60,
+            "description": "Panel heading the row sat under"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 40,
+            "pattern": "^s\\d+(\\.t\\d+\\.r\\d+|\\.p\\d+)$",
+            "description": "Cell reference into `structured`: \"s0.t0.r3\" (section, table, row) or \"s2.p1\" (section, pair). Malformed or out of range → dropped with a `bad_source` warning; the item still lands."
+          },
+          "suggested_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Your guess at a catalog key_name for this row. Must be in the active catalog or it is dropped with an `unknown_suggested_key` warning. NEVER promoted automatically — stored for review and re-promotion, rendered as 「可能为 …」 beside the printed label, never as the marker's name."
+          },
+          "suggested_confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": [
+          "label"
+        ]
+      },
+      "ResultPayload": {
+        "type": "object",
+        "required": [
+          "job_uid"
+        ],
+        "description": "Every field but job_uid and result_token is optional. A document with nothing extractable is still a legitimate result — send metadata and a summary with empty arrays rather than calling /jobs/fail. Under contract 3 send `tags` (and `structured` with version 2) rather than `findings`.",
+        "properties": {
+          "job_uid": {
+            "type": "string"
+          },
+          "result_token": {
+            "type": "string"
+          },
+          "document": {
+            "type": "object",
+            "properties": {
+              "doc_type": {
+                "$ref": "#/components/schemas/DocType"
+              },
+              "doc_date": {
+                "type": "string",
+                "format": "date",
+                "description": "The date ON the report. If the page shows none, the claim's document.doc_date (possibly user-set). Never today's date as a stand-in — a wrong date puts an old panel into the twin as though it were current."
+              },
+              "institution": {
+                "type": "string",
+                "maxLength": 120
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 200
+              }
+            }
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Plain language, in the subject's language. No ':::' — those are display-card fences in nano's chat renderer and are stripped on ingest."
+          },
+          "observations": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/Observation"
+            }
+          },
+          "findings": {
+            "type": "array",
+            "maxItems": 40,
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            }
+          },
+          "unmapped": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/Unmapped"
+            }
+          },
+          "food_sensitivity": {
+            "$ref": "#/components/schemas/FoodSensitivity"
+          },
+          "structured": {
+            "$ref": "#/components/schemas/Structured"
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 60,
+            "items": {
+              "$ref": "#/components/schemas/Tag"
+            }
+          }
+        }
+      },
+      "Rejection": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "unknown_marker",
+              "invalid_value",
+              "unit_mismatch",
+              "implausible_value",
+              "low_confidence",
+              "missing_date",
+              "duplicate_observation",
+              "unknown_doc_type",
+              "unparseable_date",
+              "unknown_finding_category",
+              "empty_finding",
+              "invalid_structured",
+              "implausible_label",
+              "implausible_finding"
+            ]
+          },
+          "entry": {
+            "type": "object",
+            "description": "The offending input, echoed back"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "Counts": {
+        "type": "object",
+        "properties": {
+          "observations_accepted": {
+            "type": "integer"
+          },
+          "observations_submitted": {
+            "type": "integer"
+          },
+          "findings_accepted": {
+            "type": "integer"
+          },
+          "findings_submitted": {
+            "type": "integer"
+          },
+          "unmapped": {
+            "type": "integer"
+          },
+          "rejected": {
+            "type": "integer"
+          },
+          "food_items_accepted": {
+            "type": "integer",
+            "nullable": false
+          },
+          "food_items_submitted": {
+            "type": "integer",
+            "nullable": false
+          },
+          "food_panel_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "food_restrictions": {
+            "type": "integer",
+            "nullable": false
+          },
+          "items_written": {
+            "type": "integer",
+            "description": "health_report_items rows kept under the report: observations plus unmapped"
+          },
+          "structured": {
+            "type": "integer",
+            "description": "1 if a structured block was accepted"
+          },
+          "tags_submitted": {
+            "type": "integer"
+          },
+          "facts_accepted": {
+            "type": "integer"
+          },
+          "descriptors_accepted": {
+            "type": "integer",
+            "description": "Includes findings stored as descriptors and facts demoted for an unknown key"
+          },
+          "tags_written": {
+            "type": "integer"
+          },
+          "facts_written": {
+            "type": "integer",
+            "description": "Facts stored on the document; what the user is told about"
+          },
+          "warnings": {
+            "type": "integer"
+          }
+        }
+      },
+      "ValidationOutcome": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "contract_version": {
+            "type": "integer"
+          },
+          "would_accept": {
+            "type": "boolean"
+          },
+          "document": {
+            "type": "object"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Observation"
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            }
+          },
+          "unmapped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Unmapped"
+            }
+          },
+          "rejected": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Rejection"
+            }
+          },
+          "counts": {
+            "$ref": "#/components/schemas/Counts"
+          },
+          "structured": {
+            "$ref": "#/components/schemas/Structured"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Tag"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            }
+          }
+        }
+      },
+      "FoodCatalogEntry": {
+        "type": "object",
+        "description": "A food nano can store a sensitivity result for. Ships in every claim response as food_catalog, and standalone at GET /doc-extract/catalog.",
+        "properties": {
+          "food_key": {
+            "type": "string",
+            "description": "The only identifier nano resolves. Send it verbatim."
+          },
+          "name_zh": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "dairy_egg",
+              "fruit",
+              "vegetable",
+              "meat",
+              "seafood",
+              "grain_nut",
+              "other"
+            ]
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Alternate printed spellings. One lab prints 卵类粘蛋白 in its grid and 卵类黏蛋白 in its appendix."
+          },
+          "common_sources_zh": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Reference data. Do not send it back — it is ignored."
+          },
+          "substitutes_zh": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Reference data. Do not send it back — it is ignored."
+          }
+        }
+      },
+      "FoodSensitivityItem": {
+        "type": "object",
+        "required": [
+          "class"
+        ],
+        "properties": {
+          "food_key": {
+            "type": "string",
+            "description": "From food_catalog, verbatim. Omit it and send label alone to let nano resolve the printed name."
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "The food name as printed. Resolves against name_zh, name_en and aliases."
+          },
+          "class": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3,
+            "description": "The class PRINTED on the page. Never computed from the value: thresholds differ between labs, and a report prints a band only for the classes its subject actually has. An absent class is refused rather than defaulting to 0."
+          },
+          "value": {
+            "type": "number",
+            "description": "The antibody level. Omit it and set below_detection when the report prints a censored reading."
+          },
+          "below_detection": {
+            "type": "boolean",
+            "description": "True for a censored reading such as \"<0.1\". Never send the string, and never substitute the detection limit as a number — the lab declined to measure it."
+          },
+          "unit": {
+            "type": "string",
+            "description": "Only if this item differs from the panel unit. A mismatch is rejected, never converted."
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Below 0.6 is rejected."
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 40,
+            "pattern": "^s\\d+(\\.t\\d+\\.r\\d+|\\.p\\d+)$",
+            "description": "Cell reference into `structured`: \"s0.t0.r3\" (section, table, row) or \"s2.p1\" (section, pair). Malformed or out of range → dropped with a `bad_source` warning; the item still lands."
+          }
+        }
+      },
+      "FoodSensitivity": {
+        "type": "object",
+        "required": [
+          "panel_key",
+          "unit",
+          "report_date",
+          "items"
+        ],
+        "description": "A chronic food-sensitivity (IgG) panel. Send this INSTEAD OF observations for such a report, never both for the same grid, and omit it entirely for every other kind of document. These are not biomarkers: routing them through observations would overwrite the clinical lab panel in the user’s digital twin.",
+        "properties": {
+          "panel_key": {
+            "type": "string",
+            "maxLength": 40,
+            "example": "igg_120"
+          },
+          "unit": {
+            "type": "string",
+            "maxLength": 20,
+            "example": "U/mL"
+          },
+          "sampled_at": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "采样日期, when the report distinguishes it from 报告日期."
+          },
+          "report_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Required. Without a readable, non-future date the WHOLE panel is refused — comparing this test to the next one is its clinical purpose."
+          },
+          "institution": {
+            "type": "string",
+            "maxLength": 120,
+            "nullable": true
+          },
+          "sample_no": {
+            "type": "string",
+            "maxLength": 60,
+            "nullable": true
+          },
+          "class_bands": {
+            "type": "array",
+            "description": "Only the bands the page actually prints.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "class": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 3
+                },
+                "low": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "high": {
+                  "type": "number",
+                  "nullable": true
+                }
+              }
+            }
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/FoodSensitivityItem"
+            }
+          }
+        }
+      },
+      "Structured": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "The document's content as laid out. `version: 2` (contract 3) keeps tables as tables — see StructuredV2. `version` absent or 1 is contract 2's free shape, rendered as a key/value tree. Caps for both: 64 KB serialised, nesting depth 8 (root object = 1), 200 per array, 100 keys per object, 500 chars per string; a violation refuses the whole block as invalid_structured.",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "description": "The document's doc_type"
+          },
+          "sections": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/StructuredSection"
+            }
+          },
+          "unanchored": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Leaves dropped by your own anchoring check (informational)"
+          }
+        }
+      },
+      "StructuredSection": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "tables": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/StructuredTable"
+            }
+          },
+          "pairs": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "required": [
+                "label"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": [
+                    "string",
+                    "number",
+                    "null"
+                  ]
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "StructuredTable": {
+        "type": "object",
+        "required": [
+          "columns"
+        ],
+        "description": "columns: the header row as printed, non-empty and unique within the table. rows: each exactly columns.length cells, verbatim.",
+        "properties": {
+          "columns": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "TagCatalogEntry": {
+        "type": "object",
+        "properties": {
+          "tag_key": {
+            "type": "string",
+            "description": "'<category>:<slug>', e.g. allergy:shellfish"
+          },
+          "category": {
+            "$ref": "#/components/schemas/TagCategory"
+          },
+          "name_zh": {
+            "type": "string"
+          },
+          "name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "values": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Admitted values for a keyed result (result:hpv52 → positive | negative); null means the tag is a bare fact"
+          }
+        }
+      },
+      "TagCategory": {
+        "type": "string",
+        "enum": [
+          "allergy",
+          "condition",
+          "medication",
+          "diet",
+          "lifestyle",
+          "result",
+          "family_history",
+          "procedure"
+        ]
+      },
+      "Tag": {
+        "type": "object",
+        "required": [
+          "kind",
+          "category",
+          "text"
+        ],
+        "description": "A fact about the person with a key, a status and an anchor. A `fact` must resolve in tag_catalog and is ACTED ON (allergy/diet filter products and feed formulation; a current medication is recorded; a result is shown). A `descriptor` is stored and displayed and NEVER acted on. A fact whose key resolves to nothing is demoted to a descriptor (reason unknown_tag), not rejected. family_history never satisfies condition.",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "fact",
+              "descriptor"
+            ]
+          },
+          "tag_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required for a fact; from tag_catalog verbatim"
+          },
+          "category": {
+            "$ref": "#/components/schemas/TagCategory"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The document's own words, verbatim"
+          },
+          "value": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the catalog entry has `values`, one of them → else bad_tag_value"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "past",
+              "stopped"
+            ],
+            "default": "current"
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Defaults to doc_date; never today"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 40,
+            "pattern": "^s\\d+(\\.t\\d+\\.r\\d+|\\.p\\d+)$",
+            "description": "Cell reference into `structured`: \"s0.t0.r3\" (section, table, row) or \"s2.p1\" (section, pair). Malformed or out of range → dropped with a `bad_source` warning; the item still lands."
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Required and ≥ 0.8 for a fact; any value on a descriptor"
+          }
+        }
+      },
+      "Warning": {
+        "type": "object",
+        "description": "A field dropped from an item that still landed",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "bad_source",
+              "unknown_suggested_key"
+            ]
+          },
+          "entry": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

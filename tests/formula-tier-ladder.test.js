@@ -14,7 +14,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const D = require('../src/functions/worker/handlers/dots.js');
+// The engine and the card renderer, in one namespace: this file exercises the ladder end to end,
+// from the trim to the #tier lines the miniapp parses.
+const D = { ...require('../src/functions/worker/lib/formulation.js'), ...require('../src/functions/worker/lib/chatCards.js') };
 const { N7_KEY, PLAN_WEEKS } = require('../src/functions/worker/lib/dotsProductModel.js');
 const { mdToSegments } = require('../src/mini/nano-miniapp/utils/markdown.js');
 
@@ -36,9 +38,9 @@ FORMULARY.push({
 });
 
 const TIERS = [
-    { tier_label: '6种原粒', max_distinct_dots: 6 },
-    { tier_label: '8种原粒', max_distinct_dots: 8 },
-    { tier_label: '10种原粒', max_distinct_dots: 10 },
+    { tier_label: '轻享套装', max_distinct_dots: 6 },
+    { tier_label: '臻选套装', max_distinct_dots: 8 },
+    { tier_label: '尊享套装', max_distinct_dots: 10 },
 ];
 
 // Descending emphasis: DOT-N1 is the most emphasised, DOT-N12 the least. N7 is present so the
@@ -65,7 +67,7 @@ test('_buildTierLadder produces one variant per purchasable width, narrowest fir
     });
     assert.ok(ladder, 'a full allocation and three tiers must produce a ladder');
     assert.deepStrictEqual(ladder.variants.map(v => v.max_distinct_dots), [6, 8, 10]);
-    assert.deepStrictEqual(ladder.variants.map(v => v.tier_label), ['6种原粒', '8种原粒', '10种原粒']);
+    assert.deepStrictEqual(ladder.variants.map(v => v.tier_label), ['轻享套装', '臻选套装', '尊享套装']);
     assert.strictEqual(ladder.base, ladder.variants[0], 'the base is the NARROWEST variant');
 });
 
@@ -238,13 +240,14 @@ test('_applyTierLadder ladders in buy mode and caps to the purchased tier otherw
 
     const buy = D._applyTierLadder({ ...args, orderContext: { mode: 'buy', maxDistinctDots: null } });
     assert.strictEqual(buy.tierVariants.length, 3);
-    assert.strictEqual(buy.rungs.length, 2, 'the base is the chart; the rungs are what it could become');
+    assert.strictEqual(buy.tierCards.length, 3, 'every package is drawn in full, the narrowest included');
+    assert.strictEqual(buy.tierCards.filter(t => t.recommended).length, 1, 'exactly one is recommended');
     assert.strictEqual(D._countDistinctDots(buy.morningRecipe, buy.eveningRecipe), 6);
 
     // A package already waiting: one tier to hit, no choice to offer, and the existing trim.
     const submit = D._applyTierLadder({ ...args, orderContext: { mode: 'submit', maxDistinctDots: 8 } });
     assert.strictEqual(submit.tierVariants, null);
-    assert.deepStrictEqual(submit.rungs, []);
+    assert.deepStrictEqual(submit.tierCards, []);
     assert.strictEqual(D._countDistinctDots(submit.morningRecipe, submit.eveningRecipe), 8);
 });
 
@@ -255,19 +258,30 @@ test('_applyTierLadder with no ladder and no package leaves the allocation untou
         tiers: [], orderContext: { mode: 'buy', maxDistinctDots: null },
     });
     assert.strictEqual(out.tierVariants, null);
-    assert.deepStrictEqual(out.rungs, []);
+    assert.deepStrictEqual(out.tierCards, []);
     assert.deepStrictEqual(out.morningRecipe.dots, morning.dots);
     assert.deepStrictEqual(out.eveningRecipe.dots, evening.dots);
 });
 
-test('rung pitches are keyed on rung position, not on the width GCN happens to sell', () => {
-    const { morning, evening } = allocation();
-    const out = D._applyTierLadder({
-        morningRecipe: morning, eveningRecipe: evening, dotsFormulary: FORMULARY, tiers: TIERS,
-        orderContext: { mode: 'buy', maxDistinctDots: null },
-        pitchByTier: new Map([[2, 'first upgrade'], [3, 'second upgrade']]),
-    });
-    assert.deepStrictEqual(out.rungs.map(r => r.pitch), ['first upgrade', 'second upgrade']);
+// A dot whose range is a single value (DOT-N8 明眸 and DOT-N10 肌光焕采 are both min = max = 1)
+// cannot express emphasis — its count was never a choice. It used to score 1, the maximum, so it
+// outranked every dot the formulator had actually prioritised and took slots in the essential
+// six. Seen live 2026-09-07: 明眸 displaced a cellular dot from a base built for a user whose
+// worst dimension was Cellular Age, while DOT-N6/DOT-N9 sat at their ceilings.
+test('a fixed-dose dot no longer outranks a dot the formulator emphasised', () => {
+    const F = [
+        { key_name: 'DOT-A', name_zh: 'A', timing: 'Morning', timing_flexible: true, target_dots_min: 1, target_dots_max: 11 },
+        { key_name: 'DOT-B', name_zh: 'B', timing: 'Morning', timing_flexible: true, target_dots_min: 1, target_dots_max: 11 },
+        { key_name: 'DOT-C', name_zh: 'C', timing: 'Morning', timing_flexible: true, target_dots_min: 1, target_dots_max: 11 },
+        // The fixed-dose dot: one value, no emphasis to read.
+        { key_name: 'DOT-F', name_zh: 'F', timing: 'Morning', timing_flexible: true, target_dots_min: 1, target_dots_max: 1 },
+    ];
+    //        ceiling      middle      floor       forced
+    const m = { dots: { 'DOT-A': 11, 'DOT-B': 6, 'DOT-C': 1, 'DOT-F': 1 } };
+    const capped = D._capDistinctDots(m, { dots: {} }, F, 2);
+    const kept = Object.keys(capped.morning.dots).sort();
+    assert.deepStrictEqual(kept, ['DOT-A', 'DOT-B'],
+        'the emphasised dot must survive the fixed-dose one, which scores neutral and loses the tie on total');
 });
 
 // ── _selectTierVariant: what the redeemed code actually buys ────────────────────────────────────
@@ -315,61 +329,72 @@ test('_selectTierVariant falls back to the base — never to the widest', () => 
 
 // ── The card ────────────────────────────────────────────────────────────────────────────────────
 
-test('the card carries a #rung block per upgrade, and the client reads back what the server wrote', () => {
+test('the card carries a #tier block per package, each drawn in full', () => {
     const { morning, evening } = allocation();
     const out = D._applyTierLadder({
         morningRecipe: morning, eveningRecipe: evening, dotsFormulary: FORMULARY, tiers: TIERS,
         orderContext: { mode: 'buy', maxDistinctDots: null },
-        pitchByTier: new Map([[2, '把抗炎这一环补全'], [3, '接上最后两条通路']]),
     });
+    // Copy is written afterwards, by a call that is shown these exact packages (lib/tierCopy.js).
+    out.tierCards[0].pitch = '打底的那一套';
+    out.tierCards[1].pitch = '把抗炎这一环补全';
+    out.tierCards[2].pitch = '接上最后两条通路';
+    for (const t of out.tierCards) t.tier_description = t.tier_label + ' —— 定位说明';
     const block = D._buildFormulaChartBlock(out.morningRecipe, out.eveningRecipe, FORMULARY, 'zh', {
-        planId: 38860, orderMode: 'buy', rungs: out.rungs,
+        planId: 38860, orderMode: 'buy', tiers: out.tierCards,
     });
     const seg = mdToSegments(block.trim()).find(s => s.t === 'formula');
-    assert.strictEqual(seg.rungs.length, 2);
-    assert.deepStrictEqual(seg.rungs.map(r => r.label), ['8种原粒', '10种原粒']);
-    assert.deepStrictEqual(seg.rungs.map(r => r.width), [8, 10]);
-    assert.deepStrictEqual(seg.rungs.map(r => r.pitch), ['把抗炎这一环补全', '接上最后两条通路']);
-    assert.deepStrictEqual(seg.rungs.map(r => r.items.length), [2, 2]);
-    // Rung rows must not be swept into the last day group — they are not a day of the cycle.
-    const dayKeys = new Set(seg.groups.flatMap(g => g.items.map(i => i.key)));
-    for (const r of seg.rungs) for (const it of r.items) {
-        assert.ok(!dayKeys.has(it.key), `${it.key} leaked from a rung into the chart`);
+    assert.strictEqual(seg.tiers.length, 3);
+    assert.deepStrictEqual(seg.tiers.map(t => t.label), ['轻享套装', '臻选套装', '尊享套装']);
+    assert.deepStrictEqual(seg.tiers.map(t => t.width), [6, 8, 10]);
+    assert.deepStrictEqual(seg.tiers.map(t => t.pitch), ['打底的那一套', '把抗炎这一环补全', '接上最后两条通路']);
+    assert.deepStrictEqual(seg.tiers.map(t => t.note),
+        ['轻享套装 —— 定位说明', '臻选套装 —— 定位说明', '尊享套装 —— 定位说明']);
+    // Each package is a COMPLETE formula, not a delta: its roster is its whole everyday chart.
+    assert.deepStrictEqual(seg.tiers.map(t => t.dots.length), [6, 8, 10]);
+    // And the card states no count and no "+N": what separates the packages is moving beyond the
+    // number of dots, so the roster is shown and the arithmetic is not.
+    for (const t of seg.tiers) {
+        assert.strictEqual(t.dotCount, undefined, 'a package must not carry a dot count');
+        assert.strictEqual(t.more, undefined, 'nor a delta over the package below');
     }
-    // Names are the formulary's, verbatim — the rung is server-written, like every other row.
-    assert.ok(seg.rungs[0].items.every(i => /^原粒\d+号$/.test(i.name)));
+    // Exactly one package opens, and the collapsed ones still carry a roster to compare against.
+    assert.strictEqual(seg.tiers.filter(t => t.open).length, 1);
+    for (const t of seg.tiers) assert.ok(t.dots.length > 0, `${t.label} has nothing to compare`);
+    // Names are the formulary's, verbatim — every row is server-written.
+    assert.ok(seg.tiers[0].dots.every(d => /^原粒\d+号$/.test(d.name)));
+    // The retired ladder is not written any more.
+    assert.ok(!block.includes('#rung'));
 });
 
-test('a rung row carries the weeks a rotated upgrade runs in, and only then', () => {
-    // A tier caps dots per WEEK, so "+2" can mean two more dots every week or the same dot for two
-    // more weeks. The row says which — and stays exactly as it was for a dot that runs all four,
-    // so a card written before rotation reached the rungs still parses.
-    const weeks = { 'DOT-N8': [3, 4] };
-    const morning = { dots: { 'DOT-N1': 6, 'DOT-N3': 5, 'DOT-N5': 4, [N7_KEY]: 5 }, weeks };
-    const evening = { dots: { 'DOT-N2': 6, 'DOT-N4': 5, 'DOT-N6': 4, 'DOT-N8': 5 }, weeks };
+test('a package chart is its own, and DOT-N7 belongs to all of them', () => {
+    const { morning, evening } = allocation();
     const out = D._applyTierLadder({
         morningRecipe: morning, eveningRecipe: evening, dotsFormulary: FORMULARY, tiers: TIERS,
         orderContext: { mode: 'buy', maxDistinctDots: null },
     });
     const block = D._buildFormulaChartBlock(out.morningRecipe, out.eveningRecipe, FORMULARY, 'zh', {
-        planId: 1, orderMode: 'buy', rungs: out.rungs,
+        planId: 1, orderMode: 'buy', tiers: out.tierCards,
     });
     const seg = mdToSegments(block.trim()).find(s => s.t === 'formula');
-    const item = seg.rungs[0].items[0];
-    assert.strictEqual(item.weeks, '3,4', 'bare week numbers — the word around them is the page\'s');
-
-    // The all-four-weeks case writes no 6th field at all.
-    const flat = D._applyTierLadder({
-        morningRecipe: { dots: { 'DOT-N1': 6, 'DOT-N3': 5, 'DOT-N5': 4, [N7_KEY]: 5 } },
-        eveningRecipe: { dots: { 'DOT-N2': 6, 'DOT-N4': 5, 'DOT-N6': 4, 'DOT-N8': 5, 'DOT-N9': 3 } },
-        dotsFormulary: FORMULARY, tiers: TIERS, orderContext: { mode: 'buy', maxDistinctDots: null },
-    });
-    const flatBlock = D._buildFormulaChartBlock(flat.morningRecipe, flat.eveningRecipe, FORMULARY, 'zh', {
-        planId: 1, orderMode: 'buy', rungs: flat.rungs,
-    });
-    const flatSeg = mdToSegments(flatBlock.trim()).find(s => s.t === 'formula');
-    for (const r of flatSeg.rungs) for (const it of r.items) {
-        assert.strictEqual(it.weeks, '', 'a dot running every week needs no week label');
+    // Every package draws its own everyday group AND its own N7 reset days — it is a whole
+    // 28-day formula, not a fragment of the one above it.
+    for (const t of seg.tiers) {
+        assert.ok(t.groups.some(g => g.kind === 'n7'), `${t.label} lost its reset days`);
+        assert.ok(t.groups.some(g => g.kind === 'regular'), `${t.label} lost its everyday dose`);
+    }
+    // The roster is the everyday dose only: N7 is dosed alone on its own days and counts toward
+    // no package's width, so listing it would misstate what the buyer is choosing between.
+    for (const t of seg.tiers) {
+        assert.ok(!t.dots.some(d => d.key === N7_KEY), 'N7 must not appear in a package roster');
+    }
+    // Nesting is visible on the card, not just in the data: every dot of a narrower package is in
+    // the wider one, so an upgrade never takes something away.
+    const rosters = seg.tiers.map(t => new Set(t.dots.map(d => d.key)));
+    for (let i = 1; i < rosters.length; i++) {
+        for (const key of rosters[i - 1]) {
+            assert.ok(rosters[i].has(key), `${key} vanished on the way up to ${seg.tiers[i].label}`);
+        }
     }
 });
 
@@ -378,43 +403,52 @@ test('a pitch is sanitised and length-capped before it reaches the card', () => 
     const out = D._applyTierLadder({
         morningRecipe: morning, eveningRecipe: evening, dotsFormulary: FORMULARY, tiers: TIERS,
         orderContext: { mode: 'buy', maxDistinctDots: null },
-        pitchByTier: new Map([[2, 'a|b\nc ' + 'x'.repeat(400)]]),
     });
+    out.tierCards[1].pitch = 'a|b\nc ' + 'x'.repeat(400);
     const block = D._buildFormulaChartBlock(out.morningRecipe, out.eveningRecipe, FORMULARY, 'zh', {
-        planId: 1, orderMode: 'buy', rungs: out.rungs,
+        planId: 1, orderMode: 'buy', tiers: out.tierCards,
     });
-    const line = block.split('\n').find(l => l.startsWith('#rung|8种原粒'));
+    const line = block.split('\n').find(l => l.startsWith('#pitch|'));
     assert.ok(!/\r|\n/.test(line));
     const seg = mdToSegments(block.trim()).find(s => s.t === 'formula');
-    assert.ok(seg.rungs[0].pitch.length <= 90, 'a pitch long enough to push the CTA off screen is cut');
-    assert.ok(!seg.rungs[0].pitch.includes('|'), 'a pipe would break the row split');
+    assert.ok(seg.tiers[1].pitch.length <= 90, 'a pitch long enough to push the CTA off screen is cut');
+    assert.ok(!seg.tiers[1].pitch.includes('|'), 'a pipe would break the row split');
 });
 
-test('a pitch naming a dot outside its own rung is dropped, not shipped', () => {
+test('a pitch naming a dot outside its own package is dropped, not shipped', () => {
     // Found live on dev, first real run: the model narrated one split ("加配肠道焕新与脉络
-    // 畅流") and tagged a different one, so the copy promised dots the rung did not hold and one
-    // the formulation did not contain at all. The server owns membership; the model only owns the
-    // reasoning, so a pitch that contradicts membership is dropped rather than repaired.
-    const rung = { tier_label: '8种原粒', max_distinct_dots: 8, added: [{ key: 'DOT-N9', am: 2, pm: 0 }] };
-    assert.strictEqual(D._rungPitch({ ...rung, pitch: '再添原粒12号，补上最后一环' }, FORMULARY), '',
-        'a display name from another rung drops the pitch');
-    assert.strictEqual(D._rungPitch({ ...rung, pitch: '加配12号原粒，从两路强化' }, FORMULARY), '',
+    // 畅流") and tagged a different one, so the copy promised dots the package did not hold and
+    // one the formulation did not contain at all. The server owns membership; the model only owns
+    // the reasoning, so a pitch that contradicts membership is dropped rather than repaired.
+    const tier = {
+        tier_label: '臻选套装', max_distinct_dots: 8,
+        morning: { dots: { 'DOT-N9': 2 } }, evening: { dots: {} },
+    };
+    assert.strictEqual(D._tierPitch({ ...tier, pitch: '再添原粒12号，补上最后一环' }, FORMULARY), '',
+        'a display name from another package drops the pitch');
+    assert.strictEqual(D._tierPitch({ ...tier, pitch: '加配12号原粒，从两路强化' }, FORMULARY), '',
         'so does the conversational key the prompt tells the model to use in prose');
     // Its own dot is fine, and so is copy that names nothing — which is what the prompt asks for.
     const own = '加配原粒9号，把这一环补全';
-    assert.strictEqual(D._rungPitch({ ...rung, pitch: own }, FORMULARY), own);
+    assert.strictEqual(D._tierPitch({ ...tier, pitch: own }, FORMULARY), own);
     const generic = '把白天的清醒感和夜里的修复接成一条完整的线';
-    assert.strictEqual(D._rungPitch({ ...rung, pitch: generic }, FORMULARY), generic);
+    assert.strictEqual(D._tierPitch({ ...tier, pitch: generic }, FORMULARY), generic);
 });
 
-test('a card with no rungs is exactly the card this produced before rungs existed', () => {
+test('a card with no packages is exactly the card this produced before packages existed', () => {
     const { morning, evening } = allocation();
     const withNone = D._buildFormulaChartBlock(morning, evening, FORMULARY, 'zh', { planId: 1, orderMode: 'buy' });
-    const withEmpty = D._buildFormulaChartBlock(morning, evening, FORMULARY, 'zh', { planId: 1, orderMode: 'buy', rungs: [] });
+    const withEmpty = D._buildFormulaChartBlock(morning, evening, FORMULARY, 'zh', { planId: 1, orderMode: 'buy', tiers: [] });
     assert.strictEqual(withNone, withEmpty);
+    assert.ok(!withNone.includes('#tier'));
     assert.ok(!withNone.includes('#rung'));
+    // The client still gets one package to render, so the page has a single code path.
     const seg = mdToSegments(withNone.trim()).find(s => s.t === 'formula');
     assert.deepStrictEqual(seg.rungs, [], 'a legacy card reads back as a card with no upgrades');
+    assert.strictEqual(seg.tiers.length, 1);
+    assert.strictEqual(seg.tiers[0].label, '');
+    assert.strictEqual(seg.tiers[0].open, true);
+    assert.deepStrictEqual(seg.tiers[0].groups, seg.groups);
 });
 
 test('a width caps a WEEK, so a tier may run more distinct dots than its own number', () => {

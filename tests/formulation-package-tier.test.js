@@ -8,7 +8,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const D = require('../src/functions/worker/handlers/dots.js');
+const D = { ...require('../src/functions/worker/lib/formulation.js'), ...require('../src/functions/worker/lib/chatCards.js') };
 const { N7_KEY, PLAN_DAYS, PLAN_WEEKS, DAYS_PER_WEEK } = require('../src/functions/worker/lib/dotsProductModel.js');
 const { validateAgFormulation } = require('../src/functions/worker/lib/agFormulation.js');
 

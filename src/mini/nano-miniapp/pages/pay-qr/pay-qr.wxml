@@ -1,0 +1,38 @@
+<view class="payqr-page {{theme === 'light' ? 'theme-light' : ''}}">
+  <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
+  <view class="app-header">
+    <view class="back-btn" bindtap="goBack">
+      <text class="back-icon">‹</text>
+      <text class="back-label">{{t.back}}</text>
+    </view>
+    <text class="header-title">{{t.title}}</text>
+  </view>
+
+  <scroll-view scroll-y class="payqr-content">
+    <view class="payqr-card">
+      <view class="payqr-method">{{methodLabel}}</view>
+
+      <view class="payqr-image-wrap" wx:if="{{qr && !loadError}}">
+        <image class="payqr-image" src="{{qr}}" mode="aspectFit" bindtap="handlePreview" binderror="onQrError"></image>
+      </view>
+      <view class="payqr-error" wx:elif="{{loadError}}">{{t.loadFailed}}</view>
+
+      <view class="payqr-meta" wx:if="{{amount}}">
+        <text class="payqr-meta-label">{{t.amount}}</text>
+        <text class="payqr-amount">¥{{amount}}</text>
+      </view>
+      <view class="payqr-meta" wx:if="{{payee}}">
+        <text class="payqr-meta-label">{{t.payee}}</text>
+        <text class="payqr-payee">{{payee}}</text>
+      </view>
+
+      <view class="payqr-hint">{{isAlipay ? t.hintAlipay : t.hintWechat}}</view>
+    </view>
+
+    <view class="payqr-actions" wx:if="{{qr && !loadError}}">
+      <button class="payqr-btn primary" bindtap="handleSave" disabled="{{saving}}">{{t.save}}</button>
+    </view>
+
+    <view class="payqr-after">{{t.hintAfter}}</view>
+  </scroll-view>
+</view>

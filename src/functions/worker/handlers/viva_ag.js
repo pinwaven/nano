@@ -30,6 +30,8 @@
 
 const crypto = require('crypto');
 const { pool } = require('../lib/db');
+const { humanizeDotCodes } = require('../lib/dotNames');
+const { humanizeSubAgeKeys } = require('../lib/subAgeLabels');
 const ossLib = require('../lib/oss');
 const { requireVivaAgAccess } = require('../lib/vivaAgAccess');
 const { buildTwinBundle, presignDocuments, fetchHealthDocuments, BUNDLE_VERSION, DEFAULT_DOC_URL_TTL_SECONDS, clampInt } = require('../lib/twinBundle');
@@ -46,7 +48,10 @@ const { formatToShanghai } = require('../lib/time-utils');
 // Preset intents the panel offers. 'dots_formulation' asks the agent to design a custom Dots
 // (原粒) formulation from the whole twin — the bundle already carries dots_formulary and the
 // user's committed nutrition schedule, so it needs no extra data, only a different intent.
-const VALID_COMMAND_KEYS = new Set(['full_analysis', 'document_review', 'risk_screen', 'dots_formulation']);
+// 'food_sensitivity_review' reads the user's uploaded 慢性食物过敏 panel, which the twin bundle
+// now carries whole (layers.medical_records.food_sensitivity, bundle_version 3) alongside the
+// original PDF — so like dots_formulation it needs no extra data, only a different intent.
+const VALID_COMMAND_KEYS = new Set(['full_analysis', 'document_review', 'risk_screen', 'dots_formulation', 'food_sensitivity_review']);
 const MAX_COMMAND_LENGTH = 2000;
 const MAX_SUMMARY_LENGTH = 4000;
 const MAX_RESULT_BYTES = 512 * 1024;
@@ -228,10 +233,20 @@ async function _deliverFailure(job, reason) {
 // when rich_format is on the miniapp renderer interprets ::: display-card fences
 // (prompts/chat/outputFormat.js). An external system writing raw ::: into a bubble is therefore
 // a render-injection surface, so the fences are stripped rather than trusted.
-function _sanitizeSummary(raw) {
+async function _sanitizeSummary(raw, lang = 'zh') {
     let text = String(raw || '').trim();
     text = text.replace(/^:::.*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
     if (text.length > MAX_SUMMARY_LENGTH) text = text.slice(0, MAX_SUMMARY_LENGTH).trim();
+    // An internal dot code is no more readable coming from the external agent than from Viva —
+    // prod has 4 AG summaries carrying one. The formulary is fetched here rather than threaded in
+    // because this runs once per completed job, not per turn; a failed lookup leaves the text
+    // exactly as the agent wrote it.
+    try {
+        const { rows } = await pool.query('SELECT key_name, key_name_zh, name, name_zh FROM dots');
+        text = humanizeSubAgeKeys(humanizeDotCodes(text, rows, lang), lang);
+    } catch (err) {
+        _logError('dot code rewrite skipped', err, {});
+    }
     return text;
 }
 
@@ -349,6 +364,62 @@ async function handlePostVivaAgJob(body) {
     } catch (err) {
         _logError('handlePostVivaAgJob failed', err);
         return _fail(REASONS.INTERNAL_ERROR, err.message);
+    }
+}
+
+/**
+ * Queue a free deep review of a freshly extracted food-sensitivity panel (§40).
+ *
+ * Called from the extraction result path, not from the panel, so it deliberately does NOT go
+ * through requireVivaAgAccess: it grants the window itself first. Everything else it keeps —
+ * the daily cap, the one-in-flight constraint, the document snapshot.
+ *
+ * THE REVIEW IS NARRATION, NEVER THE GUIDELINE. The restrictions are already derived and written
+ * by lib/foodSensitivity.js before this is ever called, so a review that is slow, refused or
+ * never claimed costs the user a written explanation and nothing else. Same split §36 draws
+ * between what nano decides and what an external agent is allowed to say.
+ *
+ * Every refusal is a quiet no-op: an upload must not fail because a bonus review could not run.
+ */
+async function enqueueFoodSensitivityReview(userId, { language = 'zh' } = {}) {
+    try {
+        // Required at call time, not at module load: viva_subscription.js is a cold path for
+        // this file, and requiring it at the top would pull it into every warm container. Same
+        // reasoning handlers/users.js records for its own require of ./chat.
+        const { grantFoodPanelReviewAccess } = require('./viva_subscription');
+        const grant = await grantFoodPanelReviewAccess(userId);
+        if (!grant.granted) return { queued: false, reason: grant.reason };
+
+        const { rows: [{ count }] } = await pool.query(
+            `SELECT COUNT(*) FROM viva_ag_jobs WHERE user_id = $1 AND created_at > NOW() - INTERVAL '1 day'`,
+            [userId]
+        );
+        if (parseInt(count, 10) >= MAX_JOBS_PER_DAY) return { queued: false, reason: 'daily_limit' };
+
+        const { rows: [user] } = await pool.query(
+            'SELECT user_id, channel_id, language FROM users WHERE user_id = $1', [userId]);
+        if (!user) return { queued: false, reason: 'user_not_found' };
+
+        const docs = await fetchHealthDocuments(pool, userId, null);
+        const jobUid = crypto.randomUUID();
+        try {
+            const { rows: [job] } = await pool.query(
+                `INSERT INTO viva_ag_jobs
+                    (job_uid, user_id, channel_id, persona_type, language, command_key, command, params, document_ids)
+                 VALUES ($1,$2,$3,'viva',$4,'food_sensitivity_review','food_sensitivity_review','{}'::jsonb,$5)
+                 RETURNING job_uid`,
+                [jobUid, userId, user.channel_id, user.language || language, docs.map(d => Number(d.id))]
+            );
+            return { queued: true, job_uid: job.job_uid };
+        } catch (err) {
+            // uniq_viva_ag_jobs_active — something is already running for this user. Routine, and
+            // the right outcome: their in-flight analysis is worth more than a duplicate review.
+            if (err.code === '23505') return { queued: false, reason: 'job_already_active' };
+            throw err;
+        }
+    } catch (err) {
+        _logError('enqueueFoodSensitivityReview failed', err, { user_id: userId });
+        return { queued: false, reason: 'internal_error' };
     }
 }
 
@@ -1151,7 +1222,7 @@ async function handlePostVivaAgResult(body) {
             return { success: true, already_completed: true, job_uid: job.job_uid, notification_id: job.notification_id };
         }
 
-        const summary = _sanitizeSummary(body?.summary);
+        const summary = await _sanitizeSummary(body?.summary);
         if (!summary) return _fail(REASONS.MISSING_PARAMS, 'summary is required');
 
         const result = body?.result ?? null;
@@ -1273,6 +1344,7 @@ async function handlePostVivaAgFail(body) {
 }
 
 module.exports = {
+    enqueueFoodSensitivityReview,
     // User-facing (app bearer + ?openid=)
     handlePostVivaAgJob,
     handleGetVivaAgJobs,
@@ -1296,6 +1368,9 @@ module.exports = {
     // Injected into handlers/questionnaires.js from index.js, so that module never has to
     // require this one — the same pattern saveChatMessage already uses there.
     resumeVivaAgJobForAssignment,
+    // Shared with handlers/twin_reports.js (the 数字孪生 综合报告 card), which lists the same
+    // completed-job artifacts by INDEX so the oss_key never leaves the server there either.
+    publicResultFiles: _publicResultFiles,
     // Exported for tests / the docs endpoint
     VALID_COMMAND_KEYS,
     MAX_JOBS_PER_DAY,

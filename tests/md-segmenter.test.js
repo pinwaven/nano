@@ -236,3 +236,32 @@ test('MD_TAG_STYLE carries no theme-dependent colour (tagStyle has no observer, 
   }
   assert.match(MD_TAG_STYLE.a, /color:inherit/, 'links must inherit the bubble colour to stay theme-safe');
 });
+
+// ── :::lesson / :::checkin (打卡 programs, §42) ──────────────────────────────
+
+test(':::lesson parses into a lesson segment with runtime flags at their defaults', () => {
+  const segs = mdToSegments('intro\n\n:::lesson\n12|第一课 · 十年生命能力\n:::');
+  assert.deepStrictEqual(segs.map(s => s.t), ['html', 'lesson']);
+  assert.deepStrictEqual(segs[1], { t: 'lesson', lessonId: '12', title: '第一课 · 十年生命能力', url: '', poster: '', loading: false, done: false });
+});
+
+test(':::lesson with a non-numeric id is not a lesson — falls back to prose, never dropped', () => {
+  const segs = mdToSegments(':::lesson\nabc|x\n:::');
+  assert.deepStrictEqual(segs.map(s => s.t), ['html']);
+  assert.match(segs[0].h, /abc/);
+});
+
+test(':::checkin parses program id, day index and label; flags default to inert', () => {
+  const segs = mdToSegments(':::checkin\n3|1|开始打卡\n:::');
+  assert.deepStrictEqual(segs, [{ t: 'checkin', programId: '3', dayIndex: '1', label: '开始打卡', done: false, lessonDone: true, active: false }]);
+});
+
+test(':::checkin with a bad day index falls back to prose', () => {
+  assert.deepStrictEqual(types(':::checkin\n3|one|开始打卡\n:::'), ['html']);
+});
+
+test('a full program-day card keeps prose, lesson and checkin in order', () => {
+  assert.deepStrictEqual(
+    types('**Day 1**\n\n今天三件事\n\n:::lesson\n12|课\n:::\n\n:::checkin\n3|1|开始打卡\n:::'),
+    ['html', 'lesson', 'checkin']);
+});

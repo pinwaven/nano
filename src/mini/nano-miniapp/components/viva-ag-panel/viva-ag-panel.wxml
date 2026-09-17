@@ -21,41 +21,9 @@
       </view>
     </view>
 
-    <!-- ── Documents ── -->
-    <view class="ag-section">
-      <view class="ag-section-head">
-        <text class="ag-section-title">{{t.documents}}</text>
-        <text class="ag-section-count">{{documents.length}}</text>
-      </view>
-
-      <view class="ag-upload-btn {{uploading ? 'ag-btn-busy' : ''}}" bindtap="chooseDocument">
-        <text wx:if="{{!uploading}}">{{t.uploadBtn}}</text>
-        <text wx:else>{{uploadStatus}}</text>
-      </view>
-
-      <view wx:if="{{docsLoading}}" class="ag-muted">{{t.loading}}</view>
-
-      <view wx:elif="{{documents.length === 0}}" class="ag-empty">
-        <text class="ag-empty-title">{{t.noDocsTitle}}</text>
-        <!-- wx.chooseMessageFile can only reach files that live in a WeChat conversation;
-             there is no filesystem picker on the platform, so the instruction is required. -->
-        <text class="ag-empty-hint">{{t.noDocsHint}}</text>
-      </view>
-
-      <view wx:else>
-        <view wx:for="{{documents}}" wx:key="id" class="ag-doc">
-          <view class="ag-doc-main" bindtap="openDocument" data-id="{{item.id}}">
-            <text class="ag-doc-name">{{item.filename}}</text>
-            <view class="ag-doc-meta">
-              <text class="ag-doc-badge">{{item.typeLabel}}</text>
-              <text wx:if="{{item.doc_date}}" class="ag-doc-sub">{{item.doc_date}}</text>
-              <text class="ag-doc-sub">{{item.sizeLabel}}</text>
-            </view>
-          </view>
-          <text class="ag-doc-del" catchtap="deleteDocument" data-id="{{item.id}}" data-name="{{item.filename}}">{{t.delete}}</text>
-        </view>
-      </view>
-    </view>
+    <!-- ── Documents ── the same component the 数字孪生 subtab hosts, so the two surfaces
+         can never drift apart against one backend. -->
+    <health-documents user-id="{{userId}}" lang="{{lang}}" theme="{{theme}}" />
 
     <!-- ── Formulation progress ──
          A dots_formulation result keeps moving after the job says "completed": expert review,

@@ -2020,6 +2020,12 @@
   margin-top: 4rpx;
 }
 
+/* A suggested catalog key on an unmapped row: a hint, styled as one — never the marker's name. */
+.rpt-ev-maybe {
+  color: rgba(var(--wave-rgb), 0.5);
+  font-style: italic;
+}
+
 .rpt-ev-right {
   display: flex;
   align-items: center;
@@ -2340,6 +2346,29 @@
   font-size: var(--fs-17, 17rpx);
   color: rgba(var(--wave-rgb), 0.35);
   display: block;
+}
+
+/* A marker's own date when it differs from the panel's newest, and the trend affordance. */
+.ht-lab-sub {
+  font-size: var(--fs-17, 17rpx);
+  color: rgba(var(--wave-rgb), 0.45);
+  display: block;
+  margin-top: 2rpx;
+}
+
+.ht-lab-item-trend { border-style: solid; }
+
+.ht-lab-hint {
+  display: block;
+  margin-top: 12rpx;
+  font-size: var(--fs-19, 19rpx);
+  color: rgba(var(--wave-rgb), 0.35);
+}
+
+.ht-lab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ═══ Wearable Device ═══ */
@@ -3271,6 +3300,7 @@
 .theme-light .rpt-date { color: #6B5839; }
 .theme-light .rpt-arrow { color: #856C47; }
 .theme-light .ht-lab-unit { color: #7A6342; }
+.theme-light .ht-lab-sub, .theme-light .ht-lab-hint { color: #8A7A62; }
 .theme-light .wd-ring-icon { color: #5D4C32; }
 .theme-light .wd-bind-sub { color: #6B5839; }
 .theme-light .wd-server-hint { color: #5D4C32; }
@@ -3313,3 +3343,131 @@
 .theme-light .ring-sleep-leg-txt { color: #6B5839; }
 .theme-light .privacy-body { color: #5D4C32; }
 .theme-light .privacy-cancel-btn text { color: #6B5839; }
+
+/* Chronic food sensitivity (§40) — Medical Records layer, below the lab snapshot and the
+   report list. Its own block rather than a lab-grid tile: a food titre is not a clinical
+   marker with a reference range, and what a user needs from it is a name and an instruction,
+   not a number in a grid. */
+.fs-block {
+  margin-top: 24rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid rgba(var(--wave-rgb), 0.08);
+}
+
+.fs-summary {
+  display: block;
+  margin: 8rpx 0 16rpx;
+  font-size: var(--fs-24, 24rpx);
+  color: rgba(var(--wave-rgb), 0.62);
+}
+
+.fs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.fs-row {
+  padding: 16rpx 20rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid rgba(var(--wave-rgb), 0.12);
+  background: rgba(var(--wave-rgb), 0.03);
+}
+
+.fs-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+}
+
+.fs-food {
+  font-size: var(--fs-26, 26rpx);
+  font-weight: 600;
+  color: rgba(var(--wave-rgb), 0.9);
+}
+
+.fs-class {
+  font-size: var(--fs-20, 20rpx);
+  font-weight: 700;
+  letter-spacing: 1rpx;
+}
+
+/* Pushed to the trailing edge so the food names stay left-aligned and scannable. */
+.fs-val {
+  margin-left: auto;
+  font-size: var(--fs-22, 22rpx);
+  color: rgba(var(--wave-rgb), 0.45);
+}
+
+.fs-window {
+  display: block;
+  margin-top: 8rpx;
+  font-size: var(--fs-22, 22rpx);
+  color: rgba(var(--wave-rgb), 0.55);
+}
+
+.fs-subs {
+  display: block;
+  margin-top: 6rpx;
+  font-size: var(--fs-22, 22rpx);
+  color: rgba(var(--wave-rgb), 0.45);
+}
+
+.fs-footnote {
+  display: block;
+  margin-top: 16rpx;
+  font-size: var(--fs-20, 20rpx);
+  color: rgba(var(--wave-rgb), 0.35);
+}
+
+/* ── 综合报告 card (between the hero and the twin layers) ───────────────── */
+.tr-count {
+  margin-left: auto;
+  font-size: var(--fs-22, 22rpx);
+  color: rgba(var(--blue-rgb), 0.85);
+}
+.tr-card {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 22rpx 24rpx;
+  border-radius: 20rpx;
+  background: var(--navy-card);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.28);
+}
+.tr-card:active { border-color: rgba(var(--blue-rgb), 0.6); }
+.tr-icon {
+  width: 72rpx; height: 72rpx; flex: none;
+  border-radius: 16rpx;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(var(--blue-rgb), 0.12);
+  font-size: 36rpx;
+}
+.tr-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6rpx; }
+.tr-title {
+  font-size: var(--fs-28, 28rpx);
+  font-weight: 600;
+  color: var(--wave);
+}
+.tr-meta {
+  font-size: var(--fs-22, 22rpx);
+  color: rgba(var(--wave-rgb), 0.55);
+}
+.tr-summary {
+  font-size: var(--fs-22, 22rpx);
+  line-height: 1.45;
+  color: rgba(var(--wave-rgb), 0.75);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.tr-open {
+  flex: none;
+  padding: 10rpx 20rpx;
+  border-radius: 999rpx;
+  background: var(--blue);
+  color: #fff;
+  font-size: var(--fs-22, 22rpx);
+  font-weight: 600;
+}

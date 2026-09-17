@@ -15,6 +15,20 @@
 
 const { formatQuestionnaireContext } = require('../handlers/questionnaires');
 const { formatToShanghai } = require('./time-utils');
+const { describeBioAge } = require('./subAgeLabels');
+const { fetchWearableDaily } = require('./wearableDaily');
+// Safe: handlers/formulation_orders.js requires nothing from lib/agentic*, so this closes no cycle
+// in either load order, and it adds no module to the cold path — handlers/chat.js already
+// requires both.
+const {
+    _fetchFormulationPackages,
+    _fetchFormulationCodes,
+    PACKAGE_STAGE_NARRATION,
+} = require('../handlers/formulation_orders');
+const { fetchFormulationTiers } = require('./gcnClient');
+const { resolveGcnSector } = require('./channels');
+// Pure, no DB — the class→window map is a transcription of the report's own 戒断方案 page.
+const { CLASS_WINDOWS } = require('./foodSensitivity');
 
 const AGENTIC_TOOL_DEFS = [
     {
@@ -68,12 +82,28 @@ const AGENTIC_TOOL_DEFS = [
     {
         type: 'function',
         function: {
-            name: 'get_dot_inventory',
-            description: "Fetch the user's physical dot cartridge inventory (which dots are loaded, remaining/total dose counts, status) — use for questions like how many doses of a dot are left.",
+            name: 'get_formulation_packages',
+            // Replaced get_dot_inventory, which read user_cartridges — the Neo dispenser's
+            // cartridge table for hardware that is not shipping (§28d gated it off), so it could
+            // only ever narrate legacy rows. It was the closest-sounding tool to "what dots do I
+            // have", which is exactly how a purchase question got answered out of it. §28g.
+            description: "Fetch what the user has actually BOUGHT of 原粒 · 定制营养素 · 28天: their package orders and each one's current stage (paid, being compounded, shipped, in progress…), any unredeemed codes they hold, and the three packages the store sells. Use for every question about a purchase, an order, payment, shipping or which packages exist. This is the ONLY source for those — a nutrition plan or dosing schedule does not say what was bought.",
+            parameters: { type: 'object', properties: {} },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_food_sensitivity',
+            description: "Fetch the user's chronic food-sensitivity (慢性食物过敏 / food IgG) panel: which foods came back at a sensitivity class, how long each is to be avoided, what it is commonly hidden in and what to eat instead. Use for any question about which foods they react to, whether a specific food is safe for them, or what their 过敏/忌口 situation is. Pass `foods` to look up specific foods by name — the panel covers a fixed list, and a food that was never tested is reported as untested rather than guessed. This is the ONLY source for it: a nutrition plan, a dots formula and a lab panel all answer different questions.",
             parameters: {
                 type: 'object',
                 properties: {
-                    include_removed: { type: 'boolean', description: 'Also include removed/finished cartridges, not just active ones' },
+                    foods: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Specific food names to look up, in Chinese as the user said them (e.g. ["牛奶","鸡蛋"]). Up to 10.',
+                    },
                 },
             },
         },
@@ -82,11 +112,25 @@ const AGENTIC_TOOL_DEFS = [
         type: 'function',
         function: {
             name: 'get_health_reports',
-            description: "Fetch metadata (date, institution, report type) for external lab/health reports the user has uploaded — not their full content. Use for questions like how many reports they've submitted or when their last one was.",
+            description: "Fetch metadata (date, institution, report type, how many analytes it holds) for external lab/health reports and uploaded health documents the user has — not their values. Use for questions like how many reports they've submitted or when their last one was. For the VALUES of a lab marker over time, use get_lab_history instead.",
             parameters: {
                 type: 'object',
                 properties: {
                     limit: { type: 'integer', description: 'Max rows to return, 1-20 (default 10)' },
+                },
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_lab_history',
+            description: "Per-marker history of the user's EXTERNAL lab results — values read from uploaded 体检报告 / lab PDFs / photographed reports (twin layer 医疗记录), newest first, each with its date, unit, reference range and source. Use for 'what was my LDL last time', 'is my vitamin D improving', 'what did my NAD+ test say', or any question about a lab marker that is not a Kino chip biomarker. Pass key_name to fetch one marker; omit it for the latest few values of every marker. Kino chip biomarkers live in get_biomarkers / get_biomarker_history, not here.",
+            parameters: {
+                type: 'object',
+                properties: {
+                    key_name: { type: 'string', description: 'A biomarker_catalog key such as LDL, VitaminD, Hcy, NAD, AMH. Omit for all markers.' },
+                    limit: { type: 'integer', description: 'Max values per marker, 1-24 (default 6)' },
                 },
             },
         },
@@ -110,6 +154,14 @@ const AGENTIC_TOOL_DEFS = [
                     limit: { type: 'integer', description: 'Max rows to return, 1-10 (default 10)' },
                 },
             },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_wearable_daily',
+            description: "Per-day wearable readings for the last N days (default 7, max 30): each night's sleep hours, deep/REM/light/awake minutes, onset and wake time; daily steps; HRV, resting HR, intraday HR range, SpO2, stress, breath rate. Use this for 'last night', 'today', 'this week' or any question about a specific day or a day-to-day trend — get_health_twin only has 7-day averages.",
+            parameters: { type: 'object', properties: { days: { type: 'integer', description: 'How many days back, 1-30 (default 7).' } } },
         },
     },
     {
@@ -157,9 +209,63 @@ function clampInt(value, fallback, min, max) {
     return Math.max(min, Math.min(n, max));
 }
 
+// Date-ONLY, and that is load-bearing twice over.
+//
+// 1. formatToShanghai returns 'yyyy-MM-dd HH:mm:ss' with no offset, and extractToolGroundTruth's
+//    addDate re-parses whatever we emit with `new Date(value)` — which reads an offsetless string
+//    in the PROCESS timezone (UTC on FC) and then applies +8 again. Every timestamp at or after
+//    16:00 Shanghai would be harvested as the following day, so the date the model was shown and
+//    the date allowlisted as grounded would differ and a correct answer could be rewritten away.
+//    A bare YYYY-MM-DD is parsed as UTC midnight by spec, so the round trip is exact.
+// 2. A raw UTC ISO string has been observed being echoed to the user verbatim, which is why no
+//    tool in this file hands the model one.
+function dateOnly(value) {
+    if (!value) return null;
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    return formatToShanghai(d).slice(0, 10);
+}
+
 // Binds handlers to one user/session. Schema (AGENTIC_TOOL_DEFS) is static and exported
 // separately since it doesn't depend on user_id/language.
-function createAgenticToolHandlers({ pool, user_id, language }) {
+function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_names = null }) {
+    // What a package stage means, and what the user does next, in their language — authored in
+    // handlers/formulation_orders.js beside PACKAGE_STAGES itself. The model narrates these rather than
+    // deriving them, so the chat prompt never has to learn a stage string (§28g).
+    const zh = language === 'zh';
+    const narrate = (stage, fulfillment) => {
+        const entry = PACKAGE_STAGE_NARRATION[stage];
+        if (!entry) return { stage_meaning: null, next_step: null };
+        const copy = entry[zh ? 'zh' : 'en'];
+        let next = copy.next_step || null;
+        // Before payment, next_step stops at "pay" — and the model kept inventing what follows,
+        // landing on "系统将自动进入营养定制环节" in roughly a third of live dev runs. Paying
+        // starts nothing on its own (§28c), so the continuation is spelled out here rather than
+        // banned in the prompt: given the true next sentence, the model has nothing to invent.
+        //
+        // It depends on the package, which is why it is not in the static table: a fast-track
+        // buyer must run 营养定制 themselves, while a premium buyer is explicitly done (§28d).
+        if (next && (stage === 'pending_payment' || stage === 'paid')) {
+            next += fulfillment === 'expert_review'
+                ? (zh ? '之后由 Viva AG 出配方，你不需要再做别的。' : ' After that Viva AG formulates it and nothing more is required from you.')
+                : (zh ? '付款本身不会生成配方——付款之后你还要自己再运行一次「营养定制」并确认提交。' : ' Paying does not itself produce a formula — afterwards you must run the 营养定制 tool yourself and confirm.');
+        }
+        return { stage_meaning: copy.meaning, next_step: next };
+    };
+
+    // An order with no plan attached has no recipe — nobody has decided what goes in it. Said in
+    // words rather than left as a null field, because a null is an invitation to fill it in.
+    const formulaStatus = (planStatus) => {
+        if (planStatus) {
+            return language === 'zh'
+                ? '这一份套餐已经绑定了配方。'
+                : 'A formula is attached to this package.';
+        }
+        return language === 'zh'
+            ? '这一份套餐还没有绑定配方——里面具体放哪些原粒尚未确定，不要描述它的配方内容。'
+            : 'No formula is attached to this package yet — which dots go in it has not been decided, so do not describe its contents.';
+    };
+
     return {
         async get_biomarkers() {
             const { rows } = await pool.query(
@@ -172,7 +278,11 @@ function createAgenticToolHandlers({ pool, user_id, language }) {
                 ok: true,
                 data: {
                     validated: row.data?.validated || {},
-                    bioage_profile: row.data?.bioage_profile || {},
+                    // Labelled in the user's language, never the raw `bioage_profile`: handed
+                    // that object, the model echoed its keys into prose — 「BioAge 39.2岁」,
+                    // 「MetabolicAge（41.5岁）」 on prod 2026-09-14 — and `Scores`/`Details`/`mFI`
+                    // are internals nothing user-facing should narrate (lib/subAgeLabels.js).
+                    bio_age: describeBioAge(row.data?.bioage_profile, language, sub_age_display_names),
                     // Shanghai-local, human-readable — raw pg timestamptz values serialize to
                     // UTC ISO strings ("...T07:51:49.631Z") when JSON.stringify'd for the tool
                     // result, and the model has been observed echoing that literally into a
@@ -255,29 +365,312 @@ function createAgenticToolHandlers({ pool, user_id, language }) {
             };
         },
 
-        async get_dot_inventory(args = {}) {
-            const statusClause = args.include_removed ? '' : `AND uc.status = 'active'`;
-            const { rows } = await pool.query(
-                `SELECT uc.dot_id, d.name, d.name_zh, uc.total_dots, uc.remaining_dots, uc.status, uc.last_dispensed_at
-                 FROM user_cartridges uc
-                 JOIN dots d ON d.id = uc.dot_id
-                 WHERE uc.user_id = $1 ${statusClause}
-                 ORDER BY uc.last_dispensed_at DESC NULLS LAST LIMIT 20`,
+        // What the user has BOUGHT — read live from GCN every time, never cached on a nano row,
+        // because an order can be refunded, cancelled or fulfilled between two reads (§28d).
+        //
+        // Returns a FLAT array with a `kind` discriminator, not a {packages, codes, tiers}
+        // wrapper. extractToolGroundTruth (lib/agenticChat.js) normalises a tool result with
+        // `Array.isArray(data) ? data : (Array.isArray(data.tests) ? data.tests : [data])`, so a
+        // wrapper object is treated as one row and nothing is harvested from it — real order
+        // dates would then never reach extraValidDates and verifyBiomarkerGrounding would flag a
+        // correct answer as a fabrication and rewrite it away (the bug CLAUDE.md §21 step 6
+        // records). The `data.tests` branch is already the fossil of one such wrapper; do not add
+        // the second.
+        // The user's chronic food-sensitivity (IgG) panel. §40.
+        //
+        // FLAT ARRAY, one row per item, each tagged `kind` — never a {panel, items} wrapper.
+        // extractToolGroundTruth normalises a tool result with
+        // `Array.isArray(data) ? data : (Array.isArray(data.tests) ? data.tests : [data])`, so a
+        // wrapper becomes ONE row and harvests nothing: the real panel dates would never reach
+        // extraValidDates and verifyBiomarkerGrounding would rewrite a correct answer away as a
+        // fabrication. The data.tests branch is already the fossil of one such wrapper.
+        //
+        // NO DEGRADED BRANCH, unlike get_formulation_packages. That tool needs one because its
+        // three sources are cross-repo calls that return [] on failure, making "GCN is down"
+        // indistinguishable from "you bought nothing". These are nano's own tables: an empty
+        // result genuinely means no panel has been uploaded, and a query failure throws into the
+        // loop's own catch rather than quietly returning [].
+        async get_food_sensitivity({ foods } = {}) {
+            // ::text on every DATE column. node-postgres parses a DATE at LOCAL midnight, which
+            // serialises to a UTC instant — CLAUDE.md §35 records scheduled_date for 2026-08-16
+            // shipping as "2026-08-15T16:00:00.000Z", the wrong day to any consumer. Casting in
+            // SQL is the documented fix, and it also means these dates skip formatToShanghai
+            // entirely, which would re-apply +8 to an offsetless string (§28g).
+            const { rows: panels } = await pool.query(
+                `SELECT id, panel_key, unit, sampled_at::text AS sampled_at,
+                        report_date::text AS report_date, institution
+                   FROM food_sensitivity_panels
+                  WHERE user_id = $1
+                  ORDER BY report_date DESC, id DESC
+                  LIMIT 1`,
                 [user_id]
             );
-            return {
-                ok: true,
-                data: rows.map(r => ({ ...r, last_dispensed_at: r.last_dispensed_at ? formatToShanghai(r.last_dispensed_at) : null })),
+            // Not an empty array. Handed `[]`, the model narrated a report that does not exist —
+            // 「根据你最新的慢性食物敏感性检测（IgG）报告，鸡蛋未被纳入检测项目」 for a user with no
+            // panel (dev, 2026-09-15). Same lesson as §28g's formula_status: a null is an
+            // invitation to fill it in, a sentence is not. Flat row with a `kind`, per §40.
+            if (panels.length === 0) {
+                return { ok: true, data: [{
+                    kind: 'no_panel',
+                    note: language === 'zh'
+                        ? '这位用户没有上传过慢性食物过敏（IgG）检测报告，系统中没有任何食物的检测结果。不要描述任何报告内容，也不要说某种食物"未被纳入检测"或"未检出"——只能如实说没有这类检测记录，然后按一般营养原则回答。'
+                        : 'This user has never uploaded a chronic food-sensitivity (IgG) panel; there are no food results on file. Do not describe any report, and do not say a food was "not tested" or "not detected" — say plainly that there is no such record, then answer on general nutrition principles.',
+                }] };
+            }
+            const panel = panels[0];
+
+            const { rows: results } = await pool.query(
+                `SELECT r.food_key, r.value, r.below_detection, r.class,
+                        f.name_zh, f.name_en, f.category, f.aliases,
+                        f.common_sources_zh, f.substitutes_zh
+                   FROM food_sensitivity_results r
+                   JOIN food_catalog f ON f.food_key = r.food_key
+                  WHERE r.panel_id = $1
+                  ORDER BY r.class DESC, r.value DESC NULLS LAST`,
+                [panel.id]
+            );
+
+            const today = dateOnly(new Date());
+            const name = (r) => (zh ? r.name_zh : (r.name_en || r.name_zh));
+
+            // Server-written, quoted by the model — the same division §28g draws for a package
+            // stage and §37 for product copy. What a class means and how long the food is stopped
+            // are printed in the report; letting the model paraphrase them is how a 1个月 window
+            // becomes 三到六个月.
+            const severityText = (cls) => (zh
+                ? { 1: '轻度慢性过敏（1级）', 2: '中度慢性过敏（2级）', 3: '重度慢性过敏（3级）' }[cls]
+                : { 1: 'mild chronic sensitivity (class 1)', 2: 'moderate chronic sensitivity (class 2)', 3: 'severe chronic sensitivity (class 3)' }[cls]) || null;
+            const guidanceText = (cls) => {
+                const w = CLASS_WINDOWS[cls];
+                if (!w) return null;
+                if (zh) {
+                    const head = `建议停止摄食 ${w.months} 个月以上`;
+                    if (w.recheck_max_months) return `${head}（${w.months}-${w.recheck_max_months} 个月），之后复查该食物的抗体浓度再决定是否恢复。`;
+                    if (w.reintroduce_interval_days) return `${head}，之后可以每 ${w.reintroduce_interval_days} 天少量摄入一次。`;
+                    return `${head}，之后复查该食物的抗体浓度再决定是否恢复。`;
+                }
+                const head = `Stop eating it for at least ${w.months} month${w.months === 1 ? '' : 's'}`;
+                if (w.recheck_max_months) return `${head} (${w.months}-${w.recheck_max_months}), then recheck the antibody level before deciding whether to bring it back.`;
+                if (w.reintroduce_interval_days) return `${head}, then a small portion no more often than every ${w.reintroduce_interval_days} days.`;
+                return `${head}, then recheck the antibody level.`;
             };
+            const addMonths = (iso, n) => {
+                const [y, m, d] = iso.split('-').map(Number);
+                const first = new Date(Date.UTC(y, (m - 1) + n, 1));
+                const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+                return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, last)))
+                    .toISOString().slice(0, 10);
+            };
+
+            const positives = results.filter(r => r.class >= 1);
+            const rows = [{
+                kind: 'panel',
+                panel_name: zh ? '慢性食物过敏（食物特异性 IgG）' : 'Chronic food sensitivity (food-specific IgG)',
+                unit: panel.unit,
+                sampled_at: panel.sampled_at,
+                report_date: panel.report_date,
+                institution: panel.institution,
+                foods_tested: results.length,
+                foods_with_sensitivity: positives.length,
+                // The distinction the report itself devotes a page to, and the one users most
+                // reliably get wrong. Stated as a fact on the row rather than left to the model,
+                // because calling this an allergy is a clinical misstatement, not a wording slip.
+                note: zh
+                    ? '这是 IgG 介导的慢性食物过敏（食物不耐受），与 IgE 介导的急性过敏不同：它通常是暂时的，戒断一段时间后多数可以恢复摄入。不要把它说成急性过敏或终身过敏。'
+                    : 'This is IgG-mediated chronic food sensitivity (intolerance), which is NOT the same as an IgE-mediated acute allergy: it is usually temporary and most foods can be reintroduced after a period of avoidance. Do not describe it as an acute or lifelong allergy.',
+            }];
+
+            for (const r of positives) {
+                const until = addMonths(panel.report_date, CLASS_WINDOWS[r.class].months);
+                rows.push({
+                    kind: 'restriction',
+                    food: name(r),
+                    category: r.category,
+                    class: r.class,
+                    severity_text: severityText(r.class),
+                    value: r.value == null ? null : Number(r.value),
+                    unit: panel.unit,
+                    guidance: guidanceText(r.class),
+                    avoid_until: until,
+                    // Resolved here rather than left as a date for the model to compare against a
+                    // "today" it does not reliably know. This is what makes the stored valid_until
+                    // actually mean something in a reply.
+                    window_has_passed: until < today,
+                    hidden_in: r.common_sources_zh || [],
+                    eat_instead: r.substitutes_zh || [],
+                });
+            }
+
+            // A specific lookup — "can I drink milk?". Resolved against the SAME declared
+            // vocabulary the panel was ingested through (name plus explicit aliases), never
+            // fuzzily, and a food the panel never covered comes back as untested rather than as
+            // an implied all-clear. 120 foods is a fixed list, not everything a person eats.
+            for (const raw of (Array.isArray(foods) ? foods : []).slice(0, 10)) {
+                const q = String(raw || '').trim();
+                if (!q) continue;
+                const hit = results.find(r => r.name_zh === q
+                    || (r.name_en || '').toLowerCase() === q.toLowerCase()
+                    || (r.aliases || []).includes(q));
+                if (!hit) {
+                    rows.push({
+                        kind: 'not_tested',
+                        food: q,
+                        note: zh
+                            ? '这一项不在这份检测覆盖的食物范围内，因此没有结果——不要据此说它安全，也不要说它有问题。'
+                            : 'This food is not covered by this panel, so there is no result for it — do not call it safe and do not call it a problem.',
+                    });
+                    continue;
+                }
+                rows.push({
+                    kind: 'result',
+                    food: name(hit),
+                    category: hit.category,
+                    class: hit.class,
+                    severity_text: hit.class >= 1 ? severityText(hit.class)
+                        : (zh ? '未达到过敏分级（0级）' : 'below the sensitivity threshold (class 0)'),
+                    value: hit.value == null ? null : Number(hit.value),
+                    // The lab declined to measure below its detection limit. Reported as a fact
+                    // rather than as a number, so the model cannot quote a titre nobody measured.
+                    below_detection: hit.below_detection,
+                    unit: panel.unit,
+                    guidance: hit.class >= 1 ? guidanceText(hit.class)
+                        : (zh ? '这一项没有超标，正常食用即可。' : 'This one is not elevated; it can be eaten normally.'),
+                    hidden_in: hit.class >= 1 ? (hit.common_sources_zh || []) : [],
+                    eat_instead: hit.class >= 1 ? (hit.substitutes_zh || []) : [],
+                });
+            }
+
+            return { ok: true, data: rows };
+        },
+
+        async get_formulation_packages() {
+            // The catalog is per GCN sector; the user's channel tree says which (lib/channels.js).
+            // Best-effort: with no answer GCN serves aeviva's catalog, as it always did.
+            let sector = null;
+            try {
+                const r = await pool.query('SELECT channel_id FROM users WHERE user_id = $1', [user_id]);
+                sector = await resolveGcnSector(r.rows[0]?.channel_id ?? null, pool);
+            } catch (_) { sector = null; }
+            const [packages, codes, tiers] = await Promise.all([
+                _fetchFormulationPackages(user_id),
+                _fetchFormulationCodes(user_id),
+                fetchFormulationTiers(sector),
+            ]);
+
+            // DEGRADED IS NOT EMPTY. All three fetchers swallow every failure and return [], so
+            // "GCN is unreachable" and "you have bought nothing" are byte-identical here — and
+            // the model will state the second one confidently, which is this tool's own origin
+            // bug relocated. fetchFormulationTiers is user-independent and returns three rows in
+            // a healthy system, so all three empty at once means the far side is down. The
+            // conjunction matters: a nano-side 'proposed' plan still answers while GCN is dead,
+            // which is the degradation §28d asks for.
+            if (packages.length === 0 && codes.length === 0 && tiers.length === 0) {
+                return {
+                    ok: false,
+                    reason: 'the order system could not be reached — tell the user their order status is temporarily unavailable, and do NOT tell them they have no packages',
+                };
+            }
+
+            const rows = [
+                // The raw `stage` enum is deliberately NOT sent. Given it, the model quoted it
+                // verbatim into user prose — 状态均为"pending_payment" — which is precisely what
+                // stage_meaning exists to prevent (observed live on dev, 2026-09-10). It has
+                // nothing to add: stage_meaning is already distinct per stage.
+                ...packages.map(p => ({
+                    kind: 'package',
+                    ...narrate(p.stage, p.fulfillment),
+                    // Whether anyone has decided what goes IN this package yet. Server-written,
+                    // for the same reason as stage_meaning: handed only a null plan_status, the
+                    // model invented a dot roster for two unformulated orders and JUDGE passed it,
+                    // because every dot it named was real (dev, 2026-09-10).
+                    formula_status: formulaStatus(p.plan_status),
+                    package_name: p.package_name,
+                    tier_label: p.tier_label,
+                    max_distinct_dots: p.max_distinct_dots,
+                    day_index: p.day_index,
+                    total_days: p.total_days,
+                    ordered_at: dateOnly(p.ordered_at),
+                    shipped_at: dateOnly(p.shipped_at),
+                    tracking_number: p.tracking_number,
+                    shipping_carrier: p.shipping_carrier,
+                    tracking_status_desc: p.tracking_status_desc,
+                })),
+                // The code STRING is deliberately withheld: redeeming happens in the app, so the
+                // model has no use for it, and a value it was never given is a value it cannot
+                // leak — the same reasoning §37 applies to prices.
+                ...codes.map(c => ({
+                    kind: 'code',
+                    package_name: c.package_name,
+                    tier_label: c.tier_label,
+                    max_distinct_dots: c.max_distinct_dots,
+                    fulfillment: c.fulfillment,
+                    sold_at: dateOnly(c.sold_at),
+                    next_step: language === 'zh'
+                        ? '在「方案 · 原粒」里用这个兑换码开始配制。'
+                        : 'Use this code under Plans · Dots to start compounding.',
+                })),
+                // The catalog, for "what packages are there". No width here: §28f took that
+                // number off the card because what separates the packages is a product decision
+                // moving past "how many kinds of dot", and on the catalog it is a merchandising
+                // claim rather than a fact about something the user owns. tier_description is the
+                // store's own positioning line and is passed through verbatim, never rewritten.
+                ...tiers.map(t => ({
+                    kind: 'tier',
+                    package_name: t.package_name,
+                    tier_label: t.tier_label,
+                    tier_description: t.tier_description,
+                })),
+            ];
+            return { ok: true, data: rows };
         },
 
         async get_health_reports(args = {}) {
             const limit = clampInt(args.limit, 10, 1, 20);
+            // report_date::text — a bare DATE is parsed at local midnight and re-serialised as
+            // a UTC instant, which the grounding allowlist then reads a day off (CLAUDE.md §28g).
+            // item_count is the number of printed analytes kept under the report (mapped and
+            // unmapped), so a NAD+ report with no catalogued marker still reads as having content.
             const { rows } = await pool.query(
-                `SELECT report_date, source, institution, report_type, status FROM health_reports WHERE user_id = $1 ORDER BY report_date DESC LIMIT $2`,
+                `SELECT r.report_date::text AS report_date, r.source, r.institution, r.report_type, r.status,
+                        (SELECT COUNT(*)::int FROM health_report_items i WHERE i.report_id = r.id) AS item_count
+                   FROM health_reports r WHERE r.user_id = $1 ORDER BY r.report_date DESC LIMIT $2`,
                 [user_id, limit]
             );
             return { ok: true, data: rows };
+        },
+
+        // Values of external lab markers over time, flat rows (CLAUDE.md §28g's rule: never a
+        // {series} wrapper — extractToolGroundTruth harvests dates and values row by row, and a
+        // wrapper would leave every real date unallowlisted and the reply rewritten as a
+        // fabrication). The date field is named `date` so it is harvested as one, and the value
+        // is harvested under its key_name so a lab hsCRP that differs from the Kino hsCRP is a
+        // second legitimate value, not a mismatch.
+        async get_lab_history(args = {}) {
+            const { fetchLabHistory } = require('./labHistory');
+            const limit = clampInt(args.limit, 6, 1, 24);
+            const keyName = args.key_name ? String(args.key_name).trim() : null;
+            const rows = await fetchLabHistory(pool, user_id, { keyName, limitPerKey: limit });
+            if (rows.length === 0) {
+                return { ok: true, data: [{ kind: 'no_lab_history', note: keyName
+                    ? `no external lab result for ${keyName} — it may be a Kino biomarker (get_biomarkers) or not yet uploaded`
+                    : 'no external lab results on file — the user has not uploaded a lab report, or none has been read yet' }] };
+            }
+            return {
+                ok: true,
+                data: rows.map(r => ({
+                    kind: 'lab_result',
+                    key_name: r.key_name,
+                    name: language === 'en' ? r.display_name : r.display_name_zh,
+                    value: r.value,
+                    unit: r.unit,
+                    date: r.data_date,
+                    ref_low: r.ref_low,
+                    ref_high: r.ref_high,
+                    status: r.ref_high != null && r.value > r.ref_high ? 'high'
+                          : r.ref_low != null && r.value < r.ref_low ? 'low' : 'normal',
+                    source: r.source,
+                })),
+            };
         },
 
         async get_questionnaire_responses() {
@@ -306,6 +699,21 @@ function createAgenticToolHandlers({ pool, user_id, language }) {
                 ok: true,
                 data: rows.map(r => ({ weight_kg: r.data?.actual?.weight ?? null, tested_at: formatToShanghai(r.tested_at) })),
             };
+        },
+
+        async get_wearable_daily(args = {}) {
+            // Flat array, one row per day, `date` as YYYY-MM-DD — extractToolGroundTruth harvests
+            // `date` so a cited day is allow-listed rather than rewritten as a fabrication.
+            const rows = await fetchWearableDaily(pool, user_id, args.days);
+            if (rows.length === 0) {
+                return { ok: true, data: [{
+                    kind: 'no_wearable_data',
+                    note: language === 'zh'
+                        ? '最近没有任何穿戴设备同步的数据（睡眠、步数、心率等）。如实说没有记录，不要用均值或猜测代替。'
+                        : 'No wearable data (sleep, steps, heart rate…) has been synced recently. Say so plainly; do not substitute averages or guesses.',
+                }] };
+            }
+            return { ok: true, data: rows };
         },
 
         async get_health_twin() {

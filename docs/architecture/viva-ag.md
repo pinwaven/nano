@@ -946,3 +946,306 @@ Until then the queue is fully inspectable with SQL and there is one operator.
 - **i18n**: every `{{t.*}}` in WXML and every `t.*` in the panel's JS resolves in **both** language
   blocks, and the blocks are symmetric.
 - Existing suite: 8 failures, all identical on a clean tree, none related.
+
+---
+
+# Appendix: the `CLAUDE.md` §35 record (moved here verbatim 2026-09-15)
+
+This was the project-rules entry for Viva AG before it was condensed. It overlaps §1–§11 above
+and is kept because it records several decisions and live findings in the words they were made
+in. The rules that must hold are now summarised in `CLAUDE.md` §35.
+
+## Viva AG — External Deep-Analysis Agent (2026-08-23)
+
+**Viva AG (Advanced Generation)** is an *external* agent that spends minutes-to-hours analyzing a
+user's full digital twin, including uploaded hospital-record PDFs. Nano owns a job queue; the
+agent **pulls** from it, reads a twin bundle, and posts a result back, which lands in the user's
+chat. Nothing in §21-§29 applies here — that machinery is for work nano performs itself.
+
+### Entitlement: an add-on column, not a third persona
+
+`users.viva_ag_expires_at` (migration `migration_users_viva_ag_expiry.sql`), gated by
+`hasActiveVivaAgAccess()` in `lib/persona.js`. **The regular chatbox stays powered by Viva; AG is
+only active inside the health tab's AG subtab.** Deliberately not a `persona_override_type` value
+— `resolveEffectivePersona()` must keep returning `'nano'|'viva'` only, or every prompt-routing
+site, `chat_messages.persona_type` and the dispatcher's inlined SQL copy would need a third branch
+they have no prompts for.
+
+Every server-side gate goes through `requireVivaAgAccess()` (`lib/vivaAgAccess.js`), which is a
+**composite**: effective persona is `viva` **and** `hasActiveVivaAccess()` **and**
+`hasActiveVivaAgAccess()`. Conditions 1-2 mirror `handlePostChat`'s paywall exactly, so AG can
+never be more permissive than the chatbox. Grants/revokes are admin-only for v1
+(`handlePostAdminUserVivaAg` / `handleDeleteAdminUserVivaAg` in `handlers/persona_subscriptions.js`,
+routed at `/admin/users/{uid}/viva-ag-subscription`) and audit into the existing
+`persona_subscription_grants` with `persona_type='viva_ag'`. The one-migration path to redeem
+codes / GCN checkout is written into the migration comment.
+
+### No EventBridge, no cron — and why
+
+§22's CloudEvent machinery exists for exactly one reason: FC cancels an invocation the moment the
+HTTP client disconnects, so nano-side work taking minutes must leave the request cycle. **Viva AG
+has no nano-side long work** — enqueue is one INSERT, the long work is entirely inside the external
+agent, and delivery is two INSERTs inside the agent's own `POST /result` request. Publishing a
+CloudEvent would add shared dev/prod bus leak risk and a dedupe table for zero benefit.
+
+Lease expiry is swept **lazily** at the top of the claim handler and the user's job list
+(`_sweepExpiredLeases()`). Residual limitation, accepted: if the agent stops polling *and* no user
+opens the AG subtab, an expired lease sits until someone touches the queue. The fix, if it ever
+bites, is a fourth scan in `dispatcher/index.js`'s existing tick — not new infrastructure.
+
+### The fencing token is the whole concurrency story
+
+`viva_ag_jobs.result_token` is regenerated on **every** claim. It is simultaneously the
+result-submission credential and the idempotency key: a worker whose lease expired and was
+re-claimed holds a stale token and is rejected, so two workers can never both write a result and
+no separate idempotency key exists. The claim itself is a single
+`UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)` — **do not** rewrite it as a
+SELECT followed by an UPDATE; SKIP LOCKED is what gives two concurrent pollers two different jobs.
+`uniq_viva_ag_jobs_active` caps one in-flight job per user at the DB level, plus a 3/day cap in the
+enqueue handler.
+
+### External API — `VIVA_AG_API_TOKEN`
+
+Same shape as the GCN credential (§19): a scoped token branch in `worker/index.js` with a local
+`VIVA_AG_ALLOWED_PATHS` Set, 403 on anything else. Three constraints, all load-bearing:
+
+1. **It must precede the `ch.` branch** — that one matches on prefix and would swallow a token
+   starting `ch.`. Issue tokens as `vag_` + 32 hex.
+2. **Exact match only, no path params** — every parameter travels in the query string or body.
+3. **Distinct tokens per environment** (`VIVA_AG_API_TOKEN` / `VIVA_AG_API_TOKEN_PROD`), or a
+   dev-configured agent could claim and answer real prod users' jobs.
+
+The per-job fencing token rides in an `X-Viva-Ag-Job-Token` header on GET and in the body on POST
+— never a query param, because query strings land in FC/SLS access logs and it gates a medical
+record. **No `/viva-ag/*` response ever returns a `user_id`, openid or nickname**: `job_uid` is
+the only handle, and there is deliberately no "fetch the twin for an arbitrary openid" endpoint,
+so a leaked token can drain the queue but cannot enumerate users.
+
+**The API documents itself**: `GET /viva-ag/docs` (Markdown) and `GET /viva-ag/openapi.json`,
+read at module load from `src/functions/worker/docs/viva-ag-api.md` / `viva-ag-openapi.json`.
+`s.yaml`'s worker uses `code: ./src/functions/worker`, so those files deploy with the function and
+cannot drift from the code. **Keep them in step with any endpoint change** — the spec's paths and
+`VIVA_AG_ALLOWED_PATHS` should agree in both directions.
+
+### Large files never pass through Function Compute
+
+The response envelope base64-encodes binary bodies, so proxying a large PDF would inflate it ~33%,
+buffer it entirely in the 512 MB worker, and hit FC's response ceiling. Every download is a
+**direct-from-OSS presigned GET**; nano only hands out a signature. This also makes HTTP `Range`
+(chunked and resumable transfer) work for free, and means download size is effectively unbounded
+— the 20 MB cap is a miniapp *upload* constraint (`readFile` loads into the JS heap), not a
+download one.
+
+**This bucket refuses a `response-content-type` override** — `400 InvalidRequest`, "Can not
+override response header on content-type" (confirmed live; the signed URL fails outright, it does
+not degrade). Content-Type is therefore fixed at **upload** time: `generatePresignedPutUrl` takes
+an optional real content type, and callers must PUT with exactly the `put_content_type` the
+presign returned or OSS returns `SignatureDoesNotMatch`. `generatePresignedGetUrl` gained an
+optional `filename` that sets an RFC 5987 `Content-Disposition` (these filenames are routinely
+Chinese) — but **no** content-type override; don't re-add one.
+
+### Report files: `pdf` / `md` / `txt` only, and markdown renders in-app
+
+A job carries up to 5 artifacts in `viva_ag_jobs.result_files` (migration
+`migration_viva_ag_result_files.sql`) — typically a rendered PDF plus its `.md` source.
+`result_oss_key` is **kept and still written** (the first file, PDF preferred) so legacy rows and
+the single-file shape keep working; `result_files` is the source of truth.
+
+The allowed set is narrow because the miniapp is the only consumer and has exactly two ways to
+present a file — and **`wx.openDocument` cannot open markdown** (its `fileType` list is
+`doc/docx/xls/xlsx/ppt/pptx/pdf`), so an `.md` handed to it fails in the user's hands. Hence
+`md`/`txt` are downloaded and rendered **in-app**, and `/viva-ag/result-upload-url` rejects
+anything else with `unsupported_file_type` *before* the agent spends the upload.
+
+At submission every key is prefix-confined to `viva-ag-results/{job_uid}/`, type-checked, and
+`headObject`-verified (a key minted but never PUT would become a download button that fails);
+any failure refuses the whole submission so nothing half-committed is delivered. The client
+addresses files by **index** — `oss_key` never leaves the server.
+
+**Rendering the `.md` is a trust boundary.** `mdToHtml()` (new export in `utils/markdown.js`)
+deliberately does not interpret `:::` display-card directives the way `mdToSegments()` does — same
+reason summaries are stripped of them. And `_neutralizeLinks()` rewrites `[text](href)` to plain
+text, because mp-html's `linkTap` calls `wx.navigateTo` for any scheme-less href, which would let
+an external report push the user into an arbitrary page of this miniapp.
+
+### `dots_formulation` (原粒定制) is a contract, and the contract lives in the API doc
+
+The fourth preset asks the external agent for a **28-day / 56-capsule Dots formula** as an `.md`
+file in a fixed, machine-readable format — §8 of `worker/docs/viva-ag-api.md`. Every rule in it is
+mirrored from `handlers/dots.js` (`PLAN_DAYS = 28`, `MAX_DOTS_PER_CAPSULE = 72`, per-dot
+`target_dots_min`/`max` applied to the **daily** total, pulse windows, and `DOT-N7` isolation on
+`N7_ISOLATION_DAY_INDEXES = [9, 10]` where both capsules are `DOT-N7` alone). **Change any of those
+constants and you must change that doc**, or the agent builds against rules nano no longer uses.
+
+**Superseded 2026-08-25 by §36.** Nano originally did **not** parse or validate this file, and the
+formula was an artifact that never touched `nutrition_plans`. Both are now false: `lib/agFormulation.js`
+validates every rule above on submission and rejects a non-conforming formula outright, and an
+expert-approved formula becomes a real plan. The constants-coupling warning in the paragraph above
+still stands, and now binds a third consumer — see §36.
+
+### `health_documents`, not `health_reports`
+
+`health_reports` means "a parsed lab report": mandatory `report_date`, `raw_data` observations,
+`health_events.report_id` children. A discharge PDF has none of those. `health_documents` is
+**twin layer 3, Medical Records** (§34) and is declared as such in
+`docs/architecture/digital-twin.md`.
+
+Delete is a **soft** delete: a running job can hold a 6-hour URL and snapshots document ids in
+`viva_ag_jobs.document_ids`, so hard-deleting either would break it mid-run. Cost is orphaned OSS
+objects; a purge job is an open follow-up.
+
+**Documents are never routed through `/oss/presign`.** That endpoint performs zero authorization
+on `action=get&key=…` and will hand a signed URL for *any* OSS key to any caller holding the app
+token — a live pre-existing hole this feature must not widen. Instead: keys are minted server-side
+under `health-documents/<user_id>/`, registration rejects any key outside the caller's own prefix,
+`oss_key` is never returned to the client (documents are referenced by id), and user-facing URLs
+expire in 300s.
+
+**The endpoints are no longer AG-gated (2026-09-08).** They are twin data, so any logged-in user
+can build an archive — see §38. Be clear-eyed about what changed: the AG check was an
+*entitlement* gate, never an access-control one, and it never stopped one AG user from passing
+another user's openid. The four protections in the paragraph above are the ones that actually
+guard the object, and they are untouched.
+
+### Result delivery
+
+`deliverTerminalMessage` (exported from `handlers/chat.js`) writes **both** `chat_messages` and a
+`notifications` row — the two-channel model §22 requires. Saved under `persona_type = 'viva'`,
+**never** `'viva_ag'`: chat history is persona-scoped, so a bubble under a persona the chat tab
+never queries would flash once and vanish on reload (§25's "second real bug"). `saveChatMessage`
+and `_deliverTerminalMessage` now return their inserted ids for correlation; every pre-existing
+caller ignores the return.
+
+AG replies are attributed to **"Viva AG"** in the chat via `chat_messages.source = 'viva_ag'`
+(migration `migration_chat_messages_source.sql`), rendered as a label above the bubble like the
+existing `Coach` one. It has to be its own column: `persona_type` would make the row invisible to
+the persona-scoped history query (§25's bug again), and `notification_type` is not durable because
+notifications are read destructively. `handleGetChatHistory`'s three queries all select `source` —
+missing one makes the label vanish on that load path only.
+
+`'viva_ag_result'` and `'viva_ag_failed'` **must stay in `AI_ECHO_TYPES`** (`pages/main/main.js`)
+— both write to `chat_messages` and `notifications`, and a type missing from that Set renders the
+bubble twice.
+
+`result_summary` is **sanitized on ingest**: `:::` display-card fences are stripped, because that
+syntax is interpreted by the miniapp renderer and an external system emitting it could render
+arbitrary UI in the user's chat. Never feed `viva_ag_jobs.result` into a later LLM prompt without
+treating it as untrusted content.
+
+### `lib/twinBundle.js` is AG-only, on purpose
+
+Its fetchers duplicate SQL that also lives in `lib/agenticTools.js` and the four `llmContext`
+builders. Adopting them there is the natural next pass and would be a real improvement — but those
+builders construct the contract 20+ prompt templates, JUDGE grounding and `extractToolGroundTruth`
+consume, and §21/§27 record user-visible regressions from touching exactly that. The duplication
+is a decision, not an oversight.
+
+Conventions the module carries over and must keep: fetchers never throw (a dead source degrades
+that section to `null`/`[]` rather than failing the bundle), biomarkers always from
+`data.validated` (§17), every timestamp through `formatToShanghai()`, and **`DATE` columns cast
+`::text` in SQL** — node-postgres parses a DATE at local midnight, which serializes to a UTC
+instant, so `scheduled_date` for 2026-08-16 shipped as `"2026-08-15T16:00:00.000Z"`, the wrong day
+to any consumer.
+
+### Miniapp
+
+The subtab strip lives **inside** `components/user-health/` (three small WXML edits plus
+component-local `.uh-tab-*` classes — component style isolation means the page's `.inner-tab-*`
+rules are unreachable). The panel body is its own component, `components/viva-ag-panel/`, which is
+what keeps an already-1000-line template from absorbing another feature. Self view only; the coach
+app never passes `viva-ag-enabled`, so it defaults false.
+
+Upload offers two sources via an action sheet, because they have different prerequisites:
+
+- **`wx.chooseMessageFile`** is the only way to obtain a PDF in a Mini Program, and it reads from
+  a WeChat *conversation*, not the device filesystem — the user must forward the file to
+  文件传输助手 first, which the empty state has to say.
+- **`wx.chooseMedia`** (photo of a paper record) uses the album/camera scope the chat tab's image
+  upload already relies on, so it needs no additional declaration and works today.
+
+**Platform prerequisite for the PDF path (2026-08-23):** `chooseMessageFile` requires the
+「选中的文件」 scope to be declared in the miniapp's **用户隐私保护指引** in the MP console
+(小程序后台 → 设置 → 服务内容声明). Without it WeChat rejects the call outright —
+`chooseMessageFile:fail api scope is not declared in the privacy agreement`, errno 112 — and
+**no runtime consent flow can rescue it**: `app.js`'s `onNeedPrivacyAuthorization` handler never
+fires, because the failure is a missing *declaration*, not a missing *consent*. It is not a
+`requiredPrivateInfos` entry either (that list only accepts location-family APIs plus
+`chooseAddress`). The only fix is the console declaration.
+
+`_choosePdf()` therefore distinguishes three outcomes, following `fetchWechatAddress`'s precedent
+in `pages/main/main.js`: silent on cancel/deny, an explanatory modal pointing at the photo path
+on a privacy/scope error, a generic toast otherwise. **Never re-add a bare `fail: () => {}`** —
+that is what made the button look dead when this first shipped.
+
+Neither picker can be driven by `miniprogram-automator` (both open native pickers), so automate
+`_uploadDocument` directly with a file staged into `wx.env.USER_DATA_PATH` and do the real pick
+manually once.
+
+Job polling is a 15s timer inside the panel, running only while a job is in flight — deliberately
+not hooked into `main.js`'s 3s notification poll, which is tuned for chat delivery.
+
+### Clarifying questionnaires — the agent can ask the user (2026-08-27)
+
+The agent can **park** a claimed job and push back a short questionnaire instead of guessing, then
+resume once the user answers. New status **`awaiting_input`**; new endpoint
+`POST /viva-ag/jobs/questionnaire`.
+
+Almost nothing was built. Nano already had a server-defined questionnaire system — four tables,
+five input widgets, a chat-tab renderer, a `questionnaire_ready` client trigger, and a precedent
+for a runtime-generated form (`type='dynamic'`, Viva's own `ask_questions`). Crucially
+`twinBundle.js` **already** merged completed answers into every bundle, so the return path existed
+before the outbound one did. Only the asking, the parking and the resume trigger are new.
+
+Things that are load-bearing:
+
+- **`uniq_viva_ag_jobs_active` must include `awaiting_input`** — a parked job still owns the
+  user's one in-flight slot. `viva_ag_jobs.status` has no CHECK constraint (the value set is a
+  comment), so the migration's real work is that index. Verify the predicate on a live DB: a
+  `DROP`/`CREATE` pair that no-ops fails silently.
+- **The lease is released, not held.** No lease length covers a person answering a form, so any
+  worker re-claims it fresh. Workers stay stateless — the answers travel in the bundle. After a
+  successful park the caller has lost its lease and must stop working on the job.
+- **The attempt is refunded.** Asking is progress, not a failed delivery. Rounds (2 per job) bound
+  the loop, not `attempts`.
+- **`lib/agQuestionnaire.js` is a security boundary, not a formatting check.**
+  `questionnaire_questions` is a write path into user data — `save_target` writes
+  `users.<save_field>`, merges `bio_data`, or **inserts a biomarkers row**, and `completion_check`
+  makes a question auto-skip (so a form could self-complete and resume the job having asked
+  nothing). Those four are **never sourced from the payload**; `createDynamicQuestionnaire` writes
+  them `NULL`/`'{}'`. Same rule strips `config.other_key` and rejects an option keyed `other`.
+  Treat any change that starts reading them from the agent as a regression.
+- **`viva_ag_questionnaire` must stay in `AI_ECHO_TYPES`** (`pages/main/main.js`) — it writes both
+  `chat_messages` and `notifications`, so a type missing from that Set renders the bubble twice.
+  The paired `questionnaire_ready` row is what makes the chat tab fetch the form, and `main.js`
+  already suppresses its own bubble for that type.
+- **The resume hook is injected from `index.js`**, like `saveChatMessage`, so
+  `handlers/questionnaires.js` never requires `handlers/viva_ag.js` — and it is **awaited**, per
+  the comment already beside it (FC 3.0 freezes the context on return; an un-awaited promise there
+  was confirmed live never to complete).
+- The user answers in the **chat tab**, reusing the one renderer every questionnaire in the app
+  uses. The panel only hands off (`gotochat` → `handleAgGoToChat`).
+
+`bundle_version` is now **2**: additive `job_questionnaires` (job-scoped rounds + answers,
+`answer: null` = asked-but-unanswered), distinct from `questionnaire_context`'s whole-user merge.
+AG answers deliberately feed normal chat too.
+
+### Files
+
+New: `src/schemas/migration_viva_ag_questionnaire.sql`, `worker/lib/agQuestionnaire.js`.
+Modified for this pass: `worker/handlers/{viva_ag,questionnaires}.js`, `worker/lib/twinBundle.js`,
+`worker/index.js`, `worker/docs/viva-ag-{api.md,openapi.json}` (§7b),
+`nano-miniapp/components/{viva-ag-panel,user-health}/*`, `nano-miniapp/pages/main/main.{js,wxml}`.
+
+Originally (2026-08-23):
+New: `src/schemas/migration_{users_viva_ag_expiry,health_documents,viva_ag_jobs,viva_ag_result_files}.sql`;
+`worker/handlers/{viva_ag,viva_ag_docs,health_documents}.js`;
+`worker/lib/{twinBundle,vivaAgAccess}.js`; `worker/docs/viva-ag-{api.md,openapi.json}`;
+`nano-miniapp/components/viva-ag-panel/`. Modified: `worker/index.js` (token branch + routes),
+`worker/lib/{persona,oss}.js`, `worker/handlers/{chat,viva_subscription,persona_subscriptions}.js`,
+`s.yaml`/`s-prod.yaml`, `admin-panel/src/tabs/UsersTab.jsx`,
+`nano-miniapp/components/user-health/*`, `nano-miniapp/pages/main/main.{js,wxml}`,
+`nano-miniapp/utils/markdown.js` (`mdToHtml`), `utils/config.js` (VERSION).
+
+Full detail: [docs/architecture/viva-ag.md](docs/architecture/viva-ag.md).
+
+

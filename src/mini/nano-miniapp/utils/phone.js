@@ -7,4 +7,16 @@ function maskPhone(phone) {
   return `${digits.slice(0, 3)}****${digits.slice(-4)}`
 }
 
-module.exports = { maskPhone }
+// Same idea for an email login identity: keeps the first two characters of the local
+// part and the whole domain (ab***@example.com), which is enough to recognise "mine".
+function maskEmail(email) {
+  if (!email) return ''
+  const s = String(email)
+  const at = s.indexOf('@')
+  if (at <= 0) return s
+  const local = s.slice(0, at)
+  const domain = s.slice(at)
+  return `${local.slice(0, Math.min(2, local.length))}***${domain}`
+}
+
+module.exports = { maskPhone, maskEmail }

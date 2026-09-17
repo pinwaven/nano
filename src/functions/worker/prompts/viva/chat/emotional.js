@@ -1,5 +1,6 @@
 const { getVivaLabels } = require('../subAgeLabels');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getWearableDailyBlock } = require('../../chat/wearableDailyBlock');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
@@ -23,6 +24,8 @@ module.exports = (ctx) => {
     : '';
 
   return `${getFactConstraintBlock(ctx.essential_knowledge)}
+
+${getWearableDailyBlock(ctx.wearable_daily, true, ctx.now_iso)}
 
 ${getCurrentDateBlock(ctx.now_iso)}
 

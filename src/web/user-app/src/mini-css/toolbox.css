@@ -1,0 +1,43 @@
+/* GENERATED from src/mini/nano-miniapp/components/toolbox/toolbox.wxss by scripts/sync-css-from-miniapp.mjs.
+   Do not edit by hand — change the WXSS and re-run `npm run sync:css`. */
+
+.toolbox-panel {
+  background: var(--bg-input);
+  border-top: 0.5px solid var(--navy-border);
+  padding: 10px 12px 8px;
+}
+
+.toolbox-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tool-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  background: var(--blue-dim);
+  border: 0.5px solid var(--navy-border);
+  border-radius: 10px;
+  padding: 9px 14px;
+  min-width: 74px;
+}
+
+.tool-item-icon {
+  font-size: var(--fs-30, 15px);
+  color: var(--blue);
+  line-height: 1;
+}
+
+.tool-item-label {
+  font-size: var(--fs-24, 12px);
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+}
+
+.tool-item-disabled {
+  opacity: 0.35;
+}

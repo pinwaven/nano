@@ -140,3 +140,57 @@ All functions share the same VPC to allow internal communication between dispatc
 | vSwitch | `vsw-uf6438oo047ucsbmlvmxw` |
 | Security Group | `sg-uf6hwn97w4pz60mmfgwz` |
 | IAM Role | `acs:ram::1719995052853530:role/aliyunfcdefaultrole` |
+
+---
+
+# Appendix: the `CLAUDE.md` §32 (shared PolarDB cluster incident) record (moved here verbatim 2026-09-15)
+
+The project-rules entry as it stood before being condensed; the rules that must hold are now
+summarised in `CLAUDE.md`. Kept because it records decisions and live findings in the words they
+were made in.
+
+## 32. Shared PolarDB Cluster with GCN — Connection Exhaustion Incident (2026-08-16)
+
+**This cluster is not nano-exclusive.** `pc-uf6ttj5kse63r270k` (console description "nano-polardb",
+`polar.pg.sl.small.c`, region `cn-shanghai`) hosts `nano_db`/`nano_db_dev`/`nano_db_test` *and*
+GCN's `gcn_db`/`gcn_db_dev` — GCN's `DATABASE_URL`/`DATABASE_URL_PROD` point at this same cluster's
+public endpoint (`amclbdsyqvfq.rwlb.rds.aliyuncs.com`), just a different database name. This wasn't
+documented anywhere in either repo before this incident — found only by tracing the connection
+string via `aliyun polardb DescribeDBClusterEndpoints`.
+
+**Incident**: 2026-08-16 ~08:39 UTC, GCN prod started failing all DB connections with `Sorry, too
+many clients already` / `number of normal user connections (193) plus polar super user connections
+(8) have exceeded limits`. `pg_stat_activity` on the shared cluster showed 227 total backend
+connections, 181 of them `nano_admin`/`nano_db` — GCN's own usage was 1 connection. Root cause: all
+five of nano's Postgres `db.js` copies (`worker`, `dispatcher`, `agent`, `lab`, `kino`) constructed
+`new Pool({...})` with **no explicit `max`**, so each defaulted to `node-postgres`'s built-in cap
+of 10 — and since each warm FC container gets its own module-level pool with no cross-container
+coordination, a burst of concurrent FC scale-out had no ceiling on the aggregate connection count
+across all of them. Contrast with GCN's own `auth/lib/db.js`, which has always capped `max: 5`.
+
+**Why PolarDB Serverless autoscaling didn't absorb this**: `DescribeDBClusterServerlessConf` shows
+`ScaleMax: 4` (PCU) and `ServerlessRuleCpuEnlargeThreshold: 85` — scale-up triggers on CPU%
+crossing 85, nothing else. The connection storm was mostly idle pooled connections, not compute
+load: CPU peaked at 46.8% during the incident (never near the 85% trigger), even though memory
+usage did spike (2% → ~48%, since every open backend connection costs PolarDB per-connection
+shared memory regardless of whether it's doing work). A pile of idle-but-open connections is
+invisible to this cluster's autoscaling policy.
+
+**Fix**: added `max: 5, idleTimeoutMillis: 10000` to every `new Pool({...})` call in all five
+`db.js` copies (`worker`/`dispatcher`/`agent`/`lab`/`kino`, both the `DATABASE_URL` and discrete
+`DB_HOST` branches), mirroring GCN's own already-safe pattern. `worker/lib/estimator/db.js` is a
+Tablestore client, not Postgres — untouched, not part of this issue. Deployed to all five functions
+on both `s.yaml` (dev) and `s-prod.yaml` (prod) — 10 deploys, `npm run deploy:<fn>` /
+`npm run deploy:<fn>:prod`. Verified live: `pg_stat_activity` on the shared cluster dropped from
+227 total / 181 `nano_admin` to 46 total / 5 `nano_admin` within minutes of the prod deploys as old
+unbounded-pool containers cycled out; GCN prod connections succeeded cleanly afterward.
+
+**Known gap, not fully closed by this fix**: capping each pool at 5 lowers the ceiling per
+container but doesn't remove it — enough simultaneous warm FC containers across all five functions
+can still exhaust the shared cluster's connection budget (~200 at the then-current 1-PCU serverless
+tier) under a big enough traffic burst, and PolarDB Serverless's CPU-only scale-up trigger still
+won't reliably catch a connection-count-driven (rather than compute-driven) squeeze. No FC-level
+concurrency cap was added as part of this fix. If this recurs, check `pg_stat_activity` grouped by
+`usename`/`datname` on this cluster first — nano and GCN are genuine neighbors on shared infra, not
+two independent databases, and either side's connection behavior can take the other down.
+

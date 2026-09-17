@@ -2,7 +2,10 @@
 
 /**
  * User-uploaded health record documents (PDFs of hospital records, discharge summaries,
- * imaging reports, ...). Backs the Viva AG subtab's document manager.
+ * imaging reports, ...). This is twin layer 3, Medical Records (CLAUDE.md §34) — part of the
+ * digital twin, not part of Viva AG. Two surfaces host the same manager: the 数字孪生 subtab
+ * (every user) and the Viva AG subtab (add-on holders), both via the shared
+ * components/health-documents/ miniapp component.
  *
  * SECURITY NOTE — read before adding an endpoint here.
  *
@@ -18,18 +21,28 @@
  *      could register someone else's object into their own list.
  *   3. oss_key is never returned to the client. Documents are referenced by id only.
  *   4. User-facing GET URLs expire in 300s, not the 10-year links /oss/presign mints for images.
- *   5. Every endpoint re-checks the Viva AG entitlement server-side; the miniapp's subtab
- *      gating is cosmetic.
+ *
+ * These endpoints used to additionally require the Viva AG entitlement. As of 2026-09-08 they do
+ * not, so every user can build an archive. Be clear-eyed about what that changed: the AG check
+ * was an ENTITLEMENT gate, never an access-control one — it never stopped one AG user from
+ * passing another user's openid. What is left is exactly the authorization strength of every
+ * other end-user endpoint here (/api/biomarkers?openid= and the rest) plus items 1-4 above,
+ * which are the parts that actually protect the object.
  */
 
 const crypto = require('crypto');
 const { pool } = require('../lib/db');
 const ossLib = require('../lib/oss');
-const { requireVivaAgAccess } = require('../lib/vivaAgAccess');
 
+// Must equal lib/docExtraction.js's copy (tests/doc-extraction-contract.test.js holds them
+// together): the agent classifies into this set and the user corrects within it.
 const VALID_DOC_TYPES = new Set([
-    'hospital_record', 'lab_report', 'imaging', 'discharge_summary', 'prescription', 'other',
+    'hospital_record', 'lab_report', 'imaging', 'discharge_summary', 'prescription',
+    'genetic', 'microbiome', 'functional_test', 'other',
 ]);
+
+const MAX_INSTITUTION_LENGTH = 200;
+const MAX_NOTE_LENGTH = 1000;
 
 // Matches the miniapp's own client-side cap. Enforced here too because the client-side check
 // is trivially bypassable and an unbounded blob is a cost problem, not just a UX one.
@@ -67,6 +80,42 @@ const ALLOWED_EXTENSIONS = new Set(Object.keys(CONTENT_TYPE_BY_EXT));
 // wx.openDocument can render these; anything else the miniapp previews as an image instead.
 const OFFICE_EXTENSIONS = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']);
 
+// Resolves the document owner from ?openid=, and — when the caller supplies its own coach_id
+// — checks that the target really is one of that coach's clients. Same coarse ownership pattern
+// as handleGetUserFacts / handleGetCoachUserChat: the check only runs when coach_id is present,
+// so the admin panel and the user's own miniapp omit it and address themselves.
+async function _resolveOwner(openid, coachId) {
+    if (!openid) {
+        return { ok: false, error: { success: false, reason: 'missing_openid', error: 'openid is required', statusCode: 400 } };
+    }
+    const { rows } = await pool.query(
+        // language rides along so an extraction queued here can snapshot it, and the result
+        // message localises without a second read at delivery time.
+        'SELECT user_id, language FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]
+    );
+    const userId = rows[0]?.user_id;
+    if (!userId) {
+        return { ok: false, error: { success: false, reason: 'user_not_found', error: 'User not found', statusCode: 404 } };
+    }
+    if (coachId) {
+        const check = await pool.query('SELECT 1 FROM users WHERE user_id = $1 AND coach_id = $2', [userId, coachId]);
+        if (check.rows.length === 0) {
+            return { ok: false, error: { success: false, reason: 'access_denied', error: 'Access denied', statusCode: 403 } };
+        }
+    }
+    return { ok: true, userId, language: rows[0].language || 'zh' };
+}
+
+// Upload, register and delete are the owner's alone — a coach reads a client's records, it never
+// adds to or removes from them. This refusal is a statement of intent, not enforcement: a caller
+// can always omit coach_id and send a bare openid, the same as any caller of any endpoint here.
+// "A coach cannot upload" actually lives in the UI, as can-upload="{{mode === 'self'}}" on
+// <health-documents> in user-health.wxml.
+function _refuseCoach(coachId) {
+    if (!coachId) return null;
+    return { success: false, reason: 'coach_cannot_write', error: 'A coach cannot upload or delete a client\'s records', statusCode: 403 };
+}
+
 function _keyPrefix(userId) {
     return `health-documents/${userId}/`;
 }
@@ -91,6 +140,10 @@ function _publicRow(row) {
         note: row.note,
         uploaded_by: row.uploaded_by,
         created_at: row.created_at,
+        user_edited_at: row.user_edited_at || null,
+        // The structured block itself rides on the row only when the caller asks for it; the
+        // list needs to know it exists to offer the expand.
+        has_structured: row.extracted_json != null,
     };
 }
 
@@ -98,8 +151,10 @@ function _publicRow(row) {
 // from the client, so it always lands under the caller's own prefix.
 async function handleGetHealthDocumentPresign(query) {
     try {
-        const gate = await requireVivaAgAccess(query?.openid);
-        if (!gate.ok) return gate.error;
+        const refusal = _refuseCoach(query?.coach_id);
+        if (refusal) return refusal;
+        const owner = await _resolveOwner(query?.openid, null);
+        if (!owner.ok) return owner.error;
 
         const filename = String(query?.filename || '').trim();
         if (!filename) return { success: false, error: 'filename is required', statusCode: 400 };
@@ -112,7 +167,7 @@ async function handleGetHealthDocumentPresign(query) {
             return { success: false, error: 'File exceeds the 20 MB limit', statusCode: 400 };
         }
 
-        const key = `${_keyPrefix(gate.user.user_id)}${crypto.randomBytes(12).toString('hex')}.${ext}`;
+        const key = `${_keyPrefix(owner.userId)}${crypto.randomBytes(12).toString('hex')}.${ext}`;
         // Sign the REAL content type, not octet-stream. This bucket refuses a
         // response-content-type override at download time, so upload is the only chance to get
         // it right — otherwise every PDF is served as an opaque binary and neither a browser
@@ -139,9 +194,11 @@ async function handleGetHealthDocumentPresign(query) {
 // actually in the bucket.
 async function handlePostHealthDocument(body) {
     try {
-        const gate = await requireVivaAgAccess(body?.openid);
-        if (!gate.ok) return gate.error;
-        const userId = gate.user.user_id;
+        const refusal = _refuseCoach(body?.coach_id);
+        if (refusal) return refusal;
+        const owner = await _resolveOwner(body?.openid, null);
+        if (!owner.ok) return owner.error;
+        const userId = owner.userId;
 
         const ossKey = String(body?.oss_key || '').trim();
         const filename = String(body?.filename || '').trim();
@@ -178,6 +235,23 @@ async function handlePostHealthDocument(body) {
              RETURNING *, doc_date::text AS doc_date`,
             [userId, ossKey, filename.slice(0, 300), contentType, head.size_bytes, head.etag, docType, docDate, institution, note]
         );
+        // Queue an extraction. A document nobody reads is the problem this feature exists to
+        // solve, so this is automatic rather than a button the user has to find.
+        //
+        // Required at CALL TIME, not at module load: handlers/doc_extraction.js pulls in
+        // handlers/chat.js (for deliverTerminalMessage) and with it the whole prompt/LLM graph,
+        // which has no business on the upload path of a warm container. Same reason
+        // handlers/users.js requires './chat' at its call site (CLAUDE.md 28c).
+        //
+        // A failure here must never fail the upload: the document is safely stored either way and
+        // the user can re-run extraction by hand.
+        try {
+            const { enqueueDocExtraction } = require('./doc_extraction');
+            await enqueueDocExtraction(row.id, userId, { language: owner.language });
+        } catch (queueErr) {
+            console.error(JSON.stringify({ level: 'WARN', msg: 'doc extraction enqueue failed', document_id: row.id, error: queueErr.message }));
+        }
+
         return { success: true, document: _publicRow(row) };
     } catch (err) {
         if (err.code === '23505') return { success: false, error: 'This file is already registered', statusCode: 409 };
@@ -188,8 +262,8 @@ async function handlePostHealthDocument(body) {
 
 async function handleGetHealthDocuments(query) {
     try {
-        const gate = await requireVivaAgAccess(query?.openid);
-        if (!gate.ok) return gate.error;
+        const owner = await _resolveOwner(query?.openid, query?.coach_id);
+        if (!owner.ok) return owner.error;
         const { rows } = await pool.query(
             // doc_date::text, not the raw DATE: node-postgres turns a DATE into a JS Date at
             // local midnight, which serializes to a UTC instant and can read as the previous
@@ -197,9 +271,92 @@ async function handleGetHealthDocuments(query) {
             `SELECT *, doc_date::text AS doc_date FROM health_documents
              WHERE user_id = $1 AND status = 'active'
              ORDER BY COALESCE(doc_date, created_at::date) DESC, id DESC LIMIT 200`,
-            [gate.user.user_id]
+            [owner.userId]
         );
-        return { success: true, documents: rows.map(_publicRow) };
+        const withJson = String(query?.include_structured || '') === '1';
+        // Contract 3: the document's tags ride along with the structured block, on the same
+        // flag — both are "what the document said", and the list needs them only to expand a
+        // row. Degrades to none rather than failing the list, like the extraction state below.
+        let tagsByDoc = new Map();
+        if (withJson) {
+            try {
+                const { rows: tagRows } = await pool.query(
+                    `SELECT t.document_id, t.id, t.kind, t.tag_key, t.category, t.text, t.value, t.status,
+                            t.since::text AS since, t.source_ref, t.reason, c.name_zh, c.name_en
+                       FROM health_document_tags t
+                       LEFT JOIN tag_catalog c ON c.tag_key = t.tag_key
+                      WHERE t.user_id = $1
+                      ORDER BY t.document_id, t.sort_order, t.id`,
+                    [owner.userId]
+                );
+                for (const t of tagRows) {
+                    const docId = Number(t.document_id);
+                    if (!tagsByDoc.has(docId)) tagsByDoc.set(docId, []);
+                    tagsByDoc.get(docId).push({
+                        id: Number(t.id), kind: t.kind, tag_key: t.tag_key, category: t.category, text: t.text,
+                        value: t.value, status: t.status, since: t.since, source_ref: t.source_ref, reason: t.reason,
+                        name_zh: t.name_zh || null, name_en: t.name_en || null,
+                    });
+                }
+            } catch (tagErr) {
+                console.error(JSON.stringify({ level: 'WARN', msg: 'document tags unavailable', error: tagErr.message }));
+            }
+        }
+
+        // The extraction state, joined on the newest job per document. DISTINCT ON rather than a
+        // correlated subquery because a re-run leaves the previous job in place as history.
+        //
+        // Degrades to no extraction state rather than failing the list. This endpoint predates
+        // extraction and is the user's only view of their own records: it must keep working if
+        // doc_extraction_jobs is missing (worker deployed ahead of its migration) or the query
+        // fails for any other reason.
+        let byDoc = new Map();
+        try {
+            const { rows: jobs } = await pool.query(
+                `SELECT DISTINCT ON (document_id) document_id, status, result, rejected, health_report_id
+                   FROM doc_extraction_jobs
+                  WHERE user_id = $1
+                  ORDER BY document_id, created_at DESC`,
+                [owner.userId]
+            );
+            byDoc = new Map(jobs.map(j => [Number(j.document_id), j]));
+        } catch (jobErr) {
+            console.error(JSON.stringify({ level: 'WARN', msg: 'extraction state unavailable', error: jobErr.message }));
+        }
+
+        return {
+            success: true,
+            documents: rows.map(r => {
+                const pub = _publicRow(r);
+                pub.summary = r.summary || null;
+                if (withJson) {
+                    pub.structured = r.extracted_json || null;
+                    pub.tags = tagsByDoc.get(Number(r.id)) || [];
+                }
+                const job = byDoc.get(Number(r.id));
+                const rejected = Array.isArray(job?.rejected) ? job.rejected : [];
+                pub.extraction = job ? {
+                    status: job.status,
+                    // Counts only. The values themselves are already visible as the document's
+                    // own metadata and in the Medical Records layer; repeating them here would be
+                    // a second copy to keep in step.
+                    accepted: job.result?.counts?.observations_accepted ?? 0,
+                    // Facts (contract 3) — what was actually mirrored; a v2 job's findings are
+                    // descriptors now and count for nothing here.
+                    findings: job.result?.counts?.facts_written ?? job.result?.counts?.facts_accepted ?? 0,
+                    descriptors: job.result?.counts?.descriptors_accepted ?? 0,
+                    unmapped: job.result?.counts?.unmapped ?? 0,
+                    items: job.result?.counts?.items_written ?? 0,
+                    rejected: rejected.length,
+                    // The one rejection the user can fix themselves: set the report date and
+                    // re-run. Surfaced as its own flag so the row can say so.
+                    missing_date: rejected.some(x => x && x.reason === 'missing_date'),
+                    has_report: job.health_report_id != null,
+                    report_id: job.health_report_id == null ? null : Number(job.health_report_id),
+                } : null;
+                return pub;
+            }),
+        };
     } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetHealthDocuments failed', error: err.message }));
         return { success: false, error: err.message };
@@ -210,12 +367,12 @@ async function handleGetHealthDocuments(query) {
 // rather than trusting a client-supplied key (which is what /oss/presign does).
 async function handleGetHealthDocumentUrl(documentId, query) {
     try {
-        const gate = await requireVivaAgAccess(query?.openid);
-        if (!gate.ok) return gate.error;
+        const owner = await _resolveOwner(query?.openid, query?.coach_id);
+        if (!owner.ok) return owner.error;
         const { rows: [doc] } = await pool.query(
             `SELECT *, doc_date::text AS doc_date FROM health_documents
              WHERE id = $1 AND user_id = $2 AND status = 'active'`,
-            [documentId, gate.user.user_id]
+            [documentId, owner.userId]
         );
         if (!doc) return { success: false, error: 'Document not found', statusCode: 404 };
         return {
@@ -239,12 +396,14 @@ async function handleGetHealthDocumentUrl(documentId, query) {
 // disappears from every user-facing list immediately; the object is left for a future purge.
 async function handleDeleteHealthDocument(documentId, query) {
     try {
-        const gate = await requireVivaAgAccess(query?.openid);
-        if (!gate.ok) return gate.error;
+        const refusal = _refuseCoach(query?.coach_id);
+        if (refusal) return refusal;
+        const owner = await _resolveOwner(query?.openid, null);
+        if (!owner.ok) return owner.error;
         const { rowCount } = await pool.query(
             `UPDATE health_documents SET status = 'deleted', deleted_at = NOW()
              WHERE id = $1 AND user_id = $2 AND status = 'active'`,
-            [documentId, gate.user.user_id]
+            [documentId, owner.userId]
         );
         if (rowCount === 0) return { success: false, error: 'Document not found', statusCode: 404 };
         return { success: true };
@@ -254,7 +413,153 @@ async function handleDeleteHealthDocument(documentId, query) {
     }
 }
 
+/**
+ * POST /health-documents/:id/extract — re-run extraction, or run it for the first time on a
+ * document uploaded before this feature existed.
+ *
+ * The previous extraction is cleared BEFORE the new job is queued, and that ordering is
+ * mandatory rather than tidy: health_events dedupes on (user_id, source, external_id) with
+ * ON CONFLICT DO NOTHING, so a corrected value for the same marker and date would otherwise be a
+ * silent no-op and the re-run would appear to change nothing.
+ */
+async function handlePostHealthDocumentExtract(documentId, body) {
+    try {
+        const refusal = _refuseCoach(body?.coach_id);
+        if (refusal) return refusal;
+        const owner = await _resolveOwner(body?.openid, null);
+        if (!owner.ok) return owner.error;
+
+        const { rows: [doc] } = await pool.query(
+            `SELECT id FROM health_documents WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+            [documentId, owner.userId]
+        );
+        if (!doc) return { success: false, reason: 'document_not_found', error: 'Document not found', statusCode: 404 };
+
+        const { clearExtraction, enqueueDocExtraction } = require('./doc_extraction');
+        const removed = await clearExtraction(doc.id, owner.userId);
+        const jobUid = await enqueueDocExtraction(doc.id, owner.userId, { language: owner.language });
+        // A null job_uid means one is already in flight for this document — a double tap, not an
+        // error. Report it so the client can say "already running" rather than "queued".
+        return { success: true, queued: !!jobUid, ...removed };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostHealthDocumentExtract failed', error: err.message }));
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * DELETE /health-documents/:id/extraction — the user's 解析有误.
+ *
+ * Removes everything the extraction wrote and marks the job 'rejected', which is deliberately a
+ * different terminal state from 'failed': a failure may legitimately be retried, but a result the
+ * user has explicitly thrown away must not be silently recreated. The DOCUMENT itself is
+ * untouched — they are saying the reading was wrong, not that the file was.
+ */
+async function handleDeleteHealthDocumentExtraction(documentId, query) {
+    try {
+        const refusal = _refuseCoach(query?.coach_id);
+        if (refusal) return refusal;
+        const owner = await _resolveOwner(query?.openid, null);
+        if (!owner.ok) return owner.error;
+
+        const { rows: [doc] } = await pool.query(
+            `SELECT id FROM health_documents WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+            [documentId, owner.userId]
+        );
+        if (!doc) return { success: false, reason: 'document_not_found', error: 'Document not found', statusCode: 404 };
+
+        const { clearExtraction } = require('./doc_extraction');
+        const removed = await clearExtraction(doc.id, owner.userId);
+        await pool.query(
+            `UPDATE doc_extraction_jobs
+                SET status = 'rejected', result_token = NULL, completed_at = NOW(), updated_at = NOW()
+              WHERE document_id = $1 AND status <> 'rejected'`,
+            [doc.id]
+        );
+        return { success: true, ...removed };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleDeleteHealthDocumentExtraction failed', error: err.message }));
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * PATCH /health-documents/:id — the owner corrects what the agent (or nobody) filled in.
+ *
+ * Exists for one measured failure: a photographed report with no printed date has every value
+ * refused as `missing_date` (dev job 15 lost six lipid/liver values), and the agent is right not
+ * to invent one. The person who took the photo knows the date. Setting it here stamps
+ * user_edited_at, after which the extraction result handler leaves doc_type / doc_date /
+ * institution alone — the correction must survive the re-run it exists to enable.
+ *
+ * `re_extract: true` clears the previous extraction and queues a fresh one in the same call, so
+ * "set the date, then re-run" is one tap. A job already in flight is reported as queued:false,
+ * exactly as POST /:id/extract does.
+ */
+async function handlePatchHealthDocument(documentId, body) {
+    try {
+        const refusal = _refuseCoach(body?.coach_id);
+        if (refusal) return refusal;
+        const owner = await _resolveOwner(body?.openid, null);
+        if (!owner.ok) return owner.error;
+
+        const { rows: [doc] } = await pool.query(
+            `SELECT id FROM health_documents WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+            [documentId, owner.userId]
+        );
+        if (!doc) return { success: false, reason: 'document_not_found', error: 'Document not found', statusCode: 404 };
+
+        const { toIsoDate, trim } = require('../lib/extractionPrimitives');
+        const sets = [];
+        const params = [doc.id];
+        const push = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+
+        if (body.doc_date !== undefined) {
+            if (body.doc_date === null || body.doc_date === '') push('doc_date', null);
+            else {
+                // toIsoDate refuses a future date and a non-calendar one — a report cannot have
+                // been taken tomorrow, and "2026-02-31" is a typo, not a date.
+                const iso = toIsoDate(String(body.doc_date));
+                if (!iso) return { success: false, reason: 'invalid_date', error: 'doc_date must be YYYY-MM-DD and not in the future' };
+                push('doc_date', iso);
+            }
+        }
+        if (body.doc_type !== undefined) {
+            const t = String(body.doc_type || '').trim();
+            if (!VALID_DOC_TYPES.has(t)) return { success: false, reason: 'invalid_doc_type', error: `doc_type must be one of ${[...VALID_DOC_TYPES].join(', ')}` };
+            push('doc_type', t);
+        }
+        if (body.institution !== undefined) push('institution', trim(body.institution, MAX_INSTITUTION_LENGTH));
+        if (body.note !== undefined) push('note', trim(body.note, MAX_NOTE_LENGTH));
+        if (sets.length === 0 && !body.re_extract) {
+            return { success: false, reason: 'nothing_to_update', error: 'No editable field supplied' };
+        }
+
+        if (sets.length > 0) {
+            sets.push('user_edited_at = NOW()');
+            await pool.query(`UPDATE health_documents SET ${sets.join(', ')} WHERE id = $1`, params);
+        }
+
+        let queued = null;
+        if (body.re_extract) {
+            const { clearExtraction, enqueueDocExtraction } = require('./doc_extraction');
+            await clearExtraction(doc.id, owner.userId);
+            queued = !!(await enqueueDocExtraction(doc.id, owner.userId, { language: owner.language }));
+        }
+
+        const { rows: [row] } = await pool.query(
+            `SELECT *, doc_date::text AS doc_date FROM health_documents WHERE id = $1`, [doc.id]);
+        return { success: true, document: _publicRow(row), ...(queued === null ? {} : { queued }) };
+    } catch (err) {
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePatchHealthDocument failed', error: err.message }));
+        return { success: false, error: err.message };
+    }
+}
+
 module.exports = {
+    handlePatchHealthDocument,
+    handlePostHealthDocumentExtract,
+    handleDeleteHealthDocumentExtraction,
     handleGetHealthDocumentPresign,
     handlePostHealthDocument,
     handleGetHealthDocuments,
@@ -264,4 +569,7 @@ module.exports = {
     VALID_DOC_TYPES,
     ALLOWED_EXTENSIONS,
     OFFICE_EXTENSIONS,
+    // Shared with handlers/lab_history.js so the coach-scoped read of a client's lab history
+    // uses the identical ownership check as their documents.
+    resolveOwner: _resolveOwner,
 };

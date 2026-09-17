@@ -29,7 +29,7 @@ Named form templates. One row per questionnaire.
 | `name_zh` | TEXT | Display name (Chinese) |
 | `description` | TEXT | Optional description (English) |
 | `description_zh` | TEXT | Optional description (Chinese) |
-| `type` | TEXT | `onboarding` or `custom` |
+| `type` | TEXT | `onboarding`, `custom`, `dynamic` (Viva-generated follow-up), `viva_ag` (external agent's clarifying form, §35), `program_day` (one day's 打卡 of a multi-day program — created on demand by the server, never hand-assigned; see [programs.md](programs.md)) |
 | `created_by` | TEXT FK | User ID of creator; NULL = system |
 | `is_active` | BOOLEAN | Soft-delete flag |
 | `created_at` / `updated_at` | TIMESTAMPTZ | — |
@@ -92,6 +92,7 @@ Unique constraint on `(assignment_id, question_id)` — answers are upserted, no
 | `date_picker` | Native date picker | `"YYYY-MM-DD"` |
 | `slider_group` | Multiple sliders in one step | `{ "height": 172, "weight": 65.5 }` |
 | `multi_select` | Chip-style multi-select | `["option_key1", "option_key2"]` |
+| `time_picker` | Native time picker (`<picker mode="time">`) | `"HH:mm"` |
 
 Each input type has a corresponding `config` JSONB structure:
 
@@ -104,6 +105,8 @@ Each input type has a corresponding `config` JSONB structure:
 **`slider_group`**: `{ "sliders": [{ "key": "height", "label_zh": "身高", "label_en": "Height", "unit": "cm", "min": 140, "max": 220, "step": 1, "default": 165 }, …] }`
 
 **`multi_select`**: `{ "options": [{ "key": "diabetes", "label_zh": "糖尿病", "label_en": "Diabetes" }, …], "other_key": "health_conditions_other" }`
+
+**`time_picker`**: `{ "default": "12:30", "start": "00:00", "end": "23:59" }` — all optional. Added by `migration_programs.sql` for the 打卡 programs' 用餐时间 / 步行时间.
 
 ---
 

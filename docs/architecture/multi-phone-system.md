@@ -85,9 +85,75 @@ The Aeviva storefront (sibling repo `/Users/pin/waven/gcn`) has its own, indepen
 
 ---
 
-## 6. Files
+## 6. Email as a second login identity (2026-09-15)
 
-**Nano:**
+Everything above now has an email twin. `user_emails` (`migration_user_emails.sql`) mirrors
+`user_phones` column for column; `users.email` — a column that already existed as free text — is
+now the denormalized primary-email cache, and `users.email_verified_at` its `phone_verified_at`.
+Handlers in `handlers/email-otp.js`, endpoint for endpoint: `POST /email-otp/{send,verify,bind,
+set-primary,remove}`, `GET /email-otp/list`, and the admin-gated `POST /admin-email-add` — the
+last one outside the bearer-exempt `/email-otp/` prefix for exactly the reason `/admin-phone-add`
+is outside `/phone-otp/`. `handlePutUser` keeps the cache in step through `syncPrimaryEmail`, the
+twin of `syncPrimaryPhone`.
+
+**Three things differ from phones, and each is deliberate.**
+
+1. **Nano owns the code.** PNVS generates and verifies SMS codes on Aliyun's side; DirectMail — the
+   email sender (`lib/email.js`, `no-reply@mail.gcn.net`) — only delivers. `lib/email-otp.js`
+   therefore generates, hashes (sha256), stores (`email_otp_codes`), rate-limits (1 per 60s and
+   5 per hour per address) and verifies (5 wrong guesses burn the code; a resend invalidates the
+   previous one). `/email-otp/send` never consults `users`, so its response is identical for a
+   known and an unknown address. Limits are per-address only — the handlers never see a client
+   IP — which bounds a mail-quota DoS, not a takeover.
+2. **Waven only, on the channel ROOT.** `handlers/email-otp.js`'s allow-rule is
+   `root_key_name == null || root_key_name === 'waven'` via `lib/channels.js`'s
+   `resolveRootChannelKey` (recursive walk up `parent_channel_id`), so `waven-china` and
+   `waven-china-zj` users qualify and every aeviva-tree account is refused with
+   `channel_not_supported` — on login, and on either side of a bind-merge. This is **not**
+   `GCN_LINKED_CHANNEL_KEYS`, which now also includes waven and would lock it out. An email
+   sign-up lands on the root `waven` channel, the same default the WeChat login uses; a phone
+   sign-up still gets `channel_id NULL` (the aeviva-branded build shares `/phone-otp/verify`).
+3. **No backfill.** `users.email` values were typed by staff and never verified by their owner, so
+   they do not become login identities; `users.email` also gets no unique index (uniqueness lives
+   on `user_emails.email`). A legitimate address is attached by the user proving it, or by an
+   admin via Add Email (unverified, like an admin-added phone).
+
+The super-OTP backdoor is honoured on `/email-otp/verify` (login only, never bind) and audits with
+`identifier_type = 'email'` (`migration_super_otp_audit_log_identifier_type.sql`).
+
+**Surfaces:** miniapp login page (phone/email toggle — hidden on a brand-specific build and once
+an aeviva channel is stored, `EMAIL_LOGIN_AVAILABLE` in `utils/config.js`), `pages/emails/` (a
+clone of `pages/phones/`, reached from the main menu when `emailLoginAllowed`), the web user-app
+`LoginScreen` (an Email tab; the refusal surfaces as a message since that app is channel-unaware
+at login), and the admin panel's Emails tab + `EmailAddModal`. The miniapp's GCN store gate
+accepts `phone_verified || email_verified` on the waven tree.
+
+**GCN side.** `WEBVIEW_USER_SELECT` now also returns `email_verified`, an `emails[]` list, and
+`channel.root_key_name`. GCN's `handleNanoSSO` accepts an email-verified nano user **only for a
+sector whose `login_methods` lists `email`** (`migration_0117` there flips waven), mirrors the email
+list into its own `user_emails`, and signs `email` into the JWT; `root_key_name` is what arms its
+channel/sector guard (`channel_sector_mismatch`). GCN's own native login (`login.html` on
+`waven(-dev).gcn.net`) offers an email tab through the same seam. Detail: GCN `CLAUDE.md`
+§"The `waven` sector".
+
+**Deferred, not forgotten:** `handleNanoProvisionPartner` (GCN) still resolves a partner by phone —
+a nano partner record always carries one today, so an email-only *store partner* is not yet
+possible. Per-IP rate limiting needs the client IP threaded from `index.js`.
+
+---
+
+## 7. Files
+
+**Nano (email, 2026-09-15):**
+- `src/schemas/migration_{email_otp_codes,user_emails,super_otp_audit_log_identifier_type}.sql`
+- `src/functions/worker/lib/{email,email-otp,channels}.js`, `handlers/email-otp.js`
+- `src/functions/worker/handlers/{users,user-merge,login}.js` (`syncPrimaryEmail`, merge demotion, `WEBVIEW_USER_SELECT`)
+- `src/mini/nano-miniapp/pages/{login,emails}/`, `pages/main/main.js`, `utils/{config,phone}.js`
+- `src/web/user-app/src/components/LoginScreen.jsx`, `App.jsx`, `i18n.js`
+- `src/web/admin-panel/src/tabs/UsersTab.jsx`, `translations.js`
+- `tests/email-otp.test.js`, `tests/email-otp-routes.test.js`
+
+**Nano (phones):**
 - `src/functions/worker/handlers/phone-otp.js` — `handlePhoneOtpList`, `handlePhoneOtpRemove`, `handlePhoneOtpAdminAdd`
 - `src/functions/worker/handlers/partners.js` — `syncPartnerPhoneFromUser`
 - `src/functions/worker/handlers/users.js`, `handlers/login.js` — call sites for `syncPartnerPhoneFromUser`
@@ -100,3 +166,26 @@ The Aeviva storefront (sibling repo `/Users/pin/waven/gcn`) has its own, indepen
 - `src/functions/auth/index.js` — `handleNanoSSO`
 
 Full cross-repo contract (webview-token exchange, provisioning, admin-panel embed): `gcn-integration` skill.
+
+---
+
+# Appendix: the `CLAUDE.md` §33 record (moved here verbatim 2026-09-15)
+
+The project-rules entry as it stood before being condensed; the rules that must hold are now
+summarised in `CLAUDE.md`. Kept because it records decisions and live findings in the words they
+were made in.
+
+## 33. Multi-Phone System (2026-08-19)
+
+A user can hold more than one verified phone (`user_phones`, primary/secondary via `is_primary`), switch which is primary, remove one, and log in with **any** of them — not just the primary. `users.phone`/`phone_verified_at` are a denormalized cache of whichever row is currently primary, kept in sync by every phone-changing code path (`syncPrimaryPhone` in `handlers/users.js`, `handlers/phone-otp.js`'s bind/set-primary/remove, `login.js`'s WeChat bind/resolve), never a second source of truth.
+
+- **Self-service (miniapp):** `GET/POST /phone-otp/{list,bind,set-primary,remove}` (`handlers/phone-otp.js`), new page `pages/phones/` reached from the main menu.
+- **Admin panel:** the Phones tab (in the tabbed user-detail drawer, `UserDetailModal` — click the user's row, not the pencil icon) has full list/set-primary/remove plus an **Add Phone** action (`POST /admin-phone-add` → `handlePhoneOtpAdminAdd`, attaches an unverified number with no OTP proof, for staff use). That endpoint is deliberately **not** under `/phone-otp/`'s bearer-auth exemption — it's gated by `requireAdminTab(adminCtx, 'users')` like every other admin user-write endpoint, since it lets the caller attach an arbitrary number to an arbitrary account with zero ownership proof. The older pencil-icon "编辑用户" modal (`UserModal`) now shows the real phone list read-only (with a "Manage in Phones tab" handoff) instead of its own separate, single-value phone input — it can no longer mutate phone data at all.
+- **Login (`handlePhoneOtpVerify`) matches through `user_phones`, not `users.phone`** — any verified phone, primary or secondary, logs into the same account (used by both the miniapp's phone-login screen and the web user-app). This also holds for an admin-added *unverified* phone the moment someone completes a real OTP check against it at login — it resolves to the existing account rather than forking a duplicate, though the login itself doesn't retroactively set that row's `verified_at` (known, un-fixed cosmetic gap — the phone still shows "Unverified" afterward even though possession was just proven).
+- **GCN identity bridge (`gcn/src/functions/auth/index.js`'s `handleNanoSSO`):** previously matched a GCN consumer account by phone alone, so switching primary phone on nano's side silently forked a second GCN account. Fixed to resolve by `nano_user_id` first (phone-match only as fallback for first-time/pre-migration accounts), and to mirror nano's **full** phone list (not just primary) into GCN's own `user_phones` on every login, reconciled exactly (stale/removed numbers dropped) — this is also what lets GCN's own native OTP login recognize any of a user's nano-verified phones. `partners.phone` (the separate, single-value cache for a *provisioned partner/store* record — unrelated to the consumer-account phone above) is now kept in sync via `syncPartnerPhoneFromUser`, called from every phone-changing call site rather than only partner-record edits.
+
+- **Email is a second login identity (2026-09-15), Waven-only.** `user_emails` mirrors `user_phones`; `handlers/email-otp.js` mirrors `phone-otp.js`; DirectMail (`lib/email.js`, `no-reply@mail.gcn.net`, sender set by `DM_ACCOUNT_NAME` — empty means the code is logged, not sent) only delivers, so nano owns the code lifecycle in `lib/email-otp.js` (`email_otp_codes`, per-address rate limit, 5-attempt cap). The allow-rule is the channel **root** (`lib/channels.js` `resolveRootChannelKey` — `waven-china-zj` is a Waven user), deliberately not `GCN_LINKED_CHANNEL_KEYS`. No backfill of legacy `users.email`. `WEBVIEW_USER_SELECT` now returns `email_verified`, `emails[]` and `channel.root_key_name` — the last one **arms GCN's already-deployed channel/sector guard** (`channel_sector_mismatch`), so verify an `aeviva-china` user still enters `aeviva.gcn.net` after deploying it.
+- **GCN linkage is resolved through the channel tree, not a leaf-key set (2026-09-15).** The six `GCN_LINKED_CHANNEL_KEYS` copies are gone: the worker uses `lib/channels.js` `resolveGcnSector` (`GCN_SECTOR_FOR_ROOT_CHANNEL = {aeviva, waven}`), the admin panel `shared.jsx` `gcnSectorForChannel`, the miniapp `main.js` `GCN_STORE_HOST_FOR_CHANNEL`. The waven tree is now GCN-linked exactly like aeviva (Store tab on `waven(-dev).gcn.net`, chat catalog, partner provisioning with `sector_id: 'waven'`, admin console embed at `/waven/dashboard-admin.html`); `fetchFormulationTiers(sector)` carries the sector so a waven user sees waven's packages.
+
+Full detail: `docs/architecture/multi-phone-system.md` (§6 for email).
+

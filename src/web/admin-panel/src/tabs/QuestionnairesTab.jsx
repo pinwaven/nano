@@ -3,7 +3,9 @@ import axios from 'axios';
 import { X, Plus, Pencil, Trash2, ChevronDown, ChevronUp, Send, Eye } from 'lucide-react';
 import { LangCtx } from '../shared.jsx';
 
-const INPUT_TYPES = ['text', 'button_select', 'date_picker', 'slider_group', 'multi_select'];
+// time_picker: a bare "HH:mm" via <picker mode="time"> — added for the 打卡 programs
+// (Content ▸ Programs); config {default?, start?, end?}.
+const INPUT_TYPES = ['text', 'button_select', 'date_picker', 'slider_group', 'multi_select', 'time_picker'];
 const SAVE_TARGETS = ['user_field', 'bio_data_field', 'biomarker'];
 
 function GenerateQuestionnaireModal({ channels, onClose, onSave }) {
@@ -55,7 +57,7 @@ function GenerateQuestionnaireModal({ channels, onClose, onSave }) {
     finally { setSaving(false); }
   };
 
-  const INPUT_TYPE_COLOR = { text: '#6366f1', button_select: '#0ea5e9', date_picker: '#f59e0b', slider_group: '#10b981', multi_select: '#8b5cf6' };
+  const INPUT_TYPE_COLOR = { text: '#6366f1', button_select: '#0ea5e9', date_picker: '#f59e0b', slider_group: '#10b981', multi_select: '#8b5cf6', time_picker: '#f97316' };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -183,6 +185,7 @@ function QuestionnaireModal({ questionnaire, channels, onClose, onSave }) {
           <select className="form-input" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
             <option value="custom">Custom</option>
             <option value="onboarding">Onboarding</option>
+            <option value="program_day">Program day (打卡 — linked from Content ▸ Programs, never assigned by hand)</option>
           </select>
           <label>Channel</label>
           <select className="form-input" value={form.channel_id} onChange={e => setForm(f => ({ ...f, channel_id: e.target.value }))}>
@@ -309,7 +312,9 @@ function QuestionModal({ question, questionnaireId, onClose, onSave }) {
 // follow-up, and a clarifying form the external AG agent pushed back to unblock one specific job.
 // Assigning either to somebody else hands them questions written about a different person's
 // situation. They still appear in the management list and the assignments filter; they just
-// cannot be handed out.
+// cannot be handed out. 'program_day' is excluded too: its assignment is created by the server
+// when a user taps 开始打卡 on a program day (Content ▸ Programs) — a hand-assigned copy would
+// complete with no program day to land on.
 const ASSIGNABLE_TYPES = ['onboarding', 'custom'];
 
 function AssignModal({ questionnaires, users, coaches, onClose, onSave }) {

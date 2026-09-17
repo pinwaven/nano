@@ -36,7 +36,7 @@ async function loadUserForVivaAg(openid) {
         `SELECT u.user_id, u.external_id, u.nickname, u.gender, u.birth_date, u.language,
                 u.bio_data, u.channel_id,
                 u.persona_override_type, u.persona_override_expires_at, u.viva_ag_expires_at,
-                COALESCE(c.config->>'persona_type', 'nano') AS channel_persona_type
+                effective_persona_type(c.id) AS channel_persona_type
          FROM users u LEFT JOIN channels c ON c.id = u.channel_id
          WHERE u.user_id = $1 OR u.external_id = $1 LIMIT 1`,
         [openid]

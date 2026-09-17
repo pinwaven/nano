@@ -813,6 +813,84 @@ page {
    than a second card — because the chart is the formula the user is getting and the rungs are
    what they could add. Given equal weight they read as three competing options, which is the one
    thing this layout was chosen to avoid. */
+/* One purchasable package. Three of these sit side by side in the card, and unlike the upgrade
+   ladder they replaced they are PEERS: the recommended one is open and the others collapse to a
+   header, but none of them is styled as subordinate to another. That is the whole point of the
+   change — 轻享 is a different formula, not a smaller portion of 尊享. */
+.fcard-tier {
+  margin-top: 18rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 14rpx;
+  background: rgba(127, 127, 127, 0.08);
+}
+.fcard-tier:first-child {
+  margin-top: 4rpx;
+}
+.fcard-tier-open {
+  background: rgba(127, 127, 127, 0.12);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.22);
+}
+.fcard-tier-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12rpx;
+  /* Vertical padding, not just line height: this is a finger target in a chat bubble, and the
+     title row is only ~17px of intrinsic height on its own. */
+  padding: 6rpx 0;
+}
+/* The affordance. Without it the collapsed packages read as static summaries — which is exactly
+   how they were reported. */
+.fcard-tier-chev {
+  font-size: var(--fs-22, 22rpx);
+  color: var(--text-sub);
+  line-height: 1;
+  padding-left: 8rpx;
+}
+.fcard-tier-name {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+}
+.fcard-tier-label {
+  font-size: var(--fs-24, 24rpx);
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.5rpx;
+}
+.fcard-tier-rec {
+  font-size: var(--fs-19, 19rpx);
+  color: var(--chat-accent);
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  background: rgba(var(--blue-rgb), 0.18);
+}
+.fcard-tier-note {
+  display: block;
+  margin-top: 8rpx;
+  font-size: var(--fs-21, 21rpx);
+  line-height: 1.5;
+  color: var(--text-sub);
+}
+/* Overrides .fcard-legend's own top margin: collapsed, the roster sits directly under the
+   positioning line rather than below a bar chart. */
+.fcard-tier-dots {
+  margin-top: 12rpx;
+}
+.fcard-tier-pitch {
+  display: block;
+  margin-top: 12rpx;
+  font-size: var(--fs-21, 21rpx);
+  line-height: 1.55;
+  color: var(--text-sub);
+}
+.fcard-tier-hint {
+  display: block;
+  margin-top: 14rpx;
+  font-size: var(--fs-19, 19rpx);
+  line-height: 1.5;
+  color: var(--text-sub);
+}
 .fcard-upgrades {
   margin-top: 22rpx;
   padding-top: 20rpx;
@@ -878,6 +956,15 @@ page {
   line-height: 1.5;
   color: var(--text-sub);
 }
+/* Sits directly above the CTA and explains it: without it, a button reading 开始配制 on one
+   package and 购买 on another looks arbitrary. */
+.fcard-owned {
+  display: block;
+  margin-top: 14rpx;
+  font-size: var(--fs-19, 19rpx);
+  color: var(--chat-accent);
+  text-align: center;
+}
 .fcard-cta {
   margin-top: 18rpx;
   padding: 18rpx 24rpx;
@@ -890,18 +977,6 @@ page {
   border: 1rpx solid rgba(var(--blue-rgb), 0.40);
 }
 .fcard-cta:active {
-  opacity: 0.7;
-}
-.fcard-label {
-  margin-top: 14rpx;
-  padding: 14rpx 20rpx;
-  border-radius: 14rpx;
-  text-align: center;
-  font-size: var(--fs-22, 22rpx);
-  color: var(--text-sub);
-  border: 1rpx dashed rgba(127, 127, 127, 0.35);
-}
-.fcard-label:active {
   opacity: 0.7;
 }
 .fcard-agnote {
@@ -1645,7 +1720,7 @@ page {
    saw it on an in-app sale, and this is the only place its owner can read it back. */
 .code-chip {
   font-family: 'SF Mono', Menlo, monospace;
-  font-size: 22rpx;
+  font-size: var(--fs-22, 22rpx);
   letter-spacing: 1rpx;
   color: var(--steel);
   flex-shrink: 0;
@@ -1654,7 +1729,7 @@ page {
 .code-wx-addr {
   align-self: flex-start;
   margin: 4rpx 0 12rpx;
-  font-size: 24rpx;
+  font-size: var(--fs-24, 24rpx);
   color: var(--steel);
   text-decoration: underline;
 }
@@ -5304,3 +5379,138 @@ button.consent-row::after { border: none; }
   color: var(--text-sub);
   line-height: 1;
 }
+
+/* :::lesson / :::checkin — a 打卡 program day (CLAUDE.md §42). Both are server-written cards;
+   the lesson mounts a native <video> in the bubble only after a tap, so the transcript never
+   holds more than one live player. Colours are the chat accent variables, so light/dark follow. */
+.lcard {
+  margin: 14rpx 0 18rpx;
+  border-radius: 20rpx;
+  overflow: hidden;
+  background: rgba(var(--blue-rgb), 0.10);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.26);
+}
+.lcard-video {
+  display: block;
+  width: 100%;
+  height: 340rpx;
+  background: #000;
+}
+.lcard-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200rpx;
+  background: rgba(var(--blue-rgb), 0.14);
+}
+.lcard-cover:active { opacity: 0.7; }
+.lcard-play {
+  font-size: var(--fs-26, 26rpx);
+  font-weight: 600;
+  color: var(--chat-accent);
+  letter-spacing: 1rpx;
+}
+.lcard-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
+  padding: 16rpx 22rpx;
+}
+.lcard-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-25, 25rpx);
+  font-weight: 600;
+}
+.lcard-done {
+  font-size: var(--fs-21, 21rpx);
+  color: var(--chat-accent);
+  white-space: nowrap;
+}
+.ccard { margin: 6rpx 0 10rpx; }
+.ccard-cta {
+  padding: 18rpx 24rpx;
+  border-radius: 16rpx;
+  text-align: center;
+  font-size: var(--fs-24, 24rpx);
+  font-weight: 600;
+  color: var(--chat-accent);
+  background: rgba(var(--blue-rgb), 0.16);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.40);
+}
+.ccard-cta:active { opacity: 0.7; }
+.ccard-cta-off { opacity: 0.45; }
+.ccard-done {
+  padding: 14rpx 24rpx;
+  border-radius: 16rpx;
+  text-align: center;
+  font-size: var(--fs-24, 24rpx);
+  color: var(--chat-accent);
+  background: rgba(var(--blue-rgb), 0.08);
+  border: 1rpx dashed rgba(var(--blue-rgb), 0.30);
+}
+
+/* ── 营养定制 focus sheet ─────────────────────────────────────────────────────
+   Auto-height rather than .overlay-panel's fixed 82vh: this asks one short question and a
+   half-empty screen would read as a page that failed to load. Shares .overlay-mask, the
+   .overlay-header/.overlay-title chrome and .plan-type-badge with the sheets around it, so it
+   needs no colours of its own beyond the buttons. */
+.focus-sheet {
+  width: 100%;
+  background: #0F2540;
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 0 36rpx calc(40rpx + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+}
+.focus-intro {
+  display: block;
+  font-size: var(--fs-body);
+  color: #E8EEF7;
+  line-height: 1.6;
+  margin-bottom: 20rpx;
+}
+.focus-plan-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+  padding: 22rpx 24rpx;
+  background: rgba(99,117,236,0.10);
+  border-radius: 20rpx;
+  margin-bottom: 14rpx;
+}
+.focus-plan-body { flex: 1; display: flex; flex-direction: column; gap: 6rpx; }
+.focus-plan-name { font-size: var(--fs-body); color: #FFFFFF; font-weight: 600; }
+.focus-plan-goal { font-size: var(--fs-small); color: #8FA3BF; line-height: 1.5; }
+.focus-hint {
+  display: block;
+  font-size: var(--fs-small);
+  color: #8FA3BF;
+  line-height: 1.6;
+  margin: 16rpx 0 28rpx;
+}
+.focus-btn {
+  flex: 1;
+  text-align: center;
+  padding: 26rpx 0;
+  border-radius: 999rpx;
+  font-size: var(--fs-body);
+}
+.focus-btn-primary { background: #6375EC; color: #FFFFFF; font-weight: 600; }
+.focus-btn-ghost {
+  background: transparent;
+  color: #8FA3BF;
+  border: 1rpx solid rgba(143,163,191,0.35);
+  margin-top: 16rpx;
+}
+.focus-btn-row { display: flex; gap: 16rpx; }
+
+.theme-light .focus-sheet { background: #ffffff; }
+.theme-light .focus-intro { color: #1a2744; }
+.theme-light .focus-plan-row { background: rgba(41,66,229,0.07); }
+.theme-light .focus-plan-name { color: #14243D; }
+.theme-light .focus-plan-goal,
+.theme-light .focus-hint { color: #607090; }
+.theme-light .focus-btn-primary { background: #2942E5; }
+.theme-light .focus-btn-ghost { color: #607090; border-color: rgba(96,112,144,0.3); }

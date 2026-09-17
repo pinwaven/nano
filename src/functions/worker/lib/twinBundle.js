@@ -34,7 +34,15 @@ const { formatToShanghai, calculateAge, getNowShanghai } = require('./time-utils
 // Bump when the bundle's shape changes in a way an external consumer must notice. Returned in
 // every bundle response and echoed by /viva-ag/ping so the agent can assert compatibility.
 // v2 (2026-08-27) added job_questionnaires — purely additive, so a v1 consumer keeps working.
-const BUNDLE_VERSION = 2;
+// 3 — additive: layers.medical_records.food_sensitivity (§40). Every earlier field is unchanged,
+// so a consumer written against 2 keeps working; the version rises because a consumer that wants
+// the panel needs a way to know whether to expect it.
+// 4 (2026-09-15) — additive, Medical Records only: lab_panel markers now carry their own
+// data_date / display names / ranges (latest value PER MARKER across every report, no longer
+// "every marker on the newest date"); lab_history (per-marker series); health_reports[].items
+// (every printed analyte, catalogued or not); documents[].summary and documents[].structured
+// (the extraction agent's own reading — UNTRUSTED text, treat as data). No earlier field moved.
+const BUNDLE_VERSION = 4;
 
 // Presigned document URLs default to 6 hours: long enough for a multi-hour job that has to
 // resume a large download, short enough that a leaked bundle goes stale the same day.
@@ -158,10 +166,37 @@ async function fetchWeightHistory(pool, userId, limit = 30) {
 async function fetchHealthReports(pool, userId, limit = 30) {
     const n = clampInt(limit, 30, 1, 100);
     const { rows } = await pool.query(
-        `SELECT report_date::text AS report_date, source, institution, report_type, status, raw_data
+        `SELECT id, report_date::text AS report_date, source, institution, report_type, status, raw_data
          FROM health_reports WHERE user_id = $1 ORDER BY report_date DESC LIMIT $2`,
         [userId, n]
     );
+    // Every printed analyte under each report — mapped AND unmapped — in page order
+    // (migration_health_report_items.sql). This is what makes a 74-item organic-acid panel or a
+    // NAD+ report readable to the agent at all: neither has a catalog key, so `observations`
+    // alone carries nothing of them. Degrades to no items if the table is not there yet.
+    const itemsByReport = new Map();
+    if (rows.length > 0) {
+        try {
+            const { rows: items } = await pool.query(
+                `SELECT report_id, key_name, label, value_num, value_text, unit, ref_text, flag, section,
+                        data_date::text AS data_date
+                   FROM health_report_items
+                  WHERE report_id = ANY($1::bigint[]) ORDER BY report_id, sort_order, id`,
+                [rows.map(r => Number(r.id))]
+            );
+            for (const it of items) {
+                const list = itemsByReport.get(Number(it.report_id)) || [];
+                list.push({
+                    key_name: it.key_name, label: it.label,
+                    value: it.value_num == null ? it.value_text : Number(it.value_num),
+                    unit: it.unit, ref_text: it.ref_text, flag: it.flag, section: it.section, data_date: it.data_date,
+                });
+                itemsByReport.set(Number(it.report_id), list);
+            }
+        } catch (err) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'twinBundle: health_report_items unavailable', error: err.message }));
+        }
+    }
     // raw_data holds parsed observations plus an image_url; the URL is a 10-year signed link
     // to an OSS object and has no business leaving with the bundle, so only observations go.
     return rows.map(r => ({
@@ -171,7 +206,15 @@ async function fetchHealthReports(pool, userId, limit = 30) {
         report_type: r.report_type,
         status: r.status,
         observations: r.raw_data?.observations || [],
+        items: itemsByReport.get(Number(r.id)) || [],
     }));
+}
+
+// Per-marker lab series for the bundle (lib/labHistory.js — the same module that builds the
+// twin's lab_panel, so the two cannot disagree about a user's latest LDL).
+async function fetchLabHistoryForBundle(pool, userId) {
+    const { fetchLabSeries } = require('./labHistory');
+    return fetchLabSeries(pool, userId, { limitPerKey: 24 });
 }
 
 async function fetchHealthDocuments(pool, userId, documentIds = null) {
@@ -183,7 +226,8 @@ async function fetchHealthDocuments(pool, userId, documentIds = null) {
     }
     const { rows } = await pool.query(
         `SELECT id, oss_key, filename, content_type, size_bytes, etag,
-                doc_type, doc_date::text AS doc_date, institution, note, created_at
+                doc_type, doc_date::text AS doc_date, institution, note, created_at,
+                summary, extracted_json
          FROM health_documents
          WHERE user_id = $1 AND status = 'active' ${scope}
          ORDER BY COALESCE(doc_date, created_at::date) DESC, id DESC`,
@@ -197,7 +241,12 @@ async function fetchHealthDocuments(pool, userId, documentIds = null) {
 // binary bodies, so proxying a 50 MB PDF would inflate it ~33%, buffer it all in the worker, and
 // hit FC's response ceiling. OSS carries the bytes; nano only hands out a signature. As a
 // consequence these URLs also support HTTP Range for free, so the agent can chunk or resume.
-function presignDocuments(docs, ttlSeconds = DEFAULT_DOC_URL_TTL_SECONDS) {
+//
+// `includeReading` adds the extraction agent's own summary / structured block. On by default for
+// the AG bundle (it is what turns twenty PDFs into something an analyst can scan). Off for the
+// doc-extract claim, which hands the document to the extraction agent itself: sending its
+// previous reading back would just anchor the re-run on the read the user is trying to correct.
+function presignDocuments(docs, ttlSeconds = DEFAULT_DOC_URL_TTL_SECONDS, { includeReading = true } = {}) {
     const expiresAt = _ts(new Date(Date.now() + ttlSeconds * 1000));
     return docs.map(d => ({
         document_id: Number(d.id),
@@ -215,6 +264,7 @@ function presignDocuments(docs, ttlSeconds = DEFAULT_DOC_URL_TTL_SECONDS) {
         }),
         url_expires_at: expiresAt,
         supports_range: true,
+        ...(includeReading ? { summary: d.summary || null, structured: d.extracted_json || null } : {}),
     }));
 }
 
@@ -285,6 +335,59 @@ async function fetchJobQuestionnaires(pool, assignmentIds) {
         });
     }
     return [...byAssignment.values()];
+}
+
+// The user's most recent chronic food-sensitivity (IgG) panel, and every food on it (§40).
+//
+// Twin layer 3, Medical Records — it is a lab result about the person, not something they do.
+// The whole panel ships, not only the positives: "what came back clear" is exactly as much an
+// answer as "what didn't", and an agent asked to plan a rotation diet needs the negatives.
+//
+// ::text on the DATE columns, per this module's own convention: node-postgres parses a DATE at
+// local midnight, which serialises to a UTC instant and reads as the wrong day to any consumer.
+async function fetchFoodSensitivity(pool, userId) {
+    const { rows: panels } = await pool.query(
+        `SELECT id, panel_key, unit, sampled_at::text AS sampled_at, report_date::text AS report_date,
+                institution, sample_no, class_bands
+           FROM food_sensitivity_panels
+          WHERE user_id = $1
+          ORDER BY report_date DESC, id DESC
+          LIMIT 1`,
+        [userId]
+    );
+    if (panels.length === 0) return null;
+    const panel = panels[0];
+    const { rows } = await pool.query(
+        `SELECT r.food_key, r.value, r.below_detection, r.class,
+                c.name_zh, c.name_en, c.category, c.common_sources_zh, c.substitutes_zh
+           FROM food_sensitivity_results r
+           JOIN food_catalog c ON c.food_key = r.food_key
+          WHERE r.panel_id = $1
+          ORDER BY r.class DESC, r.value DESC NULLS LAST`,
+        [panel.id]
+    );
+    return {
+        panel_key: panel.panel_key,
+        unit: panel.unit,
+        sampled_at: panel.sampled_at,
+        report_date: panel.report_date,
+        institution: panel.institution,
+        class_bands: panel.class_bands || [],
+        // Stated rather than left to be inferred: an IgG panel is routinely mistaken for an
+        // acute-allergy test, and this bundle goes to an external agent.
+        assay_note: 'IgG-mediated chronic food sensitivity (intolerance). NOT an IgE-mediated acute allergy: usually temporary, and most foods can be reintroduced after a period of avoidance.',
+        foods: rows.map(r => ({
+            food_key: r.food_key,
+            name_zh: r.name_zh,
+            name_en: r.name_en,
+            category: r.category,
+            value: r.value == null ? null : Number(r.value),
+            below_detection: r.below_detection,
+            class: r.class,
+            common_sources_zh: r.common_sources_zh || [],
+            substitutes_zh: r.substitutes_zh || [],
+        })),
+    };
 }
 
 async function fetchMemoryFacts(pool, userId) {
@@ -480,8 +583,9 @@ async function buildTwinBundle(pool, { user, ref, documentIds = null, urlTtlSeco
 
     const [
         latestBio, bioHistory, twin, weightHistory,
-        reports, documents, questionnaireRows, memoryFacts,
+        reports, documents, foodSensitivity, questionnaireRows, memoryFacts,
         healthPlans, schedule, inventory, reminders, formulary, dataInventory, jobQuestionnaires,
+        labHistory,
     ] = await Promise.all([
         _safe('latest_biomarkers', () => fetchLatestBiomarkers(pool, userId), null),
         _safe('biomarker_history', () => fetchBiomarkerHistory(pool, userId), { total_count: 0, tests: [] }),
@@ -489,6 +593,7 @@ async function buildTwinBundle(pool, { user, ref, documentIds = null, urlTtlSeco
         _safe('weight_history', () => fetchWeightHistory(pool, userId), []),
         _safe('health_reports', () => fetchHealthReports(pool, userId), []),
         _safe('health_documents', () => fetchHealthDocuments(pool, userId, documentIds), []),
+        _safe('food_sensitivity', () => fetchFoodSensitivity(pool, userId), null),
         _safe('questionnaires', () => fetchQuestionnaireRows(pool, userId), []),
         _safe('memory_facts', () => fetchMemoryFacts(pool, userId), []),
         _safe('health_plans', () => fetchActiveHealthPlans(pool, userId, language), []),
@@ -498,6 +603,7 @@ async function buildTwinBundle(pool, { user, ref, documentIds = null, urlTtlSeco
         _safe('dots_formulary', () => fetchDotsFormulary(pool), []),
         _safe('inventory', () => fetchInventory(pool, userId), null),
         _safe('job_questionnaires', () => fetchJobQuestionnaires(pool, questionnaireAssignmentIds), []),
+        _safe('lab_history', () => fetchLabHistoryForBundle(pool, userId), {}),
     ]);
 
     // Same BMI precedence handlePostChat uses: prefer a real scale/wearable reading over the
@@ -536,7 +642,13 @@ async function buildTwinBundle(pool, { user, ref, documentIds = null, urlTtlSeco
                 health_reports: reports,
                 lab_panel: twin?.latest_lab_data || null,
                 lab_date: twin?.latest_lab_date || null,
+                // Per-marker series, oldest→newest — the panel above is only each marker's latest.
+                lab_history: labHistory,
                 documents: presignDocuments(documents, urlTtlSeconds),
+                // Twin layer 3 (§40). Its own section, never folded into lab_panel: a food
+                // titre is not a biomarker and this panel never reaches
+                // health_twin.latest_lab_data. null when the user has uploaded none.
+                food_sensitivity: foodSensitivity,
             },
             personal_profile: {
                 bio_data: user.bio_data || null,

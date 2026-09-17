@@ -94,8 +94,14 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 | User Deletion | [user-deletion.md](user-deletion.md) |
 | AI Report Engine | [report-engine.md](report-engine.md) |
 | Health Plan System | [health-plan-system.md](health-plan-system.md) |
+| Check-in Programs (打卡计划, CLAUDE.md §42) | [programs.md](programs.md) |
 | Digital Twin (umbrella — 4 layers) | [digital-twin.md](digital-twin.md) |
 | Viva AG (external deep-analysis agent) | [viva-ag.md](viva-ag.md) |
+| Health Documents (upload surface, coach read-only — historical CLAUDE.md §38) | [health-documents.md](health-documents.md) |
+| Document Extraction & Food-Sensitivity Panels (historical CLAUDE.md §39–§40) | [doc-extraction.md](doc-extraction.md) |
+| AI Store-Product Recommendation (historical CLAUDE.md §37) | [store-product-recommendation.md](store-product-recommendation.md) |
+| Dots Formulation (twin → capsules) | [dots-formulation.md](dots-formulation.md) |
+| Dots Formulation Lifecycle (statuses, label QR, packages, orders, subtab, chat tool — historical CLAUDE.md §28–§28g) | [dots-formulation-lifecycle.md](dots-formulation-lifecycle.md) |
 | AI 精准营养素 (AG dots ordering, cross-repo) | [ag-dots-ordering.md](ag-dots-ordering.md) |
 | Reminder System | [reminder-system.md](reminder-system.md) |
 | Channel Inventory | [channel-inventory.md](channel-inventory.md) |

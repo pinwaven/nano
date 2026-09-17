@@ -12,6 +12,12 @@ const {
 } = require('./lib/auth');
 const { getNowShanghai, calculateAge } = require('./lib/time-utils');
 const { updateHealthTwin } = require('./lib/healthTwinUpdater');
+const {
+    handleGetDocExtractPing, handleGetDocExtractCatalog, handlePostDocExtractValidate,
+    handlePostDocExtractClaim, handlePostDocExtractHeartbeat, handlePostDocExtractResult,
+    handlePostDocExtractFail,
+} = require('./handlers/doc_extraction');
+const { handleGetDocExtractDocs, handleGetDocExtractOpenApi } = require('./handlers/doc_extraction_docs');
 const { BiomarkerEstimator } = require('./lib/estimator/BiomarkerEstimator');
 const { deriveTags } = require('./lib/estimator/tagDerivation');
 const { BioAgeCalculator } = require('./lib/bioage/BioAgeCalculator');
@@ -52,10 +58,11 @@ const { handleGetAcademyCourses, handlePostAcademyCourse, handlePutAcademyCourse
 const { handleGetTickets, handlePostTicket, handlePutTicket, handleDeleteTicket } = require('./handlers/tickets');
 const { getNestedPath, formatQuestionnaireContext, handleGetPendingQuestionnaires, handlePostQuestionnaireResponse, handlePatchQuestionnaireAssignment, handleGetQuestionnaires, handleGenerateQuestionnaire, handleAiFillSku, handlePostQuestionnaire, handlePutQuestionnaire, handleDeleteQuestionnaire, handleGetQuestionnaireQuestions, handlePostQuestionnaireQuestion, handlePutQuestionnaireQuestion, handleDeleteQuestionnaireQuestion, handlePutQuestionnaireQuestionsReorder, handlePostQuestionnaireAssignment, handleGetQuestionnaireAssignments, handleGetQuestionnaireResponses } = require('./handlers/questionnaires');
 const { handleGetSavedReports, handlePostSavedReport, handlePutSavedReport, handleDeleteSavedReport, handlePostAdminReport } = require('./handlers/reports');
-const { handleGetHealthPlanTemplates, handlePostHealthPlanTemplate, handlePutHealthPlanTemplate, handleDeleteHealthPlanTemplate, handleGetHealthPlans, handlePostJoinHealthPlan, handleGetHealthPlanDetail, handlePutHealthPlan, handlePatchPlanReminder, handlePostHealthPlanCheckin, handlePostHealthPlanMilestone, handleGetCoachClientPlans, handleGetHealthReports, handleGetHealthReport, handlePostHealthReport } = require('./handlers/health-plans');
+const { handleGetHealthPlanTemplates, handlePostHealthPlanTemplate, handlePutHealthPlanTemplate, handleDeleteHealthPlanTemplate, handleGetHealthPlans, handlePostJoinHealthPlan, handleGetHealthPlanDetail, handlePutHealthPlan, handlePatchPlanReminder, handlePostHealthPlanCheckin, handlePostHealthPlanMilestone, handleGetCoachClientPlans, handleGetHealthReports, handleGetHealthReport, handlePostHealthReport, handleDeleteHealthReport } = require('./handlers/health-plans');
 const { handleGetLabProviders, handlePostLabProvider, handlePutLabProvider, handleDeleteLabProvider, handleGetLabUserMappings, handlePostLabUserMapping, handleDeleteLabUserMapping, handleGetLabReports, handleLabImportEvent } = require('./handlers/labs');
 const { handleGetInventoryStock, handlePostInventoryStock, handleGetWarehouses, handlePostWarehouse, handlePutWarehouse, handleDeleteWarehouse } = require('./handlers/inventory');
-const { handleGetOrders, handleGetMyOrders, handlePostStoreItem, handlePutStoreItem, handleDeleteStoreItem, handleGetSkus, handlePostSku, handlePutSku, handleDeleteSku } = require('./handlers/store');
+const { handleGetOrders, handleGetMyOrders, handlePostStoreItem, handlePutStoreItem, handleDeleteStoreItem, handleGetSkus, handlePostSku, handlePutSku, handleDeleteSku,
+    handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch } = require('./handlers/store');
 const { handleGetCommissionSettings, handlePutCommissionSetting, handleGetCoachCommissions, handleGetChannelCommissions, handleGetCoachEarnings, handleGetCoachPayouts, handleGetChannelPayouts, handlePostGenerateCoachPayouts, handlePostGenerateChannelPayouts, handlePutCoachPayout, handlePutChannelPayout } = require('./handlers/commissions');
 const { handleGetPartners, handleGetPartner, handleGetPartnerByPhone, handleGcnPartnerLookup, handlePostPartner, handlePostPartnerGcnProvision, handlePostPartnerInviteCode, handleGcnPartnerInviteCode, handleGcnPartnerApply, handlePostPartnerSale, handlePutPartner, handleDeletePartner, handleGetPartnerCommissions, handlePostPartnerCommission, handleGetPartnerPayouts, handlePostGeneratePartnerPayouts, handlePutPartnerPayout, handleGcnPartnerChildren, handleGcnPartnerDescendants, handleGetChannelReferralNetwork, handleGetPartnerCommissionConfig, handlePutPartnerCommissionConfig, handleGetPartnerTypes, handlePostPartnerType, handlePutPartnerType, handleDeletePartnerType, handleGcnSyncPartnerType, handleGcnSyncPartnerTierAssignment, handleGetPartnerCommissionRules, handlePostPartnerCommissionRule, handlePutPartnerCommissionRule, handleDeletePartnerCommissionRule, handlePutChannelPartnerSystemPermission, handleGetChannelRewardsSummary } = require('./handlers/partners');
 const { handleGetEvents, handlePostEvent, handlePutEvent, handleDeleteEvent, handleGetEventSignups, handlePostEventSignup, handleDeleteEventSignup, handleGetMyEventSignups } = require('./handlers/events');
@@ -66,6 +73,7 @@ const { handleGetKinoDevices, handlePostKinoDevice, handlePutKinoDevice, handleD
 const { handleGetKnowledgeEntries, handlePostKnowledgeEntry, handlePutKnowledgeEntry, handleDeleteKnowledgeEntry } = require('./handlers/knowledge');
 const { handleGetPersonaSettings, handlePutPersonaSettings } = require('./handlers/personaSettings');
 const { handleGetUserFacts, handlePostUserFact, handlePutUserFact, handleDeleteUserFact } = require('./handlers/userFacts');
+const { handleGetFoodSensitivity } = require('./handlers/food_sensitivity');
 const { handleGetCreditBalance, handleGetCreditHistory, handlePostCreditWithdraw, handleGetUserWithdrawals, handleGetAdminWithdrawals, handlePutAdminWithdrawal, handleGetAdminUserCreditHistory, handlePostAdminUserCreditAdjustment } = require('./handlers/credits');
 const {
     handlePostVivaAgJob, handleGetVivaAgJobs, handleGetVivaAgJobDetail, handlePostVivaAgJobCancel, handleGetVivaAgResultUrl,
@@ -75,21 +83,27 @@ const {
     handlePostVivaAgQuestionnaire, resumeVivaAgJobForAssignment,
 } = require('./handlers/viva_ag');
 const { handleGetVivaAgDocs, handleGetVivaAgOpenApi } = require('./handlers/viva_ag_docs');
+const { handleGetTwinReports, handleGetTwinReportFile } = require('./handlers/twin_reports');
 const {
     handleGetHealthDocumentPresign, handlePostHealthDocument, handleGetHealthDocuments,
     handleGetHealthDocumentUrl, handleDeleteHealthDocument,
+    handlePostHealthDocumentExtract,
+    handleDeleteHealthDocumentExtraction,
+    handlePatchHealthDocument,
 } = require('./handlers/health_documents');
+const { handleGetLabHistory } = require('./handlers/lab_history');
 const { handleGetAdminUserPersonaSubscription, handlePostAdminUserPersonaSubscription, handleDeleteAdminUserPersonaSubscription, handleGetAdminPersonaSubscriptions, handlePostAdminUserVivaAg, handleDeleteAdminUserVivaAg } = require('./handlers/persona_subscriptions');
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
 const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
 const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleSetIdentity, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation, handlePostFormulationPurchaseConfirmed } = require('./handlers/users');
-const { handleGetDotsInventory, handleGetMyCartridges, handlePostCartridgeInsert, handlePostCartridgeRemove, handlePostDispense, handleGetStoreItems, handleGetStoreItemsByChannel, handleGetChannelInventory, handlePostChannelInventory, handlePutChannelInventory, handleDeleteChannelInventory, handlePutOrder, handlePostOrder, handlePostOrderBatch, handleGetNutritionPlan, handleGetFormulationOrders, handleGetFormulationCheckoutSnapshot, handlePostFormulationSubmit,
-    handlePostFormulationRedeem, handleGetFormulationLabelByCode, handleGetFormulationReviewSnapshot, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
+const { handleGetDotsInventory, handleGetNutritionPlan, handleGetFormulationCheckoutSnapshot, handleGetFormulationLabelByCode, handleGetFormulationReviewSnapshot, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
+const { handleGetFormulationOrders, handlePostFormulationSubmit, handlePostFormulationRedeem } = require('./handlers/formulation_orders');
 const { handlePostBoxBatch, handleGetBoxBatches, handleGetBoxBatchBoxes, handleGetBoxPage, handlePostBoxClaim } = require('./handlers/boxes');
 const { handleGetAgFormulationReviewSnapshot, handlePostAgFormulationApproved, handleGetAgFormulationStatus } = require('./handlers/ag_formulation');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
 const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm, handleGetMyCoach } = require('./handlers/login');
 const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified, handlePhoneOtpList, handlePhoneOtpRemove, handlePhoneOtpAdminAdd } = require('./handlers/phone-otp');
+const { handleEmailOtpSend, handleEmailOtpVerify, handleEmailOtpBind, handleEmailSetPrimary, handleEmailOtpList, handleEmailOtpRemove, handleEmailOtpAdminAdd } = require('./handlers/email-otp');
 const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handleChatGenerateEvent, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign, _fireQuestionnaireAnsweredFollowup } = require('./handlers/chat');
 const { CHAT_EVENT_SOURCE } = require('./lib/chatEventBridge');
 // Same environment-scoping fix as CHAT_EVENT_SOURCE (see chatEventBridge.js's comment for the
@@ -101,6 +115,7 @@ const { CHAT_EVENT_SOURCE } = require('./lib/chatEventBridge');
 const LAB_EVENT_SOURCE = 'acs.lab' + (process.env.EVENT_SOURCE_SUFFIX || '');
 const DISPATCHER_EVENT_SOURCE = 'acs.dispatcher' + (process.env.EVENT_SOURCE_SUFFIX || '');
 const { handleDailyCheckinEvent } = require('./handlers/checkin');
+const { handleProgramDayEvent, handleProgramNudgeEvent, handleGetProgramsMy, handleGetProgramLessonUrl, handlePostProgramDayStartCheckin, completeProgramDayCheckin, handleGetCoachPrograms, handlePostProgramEnroll, handlePutProgramEnrollment, handleGetPrograms, handlePostProgram, handlePutProgram, handleDeleteProgram, handleGetProgramDays, handlePutProgramDay, handleGetProgramEnrollments } = require('./handlers/programs');
 const { handleGetVivaSubscriptionStatus, handleGetVivaSubscriptionPlans, handlePostVivaSubscriptionCheckoutConfirmed, handlePostVivaSubscriptionRedeem, handleGetVivaSubscriptionCodes, handlePutVivaSubscriptionCode } = require('./handlers/viva_subscription');
 
 
@@ -162,6 +177,20 @@ exports.handler = async (req, resp, context) => {
                 await handleDailyCheckinEvent(cloudData);
             } catch (err) {
                 console.error(JSON.stringify({ level: 'ERROR', msg: 'handleDailyCheckinEvent failed', error: err.message }));
+            }
+        } else if (event.source === DISPATCHER_EVENT_SOURCE && event.type === 'program.day') {
+            // 打卡 program: offer the user's next program day (CLAUDE.md §42).
+            try {
+                await handleProgramDayEvent(cloudData);
+            } catch (err) {
+                console.error(JSON.stringify({ level: 'ERROR', msg: 'handleProgramDayEvent failed', error: err.message }));
+            }
+        } else if (event.source === DISPATCHER_EVENT_SOURCE && event.type === 'program.nudge') {
+            // 打卡 program: "Day N 还没完成" for an open day from an earlier date (§42).
+            try {
+                await handleProgramNudgeEvent(cloudData);
+            } catch (err) {
+                console.error(JSON.stringify({ level: 'ERROR', msg: 'handleProgramNudgeEvent failed', error: err.message }));
             }
         }
         // No 'nutrition.topup' case, deliberately: nothing may create a nutrition plan on a timer.
@@ -275,9 +304,19 @@ exports.handler = async (req, resp, context) => {
         return (key && h[key]) || '';
     })();
 
+    // Same shape and same reasoning as the viva-ag reader above, for the document-extraction
+    // agent's own per-job fencing token. A separate header rather than a shared one: the two
+    // queues issue independent tokens, and a worker holding one must never be able to present it
+    // to the other.
+    const docExtractJobToken = (() => {
+        const h = event.headers || {};
+        const key = Object.keys(h).find(k => k.toLowerCase() === 'x-doc-extract-job-token');
+        return (key && h[key]) || '';
+    })();
+
     const adminCtx = { role: 'superadmin', username: 'superadmin', channelId: null, accountId: null, canManageSubchannels: false };
     const expectedBearer = process.env.API_BEARER_TOKEN;
-    if (expectedBearer && rawPath && path !== '/admin/login' && !path.startsWith('/qr-login/') && !path.startsWith('/phone-otp/')) {
+    if (expectedBearer && rawPath && path !== '/admin/login' && !path.startsWith('/qr-login/') && !path.startsWith('/phone-otp/') && !path.startsWith('/email-otp/')) {
         const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
         const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
         if (token === expectedBearer) {
@@ -325,6 +364,32 @@ exports.handler = async (req, resp, context) => {
             }
             adminCtx.role = 'superadmin';
             adminCtx.username = 'viva-ag-service';
+        } else if (process.env.DOC_EXTRACT_API_TOKEN && token === process.env.DOC_EXTRACT_API_TOKEN) {
+            // Scoped external credential for the document-extraction agent — a SEPARATE service
+            // from viva-ag even though the same platform runs both, so it gets a separate token.
+            // Extraction is available to every user (CLAUDE.md 38) while AG is a paid add-on, and
+            // one credential covering both would mean a compromise of the cheap, widely-used
+            // service also opened the queue of paid deep analyses.
+            //
+            // MUST stay above the 'ch.' branch below — that one matches on PREFIX, so a token
+            // that happened to start with "ch." would be swallowed there and 401 as a malformed
+            // channel-admin JWT. Mint this token as "dex_" + 32 hex.
+            //
+            // Exact match only, no prefixes: every parameter travels in the query string or body
+            // rather than a path segment, because this Set can only compare whole paths.
+            const DOC_EXTRACT_ALLOWED_PATHS = new Set([
+                '/doc-extract/ping', '/doc-extract/docs', '/doc-extract/openapi.json',
+                '/doc-extract/catalog', '/doc-extract/validate',
+                '/doc-extract/jobs/claim', '/doc-extract/jobs/heartbeat',
+                '/doc-extract/jobs/result', '/doc-extract/jobs/fail',
+            ]);
+            if (!DOC_EXTRACT_ALLOWED_PATHS.has(path)) {
+                const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
+                if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
+                return forbiddenPayload;
+            }
+            adminCtx.role = 'superadmin';
+            adminCtx.username = 'doc-extract-service';
         } else if (token.startsWith('ch.')) {
             const payload = verifyChannelAdminToken(token);
             if (!payload) {
@@ -376,10 +441,22 @@ exports.handler = async (req, resp, context) => {
         if (sandbox && method !== 'GET' && path !== '/chat' && path !== '/health-advice') {
             result = { success: true, sandbox: true };
         } else if (method === 'GET') {
+            // --- Document extraction: external agent (scoped DOC_EXTRACT_API_TOKEN) ---
+            // Exact-match only, same constraint as viva-ag below: the token's allowlist can only
+            // compare whole paths, so every parameter travels in the query string.
+            if (path === '/doc-extract/ping') {
+                result = await handleGetDocExtractPing();
+            } else if (path === '/doc-extract/docs') {
+                result = await handleGetDocExtractDocs();
+            } else if (path === '/doc-extract/openapi.json') {
+                result = await handleGetDocExtractOpenApi();
+            } else if (path === '/doc-extract/catalog') {
+                result = await handleGetDocExtractCatalog();
+            }
             // --- Viva AG: external agent (scoped VIVA_AG_API_TOKEN) ---
             // Exact-match only: the token's allowlist can only compare whole paths, so every
             // parameter travels in the query string rather than a path segment.
-            if (path === '/viva-ag/ping') {
+            else if (path === '/viva-ag/ping') {
                 result = await handleGetVivaAgPing();
             } else if (path === '/viva-ag/docs') {
                 result = await handleGetVivaAgDocs();
@@ -406,6 +483,12 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetAgFormulationStatus(query);
             } else if (path === '/viva-ag/jobs') {
                 result = await handleGetVivaAgJobs(query);
+            // --- 综合报告 card on the 数字孪生 subtab: completed AG artifacts, ownership-gated
+            //     (not entitlement-gated), files by index. handlers/twin_reports.js ---
+            } else if (path === '/twin-reports') {
+                result = await handleGetTwinReports(query);
+            } else if (path === '/twin-reports/file') {
+                result = await handleGetTwinReportFile(query);
             // --- Health documents (user-facing; never routed through /oss/presign, which
             //     performs no authorization on a client-supplied key) ---
             } else if (path === '/health-documents/presign') {
@@ -450,8 +533,12 @@ exports.handler = async (req, resp, context) => {
                 result = requirePermission(adminCtx, 'content:read') || await handleGetKnowledgeEntries();
             } else if (path.includes('/user-facts')) {
                 result = await handleGetUserFacts(query.openid, query.coach_id);
+            } else if (path.includes('/food-sensitivity')) {
+                result = await handleGetFoodSensitivity(query.openid, query.coach_id);
             } else if (path === '/phone-otp/list') {
                 result = await handlePhoneOtpList(query);
+            } else if (path === '/email-otp/list') {
+                result = await handleEmailOtpList(query);
             } else if (path.match(/\/kino-tested-chips\/(\d+)/)) {
                 const scanId = path.match(/\/kino-tested-chips\/(\d+)/)[1];
                 result = await handleGetKinoTestedChipDetail(scanId);
@@ -485,6 +572,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetNutritionPlan(query.openid);
             } else if (path === '/health-twin') {
                 result = await handleGetHealthTwin(query.openid);
+            } else if (path === '/lab-history') {
+                result = await handleGetLabHistory(query);
             } else if (path.match(/\/health-reports\/(\d+)/)) {
                 const reportId = path.match(/\/health-reports\/(\d+)/)[1];
                 result = await handleGetHealthReport(reportId, query);
@@ -658,6 +747,18 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetAdminChannelRoles(adminCtx);
             } else if (path === '/tickets' || path.includes('/tickets')) {
                 result = await handleGetTickets(adminCtx.channelId);
+            } else if (path === '/programs/my') {
+                result = await handleGetProgramsMy(query);
+            } else if (path === '/programs/lesson-url') {
+                result = await handleGetProgramLessonUrl(query);
+            } else if (path === '/programs/coach') {
+                result = await handleGetCoachPrograms(query);
+            } else if (path.match(/^\/programs\/(\d+)\/days$/)) {
+                result = requirePermission(adminCtx, 'content:read') || await handleGetProgramDays(path.match(/^\/programs\/(\d+)\/days$/)[1]);
+            } else if (path.match(/^\/programs\/(\d+)\/enrollments$/)) {
+                result = requirePermission(adminCtx, 'content:read') || await handleGetProgramEnrollments(path.match(/^\/programs\/(\d+)\/enrollments$/)[1]);
+            } else if (path === '/programs') {
+                result = requirePermission(adminCtx, 'content:read') || await handleGetPrograms();
             } else if (path.includes('/pending-questionnaires')) {
                 result = await handleGetPendingQuestionnaires(query.openid);
             } else if (path.match(/\/questionnaires\/(\d+)\/questions/)) {
@@ -727,8 +828,24 @@ exports.handler = async (req, resp, context) => {
                 result = { success: false, error: `Unknown GET route: ${path}` };
             }
         } else if (method === 'POST') {
+            // --- Document extraction: external agent (scoped DOC_EXTRACT_API_TOKEN) ---
+            if (path === '/doc-extract/jobs/claim') {
+                result = await handlePostDocExtractClaim(parsedBody);
+            } else if (path === '/doc-extract/jobs/heartbeat') {
+                result = await handlePostDocExtractHeartbeat({ ...parsedBody, result_token: parsedBody?.result_token || docExtractJobToken });
+            } else if (path === '/doc-extract/jobs/result') {
+                result = await handlePostDocExtractResult({ ...parsedBody, result_token: parsedBody?.result_token || docExtractJobToken });
+            } else if (path === '/doc-extract/jobs/fail') {
+                result = await handlePostDocExtractFail({ ...parsedBody, result_token: parsedBody?.result_token || docExtractJobToken });
+            } else if (path === '/doc-extract/validate') {
+                result = await handlePostDocExtractValidate(parsedBody);
+            }
+            // --- Document extraction: user-facing (app bearer + ?openid=) ---
+            else if (path.match(/^\/health-documents\/(\d+)\/extract$/)) {
+                result = await handlePostHealthDocumentExtract(path.match(/^\/health-documents\/(\d+)\/extract$/)[1], parsedBody);
+            }
             // --- Viva AG: external agent (scoped VIVA_AG_API_TOKEN) ---
-            if (path === '/viva-ag/jobs/claim') {
+            else if (path === '/viva-ag/jobs/claim') {
                 result = await handlePostVivaAgClaim(parsedBody);
             } else if (path === '/viva-ag/jobs/heartbeat') {
                 result = await handlePostVivaAgHeartbeat(parsedBody);
@@ -755,6 +872,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostAdminChannelRole(parsedBody, adminCtx);
             } else if (path === '/admin-phone-add') {
                 result = requireAdminTab(adminCtx, 'users') || await handlePhoneOtpAdminAdd(parsedBody);
+            } else if (path === '/admin-email-add') {
+                result = requireAdminTab(adminCtx, 'users') || await handleEmailOtpAdminAdd(parsedBody);
             } else if (path === '/validate-invite') {
                 result = await handleValidateInvite(parsedBody);
             } else if (path === '/wx-app-login') {
@@ -785,6 +904,16 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePhoneAcceptUnverified(parsedBody);
             } else if (path === '/phone-otp/remove') {
                 result = await handlePhoneOtpRemove(parsedBody);
+            } else if (path === '/email-otp/send') {
+                result = await handleEmailOtpSend(parsedBody);
+            } else if (path === '/email-otp/verify') {
+                result = await handleEmailOtpVerify(parsedBody);
+            } else if (path === '/email-otp/bind') {
+                result = await handleEmailOtpBind(parsedBody);
+            } else if (path === '/email-otp/set-primary') {
+                result = await handleEmailSetPrimary(parsedBody);
+            } else if (path === '/email-otp/remove') {
+                result = await handleEmailOtpRemove(parsedBody);
             } else if (path === '/resolve-phone') {
                 const { code, app_id } = parsedBody;
                 result = await handleResolvePhone(code, app_id);
@@ -989,11 +1118,19 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGenerateQuestionnaire(parsedBody);
             } else if (path === '/questionnaires') {
                 result = await handlePostQuestionnaire(parsedBody);
+            } else if (path === '/programs/day/start-checkin') {
+                result = await handlePostProgramDayStartCheckin(parsedBody);
+            } else if (path === '/programs/enroll') {
+                result = await handlePostProgramEnroll(parsedBody);
+            } else if (path === '/programs') {
+                result = requireAdminTab(adminCtx, 'content') || await handlePostProgram(parsedBody);
             } else if (path === '/questionnaire-responses') {
                 // resumeVivaAgJobForAssignment is injected for the same reason the other two are:
                 // handlers/questionnaires.js must not require handlers/viva_ag.js. Completing a
                 // 'viva_ag' questionnaire is what un-parks the job that asked it.
-                result = await handlePostQuestionnaireResponse(parsedBody, saveChatMessage, _fireQuestionnaireAnsweredFollowup, resumeVivaAgJobForAssignment);
+                // completeProgramDayCheckin (§42) likewise: a 'program_day' questionnaire's completion
+                // is what renders and delivers the day's recap.
+                result = await handlePostQuestionnaireResponse(parsedBody, saveChatMessage, _fireQuestionnaireAnsweredFollowup, resumeVivaAgJobForAssignment, completeProgramDayCheckin);
             } else if (path === '/questionnaire-assignments') {
                 result = await handlePostQuestionnaireAssignment(parsedBody);
             } else if (path === '/admin/saved-reports') {
@@ -1056,6 +1193,13 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/persona-settings\/([a-z0-9-]+)/i)) {
                 const personaType = path.match(/\/persona-settings\/([a-z0-9-]+)/i)[1];
                 result = requireAdminTab(adminCtx, 'content') || await handlePutPersonaSettings(personaType, parsedBody, adminCtx.username);
+            } else if (path === '/programs/enrollment') {
+                result = await handlePutProgramEnrollment(parsedBody);
+            } else if (path.match(/^\/programs\/(\d+)\/days\/(\d+)$/)) {
+                const m = path.match(/^\/programs\/(\d+)\/days\/(\d+)$/);
+                result = requireAdminTab(adminCtx, 'content') || await handlePutProgramDay(m[1], m[2], parsedBody);
+            } else if (path.match(/^\/programs\/(\d+)$/)) {
+                result = requireAdminTab(adminCtx, 'content') || await handlePutProgram(path.match(/^\/programs\/(\d+)$/)[1], parsedBody);
             } else if (path.match(/\/knowledge-entries\/([a-z0-9-]+)/i)) {
                 const entryId = path.match(/\/knowledge-entries\/([a-z0-9-]+)/i)[1];
                 result = requireAdminTab(adminCtx, 'content') || await handlePutKnowledgeEntry(entryId, parsedBody);
@@ -1236,7 +1380,11 @@ exports.handler = async (req, resp, context) => {
                 result = { success: false, error: `Unknown PUT route: ${path}` };
             }
         } else if (method === 'DELETE') {
-            if (path.match(/^\/health-documents\/(\d+)$/)) {
+            if (path.match(/^\/health-documents\/(\d+)\/extraction$/)) {
+                result = await handleDeleteHealthDocumentExtraction(path.match(/^\/health-documents\/(\d+)\/extraction$/)[1], query);
+            } else if (path.match(/^\/health-reports\/(\d+)$/)) {
+                result = await handleDeleteHealthReport(path.match(/^\/health-reports\/(\d+)$/)[1], query);
+            } else if (path.match(/^\/health-documents\/(\d+)$/)) {
                 result = await handleDeleteHealthDocument(path.match(/^\/health-documents\/(\d+)$/)[1], query);
             } else if (path.match(/\/digital-assets\/(\d+)/)) {
                 const assetId = path.match(/\/digital-assets\/(\d+)/)[1];
@@ -1250,6 +1398,8 @@ exports.handler = async (req, resp, context) => {
             } else if (path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)) {
                 const code = path.match(/\/kino-chip-models\/([A-Z0-9]+)/i)[1];
                 result = await handleDeleteKinoChipModel(code);
+            } else if (path.match(/^\/programs\/(\d+)$/)) {
+                result = requireAdminTab(adminCtx, 'content') || await handleDeleteProgram(path.match(/^\/programs\/(\d+)$/)[1]);
             } else if (path.match(/\/knowledge-entries\/([a-z0-9-]+)/i)) {
                 const entryId = path.match(/\/knowledge-entries\/([a-z0-9-]+)/i)[1];
                 result = requireAdminTab(adminCtx, 'content') || await handleDeleteKnowledgeEntry(entryId);
@@ -1386,7 +1536,12 @@ exports.handler = async (req, resp, context) => {
                 result = { success: false, error: `Unknown DELETE route: ${path}` };
             }
         } else if (method === 'PATCH') {
-            if (path.match(/\/users\/([^/]+)\/identity$/)) {
+            // Before the '/users/' prefix match below: a document id path can never contain it,
+            // but the explicit ordering keeps the owner-only document edit from ever being
+            // swallowed by a looser rule added later.
+            if (path.match(/^\/health-documents\/(\d+)$/)) {
+                result = await handlePatchHealthDocument(path.match(/^\/health-documents\/(\d+)$/)[1], parsedBody);
+            } else if (path.match(/\/users\/([^/]+)\/identity$/)) {
                 const user_id = path.match(/\/users\/([^/]+)\/identity$/)[1];
                 result = await handleSetIdentity(user_id, parsedBody);
             } else if (path.includes('/users/')) {

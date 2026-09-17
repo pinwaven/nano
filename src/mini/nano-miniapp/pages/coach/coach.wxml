@@ -454,6 +454,7 @@
           user="{{detailClient}}"
           lang="{{lang}}"
           mode="coach"
+          coach-id="{{coachId}}"
           theme="{{theme}}"
           text-scale="{{textScale}}"
           bind:textscalestep="onTextScaleStep"
@@ -480,6 +481,26 @@
             </view>
             <text class="coach-plan-name">{{lang === 'zh' ? (item.name_zh || item.custom_name_zh) : (item.name_en || item.custom_name_en)}}</text>
             <text class="coach-plan-meta">{{item.checkin_count || 0}} {{t.planCheckins}} · {{item.duration_weeks}}{{t.planWeeks}}</text>
+          </view>
+
+          <!-- 打卡 programs (§42): the coach switches a program on for this client here. -->
+          <view class="plans-coach-header">
+            <text class="plans-coach-title">{{t.clientPrograms}}</text>
+          </view>
+          <view wx:if="{{detailPrograms.length === 0}}" class="panel-center">
+            <text class="empty-text">{{t.noClientPrograms}}</text>
+          </view>
+          <view wx:for="{{detailPrograms}}" wx:key="id" class="coach-plan-card coach-program-card">
+            <view class="coach-program-main">
+              <view class="coach-plan-badge coach-program-{{item.status}}">
+                <text>{{item.statusLabel}}</text>
+              </view>
+              <text class="coach-plan-name">{{lang === 'zh' ? item.title_zh : (item.title_en || item.title_zh)}}</text>
+              <text class="coach-plan-meta {{item.stalled ? 'coach-program-stalled' : ''}}">{{item.duration_days}} {{t.programDays}}{{item.progressLabel ? ' · ' + item.progressLabel : ''}}</text>
+            </view>
+            <view wx:if="{{item.action}}" class="coach-program-btn {{item.action === 'pause' ? 'secondary' : ''}}" bindtap="handleProgramAction" data-program="{{item.id}}" data-action="{{item.action}}">
+              <text>{{programActionBusy ? t.loading : item.actionLabel}}</text>
+            </view>
           </view>
 
           <!-- Actions -->

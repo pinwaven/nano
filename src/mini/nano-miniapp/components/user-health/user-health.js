@@ -273,6 +273,12 @@ const T = {
     healthScoreGrades: { optimal: '优秀', good: '良好', fair: '一般', low: '偏低' },
     dtRecovery: '恢复力', dtCardio: '心血管', dtActivity: '活动量', dtBodyDomain: '体态',
     dtVitals: '生命体征',
+    reportsTitle: '综合报告',
+    reportsCount: '共',
+    reportsOpen: '查看',
+    reportsOpening: '打开中…',
+    reportsPages: '页',
+    reportsErrOpen: '无法打开报告',
     layerDaily: '日常监测',
     layerPrecision: 'KINO 精准检测',
     layerMedical: '医疗记录',
@@ -283,9 +289,26 @@ const T = {
     noFactsSelf: '暂无记录的个人信息。',
     factCategories: { dietary_restriction: '饮食限制', allergy: '过敏', preference: '偏好', goal: '目标', other: '其他' },
     labPanel: '快照', labAbnormal: '项异常', labAllNormal: '所有指标正常',
+    labPanelMeta: '最近 {d} · {n} 项 · 来自 {m} 份报告',
+    labPanelHint: '每项为最近一次结果，点击可看变化趋势',
+    labTrendTitle: '变化趋势',
+    rptOtherItemsTitle: '其他项目（按报告原文）',
+    rptMaybe: '可能为',
+    rptItemsCount: '{n} 项',
+    foodPanelTitle: '慢性食物过敏（IgG）',
+    foodClass: ['未超标', '轻度', '中度', '重度'],
+    foodSummaryNone: '检测了 {n} 种食物，没有一种达到过敏分级。',
+    foodSummarySome: '检测了 {n} 种食物，其中 {k} 种需要暂时回避。',
+    foodAvoidUntil: '建议回避至 {d}',
+    foodWindowPassed: '建议回避期已过（{d}），可复查或尝试恢复',
+    foodSubstitutes: '可替代：',
+    foodBelowDetection: '低于检出限',
+    foodPanelNote: '这是 IgG 介导的慢性食物过敏，与急性过敏不同，通常是暂时的。',
     noReports: '暂无检测报告。',
-    reportTypeLabels: { annual_checkup: '年度体检', lab_panel: '化验报告', imaging: '影像检查', other: '其他' },
-    reportSourceLabels: { lab_api: '实验室', manual_upload: '手动上传', fhir_import: 'FHIR' },
+    reportTypeLabels: { annual_checkup: '年度体检', lab_panel: '化验报告', imaging: '影像检查', hospital_record: '就医记录',
+                        discharge_summary: '出院小结', prescription: '处方', functional: '功能医学检测', genetic: '基因检测',
+                        microbiome: '肠道菌群', other: '其他' },
+    reportSourceLabels: { lab_api: '实验室', manual_upload: '手动上传', fhir_import: 'FHIR', document_extraction: '文档解析' },
     reportItems: '项指标',
     rptNormal: '正常', rptHigh: '偏高', rptLow: '偏低',
     rptRefRange: '参考值',
@@ -396,6 +419,12 @@ const T = {
     healthScoreGrades: { optimal: 'Optimal', good: 'Good', fair: 'Fair', low: 'Low' },
     dtRecovery: 'Recovery', dtCardio: 'Cardio', dtActivity: 'Activity', dtBodyDomain: 'Body',
     dtVitals: 'Vitals',
+    reportsTitle: 'Reports',
+    reportsCount: 'All',
+    reportsOpen: 'Open',
+    reportsOpening: 'Opening…',
+    reportsPages: 'pages',
+    reportsErrOpen: 'Could not open the report',
     layerDaily: 'Daily Monitoring',
     layerPrecision: 'KINO Precision Testing',
     layerMedical: 'Medical Records',
@@ -406,9 +435,26 @@ const T = {
     noFactsSelf: 'No personal facts recorded yet.',
     factCategories: { dietary_restriction: 'Diet', allergy: 'Allergy', preference: 'Preference', goal: 'Goal', other: 'Other' },
     labPanel: 'Snapshot', labAbnormal: 'abnormal', labAllNormal: 'All markers normal',
+    labPanelMeta: 'Latest {d} · {n} markers · from {m} reports',
+    labPanelHint: 'Each marker is its most recent result; tap one for its trend',
+    labTrendTitle: 'Trend',
+    rptOtherItemsTitle: 'Other items (as printed)',
+    rptMaybe: 'Possibly',
+    rptItemsCount: '{n} items',
+    foodPanelTitle: 'Chronic food sensitivity (IgG)',
+    foodClass: ['Not elevated', 'Mild', 'Moderate', 'Severe'],
+    foodSummaryNone: '{n} foods tested; none reached a sensitivity class.',
+    foodSummarySome: '{n} foods tested; {k} to avoid for now.',
+    foodAvoidUntil: 'Avoid until {d}',
+    foodWindowPassed: 'Avoidance window ended {d} — recheck or try reintroducing',
+    foodSubstitutes: 'Instead: ',
+    foodBelowDetection: 'below detection',
+    foodPanelNote: 'IgG-mediated chronic sensitivity — unlike an acute allergy, this is usually temporary.',
     noReports: 'No lab reports yet.',
-    reportTypeLabels: { annual_checkup: 'Annual Checkup', lab_panel: 'Lab Panel', imaging: 'Imaging', other: 'Other' },
-    reportSourceLabels: { lab_api: 'Lab', manual_upload: 'Uploaded', fhir_import: 'FHIR' },
+    reportTypeLabels: { annual_checkup: 'Annual Checkup', lab_panel: 'Lab Panel', imaging: 'Imaging', hospital_record: 'Hospital Record',
+                        discharge_summary: 'Discharge Summary', prescription: 'Prescription', functional: 'Functional Test', genetic: 'Genetic Test',
+                        microbiome: 'Microbiome', other: 'Other' },
+    reportSourceLabels: { lab_api: 'Lab', manual_upload: 'Uploaded', fhir_import: 'FHIR', document_extraction: 'Extracted' },
     reportItems: 'markers',
     rptNormal: 'Normal', rptHigh: 'High', rptLow: 'Low',
     rptRefRange: 'Ref',
@@ -1025,46 +1071,105 @@ const LAB_DISPLAY_NAME = {
   vitamin_d: 'VitD', vitamin_b12: 'B12',
 }
 
-function _buildLabPanel(twin, lang) {
+// Status from the SERVER's ranges when a marker carries them (every per-marker value does since
+// 2026-09-15), else the client table — which only ever covered the original 25 keys. Kept as the
+// fallback for the legacy `results` shape and for a twin written before the ranges shipped.
+function _statusFor(key, v, info) {
+  if (v == null || Number.isNaN(v)) return 'normal'
+  const lo = info && info.ref_low != null ? Number(info.ref_low) : null
+  const hi = info && info.ref_high != null ? Number(info.ref_high) : null
+  if (lo != null || hi != null) {
+    if (hi != null && v > hi) return 'high'
+    if (lo != null && v < lo) return 'low'
+    return 'normal'
+  }
+  return _bioStatus(key, v)
+}
+
+function _refTextFor(key, info, unit) {
+  const lo = info && info.ref_low != null ? Number(info.ref_low) : null
+  const hi = info && info.ref_high != null ? Number(info.ref_high) : null
+  if (lo != null && hi != null) return `${lo}–${hi} ${unit || ''}`.trim()
+  if (hi != null) return `< ${hi} ${unit || ''}`.trim()
+  if (lo != null) return `> ${lo} ${unit || ''}`.trim()
+  return _refText(key)
+}
+
+// The panel is the latest value PER MARKER across every lab report (lib/labHistory.js), each
+// marker with its own date; the header says how many reports it spans. `series` (from
+// /api/lab-history?series=1) marks which tiles have more than one point to chart.
+function _buildLabPanel(twin, lang, series) {
   const labData = twin.latest_lab_data
   const labDate = twin.latest_lab_date
-  if (!labData || !labDate) return { labPanel: [], labPanelDate: '', labPanelAbnormal: 0 }
+  if (!labData || !labDate) return { labPanel: [], labPanelDate: '', labPanelAbnormal: 0, labPanelMeta: '' }
+  const isZh = (lang || 'zh') !== 'en'
+  const t = T[isZh ? 'zh' : 'en']
 
+  const panelDate = String(labDate).substring(0, 10)
   const labPanelDate = fmtDate(labDate, lang || 'zh')
   const items = []
+  const pointsOf = key => ((series || {})[key] || {}).points || []
 
   if (labData.markers) {
-    // New aggregated format: { markers: { LDL: { value, unit }, ... } }
+    // { markers: { LDL: { value, unit, data_date?, display_name_zh?, ref_low?, ref_high?, category? } } }
     for (const [key, info] of Object.entries(labData.markers)) {
       const v = parseFloat(info.value)
-      const status = _bioStatus(key, v)
+      const status = _statusFor(key, v, info)
       const statusColor = status === 'high' ? '#ef4444' : status === 'low' ? '#60a5fa' : '#10b981'
-      items.push({ key, displayName: LAB_DISPLAY_NAME[key] || key, value: String(v), unit: info.unit || '', status, statusColor })
+      const date = info.data_date ? String(info.data_date).substring(0, 10) : panelDate
+      const displayName = isZh
+        ? (info.display_name_zh || LAB_DISPLAY_NAME[key] || key)
+        : (LAB_DISPLAY_NAME[key] || info.display_name || key)
+      items.push({
+        key, displayName, value: String(v), unit: info.unit || '', status, statusColor,
+        category: info.category || '',
+        date,
+        dateShort: date !== panelDate ? date.substring(5) : '',
+        hasTrend: pointsOf(key).length > 1,
+      })
     }
   } else if (labData.results) {
     // Legacy format: { results: { ldl: { value, unit, ref_high, ref_low }, ... } }
     for (const [legacyKey, info] of Object.entries(labData.results)) {
       const catalogKey = LEGACY_KEY_MAP[legacyKey] || legacyKey
       const v = parseFloat(info.value)
-      // Use embedded ref ranges for legacy US-unit data
       let status = 'normal'
       if (info.ref_high != null && v > info.ref_high) status = 'high'
       else if (info.ref_low != null && v < info.ref_low) status = 'low'
       const statusColor = status === 'high' ? '#ef4444' : status === 'low' ? '#60a5fa' : '#10b981'
       const displayName = LAB_DISPLAY_NAME[legacyKey] || legacyKey.replace(/_/g, ' ')
-      items.push({ key: legacyKey, displayName, value: String(v), unit: info.unit || '', status, statusColor })
+      items.push({ key: catalogKey, displayName, value: String(v), unit: info.unit || '', status, statusColor,
+        category: '', date: panelDate, dateShort: '', hasTrend: pointsOf(catalogKey).length > 1 })
     }
   }
 
-  // Sort: abnormal first, then alphabetical
+  // Abnormal first, then by category so a CBC block reads together, then by key.
   items.sort((a, b) => {
     const aAbn = a.status !== 'normal' ? 0 : 1
     const bAbn = b.status !== 'normal' ? 0 : 1
-    return aAbn !== bAbn ? aAbn - bAbn : a.key.localeCompare(b.key)
+    if (aAbn !== bAbn) return aAbn - bAbn
+    if (a.category !== b.category) return a.category.localeCompare(b.category)
+    return a.key.localeCompare(b.key)
   })
 
   const labPanelAbnormal = items.filter(i => i.status !== 'normal').length
-  return { labPanel: items, labPanelDate, labPanelAbnormal }
+  const dates = Array.isArray(labData.dates) && labData.dates.length
+    ? labData.dates
+    : [...new Set(items.map(i => i.date))]
+  const labPanelMeta = t.labPanelMeta
+    .replace('{d}', labPanelDate).replace('{n}', String(items.length)).replace('{m}', String(dates.length))
+  return { labPanel: items, labPanelDate, labPanelAbnormal, labPanelMeta }
+}
+
+// Medical Records layer — one accent per food-sensitivity class. Class 0 never renders (it is
+// not a restriction), so the map starts at 1.
+function _foodClassColor(cls) {
+  switch (cls) {
+    case 3:  return '#ef4444'
+    case 2:  return '#f97316'
+    case 1:  return '#eab308'
+    default: return 'rgba(166,196,229,0.55)'
+  }
 }
 
 // Personal Profile layer — one accent per user_memory_facts category.
@@ -1082,7 +1187,18 @@ function _reportTypeColor(type) {
   if (type === 'annual_checkup') return '#a855f7'
   if (type === 'lab_panel')      return '#0ea5e9'
   if (type === 'imaging')        return '#14b8a6'
+  if (type === 'functional')     return '#f59e0b'
+  if (type === 'genetic')        return '#ec4899'
+  if (type === 'microbiome')     return '#84cc16'
   return '#6375EC'
+}
+
+// "6.9 MB" / "820 KB" for the 综合报告 card meta line.
+function _sizeLabel(bytes) {
+  const n = Number(bytes) || 0
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  if (n >= 1024) return `${Math.round(n / 1024)} KB`
+  return `${n} B`
 }
 
 Component({
@@ -1101,6 +1217,10 @@ Component({
     // subtab strip renders; every AG endpoint re-checks entitlement server-side. Never passed
     // by pages/coach/coach.wxml, so a coach viewing a client defaults to false.
     vivaAgEnabled: { type: Boolean, value: false },
+    // Set only by pages/coach/coach.wxml. Forwarded to <health-documents> so the server can
+    // verify the client really belongs to this coach; empty in the user's own view, where the
+    // ownership check is skipped and they simply address themselves.
+    coachId: { type: String, value: '' },
   },
 
   data: {
@@ -1177,6 +1297,7 @@ Component({
     reportsLoading: false,
     activeReport: null,
     activeReportEvents: [],
+    activeReportOtherItems: [],
     activeReportDiag: [],
     activeReportAdvice: [],
     activeReportDoctorNotes: null,
@@ -1187,6 +1308,13 @@ Component({
     labPanel: [],
     labPanelDate: '',
     labPanelAbnormal: 0,
+    labPanelMeta: '',
+    labSeries: {},
+    labChartOpen: false,
+    labChartKey: '',
+    labChartTitle: '',
+    labChartUnit: '',
+    labChartW: 0,
     // Digital twin
     twinLoading: true,
     hasTwinData: false,
@@ -1197,6 +1325,13 @@ Component({
     twinRaw: null,
     userFacts: [],
     userFactsLoaded: false,
+    // 综合报告 card (completed AG artifacts, /api/twin-reports)
+    twinReports: [],
+    twinReportLatest: null,
+    twinReportOpening: false,
+    foodPanel: null,
+    foodPositives: [],
+    foodSummary: '',
     healthScore: null,
     healthScoreColor: '#A6C4E5',
     healthScoreGrade: '',
@@ -1356,6 +1491,8 @@ Component({
       this._loadHealthTwin()
       this._loadHealthReports()
       this._loadUserFacts()
+      this._loadFoodSensitivity()
+      this._loadTwinReports()
       this._loadMetricHistory()
       try {
         const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(userId)}`)
@@ -2133,6 +2270,24 @@ Component({
     },
     closeSubAgeChart() { this.setData({ subAgeChartOpen: false }) },
 
+    // A lab tile with more than one point opens its history — the same generic chart the
+    // sub-ages use, fed by /api/lab-history?series=1 (points are {date, value}, oldest first).
+    openLabChart(e) {
+      const key = e.currentTarget.dataset.key
+      const series = (this.data.labSeries || {})[key]
+      const points = series ? series.points || [] : []
+      if (!key || points.length < 2) return
+      if (this._lastCrosshairIdx) delete this._lastCrosshairIdx['uh-lab-chart']
+      const isZh = (this.properties.lang || 'zh') !== 'en'
+      const title = isZh ? (series.display_name_zh || key) : (series.display_name || key)
+      const W = wx.getSystemInfoSync().windowWidth - 72
+      this.setData({ labChartOpen: true, labChartKey: key, labChartTitle: title, labChartUnit: series.unit || '', labChartW: W }, () => {
+        this._drawGenericChart('uh-lab-chart', points, 'value', series.unit || '', '#0ea5e9')
+        this._cacheChartRect('uh-lab-chart')
+      })
+    },
+    closeLabChart() { this.setData({ labChartOpen: false }) },
+
     // Shared touch handlers for the crosshair — any canvas that wants the drag-to-inspect
     // line just needs data-canvas-id + catchtouchstart/move/end bound to these two.
     _onChartTouch(e) {
@@ -2425,8 +2580,14 @@ Component({
         const twinBody = bodyParts.length ? bodyParts.join('  ·  ') : null
 
 
-        // Build lab panel from latest_lab_data
-        const { labPanel, labPanelDate, labPanelAbnormal } = _buildLabPanel(twin, lang)
+        // Build lab panel from latest_lab_data. The per-marker series rides in the same load so
+        // a tile knows whether it has a trend to open; a failed series fetch costs only that.
+        let labSeries = {}
+        try {
+          const sres = await this._req(`${BASE}/api/lab-history?openid=${encodeURIComponent(userId)}&series=1${this.properties.coachId ? `&coach_id=${encodeURIComponent(this.properties.coachId)}` : ''}`)
+          labSeries = sres.data?.series || {}
+        } catch (_) { labSeries = {} }
+        const { labPanel, labPanelDate, labPanelAbnormal, labPanelMeta } = _buildLabPanel(twin, lang, labSeries)
 
         // Tags generated server-side; pick label by language
         const healthTags = (twin.tags || []).map(tag => ({
@@ -2446,6 +2607,8 @@ Component({
           twinMetrics: metrics,
           twinBody,
           twinRaw: twin,
+          labSeries,
+          labPanelMeta,
           labPanel,
           labPanelDate,
           labPanelAbnormal,
@@ -2468,6 +2631,15 @@ Component({
      * `twin.data_coverage` alone can't back this — its five keys are all health_events-derived,
      * so it knows nothing about the Kino scan or the self-reported profile.
      */
+    // <health-documents> reports what it loaded. An uploaded record IS Medical Records (twin
+    // layer 3), extracted or not, so the completeness strip counts it — before this a user with
+    // twenty PDFs and no extraction saw the layer as empty.
+    _onDocsLoaded(e) {
+      const { count = 0, latestDate = null } = e.detail || {}
+      this.setData({ docCount: count, latestDocDate: latestDate })
+      this._recomputeTwinLayers()
+    },
+
     _recomputeTwinLayers() {
       const isZh = (this.properties.lang || 'zh') !== 'en'
       const t = T[isZh ? 'zh' : 'en']
@@ -2496,9 +2668,10 @@ Component({
           // that predates this taxonomy and isn't in the five documented ones — it's an
           // externally-run test, so it belongs to Medical Records. Without it, a user whose
           // only outside test is an epigenetic panel would show this layer as empty.
-          has: reports.length > 0 || !!cov.lab_result || !!cov.epigenetic_result || !!twin.latest_lab_date,
+          has: reports.length > 0 || !!cov.lab_result || !!cov.epigenetic_result || !!twin.latest_lab_date
+               || (this.data.docCount || 0) > 0,
           date: newest(twin.latest_lab_date, cov.lab_result, cov.epigenetic_result,
-                       reports[0] && reports[0].report_date_raw),
+                       reports[0] && reports[0].report_date_raw, this.data.latestDocDate),
         },
         profile: {
           has: this.data.rawHeight != null && this.data.rawWeight != null,
@@ -2704,6 +2877,10 @@ Component({
           source_label: t.reportSourceLabels[r.source] || r.source,
           type_color: _reportTypeColor(r.report_type),
           image_url: r.image_url || '',
+          // Printed rows kept under the report (mapped and unmapped). A NAD+ or organic-acid
+          // report has no catalogued marker and would otherwise read as an empty card.
+          item_count: r.item_count || 0,
+          items_label: r.item_count ? t.rptItemsCount.replace('{n}', String(r.item_count)) : '',
         }))
         this.setData({ healthReports: reports, reportsLoading: false })
         this._recomputeTwinLayers()
@@ -2721,6 +2898,130 @@ Component({
      *
      * Self view only — the coach app already has its own Facts tab on the client sheet.
      */
+    /**
+     * Medical Records layer — the user's chronic food-sensitivity (IgG) panel (§40).
+     *
+     * Read-only. The panel is a lab result, not something a user edits, and its derived
+     * restrictions are ordinary user_memory_facts shown in the Personal Profile layer. A wrong
+     * panel is corrected by re-running or deleting the extraction on the document itself, which
+     * clears the panel, its results and its facts together.
+     *
+     * Only the positives are listed. This report tested 120 foods and 117 came back clear; a
+     * 120-row list would bury the three that matter, so the total is stated instead.
+     */
+    async _loadFoodSensitivity() {
+      const { userId, mode, coachId } = this.properties
+      if (!userId) return
+      try {
+        const q = `openid=${encodeURIComponent(userId)}`
+          + (mode === 'coach' && coachId ? `&coach_id=${encodeURIComponent(coachId)}` : '')
+        const res = await this._req(`${BASE}/api/food-sensitivity?${q}`)
+        const panel = res.data?.panel || null
+        if (!panel) { this.setData({ foodPanel: null, foodPositives: [], foodSummary: '' }); return }
+        const isZh = (this.properties.lang || 'zh') !== 'en'
+        const t = T[isZh ? 'zh' : 'en']
+        const today = new Date().toISOString().slice(0, 10)
+        const positives = (res.data?.foods || []).filter(f => f.class >= 1).map(f => {
+          const passed = f.avoid_until && f.avoid_until < today
+          return {
+            food_key: f.food_key,
+            name: isZh ? f.name_zh : (f.name_en || f.name_zh),
+            classLabel: t.foodClass[f.class] || '',
+            color: _foodClassColor(f.class),
+            // The lab declined to measure below its detection limit, so there is no figure to
+            // show — the marker is the fact, not a number nobody produced.
+            valueText: f.below_detection ? t.foodBelowDetection
+              : (f.value == null ? '' : `${f.value} ${panel.unit}`),
+            windowText: !f.avoid_until ? ''
+              : (passed ? t.foodWindowPassed.replace('{d}', f.avoid_until)
+                        : t.foodAvoidUntil.replace('{d}', f.avoid_until)),
+            substitutes: (f.substitutes_zh || []).join('、'),
+          }
+        })
+        const summary = positives.length === 0
+          ? t.foodSummaryNone.replace('{n}', panel.foods_tested)
+          : t.foodSummarySome.replace('{n}', panel.foods_tested).replace('{k}', positives.length)
+        this.setData({ foodPanel: panel, foodPositives: positives, foodSummary: summary })
+      } catch (_) {
+        // A twin section that cannot load is a missing section, never a broken tab.
+        this.setData({ foodPanel: null, foodPositives: [], foodSummary: '' })
+      }
+    },
+
+    // ── 综合报告 ──────────────────────────────────────────────────────────
+    // Completed AG artifacts for this user. Coach view passes coach-id so the server runs the
+    // same coarse users.coach_id check every other per-user read uses. Failure leaves the card
+    // hidden (twinReportLatest stays null) rather than showing an error — it is an optional
+    // surface above the layers, not the twin itself.
+    async _loadTwinReports() {
+      const { userId } = this.properties
+      if (!userId) return
+      try {
+        const coach = this.properties.coachId ? `&coach_id=${encodeURIComponent(this.properties.coachId)}` : ''
+        const res = await this._req(`${BASE}/api/twin-reports?openid=${encodeURIComponent(userId)}${coach}`)
+        if (!res.data?.success) return
+        const t = T[(this.properties.lang || 'zh') === 'en' ? 'en' : 'zh']
+        const reports = (res.data.reports || []).map(r => {
+          const pdf = (r.files || []).find(f => f.ext === 'pdf')
+          const parts = [r.completed_date, pdf && pdf.size_bytes ? _sizeLabel(pdf.size_bytes) : '', pdf ? 'PDF' : (r.files?.[0]?.ext || '').toUpperCase()].filter(Boolean)
+          return { ...r, metaLine: parts.join(' · ') }
+        })
+        this.setData({ twinReports: reports, twinReportLatest: reports[0] || null })
+      } catch (_) { /* card simply stays hidden */ }
+    },
+
+    onTwinReportListTap() {
+      const reports = this.data.twinReports
+      if (!reports.length) return
+      const items = reports.slice(0, 6).map(r => `${r.completed_date} · ${r.title}`)
+      wx.showActionSheet({
+        itemList: items,
+        success: (res) => {
+          const r = reports[res.tapIndex]
+          if (r) this._openTwinReport(r.job_uid, r.primary_index)
+        },
+      })
+    },
+
+    onTwinReportTap(e) {
+      const { uid, index } = e.currentTarget.dataset
+      this._openTwinReport(uid, Number(index) || 0)
+    },
+
+    // Same flow as viva-ag-panel.openResultFile: mint a 300s URL per tap (the client never sees
+    // an oss_key), download, and hand the PDF to wx.openDocument. downloadFile resolves for any
+    // HTTP status, so a 403 from an expired signature is rejected here rather than opened as a
+    // "file". Non-PDF artifacts (.md/.txt) are the AG panel's job — it has the in-app renderer.
+    async _openTwinReport(jobUid, index) {
+      if (this.data.twinReportOpening || !jobUid) return
+      const { userId } = this.properties
+      const t = T[(this.properties.lang || 'zh') === 'en' ? 'en' : 'zh']
+      const coach = this.properties.coachId ? `&coach_id=${encodeURIComponent(this.properties.coachId)}` : ''
+      this.setData({ twinReportOpening: true })
+      try {
+        const res = await this._req(`${BASE}/api/twin-reports/file?openid=${encodeURIComponent(userId)}&job_uid=${encodeURIComponent(jobUid)}&index=${index}${coach}`)
+        if (!res.data?.success) throw new Error(res.data?.reason || 'no url')
+        const { url, file_type: ft } = res.data
+        const dl = await new Promise((resolve, reject) => {
+          wx.downloadFile({
+            url,
+            success: (r) => (r.statusCode === 200 ? resolve(r) : reject(new Error('http ' + r.statusCode))),
+            fail: reject,
+          })
+        })
+        this.setData({ twinReportOpening: false })
+        wx.openDocument({
+          filePath: dl.tempFilePath,
+          fileType: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ft) ? ft : 'pdf',
+          showMenu: true,
+          fail: () => wx.showToast({ title: t.reportsErrOpen, icon: 'none' }),
+        })
+      } catch (_) {
+        this.setData({ twinReportOpening: false })
+        wx.showToast({ title: t.reportsErrOpen, icon: 'none' })
+      }
+    },
+
     async _loadUserFacts() {
       const { userId, mode } = this.properties
       if (!userId || mode !== 'self') return
@@ -2754,21 +3055,47 @@ Component({
         const res = await this._req(`${BASE}/api/health-reports/${id}?openid=${encodeURIComponent(userId)}`)
         const report = res.data?.report || {}
         const events = res.data?.events || []
+        const items = res.data?.items || []
         const raw = report.raw_data || {}
-        const enriched = events.map(ev => {
-          const d = ev.data || {}
-          const v = d.value != null ? d.value : null
-          const status = _bioStatus(d.key_name, v)
+        const isZh = lang !== 'en'
+        const statusRow = (status) => ({
+          status,
+          statusLabel: status === 'high' ? t.rptHigh : status === 'low' ? t.rptLow : t.rptNormal,
+          statusColor: status === 'high' ? '#ef4444' : status === 'low' ? '#0ea5e9' : '#10b981',
+        })
+        // Catalogued markers: from health_report_items when the report has them (every
+        // extracted document since 2026-09-15), else from the events as before. Names and
+        // ranges come with the row from the server; the client tables are only a fallback.
+        const mappedItems = items.filter(i => i.key_name)
+        const enriched = (mappedItems.length > 0 ? mappedItems : events).map(row => {
+          const d = row.data || row
+          const key = d.key_name
+          const v = d.value_num != null ? Number(d.value_num) : (d.value != null ? Number(d.value) : null)
+          const info = { ref_low: row.ref_low, ref_high: row.ref_high }
+          const status = row.flag === 'high' || row.flag === 'low' ? row.flag : _statusFor(key, v, info)
           return {
-            key_name: d.key_name || '—',
-            value: v != null ? String(v) : '—',
+            key_name: (isZh ? (row.display_name_zh || d.label) : (row.display_name || d.label)) || key || '—',
+            value: v != null ? String(v) : (d.value_text || '—'),
             unit: d.unit || '',
-            status,
-            statusLabel: status === 'high' ? t.rptHigh : status === 'low' ? t.rptLow : t.rptNormal,
-            statusColor: status === 'high' ? '#ef4444' : status === 'low' ? '#0ea5e9' : '#10b981',
-            refText: _refText(d.key_name),
+            ...statusRow(status),
+            refText: row.ref_text || _refTextFor(key, info, d.unit),
           }
         })
+        // Everything else the report printed, kept by name — organic acids, hair elements, a
+        // NAD+ grade. No catalog range, so the only verdict is the report's own flag.
+        const otherItems = items.filter(i => !i.key_name).map(i => ({
+          key_name: i.section ? `${i.section} · ${i.label}` : i.label,
+          value: i.value_num != null ? String(Number(i.value_num)) : (i.value_text || '—'),
+          unit: i.unit || '',
+          ...statusRow(i.flag === 'high' || i.flag === 'low' ? i.flag : 'normal'),
+          flagged: i.flag === 'high' || i.flag === 'low',
+          refText: i.ref_text || '',
+          // The agent's guess at a catalog key (contract 3): shown as a hint beside the
+          // printed label, never as the marker's name — a guess is not a mapping.
+          suggested: i.suggested_key
+            ? `${t.rptMaybe} ${lang === 'en' ? (i.suggested_name || i.suggested_name_zh || i.suggested_key) : (i.suggested_name_zh || i.suggested_name || i.suggested_key)}`
+            : '',
+        }))
         // Parse doctor_notes format (admin panel / liangkang reports)
         const dnRaw = raw.doctor_notes || null
         let activeReportDoctorNotes = null
@@ -2800,6 +3127,7 @@ Component({
         this.setData({
           activeReport,
           activeReportEvents: enriched,
+          activeReportOtherItems: otherItems,
           activeReportDiag: raw.diagnostics || [],
           activeReportAdvice: raw.doctor_advice || [],
           activeReportDoctorNotes,
@@ -2811,7 +3139,7 @@ Component({
     },
 
     onCloseReport() {
-      this.setData({ activeReport: null, activeReportEvents: [], activeReportDiag: [], activeReportAdvice: [], activeReportDoctorNotes: null })
+      this.setData({ activeReport: null, activeReportEvents: [], activeReportOtherItems: [], activeReportDiag: [], activeReportAdvice: [], activeReportDoctorNotes: null })
     },
 
     // Public: called by the chat page after a lab report is saved, to refresh the list.

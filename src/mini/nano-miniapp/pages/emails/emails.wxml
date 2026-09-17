@@ -1,0 +1,80 @@
+<view class="emails-page {{theme === 'light' ? 'theme-light' : ''}}">
+  <view class="status-bar-spacer" style="height: {{statusBarHeight}}px;"></view>
+
+  <view class="app-header">
+    <view class="back-btn" bindtap="goBack">
+      <text class="back-icon">‹</text>
+      <text class="back-label">{{t.back}}</text>
+    </view>
+    <text class="header-title">{{t.title}}</text>
+  </view>
+
+  <view class="emails-content">
+    <view wx:if="{{loading}}" class="center-msg">
+      <text class="dim-text">{{t.loading}}</text>
+    </view>
+
+    <view wx:else class="card">
+      <view wx:for="{{emails}}" wx:key="email" class="email-row">
+        <view class="email-row-main">
+          <text class="email-value">{{item.email}}</text>
+          <text wx:if="{{item.is_primary}}" class="email-badge">{{t.primaryBadge}}</text>
+          <text wx:if="{{!item.verified_at}}" class="email-badge email-badge-muted">{{t.unverifiedBadge}}</text>
+        </view>
+        <view class="email-row-actions">
+          <text wx:if="{{!item.is_primary}}" class="email-action" data-email="{{item.email}}" bindtap="setPrimary">{{t.setPrimaryAction}}</text>
+          <text class="email-action email-action-danger" data-email="{{item.email}}" bindtap="removeEmail">{{t.removeAction}}</text>
+        </view>
+      </view>
+      <view wx:if="{{emails.length === 0}}" class="center-msg">
+        <text class="dim-text">{{t.emptyHint}}</text>
+      </view>
+
+      <view class="btn btn-outline add-email-btn" bindtap="openAddEmail">
+        <text>{{t.addEmailBtn}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{addMode}}" class="withdraw-overlay" catchtap="closeAddEmail">
+    <view class="withdraw-modal" catchtap="noop">
+      <text class="withdraw-modal-title">{{t.addEmailBtn}}</text>
+
+      <view wx:if="{{addStep === 'email'}}">
+        <view class="form-field">
+          <text class="form-label">{{t.emailLabel}}</text>
+          <input class="form-input" value="{{newEmail}}" bindinput="onEmailInput" placeholder="{{t.emailPlaceholder}}" maxlength="254" type="text" confirm-type="send" bindconfirm="sendCode" />
+        </view>
+        <text wx:if="{{addError}}" class="error-text">{{addError}}</text>
+        <view class="withdraw-btns">
+          <view class="btn btn-outline" bindtap="closeAddEmail"><text>{{t.cancelBtn}}</text></view>
+          <view class="btn btn-primary {{addLoading ? 'disabled' : ''}}" bindtap="sendCode">
+            <text>{{addLoading ? t.sending : t.sendCodeBtn}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view wx:elif="{{addStep === 'code'}}">
+        <view class="form-field">
+          <text class="form-label">{{t.codeLabel}}</text>
+          <text class="email-step-desc">{{codeSentToText}}</text>
+          <input class="form-input" value="{{code}}" bindinput="onCodeInput" placeholder="——————" maxlength="6" type="number" />
+        </view>
+        <text wx:if="{{addError}}" class="error-text">{{addError}}</text>
+        <view class="emails-links">
+          <text wx:if="{{resendCooldown > 0}}" class="dim-text">{{resendCooldownText}}</text>
+          <text wx:else class="emails-link" bindtap="sendCode">{{t.resendCode}}</text>
+          <text class="emails-link" bindtap="changeEmail">{{t.changeEmail}}</text>
+        </view>
+        <view class="withdraw-btns">
+          <view class="btn btn-outline" bindtap="closeAddEmail"><text>{{t.cancelBtn}}</text></view>
+          <view class="btn btn-primary {{addLoading ? 'disabled' : ''}}" bindtap="verifyCode">
+            <text>{{addLoading ? t.verifying : t.verifyBtn}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="bottom-safe"></view>
+</view>

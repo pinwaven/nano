@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useLang } from '../shared.jsx';
 
-// Embeds GCN's own admin console (aeviva/dashboard-admin.html) for a GCN-linked
+// Embeds GCN's own admin console (<sector>/dashboard-admin.html — the sector comes back with
+// the token, resolved server-side from the channel tree) for a GCN-linked
 // channel's SKU/inventory/order data — nano's native Inventory UI doesn't apply
 // there, GCN is the real source of truth. Pre-authenticated via a one-time wvt
 // token minted server-side (POST /api/admin-webview-token), mirroring the
@@ -23,7 +24,10 @@ export default function GcnInventoryEmbed({ channelId }) {
         const wvt = res.data?.wvt;
         if (!wvt) { setError(t.inventory.gcnLoadFailed); return; }
         const host = window.location.hostname.includes('nano-dev') ? 'https://edge-dev.gcn.net' : 'https://edge.gcn.net';
-        setUrl(`${host}/aeviva/dashboard-admin.html?wvt=${wvt}`);
+        // A worker deployed before the sector was returned answers aeviva's console, which is
+        // what every linked channel was until waven.
+        const sector = res.data?.sector || 'aeviva';
+        setUrl(`${host}/${sector}/dashboard-admin.html?wvt=${wvt}`);
       })
       .catch(() => { if (!cancelled) setError(t.inventory.gcnLoadFailed); });
     return () => { cancelled = true; };

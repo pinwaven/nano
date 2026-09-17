@@ -6,7 +6,7 @@
  * These constants describe what can actually be manufactured, and they are consumed by
  * three things that must never disagree:
  *
- *   1. handlers/dots.js       — _expandPlanDay, the single place a steady-state recipe is
+ *   1. lib/formulation.js     — _expandPlanDay, the single place a steady-state recipe is
  *                               expanded across the cycle (box scan, and the chat card)
  *   2. lib/agFormulation.js   — the validator for a formula authored by the external Viva AG
  *                               agent, which must be rejected if it breaks any of them
@@ -38,7 +38,7 @@ const MAX_DOTS_PER_CAPSULE = 72;
 // capsule: on 2 consecutive days inside week 2 of the 28-day cycle (0-indexed day-offsets 9-10,
 // i.e. calendar days 10-11 of 28), BOTH capsules that day contain ONLY DOT-N7, each at its own
 // target_dots_max. It never appears on any other day. Its normal epoch-based pulse window
-// (_isPulseActiveDate in handlers/dots.js) is bypassed entirely for this key, so it is never
+// (_isPulseActiveDate in lib/formulation.js) is bypassed entirely for this key, so it is never
 // dosed via two different mechanisms within the same plan.
 const N7_KEY = 'DOT-N7';
 const N7_ISOLATION_DAY_INDEXES = [9, 10];

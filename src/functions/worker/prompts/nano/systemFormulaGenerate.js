@@ -14,7 +14,6 @@ const { classifyBiomarker, LABELS_ZH: STATUS_LABELS_ZH, LABELS_EN: STATUS_LABELS
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 const { getTwinVocabBlock } = require('../chat/twinVocabulary');
-const { PLAN_WEEKS } = require('../../lib/dotsProductModel');
 
 const DIM_LABELS = {
     ResilienceAge:    { zh: '抗压年龄', en: 'Resilience Age' },
@@ -24,7 +23,7 @@ const DIM_LABELS = {
 };
 
 module.exports = (ctx) => {
-    const { user_profile, biomarkers, bioage, dots, health_twin, questionnaire_context, active_health_plans, current_solar_term , formulation_package, formulation_tiers } = ctx;
+    const { user_profile, biomarkers, bioage, dots, health_twin, questionnaire_context, active_health_plans, recommended_dot_keys, current_solar_term , formulation_package, formulation_tiers } = ctx;
     const isZh = user_profile?.language === 'zh';
 
     const formularyLines = (dots || []).length > 0
@@ -84,6 +83,22 @@ module.exports = (ctx) => {
         .filter(([, age]) => age > (bioage?.ChronoAge ?? Infinity))
         .map(([dim]) => (isZh ? DIM_LABELS[dim]?.zh : DIM_LABELS[dim]?.en) || dim)
         .join(isZh ? '、' : ', ') || (isZh ? '无' : 'none');
+    // Every dimension, labelled, comparison done — see the viva prompt's note: with none
+    // elevated the model reached for tool output and echoed raw keys (「MetabolicAge（41.5岁）」).
+    const dimLabel = (dim) => (isZh ? DIM_LABELS[dim]?.zh : DIM_LABELS[dim]?.en) || dim;
+    const subAgeLines = Object.entries(bioage?.SubAges || {})
+        .filter(([, age]) => typeof age === 'number')
+        .map(([dim, age]) => {
+            const diff = typeof bioage?.ChronoAge === 'number' ? Math.round((age - bioage.ChronoAge) * 10) / 10 : null;
+            let rel = '';
+            if (diff != null) {
+                if (isZh) rel = diff > 0 ? `，老于实际年龄 ${diff} 岁` : diff < 0 ? `，年轻于实际年龄 ${Math.abs(diff)} 岁` : '，与实际年龄相同';
+                else rel = diff > 0 ? `, ${diff} years older than chronological` : diff < 0 ? `, ${Math.abs(diff)} years younger than chronological` : ', equal to chronological';
+            }
+            return isZh ? `  ${dimLabel(dim)}：${age} 岁${rel}` : `  ${dimLabel(dim)}: ${age}${rel}`;
+        })
+        .join('\n') || (isZh ? '  （暂无）' : '  (none)');
+    const dimNamesList = ['CellularAge', 'MetabolicAge', 'MicroVascularAge', 'ResilienceAge'].map(dimLabel).join(isZh ? '、' : ', ');
 
     const twinSection = health_twin
         ? (isZh
@@ -98,17 +113,42 @@ module.exports = (ctx) => {
         : '';
 
     // Soft, non-exclusionary weighting hint derived from the union of the user's active
-    // health_plans' recommended_dot_ids — recommended dots should skew toward the higher end
+    // health_plans' recommended dots — recommended dots should skew toward the higher end
     // of their own range, but every other dot is still decided normally by biomarker severity
-    // (never forced to 0 just for being off the focus list). See §1 of the focus-formulation
-    // plan for why this stays soft rather than a hard filter.
+    // (never forced to 0 just for being off the focus list). The weighting is purely additive on
+    // the server side too: _fallbackCountForDot promotes a listed dot and leaves everything else
+    // at the midpoint it would get with no focus at all.
+    //
+    // `recommended_dot_keys` is resolved once by the caller (handlers/dots.js) and carried on the
+    // context. The inline derivation below is a FALLBACK ONLY, for a context built before that
+    // field existed — an event published by an older worker can still be in flight. Do not make
+    // it the primary path: the stored shape changed from dots.id to key_name
+    // (migration_health_plan_recommended_dot_keys.sql) and a second copy of that logic is how one
+    // of them gets missed next time.
     const recommendedDotShortKeys = (() => {
-        const ids = new Set();
-        for (const p of active_health_plans || []) for (const id of (p.recommended_dot_ids || [])) ids.add(id);
-        if (ids.size === 0) return [];
+        const toShort = (keys) => keys.filter(Boolean).map(k => k.replace(/^DOT/, 'D'));
+        if (Array.isArray(recommended_dot_keys)) return toShort(recommended_dot_keys);
+        const entries = new Set();
+        for (const p of active_health_plans || []) for (const e of (p.recommended_dot_ids || [])) entries.add(e);
+        if (entries.size === 0) return [];
         const byId = new Map((dots || []).map(d => [d.id, d]));
-        return [...ids].map(id => byId.get(id)?.key_name).filter(Boolean).map(k => k.replace(/^DOT/, 'D'));
+        const byKey = new Set((dots || []).map(d => d.key_name));
+        return toShort([...entries].map(e => (typeof e === 'string' ? (byKey.has(e) ? e : null) : byId.get(e)?.key_name)));
     })();
+    // A live chronic food-sensitivity panel (§40). Context for the narrative, and the reason the
+    // gut-axis dots arrive already promoted in recommendedDotShortKeys — stated so the model can
+    // explain an emphasis it would otherwise have to guess at, and so it never suggests eating
+    // something the user has just been told to stop.
+    const foodRestrictionSection = (ctx.food_restrictions || []).length > 0
+        ? (isZh
+            ? `用户最近的慢性食物过敏（食物特异性 IgG）检测显示以下食物需要暂时回避：${ctx.food_restrictions.map(r => `${r.name_zh}（${r.class}级）`).join('、')}。
+这是 IgG 介导的慢性食物过敏，通常与肠道屏障功能和低度炎症相关，不是急性过敏。因此本轮可以适当偏向支持肠道屏障与免疫的原粒；但这只是排序上的偏向，各原粒的具体数值仍按生物标志物正常判断。
+注意：配方库里没有消化酶、盐酸甜菜碱、谷氨酰胺或 omega-3 类原粒，不要暗示本方案能提供这些成分。也不要在文字里建议用户食用上述需要回避的食物。`
+            : `The user's recent chronic food-sensitivity (food-specific IgG) panel flags these foods for temporary avoidance: ${ctx.food_restrictions.map(r => `${r.name_en || r.name_zh} (class ${r.class})`).join(', ')}.
+This is IgG-mediated chronic sensitivity — usually related to gut-barrier function and low-grade inflammation, not an acute allergy. You may therefore lean toward dots supporting the gut barrier and immune resilience; this is a ranking bias only, and every dot's actual number still follows normal biomarker judgement.
+Note: the formulary contains no digestive enzyme, betaine HCl, glutamine or omega-3 dot — do not imply this formula supplies any of them. Never suggest eating a food listed above.`)
+        : '';
+
     const focusWeightingSection = recommendedDotShortKeys.length > 0
         ? (isZh
             ? `本轮聚焦方案重点推荐 Dot：${recommendedDotShortKeys.join('、')}（配方决策时可适当偏向这些 Dot 范围的较高值；但其余 Dot 仍需按生物标志物正常判断决定数值，不得因未被推荐而强行归零——若某项生物标志物明显异常但对应 Dot 不在此列表中，仍应给出合理剂量）`
@@ -125,11 +165,9 @@ module.exports = (ctx) => {
         ? (isZh
             ? `用户已购买的套餐：${formulation_package.name || '28天定制套餐'} — 该套餐限定的是**每周**可同时服用的原粒种类数：任意一周内最多 ${formulation_package.max_distinct_dots} 种（DOT-N7 为系统固定的重置原粒，不计入此数量）。
 四周可以不同：你可以让某个原粒只出现在其中一两周，把名额让给另一个原粒，只要**每一周**都不超过 ${formulation_package.max_distinct_dots} 种。需要连续服用才有意义的原粒（如睡眠、情绪支持）应四周都保留；只有适合阶段性或轮换的原粒才安排在部分周。
-如需让某个原粒只在部分周出现，在该条目上加 "weeks" 字段列出周次（1-${PLAN_WEEKS}）；省略即表示四周都有。例如：{"dot_key":"D-N1","count":3,"weeks":[1,2]}
 请**主动挑选**每周最关键的 ${formulation_package.max_distinct_dots} 种并把剂量给足，不要先铺开再删减——超出的部分会被系统按重要性裁掉。`
             : `The user's purchased package: ${formulation_package.name || '28-day custom package'} — it limits how many distinct dots may run in ANY ONE WEEK: at most ${formulation_package.max_distinct_dots} at a time (DOT-N7 is the system's fixed reset dot and does not count).
 The four weeks may differ: you can give a dot only one or two weeks and hand the slot to a different dot, as long as no single week exceeds ${formulation_package.max_distinct_dots}. A dot that only works taken continuously (sleep or mood support) should stay in all four weeks; only dots that make sense in phases or rotation belong in a subset.
-To put a dot in only some weeks, add a "weeks" field to its entry listing the week numbers (1-${PLAN_WEEKS}); omit it for all four. For example: {"dot_key":"D-N1","count":3,"weeks":[1,2]}
 CHOOSE the ${formulation_package.max_distinct_dots} that matter most in each week and dose them properly. Do not spread thin and then trim — anything over the limit is cut by the system, by importance.`)
         : '';
 
@@ -138,10 +176,9 @@ CHOOSE the ${formulation_package.max_distinct_dots} that matter most in each wee
     // hit it; here the tier is the thing being chosen, and the user has never been shown what it
     // costs them to choose the narrow one.
     //
-    // So the ask is one nested set of formulas, not three: the essential core, then +2, then +2.
-    // The server takes prefixes of the model's own tier ordering (_buildTierLadder), which is what
-    // makes the widths hold whatever the model tags — the tag decides WHICH dot is the better next
-    // addition, a clinical judgement, and nothing else.
+    // The ask is ONE ordered list, from which the server builds three complete formulas — one per
+    // package sold, each dosed to carry the same daily load (_equalizeToTarget). The model never
+    // partitions them: it ranks, and the ranking is what the widths are taken from.
     //
     // Widths come from GCN's catalog, never hardcoded: a tier repriced, added or retired in the
     // admin panel has to reach this prompt with no deploy, the same rule the checkout follows.
@@ -149,57 +186,31 @@ CHOOSE the ${formulation_package.max_distinct_dots} that matter most in each wee
         .map(t => ({ label: t.tier_label || t.package_name || '', max: Number(t.max_distinct_dots) }))
         .filter(t => Number.isFinite(t.max) && t.max > 0)
         .sort((a, b) => a.max - b.max);
+    // How many dots the model is asked to rank: the widest purchasable tier when the user has
+    // bought nothing (so one ordered list yields all three nested variants by prefix), the
+    // purchased width when they have, and a sensible default otherwise. Asking for more than the
+    // widest tier would be asking for ranks that are discarded before anyone sees them.
+    const rankTarget = formulation_package && formulation_package.max_distinct_dots
+        ? Number(formulation_package.max_distinct_dots)
+        : (tierRungs.length ? tierRungs[tierRungs.length - 1].max : 8);
+
     const tierLadderSection = (!packageSection && tierRungs.length > 1)
         ? (isZh
-            ? `用户尚未购买套餐。可购买的28天套餐共 ${tierRungs.length} 档，区别只在于**每周**可同时服用的原粒种类数（DOT-N7 为系统固定的重置原粒，任何一档都不计入）：
-${tierRungs.map((t, i) => `· ${t.label || t.max + '种'}：任意一周最多 ${t.max} 种${i === 0 ? '（核心档）' : `（比上一档多 ${t.max - tierRungs[i - 1].max} 种）`}`).join('\n')}
+            ? `用户尚未购买套餐。可购买的28天套餐共 ${tierRungs.length} 款，每一款都是一份完整配方，区别在于**每周**可同时服用的原粒种类数（DOT-N7 为系统固定的重置原粒，任何一款都不计入）：
+${tierRungs.map((t, i) => `· ${t.label || t.max + '种'}：任意一周最多 ${t.max} 种${i === 0 ? '' : `（比上一款多 ${t.max - tierRungs[i - 1].max} 种）`}`).join('\n')}
 
-请按"先给出最核心的一档，再逐档加码"的方式来配，并在每个 count 大于 0 的条目上加 "tier" 字段标注它属于哪一档：
-${tierRungs.map((t, i) => `· tier ${i + 1}：${i === 0 ? `最关键的 ${t.max} 种——这一档必须自成一套完整、说得通的方案，因为多数用户只会拿到它` : `在上一档基础上再加 ${t.max - tierRungs[i - 1].max} 种（合计 ${t.max} 种），选那些"有了会更完整、没有也不致命"的原粒`}`).join('\n')}
-**剂量照常给全**：下面的配方规则不变——配方库中每一个短代码都要给出数值，与用户异常指标无关的取各自范围的下限附近，相关的按严重程度取中段或上限。"tier" 只是在这份完整配比之上再叠加一层**优先级排序**，不是"只选这几种、其余归零"；不要因为要分档就把其他原粒改成 0。
-DOT-N7 不加 tier。
-**每一档限定的是「每周」可同时服用的原粒种类数，不是整个周期的总数**：四周可以彼此不同——某个原粒只出现在其中一两周、把名额让给另一个原粒，完全可以，只要**每一周**都不超过该档的上限。因此一份 6种原粒 的方案，四周加起来用到 6 种以上是正常的。需要连续服用才有意义的原粒（如睡眠、情绪支持）应四周都保留；只有适合阶段性或轮换的原粒才安排在部分周。
-如需让某个原粒只在部分周出现，在该条目上加 "weeks" 字段列出周次（1-4）；省略即表示四周都有。例如：{"dot_key":"D-N1","count":3,"tier":1,"weeks":[1,2]}
-每档的名额数是固定的产品规格，请按上面写明的数量标满；若你标注的不足，系统会按剂量强度自动补齐后面的名额。
+系统会按你给出的重要性排序，自动生成上面这 ${tierRungs.length} 款各自的完整配方——**你不需要、也不要自己挑出哪几种属于哪一款**。你要做的只有一件事：把排序排准。排在越前面的原粒，越会出现在每一款里，并拿到该原粒范围内偏高的剂量。
+**排序里要放满 ${rankTarget} 个**：绝不要因为“反正最窄的一款只装得下 ${tierRungs[0].max} 种”就只排出 ${tierRungs[0].max} 个——排在后面的几个正是更宽那几款的内容，少排一个就少一款可选。
 
-同时在 JSON 末尾附一个 "upgrades" 数组，为第 2 档起的每一档写一句升级文案：
-{"upgrades":[${tierRungs.slice(1).map((t, i) => `{"tier":${i + 2},"pitch":"..."}`).join(',')}]}
-文案规则：
-· 一句话，30字以内，直接写给用户看，说明多出的这几种原粒把这套方案补全在哪里；
-· **不要在文案里点名任何具体原粒**——卡片会在这句话正上方列出它们的名称，重复一遍只会在你写的名字和系统实际排进这一档的原粒不一致时误导用户；只描述这一档补上了什么；
-· 语气可以是向往式、有画面感的产品介绍，不必逐字挂靠某项指标；
-· 但绝不可写出起效时间、改善幅度、任何数值预测或效果承诺，也不得编造成分、机制或功效；
-· 提到原粒时使用配方库里的"对话中称呼"或名称，不要写短代码，也不要写价格。
-正文分析请围绕第 1 档这套核心配方来写；升级内容只放在 upgrades 里，不要在正文里重复一遍。`
-            : `The user has not bought a package yet. The 28-day packages come in ${tierRungs.length} tiers, differing in exactly one thing — how many distinct dots may run in ANY ONE WEEK (DOT-N7 is the system's fixed reset dot and counts toward none of them):
-${tierRungs.map((t, i) => `· ${t.label || t.max + ' dots'}: at most ${t.max} in any one week${i === 0 ? ' (the core tier)' : ` (${t.max - tierRungs[i - 1].max} more than the tier below)`}`).join('\n')}
+正文分析请围绕这位用户的整体调理方向与优先级来写，**不要指向其中某一款套餐**，也不要提"档位""升级""加配"：每一款的定位说明由系统在卡片上逐一给出。`
+            : `The user has not bought a package yet. The 28-day product comes as ${tierRungs.length} packages. Each is a complete formula in its own right; they differ in how many distinct dots may run in ANY ONE WEEK (DOT-N7 is the system's fixed reset dot and counts toward none of them):
+${tierRungs.map((t, i) => `· ${t.label || t.max + ' dots'}: at most ${t.max} in any one week${i === 0 ? '' : ` (${t.max - tierRungs[i - 1].max} more than the package below)`}`).join('\n')}
 
-Formulate as a core set plus increments, and tag every entry with a count above 0 with a "tier" field saying which tier first includes it:
-${tierRungs.map((t, i) => `· tier ${i + 1}: the ${t.max} that matter most — this tier must stand on its own as a complete, coherent formula, because most users will only ever receive it`).slice(0, 1).concat(tierRungs.slice(1).map((t, i) => `· tier ${i + 2}: ${t.max - tierRungs[i].max} more on top of the tier below (${t.max} total) — choose the ones that make the formula more complete rather than ones it cannot do without`)).join('\n')}
-**Still dose everything**: the formulation rules below are unchanged — every short-key in the formulary gets a value, with dots unrelated to this user's abnormal markers near the LOW end of their own range and related ones mid-range or high. "tier" is only a PRIORITY RANKING layered on top of that complete allocation; it does not mean "pick these and zero the rest". Do not set other dots to 0 just because you are assigning tiers.
-DOT-N7 gets no tier.
-**Each tier caps how many distinct dots may run in ANY ONE WEEK, not across the cycle**: the four weeks may differ — giving a dot only one or two weeks and handing the slot to another is fine, as long as no single week exceeds that tier's limit. So a 6-dot package's formula may well use more than six distinct dots across the four weeks. A dot that only works taken continuously (sleep or mood support) should stay in all four weeks; only dots that make sense in phases or rotation belong in a subset.
-To put a dot in only some weeks, add a "weeks" field to its entry listing the week numbers (1-4); omit it for all four. For example: {"dot_key":"D-N1","count":3,"tier":1,"weeks":[1,2]}
-The slot count per tier is a fixed product spec, so tag exactly the numbers written above; if you tag fewer, the system fills the remaining slots by dose intensity.
+The system builds all ${tierRungs.length} complete formulas itself, from your ranking — **you do not need to, and must not, pick which dots belong to which package.** Your one job is to get the ORDER right: the higher a dot ranks, the more packages it appears in and the closer to its own ceiling it is dosed.
+**Fill all ${rankTarget} places**: never stop at ${tierRungs[0].max} on the reasoning that "the narrowest package only holds that many" — the entries after it ARE the wider packages, and one you leave out is a package that cannot be built.
 
-Also append an "upgrades" array with one line of upgrade copy per tier above the first:
-{"upgrades":[${tierRungs.slice(1).map((t, i) => `{"tier":${i + 2},"pitch":"..."}`).join(',')}]}
-Copy rules:
-· one sentence, under 25 words, written for the user, saying what the extra dots complete about the formula;
-· **do not name any specific dot in the copy** — the card lists them on the line directly above it, and repeating them only misleads when the names you write and the dots the system actually places in this tier disagree; describe what the tier completes instead;
-· the tone may be aspirational and evocative product writing — it does not have to cite a specific marker line by line;
-· but never state an onset window, an improvement magnitude, any numeric forecast, or a guarantee of results, and never invent an ingredient, mechanism or effect;
-· name dots by their formulary name, never by short key, and never mention a price.
-Write the prose analysis about the FIRST tier's core formula; keep the upgrade content in "upgrades" and don't restate it in the prose.`)
+Write the prose analysis about this user's overall direction and priorities. **Do not single out any one package**, and do not use the language of tiers, upgrades or add-ons: each package's own positioning is written by the system, on the card.`)
         : '';
-
-    // Only mentioned when a package is in play, because packageSection is the only place the
-    // "weeks" field is actually specified — naming it otherwise invites a field the model was
-    // never taught the shape of.
-    const weeksNote = (!packageSection && !tierLadderSection) ? ''
-        : (isZh
-            ? '；若你用 "weeks" 字段限定某个原粒只在部分周出现，则该原粒只安排在这些周'
-            : ' — and except any dot you restrict to certain weeks with a "weeks" field, which then runs only in those weeks');
 
     const seasonSection = current_solar_term
         ? (isZh
@@ -207,48 +218,50 @@ Write the prose analysis about the FIRST tier's core formula; keep the upgrade c
             : `Current solar term: ${current_solar_term.name_zh} (${current_solar_term.season_zh} · ${current_solar_term.organ_zh}) — traditional seasonal-wellness framing, not clinical evidence; use only as a light accent, never override biomarker-driven priorities.`)
         : '';
 
-    const NOTE_ZH_DIALOGUE_LABEL = '提及原粒时对用户使用配方库中标注的"对话中称呼"（如"原粒1号"）或原粒名称，**不要**说出内部短代码（如"D-N1"）——那是给系统解析用的，不是给用户看的。';
+    const NOTE_ZH_DIALOGUE_LABEL = `提及原粒时对用户使用配方库中标注的"对话中称呼"（如"原粒1号"）或原粒名称，**不要**说出内部短代码（如"D-N1"）——那是给系统解析用的，不是给用户看的。同理，年龄维度只用上面给出的中文名称（生理年龄、实际年龄、${dimNamesList}），**绝不**在回复里出现 BioAge、ChronoAge、MetabolicAge 这类英文字段名。`;
 
-    // The action tail grows two optional fields in ladder mode. Both are optional on the parsing
-    // side too, so a completion from a stale cached prompt still lands as an ordinary formulation.
-    const formatLineZh = tierLadderSection
-        ? `{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0,"tier":1}, ...每个配方库短代码一条],"upgrades":[${tierRungs.slice(1).map((t, i) => `{"tier":${i + 2},"pitch":"..."}`).join(',')}]}`
-        : '{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...每个配方库短代码一条]}';
-    const formatLineEn = tierLadderSection
-        ? `{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0,"tier":1}, ...one entry per formulary short-key],"upgrades":[${tierRungs.slice(1).map((t, i) => `{"tier":${i + 2},"pitch":"..."}`).join(',')}]}`
-        : '{"action":"formulate_dots","formulation":[{"dot_key":"D-N1","count":0}, ...one entry per formulary short-key]}';
+    // One action tail in both modes. The ladder used to add "tier" tags and an "upgrades" array
+    // here; both were removed 2026-09-07 — see the sibling viva prompt for the measurements.
+    // Packages are now chosen by the server from the ranking and their copy written by a second,
+    // tightly-scoped call that is SHOWN the dots it describes (lib/tierCopy.js). A stale cached
+    // prompt still parses: the extra fields are simply ignored.
+    const formatLineZh = `{"action":"formulate_dots","ranking":[{"dot_key":"D-N9","why":"一句话说明为什么排这里"}, ...按重要性排序，共 ${rankTarget} 条]}`;
+    const formatLineEn = `{"action":"formulate_dots","ranking":[{"dot_key":"D-N9","why":"one line on why it ranks here"}, ...${rankTarget} entries, most important first]}`;
 
-const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的任务是：为用户配置接下来28天（4周）的 Waven Dots 方案——这是一次真实的配方决策，不是解释一个已有方案。系统会将你给出的每日总量重复安排到这28天内（DOT-N7 除外，见下方配方库中的专项说明${weeksNote}）。
+const taskZh = `你是 Nano，Waven 打造的精准长寿顾问。你现在的任务是：为用户配置接下来28天（4周）的 Waven Dots 方案——这是一次真实的配方决策，不是解释一个已有方案。系统会将你给出的每日总量重复安排到这28天内（DOT-N7 除外，见下方配方库中的专项说明）。
 
 生物标志物的状态（正常/偏高/高）已在下方直接标注，请严格使用该标注。
 
 用户：${user_profile.nickname || '用户'}，${user_profile.age ? user_profile.age + ' 岁' : '年龄未知'}${user_profile.bmi ? '，BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
-${focusWeightingSection ? focusWeightingSection + '\n' : ''}${packageSection ? packageSection + '\n' : (tierLadderSection ? tierLadderSection + '\n' : '')}
+${focusWeightingSection ? focusWeightingSection + '\n' : ''}${foodRestrictionSection ? foodRestrictionSection + '\n' : ''}${packageSection ? packageSection + '\n' : (tierLadderSection ? tierLadderSection + '\n' : '')}
 ${twinSection}
 
 ${seasonSection}
 
 生物标志物：
 ${biomarkersStr}
-年龄：BioAge = ${bioAge}, ChronoAge = ${chronoAge}
+年龄：生理年龄 ${bioAge} 岁，实际年龄 ${chronoAge} 岁
+四个子年龄：
+${subAgeLines}
 偏高维度：${elevatedDims}
 
 配方库（短代码: 名称 [成分] — 每日总量范围，默认时段，对应维度）：
 ${formularyLines}
 
-可用工具：你可以调用 get_biomarker_history 查看历史检测趋势、get_dot_inventory 查看用户当前各 Dot 的剩余库存（避免对已有大量剩余的 Dot 过度追加）、get_nutrition_schedule 查看以往的配方历史（避免与近期方案剧烈波动、了解用户的 Dot 使用习惯）。不确定时优先调用工具核实，而不是凭空假设。
+可用工具：你可以调用 get_biomarker_history 查看历史检测趋势、get_nutrition_schedule 查看以往的配方历史（避免与近期方案剧烈波动、了解用户的 Dot 使用习惯）。不确定时优先调用工具核实，而不是凭空假设。
 
 任务：
 1. 分析：这段文字是本次配方决策的说明，**不是**一份通用健康状态总结——绝不能只罗列生物标志物/生理年龄/穿戴设备数据而不提及任何具体 Dot。必须明确点名你在下方"配方"中实际选择或加重的至少2-3个 Dot，说明"为什么选它、对应哪个生物标志物或维度"，让用户看得出这段话和下面的配方是同一个决策的两个部分。${NOTE_ZH_DIALOGUE_LABEL}可以简短提及驱动决策的关键数据，但核心内容是解释 Dot 选择，不是复述体检报告。2-3句话，对话语气，不使用列表或标题。
-2. 配方：为配方库中的**每一个**短代码分配一个数值（可以为0）——对普通 Dot 是每日总量，对标注"脉冲式方案"的 Dot 是其脉冲当天的单次剂量（系统会自动只在真正的脉冲日安排该剂量，其余日期不出现）。早晚如何拆分由系统按每个 Dot 的默认时段/是否"早晚皆可"自动计算，你**不需要**、也**不应该**自己拆分早晚——只需决定数值。
+2. 配方：从配方库中挑出对这位用户最有价值的 ${rankTarget} 个短代码，按重要性从高到低排成一份列表。粒数由系统按每个 Dot 自己的范围和它在这份列表中的位置换算，脉冲式 Dot 也一样（系统只会在真正的脉冲日安排它）。早晚如何拆分同样由系统按默认时段/是否"早晚皆可"自动计算，你**不需要**、也**不应该**自己写粒数或拆分早晚——只需把这份排序排准。
 
 配方规则（务必遵守）：
-- 每个 Dot 的数值必须落在其配方库标注的范围内——不同 Dot 范围差异巨大（从1粒到上百粒不等），务必逐一核对，不得套用统一标准。
-- 在该范围内，按生物标志物严重程度决定强度：与用户异常指标无关 → 取范围下限附近；针对偏高指标 → 取范围中段；针对高风险/关键指标的高循证成分 → 取范围上限附近。
-- 不得遗漏配方库中的任何短代码——即使某个 Dot 本次分配为0，也必须在输出中明确写出 0。
-- 系统对早/晚每颗胶囊的 Dot 总粒数设有物理上限（每颗胶囊最多72粒，超出部分系统会按比例自动缩减），所以不要为了覆盖面而习惯性把每个 Dot 都推向范围上限——现实目标是胶囊仍可一次吞服；若多个 Dot 同时判断为高优先级，考虑其中1-2个取上限、其余取中段，而不是全部拉满。
+- **你不需要写任何粒数**。你唯一要做的判断是：从配方库中挑出对这位用户最有价值的 ${rankTarget} 个 Dot，**按重要性从高到低排好序**。每个 Dot 该给多少粒、早晚怎么分、总量会不会超过一颗胶囊装得下的量，全部由系统计算——各 Dot 的范围差异极大（从1粒到上百粒），这部分交给系统才不会出错。
+- 排序就是这次配方的全部决策：排在最前面的会拿到该 Dot 范围内偏高的剂量，靠后的接近下限，没有进入列表的这次完全不用。所以真正驱动用户当前异常的那几个必须排在最前面。
+- **列表长度必须是 ${rankTarget} 个**，不多不少，且不得重复。
+- DOT-N7 不要出现在列表里——它的用法已由系统全权接管。
+- 排序依据是完整的数字孪生，而不只是生物标志物：偏高的子年龄维度是主线，但睡眠、活动量、问卷、用户自述的目标与饮食禁忌同样是排序理由。一个子年龄看着正常、却明显拖累用户日常状态的方向，照样可以排得很靠前。
 
 输出格式（严格遵守，回复正文照常撰写，然后在最后另起一行附上下方 JSON，短代码必须与配方库完全一致）：
 ${formatLineZh}
@@ -258,37 +271,40 @@ ${formatLineZh}
 - 引用用户真实的生物标志物/趋势数值，说明驱动因素。
 - 全程使用简体中文回复，结尾干净收尾，不提问、不引导用户继续追问。`;
 
-    const taskEn = `You are Nano, a warm precision-longevity AI built by Waven. Your task right now: formulate the next 28 days' (4-week) Waven Dots plan for this user — this is a real formulation decision, not an explanation of an existing plan. The system repeats your assigned daily totals across all 28 days (except DOT-N7 — see its dedicated note in the formulary below${weeksNote}).
+    const taskEn = `You are Nano, a warm precision-longevity AI built by Waven. Your task right now: formulate the next 28 days' (4-week) Waven Dots plan for this user — this is a real formulation decision, not an explanation of an existing plan. The system repeats your assigned daily totals across all 28 days (except DOT-N7 — see its dedicated note in the formulary below).
 
 Biomarker status (normal/elevated/high) is already labeled directly below — use that label as-is.
 
 User: ${user_profile.nickname || 'the user'}${user_profile.age ? ', ' + user_profile.age + ' years old' : ' (age unknown)'}${user_profile.bmi ? ', BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}
 ${healthPlanSection ? healthPlanSection + '\n' : ''}
-${focusWeightingSection ? focusWeightingSection + '\n' : ''}${packageSection ? packageSection + '\n' : (tierLadderSection ? tierLadderSection + '\n' : '')}
+${focusWeightingSection ? focusWeightingSection + '\n' : ''}${foodRestrictionSection ? foodRestrictionSection + '\n' : ''}${packageSection ? packageSection + '\n' : (tierLadderSection ? tierLadderSection + '\n' : '')}
 ${twinSection}
 
 ${seasonSection}
 
 Biomarkers:
 ${biomarkersStr}
-Age: BioAge = ${bioAge}, ChronoAge = ${chronoAge}
+Age: biological age ${bioAge}, chronological age ${chronoAge}
+Four sub-ages:
+${subAgeLines}
 Elevated dimensions: ${elevatedDims}
 
 Formulary (short key: name [ingredients] — daily total range, default slot, target dimension):
 ${formularyLines}
 
-Available tools: call get_biomarker_history for historical test trends, get_dot_inventory for the user's current remaining stock of each Dot (avoid over-adding to a Dot they already have plenty of), get_nutrition_schedule for prior formulation history (avoid wild swings from recent plans, and learn the user's Dot usage habits). When unsure, verify with a tool rather than assuming.
+Available tools: call get_biomarker_history for historical test trends, get_nutrition_schedule for prior formulation history (avoid wild swings from recent plans, and learn the user's Dot usage habits). When unsure, verify with a tool rather than assuming.
 
 Task:
-1. Analysis: this text explains the actual formulation decision — it is **not** a generic health-status summary. Never just list biomarkers/BioAge/wearable data without naming any specific Dot. You must explicitly name at least 2-3 Dot short-keys/names you actually chose or emphasized in the "formulation" below, and explain why each was chosen and which biomarker or dimension it addresses — the reader should see this text and the formulation below as two parts of the same decision. You may briefly mention the key data driving the decision, but the core content is explaining the Dot choices, not restating the lab report. 2-3 sentences, conversational tone, no lists or headers.
-2. Formulation: assign a single count (can be 0) to **every single** short-key in the formulary — for a normal Dot this is a daily total; for a Dot labeled "pulse protocol" it's the single-dose amount taken on its pulse day (the system automatically schedules it only on the real pulse days and omits it the rest of the week). The AM/PM split is computed automatically by the system from each Dot's default slot and flexibility flag — you do **not** need to, and should **not**, decide the morning/evening split yourself; just decide the count.
+1. Analysis: this text explains the actual formulation decision — it is **not** a generic health-status summary. Never just list biomarkers/bio-age/wearable data without naming any specific Dot. Refer to age dimensions only by the names given above (biological age, chronological age, ${dimNamesList}) — never internal field names such as BioAge, ChronoAge or MetabolicAge. You must explicitly name at least 2-3 Dot short-keys/names you actually chose or emphasized in the "formulation" below, and explain why each was chosen and which biomarker or dimension it addresses — the reader should see this text and the formulation below as two parts of the same decision. You may briefly mention the key data driving the decision, but the core content is explaining the Dot choices, not restating the lab report. 2-3 sentences, conversational tone, no lists or headers.
+2. Formulation: pick the ${rankTarget} short-keys worth most to this user and put them in one list, most important first. The system converts each position into a real count using that Dot's own range, pulse Dots included (it schedules those only on the real pulse days). The AM/PM split is computed automatically from each Dot's default slot and flexibility flag — you do **not** need to, and should **not**, write pill counts or decide the morning/evening split yourself; just get the order right.
 
 Formulation rules (must follow):
-- Each Dot's count must land within its formulary-labeled range — ranges vary enormously between Dots (from 1 to over a hundred), so check each one individually rather than applying one uniform standard.
-- Within that range, scale intensity by biomarker severity: unrelated to the user's abnormal markers → near the low end of the range; addressing an elevated marker → mid-range; addressing a high-risk/critical marker with strong evidence → near the high end of the range.
-- Never omit any short-key from the formulary — even a Dot assigned 0 this time must appear explicitly as 0 in the output.
-- The system enforces a physical ceiling on each morning/evening capsule (max 72 Dots per capsule — anything over gets scaled down proportionally by the system), so don't reflexively push every Dot to the top of its range just for coverage — the real-world goal is a capsule someone can still swallow in one go. If several Dots are all high-priority, consider taking 1-2 to their max and keeping the rest mid-range rather than maxing all of them.
+- **You do not write any pill counts.** Your only judgement is which ${rankTarget} Dots from the formulary matter most to this user, **ordered from most important to least**. How many pills each one gets, how they split between morning and evening, and whether the total fits in a capsule are all computed by the system — the ranges differ enormously (1 pill to over a hundred), and that part is where they get crossed.
+- The ordering IS the formulation decision: what you put first gets a dose near the top of its own range, later entries sit closer to their floor, and anything not on the list is not used this cycle. So whatever is actually driving this user's abnormal markers has to come first.
+- **The list must contain exactly ${rankTarget} entries**, no more, no fewer, with no repeats.
+- Do not include DOT-N7 — its dosing is entirely system-controlled.
+- Rank from the whole digital twin, not the biomarkers alone: the elevated sub-age dimensions are the through-line, but sleep, activity, the questionnaire, and the user's own stated goals and dietary limits are equally valid reasons to rank something highly. A dimension that reads as normal can still hold back the user's day-to-day state, and belongs near the top when it does.
 
 Output format (follow strictly — write your reply normally, then append the JSON below on a new final line, short-keys must exactly match the formulary):
 ${formatLineEn}

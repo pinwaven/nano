@@ -49,7 +49,7 @@ Library of reusable plan blueprints. Global templates have `channel_id = NULL`; 
 | `goal_zh` / `goal_en` | TEXT | One-sentence goal statement shown to users |
 | `duration_weeks` | INTEGER | Estimated plan duration |
 | `target_sub_ages` | TEXT[] | Sub-age dimensions this plan targets |
-| `recommended_dot_ids` | JSONB | Array of `dots.id` values |
+| `recommended_dot_ids` | JSONB | Array of **`dots.key_name`** strings (`["DOT-N11", …]`). The name is historical — it held `dots.id` until `migration_health_plan_recommended_dot_keys.sql`, and integers are still read for compatibility. Never write ids: a row number survives a formulary change while meaning a different dot, which is exactly what went wrong. |
 | `activity_guidance` | JSONB | Structured daily/weekly activity suggestions |
 | `milestones` | JSONB | Array of `{ week, label_zh, label_en }` |
 | `daily_tasks` | JSONB | Array of task config objects (see below) |
@@ -244,7 +244,15 @@ Miniapp: the Plan Detail Sheet (`pages/main/main.wxml`/`main.js`) renders this b
 
 ### Soft weighting of formulation by focus (`recommended_dot_ids`)
 
-A user's active focus's `recommended_dot_ids` (see the Plan Template table above) now softly biases dot-count generation toward that focus's recommended dots in both the deterministic and agentic formulation paths — never a hard filter; every dot remains primarily governed by biomarker severity, and a real biomarker need outside the chosen focus can still surface. Full mechanics (per-dot fallback biasing, the agentic prompt's `focusWeightingSection`) are documented in [`docs/ai-persona/08-formula-dots-and-reports.md`](../ai-persona/08-formula-dots-and-reports.md#health-plan-focus-linked-formulation-weighting) — not duplicated here to avoid the two docs drifting apart.
+A user's active focus's `recommended_dot_ids` (see the Plan Template table above) softly biases dot-count generation toward that focus's recommended dots in both the deterministic and agentic formulation paths — never a hard filter; every dot remains primarily governed by biomarker severity, and a real biomarker need outside the chosen focus can still surface.
+
+**The bias is purely additive: a focus only ever promotes.** A listed dot is dosed toward the high end of its own range (75%); everything else sits at exactly the midpoint it would get with no focus at all. Until 2026-09-08 an off-list dot was instead demoted to 25% — *below* the no-focus baseline — so joining a plan suppressed every dot the plan did not happen to name. That made list accuracy load-bearing (an omission was a demotion) and contradicted the sentence directly above this one. Do not reintroduce the demotion.
+
+Three sites apply the focus, and only the first two are dose-related: `_rankDotsBySeverity`'s `+0.15` on a 0–1 severity scale, which decides which dots survive `_capDistinctDots`' weekly tier cap; `_fallbackCountForDot`'s range bias; and `_padCandidatesFor`, which fills the upper packages of the tier ladder. Under a 6-dot tier the combination effectively chooses the six dots, so **a focus list is a clinical statement, not a hint** — see `migration_health_plan_recommended_dot_keys.sql` for what a stale one did.
+
+**`DOT-N7` belongs on no focus list.** It is `dosing_protocol='pulse'`, filtered out of both `_rankDotsBySeverity` and `_padCandidatesFor`, lifted out of the everyday recipe by `_planExpansionContext`, and not counted toward a tier — it is in every plan regardless, so listing it can only waste ranking weight on a dot the list cannot influence.
+
+**`DOT-N8` and `DOT-N12` have no `sub_age_target`**, so `_rankDotsBySeverity` scores them exactly `0` forever and a focus list is their only route into a formula. Neither is on any of the six seeded lists today. If either should be obtainable it needs a plan that genuinely targets it, or a `sub_age_target` — not a slot in an unrelated list. Full mechanics (per-dot fallback biasing, the agentic prompt's `focusWeightingSection`) are documented in [`docs/ai-persona/08-formula-dots-and-reports.md`](../ai-persona/08-formula-dots-and-reports.md#health-plan-focus-linked-formulation-weighting) — not duplicated here to avoid the two docs drifting apart.
 
 ---
 
@@ -433,3 +441,59 @@ All endpoints require `Authorization: Bearer <token>`.
 | Miniapp Plans CSS | `src/mini/nano-miniapp/pages/main/main.wxss` | All plans tab styles including task chips, daily bar, modals |
 | Coach panel | `src/mini/nano-miniapp/pages/coach/coach.js` | Plans sub-tab in client detail |
 | Admin panel | `src/web/admin-panel/src/App.jsx` | `HealthPlansTab` component — templates CRUD, daily tasks config, user plans view |
+
+---
+
+# Appendix: the `CLAUDE.md` §31 record (moved here verbatim 2026-09-15)
+
+The project-rules entry as it stood before being condensed; the rules that must hold are now
+summarised in `CLAUDE.md` §31. Written while the feature was in flight (2026-08-14); parts of it
+were later superseded — `handleNutritionTopupEvent` and `_commitNutritionPlan` were removed on
+2026-08-28 (nothing may create a plan on a timer), and `/health-plan-templates` is no longer in
+`GCN_ALLOWED_PATHS`. Kept for the decisions it records.
+
+## 31. Health-Plan-Focus-Linked Dot Formulation + GCN Custom-Formulation Purchase Flow
+
+**In-flight, uncommitted as of 2026-08-14** — `git status` on this repo shows this feature's files still modified/untracked on the working tree. Documented here per this codebase's own convention of tracking current disk state; verify with `git log`/`git status` before relying on it as shipped/deployed.
+
+Lets a user's active health-plan **focus** (`health_plans`, §"Health Plan System" in `docs/architecture/health-plan-system.md`) influence which Dots their next formulation emphasizes, links a committed formulation back to the focus that shaped it, and adds a GCN-side purchase flow for buying that exact formulation as a physical product — closing the loop between "join a focus" → "get a formulation weighted toward it" → "buy it."
+
+### Schema
+
+Three new migrations (`src/schemas/`):
+- `migration_nutrition_plans_health_plan_link.sql` — `nutrition_plans.primary_health_plan_id`/`secondary_health_plan_id` (nullable FKs to `health_plans`, `ON DELETE SET NULL`). Records which active focus(es) shaped a committed formulation; null when no focus was active at formulation time (today's default, unaffected).
+- `migration_custom_formulation_purchase_flag.sql` — `users.custom_formulation_purchased_at` (nullable `TIMESTAMPTZ`). Nano has no visibility into GCN's own orders table, so this one column, set by GCN via `POST /formulation-purchase-confirmed` the moment an order is confirmed paid, is nano's entire signal for "has this user ever bought a custom formulation."
+- `migration_webview_token_context.sql` — `webview_tokens.context` (`JSONB`). Lets the miniapp attach an arbitrary intent payload to a minted webview token (e.g. `{intent: 'buy_custom_formulation', nutrition_plan_id}`), carried through the existing `wvt` → `POST /exchange-webview-token` → GCN SSO handoff and returned to the target page (GCN's `dashboard.html`) verbatim after exchange — no new endpoint needed for a new intent, just a new `context` shape.
+
+### Formulation weighting — soft, never exclusionary
+
+`health_plan_templates.recommended_dot_ids` (pre-existing column, previously unused by the formulation engine) now biases both formulation paths toward a user's active focus(es):
+
+- **Deterministic path** (`handlers/dots.js`): `_resolveCandidateDotKeys(activeHealthPlans, dotsFormulary)` unions `recommended_dot_ids` across the user's active `health_plans` (primary + secondary) into a `Set` of `key_name`s, or `null` if no active focus has any recommended dots ("no narrowing," not "recommend nothing"). `_fallbackCountForDot(dot, isRecommended)` then biases the fallback count toward 75% of the dot's own `target_dots_min`–`target_dots_max` range when recommended, 25% when a focus is active but this dot isn't on its list, or the plain midpoint when no focus is active at all — **never zeroes a non-recommended dot out**, per the confirmed product decision that a real biomarker need outside the chosen focus must still be able to surface.
+- **Agentic path** (`prompts/{nano,viva}/systemFormulaGenerate.js`): a new `focusWeightingSection` tells the LLM the same thing in prose — skew recommended dots toward the higher end of their range, but every other dot is still decided normally by biomarker severity, never forced to 0 for being off the focus list.
+
+### Linking a formulation back to its focus
+
+`_commitNutritionPlan()` (`handlers/dots.js`) now also writes `primary_health_plan_id`/`secondary_health_plan_id` onto the `nutrition_plans` row it activates, resolved from whichever `activeHealthPlans` entries have `plan_type === 'primary'`/`'secondary'`. `handleGetHealthPlanDetail` (`handlers/health-plans.js`) uses this link in reverse: it now also returns a `formulation` field — the committed dot breakdown (from `nutrition_schedules`, day 0 of the plan) for whichever active `nutrition_plans` row links back to *this specific* focus, or `null` if Formulate Dots hasn't run since joining it. The miniapp's health-plan detail overlay (`pages/main/main.js`/`.wxml`) surfaces this: a dot-breakdown chip row when a formulation exists, or a hint pointing at the chat toolbox's "Formulate Dots" tool when it doesn't.
+
+### Background reformulation bug fix, found along the way
+
+`handleNutritionTopupEvent` (new, `handlers/dots.js`) is the dispatcher's periodic `nutrition.topup` CloudEvent handler — **this event was previously silently dropped**: `worker/index.js`'s EventBridge router had no case for `acs.dispatcher`/`nutrition.topup` at all (a gap §29 already flagged as "noticed in passing, not fixed there"). Now routed and handled: runs `_runDeterministicFormulation()` (the non-agentic path — this is an unattended background job, no user waiting on a reply, mirroring every other fallback path's same latency/cost tradeoff) and commits via `_commitNutritionPlan()`. Sends a `formulation_reorder_ready` notification instead of the generic `nutrition_plan` one when `users.custom_formulation_purchased_at` is set, since a user who's already bought a physical formulation once is the one audience for whom "your formula refreshed, reorder?" is the right framing.
+
+### GCN purchase flow
+
+Two new endpoints, both gated via the existing scoped `GCN_ALLOWED_PATHS` allowlist (§19/`gcn-integration` skill), not nano's superadmin bearer token:
+
+- **`GET /formulation-checkout-snapshot?planId=&openid=`** (`handleGetFormulationCheckoutSnapshot`, `handlers/dots.js`) — lets GCN validate a purchase against the buyer's real, currently-committed recipe before creating an order line, rather than trusting a client-supplied plan id blindly. `openid` is the buyer GCN already resolved from its own SSO session, never client input trusted independently. Reads day-0 of the plan's schedule specifically (every day in the 28-day cycle recomputes the same steady-state recipe except the two DOT-N7 isolation days, which would misrepresent the real formulation — day 0 is never one). Returns `{valid:false, reason: 'plan_owner_mismatch'|'plan_not_active'|'plan_not_found'|'plan_has_no_schedule'|'plan_has_no_dots'|'missing_params'|'invalid_plan_id'|'internal_error'}` or `{valid:true, plan:{...}, recipe_summary:{dot_breakdown:[...]}, verification_ref: <uuid>}` — never a 404/500 for a routine "not ready" case; the caller branches on `valid`.
+- **`POST /formulation-purchase-confirmed`** (`handlePostFormulationPurchaseConfirmed`, `handlers/users.js`) — GCN calls this the moment an order is confirmed paid; sets `users.custom_formulation_purchased_at = NOW()` unconditionally (no `ON CONFLICT` guard needed, this is a plain UPDATE, not a first-write-only upsert).
+
+`/health-plan-templates` was also added to `GCN_ALLOWED_PATHS` (it already existed as an internal admin route) so GCN can read the focus catalog directly.
+
+### Miniapp: "Buy This Formulation"
+
+`pages/main/main.js`'s `handleBuyFormulation()` — rendered only in the health-plan detail overlay once `planDetailData.formulation` is populated (i.e. a real committed formulation exists for this focus), and only on the Aeviva channel. Opens the GCN store webview via the existing `_openAevivaStoreGated()` → `openUserApp(path, context)` → `appview.js` chain, now threading `context: {intent: 'buy_custom_formulation', nutrition_plan_id}` through `options.context` → `POST /webview-token`'s `context` body field → `webview_tokens.context` → returned verbatim to GCN's `dashboard.html` on token exchange, so GCN's checkout can read back which exact formulation to price and validate (via the checkout-snapshot endpoint above) rather than a placeholder/generic "buy dots" flow.
+
+### Files
+
+New: `src/schemas/migration_nutrition_plans_health_plan_link.sql`, `src/schemas/migration_custom_formulation_purchase_flag.sql`, `src/schemas/migration_webview_token_context.sql`. Modified: `handlers/dots.js` (`_fallbackCountForDot(dot, isRecommended)`, `_resolveCandidateDotKeys()`, `handleGetFormulationCheckoutSnapshot()`, `handleNutritionTopupEvent()`, `_commitNutritionPlan()`'s new FK writes), `handlers/health-plans.js` (`handleGetHealthPlanDetail`'s `formulation` field), `handlers/login.js` (`handlePostWebviewToken`/`handleExchangeWebviewToken`'s `context` passthrough), `handlers/users.js` (`handlePostFormulationPurchaseConfirmed`), `index.js` (new routes, `GCN_ALLOWED_PATHS` additions, `nutrition.topup` EventBridge case), `prompts/{nano,viva}/systemFormulaGenerate.js` (`focusWeightingSection`), `pages/main/main.js`/`.wxml`/`.wxss` (formulation display + Buy CTA), `pages/appview/appview.js` (`context` passthrough), `utils/config.js` (VERSION bump).
+

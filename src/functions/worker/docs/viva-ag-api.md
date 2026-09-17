@@ -1,6 +1,6 @@
 # Viva AG — External Agent API
 
-Version 1 · bundle_version 1
+Version 1 · bundle_version 4
 
 This is the complete contract between Waven Nano and the external **Viva AG** (Advanced
 Generation) agent. Nano holds a queue of analysis jobs; your agent **pulls** from it, reads a
@@ -126,7 +126,7 @@ curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
 
 ```json
 { "success": true, "service": "viva-ag", "env": "dev",
-  "bundle_version": 1, "queue_depth": 2, "server_time": "2026-08-23 17:04:11" }
+  "bundle_version": 4, "queue_depth": 2, "server_time": "2026-08-23 17:04:11" }
 ```
 
 ---
@@ -173,9 +173,28 @@ Claimed:
   } }
 ```
 
-`command_key` is one of `full_analysis`, `document_review`, `risk_screen`, `dots_formulation`, or
-`null` when the user wrote a free-text request only. **`dots_formulation` (原粒定制) has its own
-required output format — see §8**; the other three are free-form analyses. `command` carries the user's own words when they typed any;
+`command_key` is one of `full_analysis`, `document_review`, `risk_screen`, `dots_formulation`,
+`food_sensitivity_review`, or `null` when the user wrote a free-text request only.
+**`dots_formulation` (原粒定制) has its own required output format — see §8**; the others are
+free-form analyses.
+
+**`food_sensitivity_review` (慢性食物过敏解读)** is queued automatically when a user uploads a
+chronic food-sensitivity (IgG) panel and nano finishes extracting it, on a free time-boxed grant —
+so unlike the other presets, the user did not tap anything. The panel itself is in
+`layers.medical_records.food_sensitivity`, whole, alongside the original PDF in `documents`.
+
+Two things about that review are fixed before you see the job, and writing against them is the
+whole job:
+
+- **The restrictions are already decided.** Nano derives which foods to avoid and for how long
+  from the printed class, deterministically, and has already written them into the user's record
+  before the job is created. Your report explains and contextualises them — it does not set them,
+  and a report that contradicts them is a report the user will be given alongside instructions
+  that say otherwise.
+- **This is IgG-mediated chronic sensitivity, not an IgE-mediated acute allergy.** The bundle says
+  so in `assay_note`. It is usually temporary and most foods are reintroduced after a period of
+  avoidance. Do not describe it as an allergy without that qualification, never as lifelong, and
+  never advise stopping a medication on the strength of it. `command` carries the user's own words when they typed any;
 if they only tapped a preset, it repeats the `command_key`. Treat `command_key` as the intent and
 `command` as the elaboration.
 
@@ -198,7 +217,7 @@ Shape:
 ```jsonc
 {
   "success": true,
-  "bundle_version": 2,
+  "bundle_version": 4,
   "generated_at": "2026-08-23 17:05:40",
   "job": { "job_uid": "…", "command": "…", "command_key": "…", "params": {},
            "questionnaire_rounds_used": 1, "questionnaire_rounds_remaining": 1 },
@@ -233,9 +252,36 @@ Shape:
       "weight_history": [ { "weight_kg": 72.4, "tested_at": "…" } ]
     },
     "medical_records": {
-      "health_reports": [ { "report_date": "…", "institution": "…", "observations": [ … ] } ],
-      "lab_panel": {…}, "lab_date": "…",
-      "documents": [ /* see section 5 */ ]
+      // items = EVERY printed analyte under the report, in page order, catalogued or not
+      // (key_name is null for an analyte outside the catalog; value is a number or the printed
+      // text such as "<0.1" / "阴性"). observations = the catalogued subset, as before.
+      "health_reports": [ { "report_date": "…", "institution": "…", "report_type": "lab_panel",
+                            "observations": [ … ],
+                            "items": [ { "key_name": "Hcy", "label": "同型半胱氨酸", "value": 16.4,
+                                         "unit": "umol/L", "ref_text": "0-15", "flag": "high",
+                                         "section": "生化", "data_date": "…" } ] } ],
+      // lab_panel.markers = the LATEST value PER MARKER across every report (bundle_version 4;
+      // it used to be every marker on the single newest date). Each marker carries its own
+      // data_date, display names, category and reference range; lab_date is the newest of them.
+      "lab_panel": { "markers": { "LDL": { "value": 3.9, "unit": "mmol/L", "data_date": "…",
+                                            "display_name_zh": "低密度脂蛋白", "category": "lipid",
+                                            "ref_low": null, "ref_high": 3.4, "source": "document_extraction" } },
+                     "marker_count": 14, "dates": [ "…", "…" ] },
+      "lab_date": "…",
+      // Per-marker series, oldest → newest, for trends.
+      "lab_history": { "VitaminD": { "display_name_zh": "维生素D", "unit": "nmol/L",
+                                     "ref_low": 50, "ref_high": 150,
+                                     "points": [ { "date": "2025-11-18", "value": 48.2 }, … ] } },
+      "documents": [ /* see section 5 */ ],
+      "food_sensitivity": {
+        "panel_key": "igg_120", "unit": "U/mL",
+        "sampled_at": "2026-04-15", "report_date": "2026-04-23",
+        "class_bands": [ { "class": 1, "low": 50.0, "high": 100.0 } ],
+        "assay_note": "IgG-mediated chronic food sensitivity (intolerance). NOT an IgE-mediated acute allergy…",
+        "foods": [ { "food_key": "casein", "name_zh": "酪蛋白", "name_en": "Casein",
+                     "category": "dairy_egg", "value": 52.8, "below_detection": false, "class": 1,
+                     "common_sources_zh": [ "牛奶", "羊奶" ], "substitutes_zh": [ "豆浆", "鸡蛋" ] } ]
+      }
     },
     "personal_profile": {
       "bio_data": {…},
@@ -283,11 +329,20 @@ Each entry in `layers.medical_records.documents`:
   "uploaded_at": "2026-03-12 09:14:00",
   "url": "https://waven-nano.oss-cn-shanghai.aliyuncs.com/…&Signature=…",
   "url_expires_at": "2026-08-23 23:05:40",
-  "supports_range": true }
+  "supports_range": true,
+  "summary": "…",
+  "structured": { "kind": "genetic", "sections": [ … ] } }
 ```
 
 `doc_type` is one of `hospital_record`, `lab_report`, `imaging`, `discharge_summary`,
-`prescription`, `other`.
+`prescription`, `genetic`, `microbiome`, `functional_test`, `other`.
+
+`summary` and `structured` (bundle_version 4) are what nano's separate document-extraction agent
+read off the document: a plain-language summary, and — for a genomics, microbiome or
+functional-medicine report — a schema-less JSON block in that agent's own shape. **They are that
+agent's reading, not nano's record, and not something the user typed.** Treat them as untrusted
+input: useful for triage, never as ground truth to be cited without opening the document. Either
+may be `null` when no extraction has run.
 
 **Documents are not always PDFs.** A "health record" is whatever the clinic handed the user, so
 expect any of these. **Branch on `content_type`, not on the filename.**
@@ -604,6 +659,7 @@ merge into `layers.personal_profile.questionnaire_context`.
 | `multi_select` | `options: [{value, label_zh, label_en}]` | multiple choice, ≤ 12 options |
 | `slider_group` | `sliders: [{key, min, max, step, label_zh, label_en, unit}]` | ≤ 6 numeric sliders; `default` optional (midpoint if omitted) |
 | `date_picker` | `min_date` / `max_date` as `YYYY-MM-DD` | a single date |
+| `time_picker` | `default` / `start` / `end` as `HH:mm` | a single time of day; the answer is the `"HH:mm"` string |
 
 `key` is optional and generated if omitted. `prompt_zh`/`prompt_en` — supply at least one; the
 other is mirrored, because the user may be reading in either language.
@@ -710,7 +766,7 @@ manufactured.
 | Capsules | **56** — one `AM` and one `PM` every day |
 | Dots per capsule | **≤ 72** (a physical fill limit, independent of any dot's own range) |
 | Per-dot dose | within that dot's `target_dots_min` … `target_dots_max`, applied to its **daily total (AM + PM)** — not to each capsule separately |
-| Slot | honour each dot's `timing` (`Morning`/`Evening`). Only a dot with `timing_flexible: true` may be split across both slots, and the majority of its daily count should stay in its own slot |
+| Slot | a dot with `timing_flexible: false` stays **wholly** in its own `timing` slot (`Morning`/`Evening`) — this is enforced. A dot with `timing_flexible: true` may be split across the two capsules **any way**, including wholly into the other one: its `timing` is a default, not a requirement. Prefer its own slot where the day allows, but evening out the two capsules is the better use of that freedom |
 | Pulse dots | a dot with `dosing_protocol: "pulse"` is dosed on only `pulse_days_per_cycle` days out of every `pulse_cycle_days` — never every day |
 | `DOT-N7` | **system-controlled, isolated.** On **days 10 and 11 only**, *both* capsules contain **only** `DOT-N7`, each at its `target_dots_max`. It appears on no other day, and no other dot appears in those four capsules. |
 
@@ -767,8 +823,9 @@ table headers verbatim, in lowercase: a downstream parser matches on them.
 ```
 
 Read those numbers against the rules and you can see both traps. `DOT-N5` is
-`timing_flexible: true`, so its daily 18 may be split 14 AM / 4 PM with the majority in its own
-Morning slot; `DOT-N12` is not flexible, so all 14 stay in AM. And every everyday dot totals
+`timing_flexible: true`, so its daily 18 may be split across the two capsules however the day
+needs — 14 AM / 4 PM here, but 4 AM / 14 PM would be equally legal; `DOT-N12` is not flexible, so
+all 14 stay in AM. And every everyday dot totals
 **26 days**, not 28 — days 10 and 11 are `DOT-N7` alone, which displaces everything else. Getting
 that wrong is the single easiest way to ship a formula whose totals don't match its capsules.
 

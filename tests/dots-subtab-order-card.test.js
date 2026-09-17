@@ -59,7 +59,10 @@ test('handleGoFormulate lands on the chat tab and starts the tool', () => {
     const fn = mainJs.slice(mainJs.indexOf('  handleGoFormulate() {'), mainJs.indexOf('\n  },', mainJs.indexOf('  handleGoFormulate() {')));
     assert.ok(fn, 'handleGoFormulate is missing');
     assert.ok(/tab: 'chat'/.test(fn), 'it does not switch to the chat tab');
-    assert.ok(/toolActions\.runFormulaDs\(/.test(fn), 'it does not run the formulate tool');
+    // Routes through _startFormulaDots, which asks which direction to formulate in before
+    // calling the tool (tests/formula-focus-confirmation.test.js). Still "runs the tool" — the
+    // point of this assertion is that the order card does not open the store instead.
+    assert.ok(/this\._startFormulaDots\(/.test(fn), 'it does not run the formulate tool');
     assert.ok(/isGuest/.test(fn), 'a guest has no user_id to formulate for');
     assert.ok(/typing \|\| obStep !== 'done'/.test(fn), 'it can start a second turn on top of a running one');
 });
@@ -95,4 +98,28 @@ test('both languages resolve every string the card binds', () => {
             assert.ok(T[lang][key].length > 0, `${lang}.${key} is empty`);
         }
     }
+});
+
+test('待付款 rows offer payment, ahead of every other CTA on that row', () => {
+    // An unpaid order blocks each later step, so paying it is the only thing worth offering there
+    // — hence first in the wx:if chain rather than appended to it.
+    const chain = mainWxml.slice(mainWxml.indexOf('item.can_pay'), mainWxml.indexOf('handleScanBox'));
+    assert.ok(/catchtap="handlePackagePay"/.test(chain), 'the pay CTA has no handler');
+    assert.ok(/data-order="\{\{item\.order_id\}\}"/.test(chain), 'the pay CTA carries no order id');
+    assert.ok(mainWxml.indexOf('item.can_pay') < mainWxml.indexOf('item.can_submit &&'),
+        'can_pay is not the first branch of the package CTA chain');
+    assert.ok(/wx:elif="\{\{item\.can_submit && item\.submit_plan_id\}\}"/.test(mainWxml),
+        'inserting can_pay broke the chain — can_submit must now be an elif');
+});
+
+test('the pay CTA opens the GCN order rather than doing anything itself', () => {
+    // Payment is a manual scan-and-upload flow the seller confirms out of band; there is nothing
+    // nano can settle, so the whole job is landing the user on the right screen.
+    const fn = mainJs.slice(mainJs.indexOf('  handlePackagePay(e) {'));
+    const body = fn.slice(0, fn.indexOf('\n  },'));
+    assert.ok(/intent: 'pay_order'/.test(body), 'it does not send the pay_order intent');
+    assert.ok(/order_id: orderId/.test(body), 'it does not carry the order id');
+    assert.ok(/isAeviva/.test(body), 'a non-aeviva user has no GCN store to open');
+    assert.ok(/if \(!orderId/.test(body), 'it would open the store with no order to show');
+    for (const lang of ['zh', 'en']) assert.ok(T[lang].pkgPayBtn, `pkgPayBtn missing from T.${lang}`);
 });

@@ -4,13 +4,33 @@ Classify the user message into exactly one intent, and list only the data that i
 
 INTENTS:
 - casual_chat        — greetings, small talk, off-topic, general non-health questions
-- biomarker_question — asking about their test results, bio age, what their numbers mean, health trends
-- nutrition_question — asking about dots, supplements, nutrition plan, what to take, timing, dosing, or what product/item might help a health concern ("anything that helps my sleep?", "is there a product for stress?", "what else can I buy?")
+- biomarker_question — asking about their test results, bio age, what their numbers mean, health trends.
+  ALSO anything about their WEARABLE data — last night's sleep, today's steps, heart rate, HRV,
+  SpO2, stress, breathing, or a trend in any of these ("我昨晚睡得怎么样", "今天走了多少步",
+  "我的HRV正常吗", "how did I sleep", "is my resting heart rate high") — these are answered from
+  dated per-day readings and are NOT casual_chat.
+- nutrition_question — asking about dots, supplements, nutrition plan, what to take, timing, dosing, or what product/item might help a health concern ("anything that helps my sleep?", "is there a product for stress?", "what else can I buy?").
+  ALSO anything about a 原粒 package they have bought or ordered: what they bought, an order's
+  status, payment, shipping, tracking, a redeem code, or which packages exist ("我的订单到哪了",
+  "发货了吗", "我已经买了什么原粒套餐", "有哪些套餐", "where is my order", "has it shipped").
+  ALSO anything about food sensitivity, food allergy, intolerance or what they should avoid
+  eating ("我对什么食物过敏", "我能喝牛奶吗", "我要忌口什么", "我有什么不耐受",
+  "can I eat eggs", "what foods should I avoid", "am I allergic to milk") — these are answered
+  from an uploaded 慢性食物过敏 IgG panel.
+  These are NOT casual_chat: answering them needs a tool only this intent can reach, and without
+  it the reply is a dead end.
 - formulate_dots     — asking to START a custom formulation right now: to have their own dots
   formula made, customised, re-made or ordered ("我要定制营养素", "帮我配制我的方案", "给我做一份定制配方",
   "make me a custom formula", "I want to order custom dots", "重新配一次"). This is a REQUEST TO ACT
   on their own formula, not a question about one. Asking what a dot does, when to take it, what is
   in their current plan, or what custom nutrition even IS ("定制营养素是什么") is nutrition_question.
+  So is anything about a PURCHASE rather than a formula: what they have already bought, where an
+  order is, whether it has shipped, tracking, a redeem code they hold, or which packages exist
+  ("我已经买了什么原粒套餐", "我的订单到哪了", "发货了吗", "有哪些套餐", "what did I buy",
+  "where is my order"). Past tense or a question word means they are ASKING, not requesting.
+  And it is ONLY about dots. A request for FOOD — a meal plan, recipes, a diet menu, what to eat
+  for breakfast/lunch/dinner ("给我订制一周的营养餐", "帮我安排饮食计划", "make me a meal plan",
+  "what should I eat this week") — is nutrition_question, even when it says 定制/订制/营养.
 - longevity_science  — educational questions about aging, longevity science, mechanisms (not about their personal data)
 - record_action      — explicitly logging their own personal data (weight, sleep hours, meals, etc.)
 - set_reminder       — asking Nano to remind them about something at a specific future time or after a delay

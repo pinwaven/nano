@@ -1,4 +1,7 @@
 const { pool } = require('../lib/db');
+const { humanizeDotCodes } = require('../lib/dotNames');
+const { humanizeSubAgeKeys } = require('../lib/subAgeLabels');
+const { scrubToolNames, dropForeignLines, localizeStatusWords } = require('../lib/toolNameScrub');
 const { buildHealthTags } = require('../lib/healthTags');
 const ossLib = require('../lib/oss');
 const { generateUserId, getWxAccessToken } = require('../lib/auth');
@@ -37,21 +40,30 @@ const vivaSystemHealthAdviceTemplate = require('../prompts/viva/systemHealthAdvi
 const { getCurrentSolarTerm } = require('../lib/solarTerms');
 const { detectAllRisks } = require('../lib/factCheck');
 const systemHealthReportTemplate = require('../prompts/nano/systemHealthReport');
-const { runAgenticTurn } = require('../lib/agenticChat');
+const { runAgenticTurn, contextDates } = require('../lib/agenticChat');
+const { attachTierCopy } = require('../lib/tierCopy');
+const { checkFormulationQuality } = require('../lib/formulationQuality');
 const { v4: uuidv4 } = require('uuid');
 const { publishChatGenerateEvent } = require('../lib/chatEventBridge');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { resolveEffectivePersona, hasActiveVivaAccess } = require('../lib/persona');
 const { grantSignupTrial } = require('../lib/personaOverride');
-const { _runDeterministicFormulation, _buildFormulaChartBlock, _commitProposedPlan, _resolveOrderContext, _applyTierLadder, _padCandidatesFor, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _buildProductCardBlock } = require('./dots');
+const { _runDeterministicFormulation, _commitProposedPlan } = require('./dots');
+const { _resolveOrderContext } = require('./formulation_orders');
+const { _applyTierLadder, _padCandidatesFor, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _balanceCapsules, _countForLevel, _doseFromRanking, _rankDotsBySeverity } = require('../lib/formulation');
+const { _buildFormulaChartBlock, _buildProductCardBlock } = require('../lib/chatCards');
 const { fetchAiCatalog } = require('../lib/gcnClient');
 const { PLAN_WEEKS, N7_KEY } = require('../lib/dotsProductModel');
 const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock');
+const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
+const { messageAsksAboutFoodSensitivity } = require('../prompts/chat/foodSensitivityBlock');
+const { messageAsksForMealPlan } = require('../prompts/chat/mealPlanRequest');
+const { fetchWearableDaily, messageAsksAboutWearable } = require('../lib/wearableDaily');
 
-// Channels with a GCN storefront behind them (mirrors handlers/login.js's own copy — the same
-// physically-duplicated-constant convention this codebase uses across handlers). Nothing else has
-// a catalog to recommend from, so the store fetch is gated on this rather than on persona alone.
-const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
+// Channels with a GCN storefront behind them resolve to their GCN sector through the channel
+// tree (lib/channels.js — aeviva and waven roots). Nothing else has a catalog to recommend
+// from, so the store fetch is gated on this rather than on persona alone.
+const { resolveGcnSector } = require('../lib/channels');
 
 // Suppress any product whose declared allergens/cautions collide with something the user has
 // already told us (user_memory_facts, CLAUDE.md §27). Deliberately a hard filter applied BEFORE
@@ -628,8 +640,16 @@ function stripTrailingQuestion(text, { strict = true } = {}) {
     const violates = strict ? (isQuestion || isInvitation) : isInvitation;
     if (!violates) return text;
     if (sentences.length <= 1) return text; // whole reply is one sentence — nothing safe to fall back to
-    sentences.splice(lastIdx, 1);
-    return sentences.join('').trimEnd();
+    // Cut the offending sentence out of the ORIGINAL text by position. This used to rebuild the
+    // reply as `sentences.join('')`, and `sentences` is only what the regex above matched: a
+    // punctuation-terminated sentence. A markdown table row, a heading, a bullet like
+    // 「1️⃣ **稳住GA**」 and every line break are none of those, so whenever this fired on a
+    // structured reply it silently deleted the structure and glued the survivors into one
+    // paragraph — a 2939-char seven-day meal plan shipped as 385 chars of intro and closing,
+    // reproduced on dev 2026-09-15. Removing by index leaves everything else byte-identical.
+    const cutAt = trimmed.lastIndexOf(last);
+    if (cutAt <= 0) return text;
+    return (trimmed.slice(0, cutAt) + trimmed.slice(cutAt + last.length)).trimEnd();
 }
 
 // Cross-checks any biomarker figures / dates / age the model actually wrote against the ground-truth
@@ -1224,7 +1244,16 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
     const productCard = (llmContext.rich_format && recommendedProducts.length > 0)
         ? _buildProductCardBlock(recommendedProducts, user.language)
         : '';
-    const reply = (strippedReply || fallbackReply) + productCard;
+    // The model is told to call a dot by its 对话中称呼 and prod shows it sometimes writing
+    // the internal code anyway; rewritten here rather than asked for again. Applied to the
+    // single assembled string, so the sandbox return and both delivery channels can never
+    // disagree — a chat row and a notification row differing by one token would defeat the
+    // client's text-keyed de-dup and render the bubble twice.
+    // Same rule for the bio-age keys (lib/subAgeLabels.js): 「BioAge 39.2岁」 reached a user on
+    // prod 2026-09-14. Rewritten on the same single string, for the same de-dup reason.
+    const reply = localizeStatusWords(dropForeignLines(scrubToolNames(humanizeSubAgeKeys(
+        humanizeDotCodes((strippedReply || fallbackReply) + productCard, llmContext.dots, user.language),
+        user.language, llmContext.sub_age_display_names), user.language), user.language), user.language);
 
     if (sandbox) {
         // Sandbox sessions have no notification-polling side channel to rely on —
@@ -1265,8 +1294,8 @@ async function _fireQuestionnaireAnsweredFollowup(userId, assignmentId) {
     let channelPersonaType = 'nano';
     if (user.channel_id) {
         try {
-            const chRes = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
-            channelPersonaType = chRes.rows[0]?.config?.persona_type ?? 'nano';
+            const chRes = await pool.query('SELECT effective_persona_type($1) AS persona_type', [user.channel_id]);
+            channelPersonaType = chRes.rows[0]?.persona_type ?? 'nano';
         } catch (e) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'questionnaire_answered_followup_persona_lookup_failed', user_id: userId, error: e.message }));
         }
@@ -1288,7 +1317,12 @@ async function _fireQuestionnaireAnsweredFollowup(userId, assignmentId) {
             `SELECT id, key_name, key_name_zh, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ORDER BY id ASC`
         ),
         pool.query(
-            `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
+            `SELECT f.category, f.fact_zh, f.severity, f.valid_until::text AS valid_until, f.food_key,
+                        COALESCE(fc.dot_conflict_keys, '{}') AS dot_conflict_keys
+                   FROM user_memory_facts f
+                   LEFT JOIN food_catalog fc ON fc.food_key = f.food_key
+                  WHERE f.user_id = $1 AND f.status = 'active'
+                  ORDER BY f.category, f.last_mentioned_at DESC`,
             [userId]
         ),
         pool.query(
@@ -1372,12 +1406,14 @@ async function handlePostChat(body) {
     let channelPersonaType = 'nano';
     let channelSubAgeNames = null;
     let channelKeyName = null;
+    let gcnSector = null;
     if (user.channel_id) {
         try {
-            const chRes = await pool.query('SELECT key_name, config FROM channels WHERE id = $1', [user.channel_id]);
-            const chConfig = chRes.rows[0]?.config || {};
+            const chRes = await pool.query(`SELECT key_name, effective_persona_type(id) AS persona_type, effective_channel_config(id, 'sub_age_display_names') AS sub_age_display_names FROM channels WHERE id = $1`, [user.channel_id]);
+            const chConfig = chRes.rows[0] || {};
             channelKeyName = chRes.rows[0]?.key_name || null;
-            channelPersonaType = chConfig.persona_type ?? 'nano';
+            gcnSector = await resolveGcnSector(user.channel_id);
+            channelPersonaType = chRes.rows[0]?.persona_type ?? 'nano';
             channelSubAgeNames = chConfig.sub_age_display_names || null;
         } catch (err) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'Failed to fetch channel persona, defaulting to nano', error: err.message }));
@@ -1437,6 +1473,50 @@ async function handlePostChat(body) {
             // than a silently dropped turn — the coach app and the web user-app both have the tool
             // but not this plumbing, and a sandbox ("login as") session must never write a real
             // formulation against the impersonated account.
+            //
+            // Deterministic override first. A misclassification here is not a degraded answer but
+            // a wrong ACTION: the branch below returns launch_tool and the miniapp starts
+            // formulating, so someone asking 「我已经买了什么原粒套餐」 would get a brand new
+            // formula instead of an answer. The classifier is told this too, but it decides with
+            // an LLM and this question is one word away from a request. Same risk acceptance as
+            // messageNeedsBiomarkerHistory: a false positive costs one agentic turn.
+            //
+            // casual_chat is promoted for the mirror-image reason. It is not in HIGH_RISK_INTENTS,
+            // so it has no tools and its template renders no package block — 「我的订单到哪了」
+            // classified there on dev and came back with factConstraint's canned 联系客服 line,
+            // which is the correct answer for a model that has no order data and the wrong one
+            // when a tool could have fetched it. Only casual_chat is promoted: every other intent
+            // either already has the tools or is answering a different question entirely.
+            if (messageAsksAboutFormulationPackage(message)
+                && (intent === 'formulate_dots' || intent === 'casual_chat')) {
+                console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_package_question', user_id, from: intent }));
+                intent = 'nutrition_question';
+            }
+            // Same promotion, same two reasons, for a food-sensitivity question (§40).
+            // 「我能喝牛奶吗」 is conversational enough to classify as casual_chat, which is not in
+            // HIGH_RISK_INTENTS and therefore has no tools at all — so the one question the panel
+            // exists to answer would be answered from nothing. And 「我该吃什么」 sits one word from
+            // a request to formulate, where a misread starts a whole new 28-day formulation
+            // instead of answering.
+            if (messageAsksAboutFoodSensitivity(message)
+                && (intent === 'formulate_dots' || intent === 'casual_chat')) {
+                console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_food_sensitivity_question', user_id, from: intent }));
+                intent = 'nutrition_question';
+            }
+            // A meal plan is food, not a dots formula. 「也给我订制一周的营养餐」 launched the
+            // formulation tool on prod (2026-09-14) — 订制+营养 is one character from 定制营养素.
+            // Only formulate_dots is demoted here: casual_chat can already answer "what should I
+            // eat this week" from its own template and needs no tool.
+            // A wearable question classified casual_chat has no tools and no per-day block —
+            // 「我昨晚睡得怎么样」 would be answered from a 7-day average or from nothing.
+            if (messageAsksAboutWearable(message) && intent === 'casual_chat') {
+                console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_wearable_question', user_id, from: intent }));
+                intent = 'biomarker_question';
+            }
+            if (messageAsksForMealPlan(message) && intent === 'formulate_dots') {
+                console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_meal_plan_question', user_id, from: intent }));
+                intent = 'nutrition_question';
+            }
             if (intent === 'formulate_dots') {
                 if (body.client === 'miniapp' && !sandbox) {
                     // Persisted here because this branch returns before the shared insert below.
@@ -1469,12 +1549,26 @@ async function handlePostChat(body) {
             fetches.dots = pool.query(
                 `SELECT id, key_name, key_name_zh, name, name_zh, description, is_isolate, timing, sub_age_target, ingredients, ingredients_zh, target_dots_min, target_dots_max, dosing_protocol, pulse_days_per_cycle, pulse_cycle_days FROM dots ORDER BY id ASC`
             );
+            // Whether this user has a chronic food-sensitivity panel at all (§40) — one indexed
+            // EXISTS, so it rides along with the rest of the bundle. Not derived from user_facts:
+            // a panel where nothing came back positive produces no facts, and «nothing you were
+            // tested for came back elevated» is a real answer that the model can only give if it
+            // knows the panel is there.
+            fetches.has_food_panel = pool.query(
+                `SELECT EXISTS (SELECT 1 FROM food_sensitivity_panels WHERE user_id = $1) AS present`,
+                [user_id]
+            );
             // Always fetch active personal memory facts (dietary restrictions, allergies,
             // preferences, goals stated in prior conversations) — same unconditional
             // treatment as biomarker/dots above, not gated behind required_data, since an
             // allergy needs to be visible on every turn regardless of intent.
             fetches.user_facts = pool.query(
-                `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
+                `SELECT f.category, f.fact_zh, f.severity, f.valid_until::text AS valid_until, f.food_key,
+                        COALESCE(fc.dot_conflict_keys, '{}') AS dot_conflict_keys
+                   FROM user_memory_facts f
+                   LEFT JOIN food_catalog fc ON fc.food_key = f.food_key
+                  WHERE f.user_id = $1 AND f.status = 'active'
+                  ORDER BY f.category, f.last_mentioned_at DESC`,
                 [user_id]
             );
             if (required_data.includes('plan')) {
@@ -1511,10 +1605,16 @@ async function handlePostChat(body) {
             // another template in the same change.
             if (required_data.includes('store_products')
                 && intent === 'nutrition_question'
-                && GCN_LINKED_CHANNEL_KEYS.has(channelKeyName)) {
-                fetches.store_products = fetchAiCatalog(user_id);
+                && gcnSector) {
+                fetches.store_products = fetchAiCatalog(user_id, gcnSector);
             }
 
+            // Always fetch the last 3 days per day, too: health_twin is 7-day averages, and
+            // 「昨晚睡得怎么样」 has no dated fact to point at without this (lib/wearableDaily.js).
+            fetches.wearable_daily = fetchWearableDaily(pool, user_id, 3).catch(err => {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'wearable_daily_fetch_failed', user_id, error: err.message }));
+                return [];
+            });
             // Always fetch health_twin — provides wearable/sleep/activity context for all intents
             fetches.health_twin = pool.query(
                 `SELECT avg_hrv_ms, avg_resting_hr, avg_spo2,
@@ -1592,6 +1692,7 @@ async function handlePostChat(body) {
                 plan: fetched.plan?.rows[0]?.content || null,
                 last_weight: fetched.weight?.rows[0]?.data?.actual?.weight ?? null,
                 health_twin: twinRow,
+                wearable_daily: Array.isArray(fetched.wearable_daily) ? fetched.wearable_daily : [],
                 now_iso: getNowShanghai().toISO(),
                 questionnaire_context: formatQuestionnaireContext(
                     fetched.questionnaire_responses?.rows || [],
@@ -1618,6 +1719,14 @@ async function handlePostChat(body) {
                 // (25 items server-side) and carries no prices: the model is never given a number
                 // it could leak, since _buildProductCardBlock renders those from the same snapshot.
                 store_products: _filterProductsByUserFacts(fetched.store_products || [], fetched.user_facts?.rows || []),
+                // Gates the 原粒套餐 vocabulary block (§28g). Channel-gated the same way
+                // store_products is — with no storefront there is no package to describe — but
+                // deliberately NOT gated on required_data: the block teaches the model to reach
+                // for get_formulation_packages, and a purchase question must never go unanswered
+                // because the classifier failed to emit a key. It carries no data, so the cost of
+                // it being present on a turn that doesn't need it is a few lines of prompt.
+                formulation_packages_available: !!gcnSector,
+                food_sensitivity_available: fetched.has_food_panel?.rows?.[0]?.present === true,
                 // Gates prompts/chat/outputFormat.js's ::: display-card syntax. Scoped to the
                 // miniapp because it's the only surface whose renderer understands the fences —
                 // the coach app shows content as a bare <text> and the web user-app uses
@@ -1714,7 +1823,9 @@ async function handlePostChat(body) {
             }
 
             let rawReply = '';
-            let extraValidDates = [];
+            // The per-day wearable block is in every template, so its dates are citable on the
+            // non-agentic path too (the agentic path merges them inside runAgenticTurn).
+            let extraValidDates = contextDates(llmContext);
             let extraValidValues = {};
             if (useAgenticLoop) {
                 const agenticResult = await runAgenticTurn({
@@ -1902,8 +2013,46 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     const dotsByKey = new Map((llmContext.dots || []).map(d => [d.key_name.replace(/^DOT/, 'D'), d]));
     const extracted = _extractTrailingJson(rawReply, '{"action":"formulate_dots"');
     let entries = null;
-    const pitchByTier = new Map();
-    if (extracted && extracted.parsed?.action === 'formulate_dots' && Array.isArray(extracted.parsed.formulation)) {
+
+    // PREFERRED SHAPE: an ordered list of the dots that matter most to this user, and nothing
+    // else. Every number is then the server's — dose from rank + dimension severity
+    // (_doseFromRanking), AM/PM from _splitDotTiming, capsule fit from _fitRecipeToDailyBudget.
+    //
+    // This replaced "dose all 18 and let the server infer an order from the doses", which asked
+    // the model for the hard thing (18 independent numbers across ranges spanning two orders of
+    // magnitude) in order to derive the easy one. The `formulation` branch below is kept as a
+    // fallback and is genuinely still used: by the deterministic formulator, and by any
+    // completion from a prompt cached before this change.
+    const ranked = extracted && extracted.parsed?.action === 'formulate_dots' && Array.isArray(extracted.parsed.ranking)
+        ? extracted.parsed.ranking
+            .map(r => (typeof r === 'string' ? r : r && r.dot_key))
+            .filter(k => typeof k === 'string')
+        : null;
+    if (ranked && ranked.length) {
+        const dosed = _doseFromRanking(ranked, llmContext.dots, llmContext.bioage);
+        if (dosed.size > 0) {
+            entries = new Map();
+            for (const [dbKey, count] of dosed) {
+                const dot = (llmContext.dots || []).find(d => d.key_name === dbKey);
+                if (dot) entries.set(dbKey.replace(/^DOT/, 'D'), { count, dot, weeks: [], level: null });
+            }
+            // The same ordering computed from the twin alone, logged beside the model's. A
+            // ranking that routinely disagrees with the arithmetic in ways nobody can defend is
+            // the failure mode this whole approach has to be watched for, and it is invisible
+            // unless it is written down.
+            const baseline = _rankDotsBySeverity(llmContext.dots, llmContext.bioage,
+                _resolveCandidateDotKeys(llmContext.active_health_plans, llmContext.dots));
+            const modelTop = [...dosed.keys()].slice(0, 6);
+            console.log(JSON.stringify({
+                level: 'INFO', msg: 'formulation_ranking', user_id,
+                model_top: modelTop, severity_top: baseline.slice(0, 6),
+                overlap: modelTop.filter(k => baseline.slice(0, 6).includes(k)).length,
+                ranked_count: dosed.size,
+            }));
+        }
+    }
+
+    if (!entries && extracted && extracted.parsed?.action === 'formulate_dots' && Array.isArray(extracted.parsed.formulation)) {
         entries = new Map();
         for (const item of extracted.parsed.formulation) {
             const dot = dotsByKey.get(item?.dot_key);
@@ -1919,9 +2068,17 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
             // non-agentic fallback path already uses — so the model is never trusted with it.
             // A legacy 'morning'/'evening'-shaped reply (from a stale cached prompt / in-flight
             // request during deploy) still degrades gracefully via their sum.
-            const count = Number.isFinite(item.count)
-                ? Math.max(0, Math.round(item.count))
-                : Math.max(0, Math.round((Number(item.morning) || 0) + (Number(item.evening) || 0)));
+            // Dose is stated as a LEVEL, not a number (see _countForLevel). The raw-count paths
+            // below stay as fallbacks and are still exercised: the deterministic formulator
+            // produces counts, as does any completion from a prompt cached before levels
+            // existed, and a legacy 'morning'/'evening' pair degrades through their sum.
+            const levelled = typeof item.level === 'string' ? _countForLevel(dot, item.level.toLowerCase()) : null;
+            const count = levelled !== null && levelled !== undefined
+                ? levelled
+                : (Number.isFinite(item.count)
+                    ? Math.max(0, Math.round(item.count))
+                    : Math.max(0, Math.round((Number(item.morning) || 0) + (Number(item.evening) || 0))));
+            const level = levelled !== null && levelled !== undefined ? item.level.toLowerCase() : null;
             // Which weeks of the cycle this dot is taken in. The purchased package caps how many
             // distinct dots may run in ONE WEEK, so a formula may legitimately rotate — six dots
             // this week, a partly different six next week. This is the one thing the model does
@@ -1937,29 +2094,15 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
                 ? [...new Set(item.weeks.map(w => Math.round(Number(w)))
                     .filter(w => Number.isFinite(w) && w >= 1 && w <= PLAN_WEEKS))].sort((a, b) => a - b)
                 : [];
-            // Which rung of the purchasable ladder first includes this dot (1 = the essential
-            // six, 2 = the first +2, 3 = the second +2). Only asked for when the user has bought
-            // nothing yet; absent everywhere else, and absent from any completion produced before
-            // the ladder existed, in which case _buildTierLadder ranks on emphasis alone.
-            //
-            // Never trusted as a count: it only ORDERS the dots, and the prefix taken from that
-            // order is what enforces each width — so a model that tags seven dots at tier 1 is
-            // corrected by construction rather than by a check that could be forgotten.
-            const tierTag = Number.isFinite(Number(item.tier)) ? Math.round(Number(item.tier)) : null;
-            entries.set(item.dot_key, { count, dot, weeks, tierTag });
+            // A "tier" tag and an "upgrades" array used to be read here. Both were removed from
+            // the prompt on 2026-09-07 (see lib/tierCopy.js for the measurements): asking one
+            // completion to reproduce the server's own emphasis ranking never worked, and copy
+            // written about the wrong dots is worse than no copy. Package membership is now
+            // decided by _capDistinctDots alone and the copy is written afterwards by a call that
+            // is shown the result. A stale cached prompt may still send them; they are ignored.
+            entries.set(item.dot_key, { count, dot, weeks, level });
         }
         if (entries.size === 0) entries = null;
-        // One line of upgrade copy per rung. Model-authored, and the only model-authored string
-        // that reaches the card — sanitised and length-capped server-side by
-        // _buildFormulaChartBlock, and dropped entirely if the rung it names does not exist.
-        if (Array.isArray(extracted.parsed.upgrades)) {
-            for (const up of extracted.parsed.upgrades) {
-                const tier = Math.round(Number(up?.tier));
-                if (!Number.isFinite(tier) || tier < 2) continue;
-                if (typeof up.pitch !== 'string' || !up.pitch.trim()) continue;
-                pitchByTier.set(tier, up.pitch.trim());
-            }
-        }
     }
 
     let finalContent, morningRecipe, eveningRecipe;
@@ -1968,11 +2111,19 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     if (entries) {
         // Fill any dot the model omitted with the same deterministic per-dot fallback used
         // elsewhere, biased toward the user's active focus (if any) the same way.
-        for (const dot of llmContext.dots || []) {
-            const key = dot.key_name.replace(/^DOT/, 'D');
-            if (entries.has(key)) continue;
-            const isRecommended = recommendedKeySet ? recommendedKeySet.has(dot.key_name) : undefined;
-            entries.set(key, { count: _fallbackCountForDot(dot, isRecommended), dot });
+        //
+        // NOT done for a ranking: there, an absent dot is a decision — the model was asked for
+        // the dots that matter and deliberately stopped. Filling the rest back in at their
+        // midpoints would re-add eight dots it had just excluded, and they would then compete for
+        // the core on a dose the model never chose. Under the `formulation` shape an omission is
+        // an oversight (every short-key was required), which is why the fill exists at all.
+        if (!ranked || !ranked.length) {
+            for (const dot of llmContext.dots || []) {
+                const key = dot.key_name.replace(/^DOT/, 'D');
+                if (entries.has(key)) continue;
+                const isRecommended = recommendedKeySet ? recommendedKeySet.has(dot.key_name) : undefined;
+                entries.set(key, { count: _fallbackCountForDot(dot, isRecommended), dot });
+            }
         }
 
         // Deterministic clamp: each dot's total must land inside its own target_dots_min/max —
@@ -1987,7 +2138,9 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         }
 
         // AM/PM split is entirely code-driven, never model-driven — see the comment above.
-        // _splitDotTiming already guarantees non-flexible dots stay 100% in their default slot.
+        // _splitDotTiming already guarantees non-flexible dots stay 100% in their default slot;
+        // _balanceCapsules below then evens the two capsules across the whole day, which one dot
+        // at a time cannot.
         for (const v of entries.values()) {
             const { morning, evening } = _splitDotTiming(v.dot, v.count);
             v.morning = morning;
@@ -2016,9 +2169,39 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
             morningRecipe.weeks = weekMap;
             eveningRecipe.weeks = weekMap;
         }
-        // Observability only — _splitDotTiming only moves ~30% of a flexible dot's count off its
-        // default slot, so a day dominated by dots defaulting to the same slot can still end up
-        // skewed by design (this is a signal to watch, not something to override here).
+        // The formulator's own ordering rides on the recipe, so the tier trim and the daily
+        // budget both drop from the bottom of the ranking rather than from a position they
+        // re-derive out of rounded counts (which loses rank entirely on a narrow range — see
+        // _orderOf). Only set when the reply WAS a ranking; the fallback shapes have no order.
+        if (ranked && ranked.length) {
+            const orderKeys = [...entries.keys()].map(k => k.replace('D', 'DOT'));
+            morningRecipe.order = orderKeys;
+            eveningRecipe.order = orderKeys;
+        }
+        // The declared levels ride on the recipe next to `weeks`, so the emphasis signal survives
+        // the tier trim and the daily budget rather than being re-derived from a count (which is
+        // distorted by how wide each dot's range happens to be — see _emphasisPosition).
+        const levelMap = {};
+        for (const [key, v] of entries) {
+            if (v.level && v.count > 0) levelMap[key.replace('D', 'DOT')] = v.level;
+        }
+        if (Object.keys(levelMap).length) {
+            morningRecipe.levels = levelMap;
+            eveningRecipe.levels = levelMap;
+        }
+        // Locked dots keep their own capsule; the flexible pool is then dealt out so both
+        // capsules hold about the same number, because that is the half of this the user has to
+        // swallow. Daily totals are untouched, so nothing here can underdose a dot or change
+        // which dots the formula contains — only which capsule each is taken in.
+        {
+            const balanced = _balanceCapsules(morningRecipe, eveningRecipe, llmContext.dots);
+            morningRecipe = balanced.morning;
+            eveningRecipe = balanced.evening;
+            morningTotal = Object.values(morningRecipe.dots).reduce((a, b) => a + b, 0);
+            eveningTotal = Object.values(eveningRecipe.dots).reduce((a, b) => a + b, 0);
+        }
+        // Observability only, and now an invariant alarm rather than an expected skew: with the
+        // balance above, a day this lopsided means the locked dots alone made it so.
         if (eveningTotal < morningTotal * 0.15 && morningTotal > 20) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'formula_dots_am_pm_imbalanced', user_id, morningTotal, eveningTotal }));
         }
@@ -2060,21 +2243,66 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     //
     // The ladder comes from llmContext, not a fresh fetch: the variants must be built against the
     // same widths the model was told to aim at (see _handleFormulaDotsAgentic).
-    let tierVariants = null, rungs = [];
-    ({ morningRecipe, eveningRecipe, tierVariants, rungs } = _applyTierLadder({
+    let tierVariants = null, tierCards = [];
+    // Does the allocation actually answer this user's biology? Nothing else asks: JUDGE grades
+    // the prose, and validateAgFormulation only checks manufacturability, and only on the AG
+    // path. Deterministic, and deliberately NOT a gate — the alternative to a flawed formula
+    // here is no formula. Findings are logged for review, with one exception: a dot colliding
+    // with an active allergy or dietary restriction is removed, because shipping it is a safety
+    // failure and dropping one dot is not.
+    const quality = checkFormulationQuality({
+        morningRecipe, eveningRecipe, dotsFormulary: llmContext.dots,
+        bioage: llmContext.bioage, userFacts: llmContext.user_facts,
+    });
+    if (quality.findings.length) {
+        console.log(JSON.stringify({
+            level: quality.ok ? 'INFO' : 'WARN', msg: 'formulation_quality', user_id,
+            ok: quality.ok, findings: quality.findings,
+        }));
+    }
+    for (const f of quality.findings) {
+        if (f.code !== 'allergy_conflict') continue;
+        for (const key of f.keys || []) {
+            delete morningRecipe.dots[key];
+            delete eveningRecipe.dots[key];
+        }
+    }
+
+    ({ morningRecipe, eveningRecipe, tierVariants, tierCards } = _applyTierLadder({
         morningRecipe, eveningRecipe, dotsFormulary: llmContext.dots, orderContext,
         tiers: llmContext.formulation_tiers,
-        tierByKey: entries
-            ? new Map([...entries.values()].filter(v => v.tierTag && v.count > 0)
-                .map(v => [v.dot.key_name, v.tierTag]))
-            : null,
-        pitchByTier,
         // Only ever used for slots above the narrowest tier, so the core formula stays the
         // model's own — see _buildTierLadder.
         padCandidates: _padCandidatesFor({
             dotsFormulary: llmContext.dots, bioage: llmContext.bioage, recommendedKeySet,
         }),
     }));
+
+    // The same questions asked again of the NARROWEST variant, which is what most users actually
+    // receive — a full allocation can point at the right dimension while the six that survive the
+    // trim do not. This is the check that catches the failure it was written for: a core holding
+    // one of three cellular dots for a cellular-dominant user.
+    const coreQuality = checkFormulationQuality({
+        morningRecipe, eveningRecipe, dotsFormulary: llmContext.dots,
+        bioage: llmContext.bioage, userFacts: llmContext.user_facts,
+    });
+    if (coreQuality.findings.length) {
+        console.log(JSON.stringify({
+            level: coreQuality.ok ? 'INFO' : 'WARN', msg: 'formulation_quality_core', user_id,
+            ok: coreQuality.ok, findings: coreQuality.findings,
+        }));
+    }
+
+    // The packages are final now, so their copy can be written about what they actually contain.
+    // One short call, never fatal: a package with no pitch is the state the card already handles,
+    // and this runs on the async delivery path where nobody is waiting on an HTTP response.
+    tierCards = await attachTierCopy({
+        client: getLlmClient(),
+        model: process.env.FORMULA_COPY_MODEL || process.env.MODEL || 'qwen-plus-latest',
+        tiers: tierCards, dotsFormulary: llmContext.dots, lang,
+        essentialKnowledge: llmContext.essential_knowledge,
+        logContext: { user_id, handler: 'finalizeFormulaDotsGenerate' },
+    });
 
     // The allocation is recorded as a 'proposed' plan — a real 28-day recipe the user does not
     // physically have yet, which is exactly what GCN's custom-formulation checkout needs in order
@@ -2085,11 +2313,6 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         analysis: finalContent, morningRecipe, eveningRecipe, tierVariants,
         activeHealthPlans: llmContext.active_health_plans,
     });
-    // The label code is minted with the plan, and the QR built from it is part of what the user
-    // gets here — not something that appears later when a box is compounded.
-    const labelCode = planId
-        ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [planId])).rows[0]?.label_code
-        : null;
     // The numbers have to be legible in the bubble itself: this card is the whole deliverable,
     // and the Dots subtab still shows the user's ACTIVE plan, which a proposal deliberately is
     // not — so there is nothing there for a "view plan" button to point at.
@@ -2097,7 +2320,9 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
     // The CTA depends on whether the user already paid for a package (the two orderings of the
     // same purchase — see _buildFormulaChartBlock's `#order` note), which orderContext above
     // already answered.
-    const chatMessage = finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, llmContext.dots, lang, { planId, orderMode: orderContext.mode, labelCode, rungs });
+    const chatMessage = localizeStatusWords(dropForeignLines(scrubToolNames(humanizeSubAgeKeys(humanizeDotCodes(
+        finalContent + _buildFormulaChartBlock(morningRecipe, eveningRecipe, llmContext.dots, lang, { planId, orderMode: orderContext.mode, tiers: tierCards }),
+        llmContext.dots, lang), lang, llmContext.sub_age_display_names), lang), lang), lang);
 
     await saveChatMessage(user_id, 'ai', chatMessage, null, personaType);
     await pool.query(
@@ -2269,11 +2494,8 @@ async function handleChatGenerateEvent(payload) {
                         tierVariants: fb.tierVariants,
                         activeHealthPlans: llmContext.active_health_plans,
                     });
-                    const fbLabelCode = fbPlanId
-                        ? (await pool.query('SELECT label_code FROM nutrition_plans WHERE id = $1', [fbPlanId])).rows[0]?.label_code
-                        : null;
                     const fbMessage = fallback.finalContent
-                        + _buildFormulaChartBlock(fb.morningRecipe, fb.eveningRecipe, llmContext.dots, language, { planId: fbPlanId, orderMode: fbOrder.mode, labelCode: fbLabelCode, rungs: fb.rungs });
+                        + _buildFormulaChartBlock(fb.morningRecipe, fb.eveningRecipe, llmContext.dots, language, { planId: fbPlanId, orderMode: fbOrder.mode, tiers: fb.tierCards });
                     await saveChatMessage(user_id, 'ai', fbMessage, null, personaType);
                     await pool.query(
                         'INSERT INTO notifications (user_id, notification_type, content, status) VALUES ($1, $2, $3, $4)',
@@ -2378,6 +2600,12 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
         }
     }
 
+    // Same rule as finalizeChatReply: rewritten once, so the saved row and the returned message
+    // are the same string. This endpoint's callers render `message` directly.
+    rawReply = localizeStatusWords(dropForeignLines(scrubToolNames(humanizeSubAgeKeys(
+        humanizeDotCodes(rawReply, llmContext.dots, llmContext.user_profile?.language || 'zh'),
+        llmContext.user_profile?.language || 'zh', llmContext.sub_age_display_names), llmContext.user_profile?.language || 'zh'), llmContext.user_profile?.language || 'zh'), llmContext.user_profile?.language || 'zh');
+
     if (!sandbox) {
         await saveChatMessage(user_id, 'ai', rawReply, null, personaType);
     }
@@ -2401,8 +2629,8 @@ async function handlePostHealthAdvice(body) {
         let channelPersonaType = 'nano';
         if (user.channel_id) {
             try {
-                const chResult = await pool.query('SELECT config FROM channels WHERE id = $1', [user.channel_id]);
-                channelPersonaType = chResult.rows[0]?.config?.persona_type ?? 'nano';
+                const chResult = await pool.query('SELECT effective_persona_type($1) AS persona_type', [user.channel_id]);
+                channelPersonaType = chResult.rows[0]?.persona_type ?? 'nano';
             } catch (_) {}
         }
         const personaType = resolveEffectivePersona({
@@ -2457,7 +2685,12 @@ async function handlePostHealthAdvice(body) {
                 [user_id]
             ),
             pool.query(
-                `SELECT category, fact_zh FROM user_memory_facts WHERE user_id = $1 AND status = 'active' ORDER BY category, last_mentioned_at DESC`,
+                `SELECT f.category, f.fact_zh, f.severity, f.valid_until::text AS valid_until, f.food_key,
+                        COALESCE(fc.dot_conflict_keys, '{}') AS dot_conflict_keys
+                   FROM user_memory_facts f
+                   LEFT JOIN food_catalog fc ON fc.food_key = f.food_key
+                  WHERE f.user_id = $1 AND f.status = 'active'
+                  ORDER BY f.category, f.last_mentioned_at DESC`,
                 [user_id]
             ),
         ]);

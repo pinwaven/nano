@@ -125,12 +125,17 @@ async function fetchFormulationCodes(nanoUserId) {
 //
 // NEVER THROWS, same 4s budget and same reason as its neighbours above: no ladder means the tool
 // formulates exactly as it did before this existed, which is a worse card but a complete one.
-async function fetchFormulationTiers() {
+//
+// sectorId is the GCN sector whose catalog to read (lib/channels.js resolveGcnSector — aeviva or
+// waven). GCN defaults to aeviva when it is absent, which is what every caller got before the
+// waven sector existed; pass it so a waven user is shown waven's packages.
+async function fetchFormulationTiers(sectorId = null) {
     if (!BASE_URL || !TOKEN) return [];
     const timer = AbortSignal.timeout ? AbortSignal.timeout(ORDER_STATUS_TIMEOUT_MS) : undefined;
     try {
+        const qs = sectorId ? `?sector_id=${encodeURIComponent(sectorId)}` : '';
         const res = await fetch(
-            `${BASE_URL}/api/mall/nano/formulation-packages`,
+            `${BASE_URL}/api/mall/nano/formulation-packages${qs}`,
             { headers: { authorization: `Bearer ${TOKEN}` }, signal: timer }
         );
         if (!res.ok) return [];
@@ -144,6 +149,10 @@ async function fetchFormulationTiers() {
             .map(p => ({
                 tier_label: p.tier_label || null,
                 package_name: p.package_name || null,
+                // The store's own one-line positioning for this tier (GCN skus.description). The
+                // card renders it verbatim, so a package reads the same in chat as on the shelf.
+                // Absent until GCN's catalog carries one; the card simply omits the line.
+                tier_description: p.tier_description || null,
                 max_distinct_dots: Number(p.max_distinct_dots),
             }))
             .sort((a, b) => a.max_distinct_dots - b.max_distinct_dots);

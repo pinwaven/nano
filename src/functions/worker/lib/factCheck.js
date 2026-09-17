@@ -299,8 +299,29 @@ function detectFakeStoreProduct(text, storeProducts) {
     return mismatches;
 }
 
+// The formulary lists ACTIVE ingredients and nothing else — no capsule material, excipients,
+// or ingredient sourcing — yet a vegetarian user asking 「原粒是素食的吗」 was told (dev,
+// 2026-09-15) that all 18 dots are 素食配方 with D3 「来自地衣」 and K2 「来自纳豆菌发酵」,
+// presented as 「配方库真实所列内容」. A prompt rule against it was ignored the same day. Flag
+// the assertion so JUDGE sees a hit and REVISE deletes the sentence. A sentence that DISCLAIMS
+// (「配方库未提供胶囊壳材质信息」「无法确认是否纯素」) is the honest answer and must not trip it.
+const _PRODUCT_CLAIM_TERMS = /植物胶囊|植物基配方|无明胶|不含明胶|(无|不含|零|没有)(任何)?动物(源|成分|来源|辅料|衍生|性)|均为植物(提取|来源|基)|植物提取或发酵|纯素(认证|配方|来源)|素食配方|(D3|维生素D3)来自|来自地衣|纳豆菌发酵|酵母发酵来源|vegan|gelatin[- ]free|animal[- ]free|vegetarian capsule/i;
+const _PRODUCT_CLAIM_DISCLAIM = /未提供|未包含|未定义|无法确认|不能确认|无法证实|没有.{0,6}信息|不确定|不得而知|请以产品说明|请查阅|联系.{0,4}客服|only lists|cannot confirm|not (?:provided|included|defined)/i;
+
+function detectUnsupportedProductClaim(text) {
+    if (!text || typeof text !== 'string') return [];
+    const hits = [];
+    // Sentence-scoped so an honest disclaimer elsewhere in the reply cannot excuse an assertion.
+    for (const sentence of text.split(/(?<=[。！？!?\n])/)) {
+        const m = _PRODUCT_CLAIM_TERMS.exec(sentence);
+        if (m && !_PRODUCT_CLAIM_DISCLAIM.test(sentence)) hits.push(m[0]);
+    }
+    return hits;
+}
+
 function detectAllRisks(reply, dotsFormulary, storeProducts) {
     const risk = detectFabricationRisk(reply);
+    if (detectUnsupportedProductClaim(reply).length > 0) risk.push('unsupportedProductClaim');
     if (dotsFormulary && dotsFormulary.length > 0) {
         if (detectDotNameMismatch(reply, dotsFormulary).length > 0) risk.push('dotNameMismatch');
         if (detectFakeProductName(reply, dotsFormulary).length > 0) risk.push('fakeProductName');
@@ -317,5 +338,6 @@ module.exports = {
     detectFakeProductName,
     detectFakeStoreProduct,
     detectDotIngredientMismatch,
+    detectUnsupportedProductClaim,
     detectAllRisks,
 };

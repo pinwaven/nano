@@ -28,7 +28,7 @@ async function handleGetAdminUserPersonaSubscription(userId, adminCtx) {
         const [overrideRes, channelRes, historyRes] = await Promise.all([
             pool.query('SELECT persona_override_type, persona_override_expires_at, viva_ag_expires_at FROM users WHERE user_id = $1', [userId]),
             pool.query(
-                `SELECT COALESCE(c.config->>'persona_type', 'nano') AS persona_type
+                `SELECT effective_persona_type(c.id) AS persona_type
                  FROM users u JOIN channels c ON c.id = u.channel_id WHERE u.user_id = $1`,
                 [userId]
             ),
@@ -268,7 +268,7 @@ async function handleGetAdminPersonaSubscriptions(query, adminCtx) {
         const where = 'WHERE ' + conditions.join(' AND ');
         const { rows } = await pool.query(
             `SELECT u.user_id, u.nickname, u.channel_id, c.name AS channel_name,
-                    COALESCE(c.config->>'persona_type', 'nano') AS channel_persona_type,
+                    effective_persona_type(c.id) AS channel_persona_type,
                     u.persona_override_type, u.persona_override_expires_at
              FROM users u
              LEFT JOIN channels c ON c.id = u.channel_id

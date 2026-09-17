@@ -1,0 +1,112 @@
+/* GENERATED from src/mini/nano-miniapp/pages/phones/phones.wxss by scripts/sync-css-from-miniapp.mjs.
+   Do not edit by hand — change the WXSS and re-run `npm run sync:css`. */
+
+
+.phones-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #0B1C2E;
+  color: #E8F0F8;
+  overflow: hidden;
+}
+
+.phones-page.theme-light {
+  background: #F4F6FA;
+  color: #1A2B3C;
+}
+
+.phones-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 14px;
+  box-sizing: border-box;
+}
+
+.phone-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 0.5px solid rgba(var(--blue-rgb), 0.1);
+}
+
+.phone-row:last-child { border-bottom: none; }
+
+.phone-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.phone-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #E8F0F8;
+}
+
+.theme-light .phone-value { color: #1A2B3C; }
+
+.phone-badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(var(--blue-rgb), 0.2);
+  color: var(--blue);
+}
+
+.phone-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.phone-action {
+  font-size: 12px;
+  color: var(--blue);
+}
+
+.phone-action-danger {
+  color: #E87070;
+}
+
+.theme-light .phone-action-danger { color: #DC2626; }
+
+.add-phone-btn {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.phone-step-desc {
+  font-size: 12px;
+  color: rgba(232, 240, 248, 0.55);
+  display: block;
+  margin: 6px 0 10px;
+}
+
+.theme-light .phone-step-desc { color: #5E656B; }
+
+.phones-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.phones-link {
+  font-size: 12px;
+  color: var(--blue);
+}
+
+/* ════════════════════════════════════════════════════════
+   Light theme — muted-text contrast fixes (generated)
+   The base rules above use low-alpha rgba() tuned for a bright color on dark
+   navy. On the cream light surface that same alpha washes out to 1.4-2.1:1,
+   and no alpha <= 0.6 can reach 4.5:1 on cream regardless of base color — so
+   light theme needs opaque values. Ramp preserves the faint->strong hierarchy.
+   ════════════════════════════════════════════════════════ */
+.theme-light .phone-badge { color: #5D4C32; }
+.theme-light .phone-action { color: #5D4C32; }
+.theme-light .phones-link { color: #5D4C32; }

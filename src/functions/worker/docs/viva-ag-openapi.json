@@ -635,7 +635,8 @@
                             "button_select",
                             "multi_select",
                             "slider_group",
-                            "date_picker"
+                            "date_picker",
+                            "time_picker"
                           ]
                         },
                         "prompt_zh": {
@@ -649,7 +650,7 @@
                         },
                         "config": {
                           "type": "object",
-                          "description": "Per input_type: options[] for button_select/multi_select (max 12, an option keyed \"other\" is rejected); sliders[] for slider_group (max 6); min_date/max_date for date_picker; placeholder_zh/_en for text."
+                          "description": "Per input_type: options[] for button_select/multi_select (max 12, an option keyed \"other\" is rejected); sliders[] for slider_group (max 6); min_date/max_date for date_picker; default/start/end (HH:mm) for time_picker; placeholder_zh/_en for text."
                         }
                       }
                     }
@@ -1013,6 +1014,7 @@
               "document_review",
               "risk_screen",
               "dots_formulation",
+              "food_sensitivity_review",
               null
             ],
             "description": "Preset intent. dots_formulation (原粒定制) requires a specific deliverable: a 28-day / 56-capsule formula attached as an .md result file in the documented format — see section 8 of GET /viva-ag/docs. The other presets are free-form analyses."
@@ -1270,6 +1272,99 @@
                     "type": "array",
                     "items": {
                       "$ref": "#/components/schemas/Document"
+                    }
+                  },
+                  "food_sensitivity": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "description": "The user's most recent chronic food-sensitivity (IgG) panel, whole — every food tested, not only the positives. null when they have uploaded none. Its restrictions are already derived and recorded by nano before a job exists; a review explains them, it does not set them.",
+                    "properties": {
+                      "panel_key": {
+                        "type": "string"
+                      },
+                      "unit": {
+                        "type": "string"
+                      },
+                      "sampled_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "report_date": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "institution": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "class_bands": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        },
+                        "description": "Only the bands the report actually printed."
+                      },
+                      "assay_note": {
+                        "type": "string",
+                        "description": "States that this is IgG-mediated chronic sensitivity and NOT an IgE-mediated acute allergy. Honour it in any narration."
+                      },
+                      "foods": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "food_key": {
+                              "type": "string"
+                            },
+                            "name_zh": {
+                              "type": "string"
+                            },
+                            "name_en": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "category": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "description": "null when below_detection — the lab measured no figure."
+                            },
+                            "below_detection": {
+                              "type": "boolean"
+                            },
+                            "class": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 3
+                            },
+                            "common_sources_zh": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "substitutes_zh": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
                     }
                   }
                 }

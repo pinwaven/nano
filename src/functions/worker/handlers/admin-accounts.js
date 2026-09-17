@@ -306,7 +306,7 @@ async function handleAdminLogin(body) {
             return { success: true, token: process.env.API_BEARER_TOKEN, role: 'superadmin', channel_id: null, allowed_tabs: null };
         }
 
-        const chRes = await pool.query(`SELECT name, effective_channel_logo(id) AS logo_url, config->'admin_tabs' AS admin_tabs, can_manage_subchannels, can_customize_store, can_manage_warehouses, autonomous FROM channels WHERE id = $1`, [row.channel_id]);
+        const chRes = await pool.query(`SELECT name, effective_channel_logo(id) AS logo_url, effective_channel_config(id, 'admin_tabs') AS admin_tabs, can_manage_subchannels, can_customize_store, can_manage_warehouses, autonomous FROM channels WHERE id = $1`, [row.channel_id]);
         const channelRow = chRes.rows[0] || {};
         // admin_tabs on a channel are feature flags ("is store enabled?"), not permission ceilings
         const channelFeatureTabs = Array.isArray(channelRow.admin_tabs) ? channelRow.admin_tabs : [];

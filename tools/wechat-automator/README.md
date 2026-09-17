@@ -67,9 +67,22 @@ node example.js
   `wechatwebdevtools`/`WeChatAppEx` processes holding a port. `node cleanup.js` force-kills both
   (`pkill -9 -f wechatwebdevtools`, `pkill -9 -f WeChatAppEx`) — safe to run any time nothing
   important is mid-test in the simulator.
-- **Screenshots don't work in this environment.** Both `page.screenshot()`-style automator calls and
-  macOS `screencapture` fail here (`fail to capture screenshot` / no screen-recording permission).
-  Don't rely on visual screenshots for verification — use DOM-level queries instead:
+- **`mp.screenshot()` doesn't work — but `screencapture -l <windowID>` does** (re-verified
+  2026-09-11). The automator call still fails with `fail to capture screenshot`. macOS
+  `screencapture` no longer does: screen-recording permission has since been granted, so a
+  window-scoped capture of the DevTools window works and is how `docs/user-manual/`'s screenshots
+  were taken. Two things make it reliable:
+  - **Capture the window, not a screen region.** `screencapture -x -o -l <CGWindowID>` grabs the
+    window's own buffer, so another app overlapping the simulator can't get into the shot — which is
+    exactly what a `-R x,y,w,h` region capture does hit, since the DevTools window sits under
+    whatever else is open. Get the id from `CGWindowListCopyWindowInfo` (a ~15-line Swift file
+    compiled with `swiftc`; `osascript`/System Events is blocked by assistive access, and pyobjc's
+    `Quartz` isn't installed).
+  - **Crop the simulator out of the window image** with PIL (installed). At the current layout the
+    device frame is `(2264, 142)-(2914, 1600)` in the 2940x1846 window capture, but re-derive it if
+    the window is resized rather than trusting those numbers.
+
+  Still prefer DOM-level queries for *verification* — a screenshot can't assert anything. Use:
   `page.data()`, `element.size()`, `element.offset()`, `element.scrollHeight()`,
   `element.property('scrollTop')`, `element.outerWxml()`. `example.js` demonstrates this pattern.
 - **`outerWxml()` returns tags with EMPTY text nodes — use `text()` for content.** A
@@ -80,6 +93,16 @@ node example.js
   the subtree's visible text newline-joined, which is what makes a resolved-vs-empty i18n check
   possible in both languages.
 
+- **A passing `element.tap()` does NOT mean a user can tap it.** `tap()` dispatches at the element
+  you selected, so it exercises the handler and its `data-*` wiring while telling you nothing about
+  whether the target is *reachable*. A collapsible card shipped this way with only its 17px title
+  row bound: the tap test passed, and on a real device 81% of the block — the part a finger actually
+  aims at — was dead. Measure coverage instead: `parent.size().height` against the summed
+  `size().height` of the elements that carry the `bindtap`, and assert the ratio.
+- **`bindtap` on a bare `<text>` does not fire; put it on a wrapping `<view>`.** Confirmed live: the
+  identical handler and `data-*` attributes on a `<text>` node produced no event, and moving them to
+  a `<view>` wrapping that same `<text>` worked immediately. Applies to automator taps and, from the
+  report that led to finding it, to real taps too.
 - **Synthetic touch gestures don't trigger real scroll-view scrolling.** `touchstart`/`touchmove`/
   `touchend` dispatched at a `scroll-view` element show zero `scrollTop` change — confirmed even on
   a known-working scroll-view via a control test, so it's an automator/simulator limitation, not a
@@ -97,6 +120,23 @@ node example.js
   `q.selectAll('.cls').fields({ computedStyle: ['color', 'backgroundColor'], rect: true, size: true }, cb)`
   then `q.exec(() => resolve(out))`. Values come back as `rgb()`/`rgba()` strings. This is what makes
   a real contrast/theme audit possible without screenshots.
+- **For the automator `Element` API, `>>>` does NOT work — chain `comp.$()` instead.** The `>>>` note
+  below is about `wx.createSelectorQuery()` inside `mp.evaluate()`; `page.$('#health-comp >>> .health-scroll')`
+  returns `null`. What works is two hops: `const comp = await page.$('#health-comp')` then
+  `await comp.$('.health-scroll')`, which hands back a real `ScrollViewElement` you can `scrollTo()`
+  and read `scrollHeight()` from. This is the only way to scroll a scroll-view that lives inside a
+  component (`user-health`, `viva-ag-panel`), and it's how the manual's health-tab screenshots were
+  paged through.
+- **`page.data()` does not include component state.** `subAgeList`, `healthSubTab` and everything else
+  owned by `<user-health>` read as `undefined` on the page — the tab can be fully rendered while the
+  page data says it's empty. Don't conclude "no data loaded" from `page.data()` alone; go through
+  `page.$('#health-comp')` and `comp.callMethod(...)`.
+- **After `navigateBack` from a pushed page, the main page can render blank.** Confirmed live:
+  returning from `pages/appview` left `pages/main/main` painting nothing but the WeChat capsule, and
+  `setData({tab})` on it produced empty screens. `mp.callWxMethod('reLaunch', {url:'/pages/main/main'})`
+  plus a few seconds restores it. Worth knowing before you conclude a tab is broken — and worth
+  avoiding entirely, since on Aeviva channels tapping the **Store** tab navigates to `pages/appview`
+  rather than switching tabs.
 - **To reach inside a custom component, use the `>>>` deep combinator — not `.in(component)`.**
   Both `wx.createSelectorQuery().in(comp)` and `comp.createSelectorQuery()` return *empty* here,
   even for the component's own root node. `wx.createSelectorQuery().selectAll('#comp-id >>> .cls')`

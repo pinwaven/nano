@@ -5,14 +5,12 @@ import {
   Package, ShoppingBag, Building2, Layers, Archive, Box,
   Image as ImageIcon, Eye, Upload, Sparkles,
 } from 'lucide-react';
-import { useLang, fmt, fmtDate, Badge, StatCard } from '../shared.jsx';
+import { useLang, fmt, fmtDate, Badge, StatCard, gcnSectorForChannel } from '../shared.jsx';
 import GcnInventoryEmbed from './GcnInventoryEmbed.jsx';
 
-// Channels whose SKU/inventory/shipping are managed entirely in GCN (see CLAUDE.md
-// §19) — kept as a literal set rather than a per-channel config flag since GCN
-// integration is currently a single sector, matching the gate already established
-// for the aeviva miniapp Store tab.
-const GCN_LINKED_CHANNEL_KEYS = new Set(['aeviva', 'aeviva-china']);
+// Channels whose SKU/inventory/shipping are managed entirely in GCN (see CLAUDE.md §19)
+// resolve to their GCN sector through the channel tree — shared.jsx gcnSectorForChannel,
+// the client-side copy of the worker's rule (aeviva and waven roots).
 
 // ── uploadToOSS helper ────────────────────────────────────────────────────────
 
@@ -1075,7 +1073,8 @@ export default function InventoryTab({ channels, session, isSuperadmin }) {
   // Channels with a GCN sector manage their own SKU/inventory/shipping entirely in
   // GCN — nano's native inventory UI is inert for them (see CLAUDE.md §19). Applies
   // to whoever is viewing that channel here, superadmin or the channel's own admin.
-  const isGcnLinked = GCN_LINKED_CHANNEL_KEYS.has(selectedChannel?.key_name);
+  const gcnSector = gcnSectorForChannel(selectedChannel, channels);
+  const isGcnLinked = !!gcnSector;
 
   useEffect(() => {
     if (isSuperadmin && !selectedChannelId && channels.length) {

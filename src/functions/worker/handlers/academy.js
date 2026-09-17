@@ -1,4 +1,5 @@
 const { pool } = require('../lib/db');
+const { markLessonWatched } = require('../lib/programs');
 const ossLib = require('../lib/oss');
 const axios = require('axios');
 
@@ -254,6 +255,18 @@ async function handleGetAcademyProgress(userId) {
     }
 }
 
+// A lesson can be the day's lesson of a 打卡 program (CLAUDE.md §42); wherever it was watched —
+// the chat card's inline player or the Academy tab — the open program day built on it is stamped
+// here. Also on the already_completed branch: the program day may have been offered after the
+// lesson was first watched, and the card's bindended re-posts. Never fails the progress write.
+async function _notifyProgramLessonWatched(user_id, lesson_id) {
+    try {
+        await markLessonWatched(user_id, lesson_id);
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'program lesson-watched hook failed', user_id, lesson_id, error: err.message }));
+    }
+}
+
 async function handlePostAcademyProgress(body) {
     try {
         const { user_id, lesson_id, time_spent_seconds } = body;
@@ -264,12 +277,15 @@ async function handlePostAcademyProgress(body) {
             [user_id, lesson_id]
         );
         if (existing.rows.length > 0) {
+            // Monotonic: a second report can only raise the recorded watch time, never lower it
+            // (the program card re-reports on every pause/end).
             if (time_spent_seconds != null) {
                 await pool.query(
-                    'UPDATE academy_coach_progress SET time_spent_seconds = $1 WHERE user_id = $2 AND lesson_id = $3',
-                    [time_spent_seconds, user_id, lesson_id]
+                    'UPDATE academy_coach_progress SET time_spent_seconds = GREATEST(COALESCE(time_spent_seconds, 0), $1) WHERE user_id = $2 AND lesson_id = $3',
+                    [Math.max(0, parseInt(time_spent_seconds, 10) || 0), user_id, lesson_id]
                 );
             }
+            await _notifyProgramLessonWatched(user_id, lesson_id);
             return { success: true, already_completed: true, credits_earned: 0 };
         }
 
@@ -288,6 +304,7 @@ async function handlePostAcademyProgress(body) {
         );
 
         await _checkAndAwardCertifications(user_id);
+        await _notifyProgramLessonWatched(user_id, lesson_id);
 
         return { success: true, credits_earned: lessonCredit };
     } catch (err) {

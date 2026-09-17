@@ -95,6 +95,13 @@ resources:
         # by the channel-admin JWT branch in worker/index.js and would 401. Issue as
         # "vag_" + 32 hex.
         VIVA_AG_API_TOKEN: ${env(VIVA_AG_API_TOKEN)}
+        # Scoped external credential for the document-extraction agent. A SEPARATE service from
+        # viva-ag even though the same platform runs both, so it gets its own token: extraction is
+        # available to every user while AG is a paid add-on, and one credential covering both would
+        # mean a compromise of the cheap, widely-used service also opened the queue of paid deep
+        # analyses. Same per-environment split and same "ch." prohibition as above. Issue as
+        # "dex_" + 32 hex.
+        DOC_EXTRACT_API_TOKEN: ${env(DOC_EXTRACT_API_TOKEN)}
         # Generous on dev: the code default (3/day, handlers/viva_ag.js) makes the feature
         # untestable after three runs — hit live during dev testing. Prod sets its own value
         # (10) in s-prod.yaml.
@@ -122,6 +129,16 @@ resources:
         SUPER_OTP_ENABLED: "true"
         # PNVS_SIGN_NAME/PNVS_TEMPLATE_CODE are optional — lib/sms.js defaults to the
         # verified system-provided pair (恒创联众 / 100001).
+        # Email OTP via Aliyun DirectMail (lib/email.js). DM_ACCOUNT_NAME is the verified sender
+        # address and is ALSO the dev-bypass switch: empty, and lib/email.js logs the code
+        # (email-otp-dev-bypass) instead of sending — keyed on the sender rather than on the
+        # AK because the AK below is shared with OSS/PNVS and is always present. Dev is a
+        # literal "" on purpose (Serverless Devs rejects ${env()} of an empty value); set it to
+        # the real sender here only to test actual delivery from dev. Credentials default to
+        # SMS_ACCESS_KEY_* (same root AK); DM_ACCESS_KEY_* exist only to move the sender to a
+        # scoped RAM user later. Region cn-hangzhou, same as the PNVS client.
+        DM_ACCOUNT_NAME: "no-reply@mail.gcn.net"
+        DM_FROM_ALIAS: "Waven Nano"
         # Dev/prod share one EventBridge bus (same Aliyun account) — nano-worker-dev and
         # nano-worker (prod) both had eb-triggers filtering on the bare "acs.chat" source,
         # so a dev-published chat.generate event was also picked up and processed by prod's
@@ -366,6 +383,48 @@ resources:
             authType: anonymous
             methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 
+  # Read-only MCP server over BOTH dev databases for the data-analysis workshop
+  # (docs/architecture/mcp-server.md). Dev only by design: lib/db.js refuses any database whose
+  # name does not end in _dev, and s-prod.yaml deliberately has no mcp block. Pools are capped at
+  # 2 connections each — the cluster is shared with GCN prod (CLAUDE.md §32).
+  mcp:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: nano-mcp-dev
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 256
+      timeout: 90
+      code: ./src/functions/mcp
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
+        DB_SSL: "false"
+        NANO_DB_NAME: "nano_db_dev"
+        NANO_DB_USER: "nano_admin"
+        NANO_DB_PASS: ${env(DB_PASS)}
+        GCN_DB_NAME: "gcn_db_dev"
+        GCN_DB_USER: "gcn_admin"
+        GCN_DB_PASS: ${env(GCN_DB_PASS)}
+        MCP_API_TOKEN: ${env(MCP_API_TOKEN)}
+        TZ: "Asia/Shanghai"
+      triggers:
+        - triggerName: http-mcp
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["GET", "POST", "DELETE", "OPTIONS"]
+
   nano-domain:
     component: fc3-domain
     props:
@@ -408,3 +467,7 @@ resources:
             functionName: nano-lab-dev
           - path: /lab
             functionName: nano-lab-dev
+          - path: /mcp/*
+            functionName: nano-mcp-dev
+          - path: /mcp
+            functionName: nano-mcp-dev

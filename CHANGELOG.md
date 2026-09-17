@@ -8,6 +8,488 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **health-report skill: batch tooling + new data traps** · 2026-09-16
+  - `scripts/batch/` (gen.py, common.py, digest.py, collect_images.js, wearable.py): one-command per-user digests, photo
+    download, ring stats and a notes-driven report generator used to produce reports for 41 GCN premier partners
+    (output in gitignored `temp/health-report/`, review index there).
+  - `references/data-sources.md`: App-screenshot "lab_import" rows, photo-extractor misreads, shared ring serials,
+    `chenby-*` style demo seeds, J2 hsCRP-only scans; `SKILL.md`: batch section + two lessons.
+
+- **Web user-app rebuilt as a twin of the Mini Program** · 2026-09-16
+  - Every end-user surface the miniapp has now exists at `/app/`, against the same endpoints and
+    copy: the async chat with the two-channel delivery contract (`hooks/useNotificationPoll.js`
+    — notifications + `chat-history?since_id&roles=coach,ai`, `chat_status` captions,
+    `AI_ECHO_TYPES` de-dup, 285s/30s wait budgets, load-earlier), all seven `:::` chat cards, the
+    server-driven questionnaire engine (six input types) in place of the hardcoded onboarding,
+    the 4-tool toolbox with the focus sheet, 打卡 program cards, formula-card CTAs (pay / redeem /
+    buy → GCN); the Health tab as the 数字孪生 (avatar + mood, edit profile, four-layer strip,
+    body figure + BioAge canvas chart, cross-layer strips, 综合报告, ring summary + charts from
+    server events, KINO trends, lab snapshot + chart, report detail sheet, food IgG, memory facts,
+    健康文档 upload/extract) and the Viva AG panel (jobs, quota, needs-input hand-off, in-app
+    md viewer); Plans with reminders, the full detail overlay, packages / 兑换码 / redeem sheet /
+    box claim / formulate-first card on the Dots subtab; Learn (Academy + 魔盒) and the native
+    Store (batch orders, cancel, cart persistence) with the GCN storefront handoff on linked
+    channels; the logo menu (theme, text scale, language, Viva redeem, phones/emails, referral),
+    banners, guest mode, and the logged-out "continue as" card.
+  - Shared logic is **imported from the miniapp** (`@mini` alias + `vite-plugin-commonjs`:
+    `markdown.js`, `biomarker-series.js`, `mood.js`, `phone.js`, `signal-smoothing.js`) and
+    everything else is **generated from it** by script — the i18n tables (`npm run sync:i18n` /
+    `check:i18n`), the theme + text-scale tokens (`sync:theme`), every stylesheet (`sync:css`,
+    rpx ÷ 2) and `user-health.js`'s pure prelude (`sync:health`). Ported components use the
+    miniapp's class names verbatim. Record: `docs/user-app-ui-style.md`.
+  - Deliberate web differences: ring data renders from the server with a "sync in the WeChat
+    app" notice on the BLE buttons (no Web Bluetooth); QR scans use `BarcodeDetector` + a manual
+    code field; voice input via the Web Speech API where available; the GCN storefront opens in a
+    new tab with the same `webview-token` context intents; files open from presigned URLs.
+  - Two live bugs fixed en route: the events sign-up called `POST/DELETE /events/:id/signups`,
+    which the worker routes to **create / delete an event** (now `/event-signups`), and the
+    library viewer called `/academy/library/:id` (the list route) instead of `/:id/content`.
+  - Dev proxy now targets `nano-dev.gcn.net` by default (`NANO_USER_APP_API_TARGET` overrides);
+    `react-markdown`, `lucide-react` and the hand-ported `utils.js` are gone. No worker changes.
+
+- **`diamond_store` (大区联盟中心) partner tier mirror** · 2026-09-16
+  - `migration_partner_types_diamond_store.sql` seeds nano's `partner_types` mirror row
+    (`managed_by_gcn = TRUE`, sort_order 4) for GCN's new fourth aeviva wholesale tier
+    (GCN `migration_0118_diamond_store_tier.sql`, 70% wholesale discount). Needed because
+    `partners.tier` is validated against this table and GCN's `partner-types-gcn-sync` push only
+    fires from its Wholesale Rules panel, never from a migration. No nano code change — the Partners
+    tab reads the table.
+  - Coach 胡樱桃 (`baff07cb`) and her 58 coached users, 16 invite codes and Kino device moved from
+    `aeviva-china` to the new `aeviva-china-sw` sub-channel (`temp/move-coach-to-subchannel.js`,
+    rehearsed on dev, applied to prod); she gained the `admin` role there. She is provisioned to GCN
+    as a `diamond_store` house partner (no upline).
+
+- **`persona_type` inherits down the channel tree** · 2026-09-16
+  - `effective_persona_type(channel_id)` (`migration_channel_persona_inheritance.sql`), a sibling of
+    `effective_channel_logo`, walks `parent_channel_id` up to the nearest channel whose config sets
+    `persona_type` and returns `'nano'` only when no ancestor does. Every server-side channel-default
+    read — `handlePostChat`, the questionnaire follow-up, Formulate Dots, `loadUserForVivaAg`,
+    `resolveProgramPersona`, the Viva/persona subscription handlers, the formulation notifies, and
+    the dispatcher's check-in and program scans — now goes through it instead of
+    `COALESCE(c.config->>'persona_type','nano')`. A sub-channel created under `aeviva-china` with
+    `config = '{}'` (as `aeviva-china-sw` was, on prod) previously ran Nano.
+  - `GET /api/channels` returns `effective_persona_type`; the Channels tab badge and the Settings /
+    Add Channel forms show the inherited value rather than a misleading "nano" default.
+    `config->>'persona_type'` alone is now the channel's *own* setting, not its effective one.
+  - **`sub_age_display_names`, `admin_tabs` and `locale` inherit the same way** via the generic
+    `effective_channel_config(channel_id, key)` (`migration_channel_config_inheritance.sql`) —
+    NULL, `{}`, `[]` and `""` all mean "not set here, ask the parent", which matches how the
+    readers already treated an empty value. A scalar comes back as text with `#>> '{}'`. Rewritten readers: every login-response channel shape
+    (`login.js`, `phone-otp.js` → email-otp via `shapeUserRow`), `handlePostChat`'s
+    `channelSubAgeNames`, and `handleAdminLogin`'s feature-tab derivation. `GET /api/channels`
+    adds `effective_admin_tabs` / `effective_sub_age_display_names`, which the Channels tab's
+    Admin Tabs and Sub-age Labels forms use as their starting state for a channel that sets none.
+    `locale` is rewritten at the same six login-shape sites and exposed as `effective_locale`.
+
+### Added
+
+- **`health-report` project skill** (`.claude/skills/health-report/`) · 2026-09-16
+  - Captures the workflow that produced Mary's 54-page 全维度健康分析报告: `scripts/extract.js`
+    (every user-scoped table + the Dots formulary → JSON, DATE columns kept as `YYYY-MM-DD`),
+    `scripts/download-docs.js` (all `health_documents` PDFs from OSS + `pdftotext`, duplicate and
+    scanned-file flags), `scripts/parse_igg.py` / `parse_exome.py` (量康 IgG grids and the 77
+    exome traits), `report/` (the A4 page scaffold, 15 SVG chart helpers, headless-Chrome build
+    driver, working-dir skeleton) and `scripts/publish.js` (upload + completed `viva_ag_jobs` row
+    → the 数字孪生 综合报告 card). `references/` hold the seven-part outline, the data-source map
+    with its traps, the analysis/Dots-recipe rules and the chart guide. User content never lives
+    in the repo — parts and data stay in a scratch working directory.
+
+- **Check-in programs (打卡计划) — multi-day curricula in the chat tab** · 2026-09-16
+  - New `program_*` tables (`migration_programs.sql`, `migration_programs_coach_activation.sql`):
+    a program is a per-day curriculum that a **coach activates for a client they manage** (coach
+    app → client → 方案 → 打卡计划 → 激活 / 暂停 / 继续); there is no auto-enrollment. Activation
+    delivers Day 1 into the client's chat immediately; the user then works through the days
+    **sequentially, one per Shanghai calendar day** (a missed day pauses, never skips). Channel
+    bindings only scope which coaches may offer a program (a bound channel covers its
+    sub-channels). Deliberately not built on `health_plans`, which is a week-scale focus with the
+    same three tasks every day.
+  - Each day is one server-built chat bubble: intro, a `:::lesson` card that plays the day's
+    **Academy** video inline (fresh presigned URL per tap, `bindended` → `POST /academy/progress`),
+    and a `:::checkin` button that starts the day's 打卡 through the existing **questionnaire**
+    engine — one question at a time in the chat tab. Completion renders the day's recap template
+    (`Day 1完成 …`) from the answers and adds one short qwen-plus comment. Nothing leaves the
+    chat tab.
+  - Seeded `viva_7day_v1` (7天生命能力打卡, `draft`) with Day 1 authored in full: 十年生命能力,
+    用餐/步行时间, 饱胀感 / 精力状态 / 身体舒适度 before→after, 最大提醒. Days 2–7 are placeholders.
+  - New questionnaire input type **`time_picker`** (`"HH:mm"`) and questionnaire type
+    **`program_day`** (server-assigned on tap; not coach-assignable).
+  - Admin panel: Content ▸ **Programs** — programs, per-day editor (Academy lesson picker,
+    questionnaire picker, recap template with placeholder legend), channel binding, read-only
+    roster. Dispatcher: new `program.day` scan. Worker: `handlers/programs.js`, `lib/programs.js`.
+  - **Open-day nudge** (`migration_programs_nudge.sql`): one "Day N 还没完成" per calendar day
+    while a day stays open (max 5), with the card re-sent; coach app and admin roster show how
+    many days a client has stalled. **Watch-time gate**: the inline player reports real playback
+    seconds and `min_watch_seconds` is enforced before a program day counts the lesson.
+    Questionnaire Q/A bubbles now save under the effective persona.
+  - Record: `docs/architecture/programs.md`; rules: CLAUDE.md §42. Tests: `tests/programs.test.js`,
+    `tests/questionnaire-response-persona.test.js`.
+
+- **Doc-extract contract 3 — tables stay tables, facts carry a key** · 2026-09-16
+  - Requested by Curia ahead of moving its layout stage to a model. Dev now declares
+    `contract_version: 3`; every version stays a superset of the last (a v2 worker keeps working).
+  - `structured.version: 2` — sections of tables with named columns and verbatim cells, plus
+    label/value pairs; validated as a table model (`invalid_structured` with the offending path)
+    and rendered in the miniapp as real tables (horizontally scrollable). Depth cap 6 → 8. Sent on
+    every document with any table the analyte reader did not consume, not only the special kinds.
+  - `source` — a cell reference (`s0.t0.r3` / `s2.p1`) on every observation, unmapped row, food
+    item and tag; stored (`health_report_items.source_ref`, `health_events.data.source_ref`,
+    `health_document_tags.source_ref`), checked against the block, dropped with a `bad_source`
+    **warning** (new response field: a field dropped from an item that still landed).
+  - `unmapped[].suggested_key` — the agent's guess at a catalog key. Stored beside the row
+    (`suggested_key`/`suggested_confidence`), **never promoted**, shown as 「可能为 …」 on the
+    report sheet's 其他项目 rows, never as the marker's name.
+  - `tag_catalog` (new table, ~170 seeded rows across allergy / condition / medication / diet /
+    lifestyle / result / family_history / procedure, with aliases and admitted `values` for
+    keyed results) ships on every claim and at `GET /doc-extract/catalog`. `memory_category` —
+    which `user_memory_facts` category a fact is mirrored into — is nano's column and is never
+    sent; it is NULL for every `family_history` row by design.
+  - `tags` — `findings` with the three things a consumer needs to act on one: a key, a status
+    (`current`/`past`/`stopped`, newest `since` wins per key) and an anchor. A `fact` resolves in
+    `tag_catalog`; an unknown key is **demoted** to a `descriptor` (`unknown_tag`), not rejected. Stored
+    on the document in `health_document_tags`; `lib/documentTags.js` re-derives the user's managed
+    `user_memory_facts` rows (new `tag_key` column; `medication` joins the category CHECK) from the
+    resolved current facts — the catalog's short `name_zh`, never the document's sentence — and
+    deactivates a managed row when its key resolves away or its document is cleared. A user's own
+    chat/admin fact is never touched. **`findings` no longer reaches `user_memory_facts`**: it is
+    stored as descriptors, which nothing acts on (two live runs wrote six false allergies that way).
+  - Re-promotion (`lib/repromotion.js`, `temp/repromote-extractions.js --env dev [--user] [--dry-run]`):
+    when either catalog gains a key or an alias, unmapped items, descriptors and v2 table rows are
+    re-resolved by **exact** NFKC-folded match, through the same unit/conversion/plausibility rules
+    as a fresh observation; `suggested_key` is reported as the alias backlog and never used as a match.
+  - Miniapp: tag chips under each document (fact solid, descriptor outlined and labelled 仅记录,
+    stopped/past struck through); v2 tables; `include_structured=1` also returns `tags`. VERSION 0916-2.
+  - Contract md/OpenAPI updated throughout (§6 tag vocabulary, §7 shapes, §8 rules incl. per-document
+    reasons, §10 limits); `tests/doc-extraction-contract.test.js` pins the seeded tag catalog, both
+    worked examples, every validator reason and warning against the docs; new `tests/document-tags.test.js`.
+
+- **综合报告 card on the 数字孪生 subtab** · 2026-09-15
+  - A new card between the health hero (the BioAge number) and the four twin layers lists the
+    user's completed Viva AG report artifacts and opens the PDF with `wx.openDocument`; several
+    reports open an action sheet. It is deliberately not a fifth twin layer and not filed under
+    健康文档 (inputs) — a report is the interpretation of the twin, not twin data.
+  - Backend: `GET /api/twin-reports` and `GET /api/twin-reports/file` (`handlers/twin_reports.js`)
+    read completed `viva_ag_jobs` rows with result files. Gated on **ownership** (same coarse
+    `users.coach_id` check as other per-user reads), not on the Viva AG entitlement, so a
+    delivered report stays openable after the add-on lapses. Files are addressed by index; the
+    `oss_key` never leaves the server (`publicResultFiles` is now exported from `viva_ag.js`).
+  - Mary's 54-page 全维度健康分析报告 was published on dev as a completed `full_analysis` job
+    (`claimed_by = 'claude-code-analyst'`) so the card has content.
+  - `completed_date` on the card is the **Shanghai** calendar day (`formatToShanghai`), not the
+    UTC date — a report finished after midnight UTC+8 showed yesterday's date. Test pins it.
+  - 2026-09-16: the same analysis was run on dev for Pin and for the eight remaining
+    `platinum_store` partners (GCN `partners.partner_type`, joined through `users.nano_user_id`),
+    with length scaled to each user's data (11–32 pages). Every one of those users' Kino panels
+    except one turned out to be estimator-synthesized (J2 hsCRP-only chips with the raw reading
+    outside the 0.2–2.5 window), so each report says so on its own 「我到底几岁」 page and builds
+    its conclusions on the uploaded documents, ring data and self-measurements instead.
+
+- **Email OTP login, alongside SMS, for the Waven channel** · 2026-09-15
+  - Sign in or sign up with an email code on the miniapp login page (phone/email toggle), the web
+    user-app (Email tab) and manage addresses in the new 邮箱管理 page (`pages/emails/`); the
+    admin panel gains an Emails tab and Add Email. Aeviva stays phone-only — the server refuses an
+    aeviva-tree account (`channel_not_supported`), judged on the channel tree's root.
+  - Backend: `user_emails` + `users.email_verified_at` (mirroring phones), `email_otp_codes` with a
+    per-address rate limit and 5-attempt cap, Aliyun DirectMail sender (`lib/email.js`,
+    `DM_ACCOUNT_NAME`; empty = code logged, nothing sent). Legacy `users.email` values are not
+    backfilled as login identities.
+  - GCN: `handleNanoSSO` accepts an email-verified nano user for a sector whose `login_methods`
+    lists `email`; native email OTP on `/api/auth/otp/{send,verify}`; `migration_0117` flips waven.
+    The waven channel tree is now GCN-linked like aeviva (store webview, chat catalog, provisioning,
+    admin console embed), resolved through the channel tree rather than a leaf-key set.
+
+- **Medical Records are built from uploaded 健康文档** (doc-extract contract v2) · 2026-09-15
+  - Measured against dev user Mary (22 PDFs): no extraction had ever run (the documents predate
+    the queue and nothing backfilled), and once it did most of her data had nowhere to go —
+    `biomarker_catalog` held 25 clinical keys and everything else (`unmapped`) survived only in
+    `doc_extraction_jobs.result`, unread by the twin, chat, or Viva AG.
+  - **Backfill**: `temp/backfill-doc-extraction-enqueue.js --env dev|prod [--user] [--dry-run]`
+    queues a job for every active document that has none, through the real `enqueueDocExtraction`.
+    The miniapp row for a job-less document now says 尚未解析 and offers 解析; a `failed` one offers
+    重试解析.
+  - **Catalog v2** (`migration_biomarker_catalog_v2.sql`): ~50 keys — Hcy, insulin, B12, folate,
+    CBC differential, liver (ALP/LDH/CK/bilirubins/proteins), Lp(a)/ApoA1/ApoB, FT3/FT4/TPOAb,
+    AMH/E2/testosterone/cortisol, tumor markers, a hair ICP-MS element panel (`Hair*`, µg/g), NAD+,
+    telomere, SBP/DBP. All context-only (`nano_dimension NULL`, `is_kino_core FALSE`). Plus
+    `aliases TEXT[]` (`migration_biomarker_catalog_aliases.sql`) shipped on every claim — dev
+    extractions were dropping `⾎红蛋⽩ Hb` / `⽢油三酯 TG` / `空腹⾎葡萄糖 FBG` although the markers
+    were catalogued. New `UNIT_CONVERSIONS` pairs mirrored in the contract table.
+  - **`health_report_items`** (`migration_health_report_items.sql`): one row per printed analyte,
+    mapped and unmapped (`key_name` NULL), with `ref_text` / `flag` / `section` as printed. A
+    report row is now written for every dated document that carried any analyte — a NAD+ report
+    with no catalogued key used to leave no report at all. Items cascade with the report on
+    re-run / 解析有误. Read back by `GET /health-reports/:id` (`items`), the report list
+    (`item_count`), the chat tool `get_health_reports`, and the AG bundle.
+  - **`structured`** (`health_documents.extracted_json`,
+    `migration_health_documents_user_edit_and_json.sql`): a schema-less, capped (64 KB / depth 6 /
+    200 per array / 500 chars per string, `:::`-stripped) JSON block for content that is neither
+    an analyte nor a finding — gene variants, microbiome abundances, HPV subtypes, telomere /
+    immune-age verdicts. Stored verbatim, rendered as a generic key/value tree under the document
+    row, shipped to the AG bundle; nano derives nothing from it.
+  - **Missing-date recovery**: `PATCH /health-documents/:id` (owner only) sets `doc_date` /
+    `doc_type` / `institution` / `note`, stamps `user_edited_at` (after which the extraction result
+    no longer overwrites those three), and `re_extract: true` clears and re-queues in one call.
+    The validator takes the ROW's date as the fallback for a page with none printed (never
+    today) — dev job 15 had refused six lipid/liver values as `missing_date`. Miniapp: a hint and
+    a date picker on such a row; the type badge opens an action sheet.
+  - **Doc types** `genetic`, `microbiome`, `functional_test` (validator, PATCH enum, `DOC_LABEL`,
+    OpenAPI, miniapp labels, report-type labels/colours). `tests/doc-extraction-contract.test.js`
+    holds the three vocabularies together and now parses both catalog migrations.
+  - **Twin lab panel = latest value PER MARKER** (`lib/labHistory.js`, used by
+    `healthTwinUpdater`): each marker carries its own `data_date`, catalog names, category and
+    ranges; `latest_lab_date` is the newest of them; `marker_count` / `dates` added. It was "every
+    marker on the single newest date", which a Vitamin-D-only report collapsed to one tile. Legacy
+    `results`-shaped rows are expanded server-side. **The twin UPSERT no longer `COALESCE`s
+    `latest_lab_data`/`latest_lab_date`** — deleting the last report left a stale panel forever
+    while both callers claimed to recompute without it.
+  - **Lab history**: `GET /lab-history?openid=&key_name=&series=1&coach_id=`; chat tool
+    `get_lab_history` (flat `kind:'lab_result'` rows, `date` field, values harvested into the
+    grounding allowlist under their `key_name` so a lab hsCRP ≠ Kino hsCRP is not a false
+    mismatch); AG bundle v4 `medical_records.lab_history`, `health_reports[].items`,
+    `documents[].summary/structured` (the doc-extract claim deliberately omits the reading it is
+    about to redo). JUDGE told that `external_lab_panel` markers may carry different dates.
+  - Miniapp Medical Records: header "最近 {d} · N 项 · 来自 M 份报告", per-tile own date, tap a
+    tile with history → trend chart; report cards show item counts; the report sheet renders
+    catalogued markers with server names/ranges and 其他项目（按报告原文）; uploaded documents
+    count toward the twin's Medical Records layer. Web user-app `buildLabPanel` reads the same
+    server fields (rebuild `dist`).
+  - Contract v2 in `docs/doc-extract-api.md` + `doc-extract-openapi.json` (`contract_version: 2`,
+    additive — a v1 worker keeps working); AG docs `bundle_version 4`. Curia-side work order sent
+    to the session that owns the worker (unit lexicon, alias/NFKC matching, `doc_date` fallback,
+    `unmapped` extras + cap, doc types, `structured`).
+  - **Prose guard in the validator** (`implausible_label`, `implausible_finding`), after two live
+    dev runs on Mary's documents had the agent's text-layer path submit sentence fragments as data —
+    an Hcy of 10 lifted from "理想水平是小于10μmol/L" (the results were 12.6 / 8.7), "如果被检者年龄小于
+    40 ng/ml" as an analyte, and six `allergy` facts ("过敏：免疫", "过敏：个别病人") from a genomics
+    report's explanatory text at a constant 0.85 confidence. A label must be an analyte name, a
+    finding a statement about the person; both are shape checks and both are reported back.
+  - `utils/config.js` VERSION → `0915-4`.
+
+- **Store checkout: the 收款码 can be saved to the album from the miniapp** · 2026-09-15
+  - New miniapp page `pages/pay-qr/`. GCN's `dashboard.html` payment screen runs inside
+    `pages/appview`'s `<web-view>`, which cannot save an image, so its "save the QR and open it
+    from your album" instruction was impossible to follow. The page now hands the store's signed
+    收款码 URL over via `wx.miniProgram.navigateTo`, and the native page saves it in one tap
+    (`wx.downloadFile` → `wx.saveImageToPhotosAlbum`, `scope.writePhotosAlbum` declared in
+    `app.json`) with a WeChat/Alipay 「扫一扫 → 相册」 hint.
+  - **The scan step is the floor, measured.** `wx.previewImage`'s long-press menu in a Mini Program
+    recognises only 小程序码/公众号/群/名片 codes — the store's `wxp://` 收款码 decodes fine locally
+    but gets no 识别图中二维码 (dev, order `df25055b`) — and Alipay cannot be launched from inside
+    WeChat. Removing the scan needs a `wx.requestPayment` merchant integration, not a page.
+  - No backend, schema or 确认收款/receipt-OCR change.
+  - **MP console step:** add `https://waven-gcn-assets-sh.oss-cn-shanghai.aliyuncs.com` to the
+    miniapp's downloadFile 合法域名, or 保存到相册 fails on device.
+  - The signed OSS URL is decoded exactly once on the receiving side and only if its outer
+    encoding survived WeChat's unreliable query auto-decode — a second pass turns the
+    Signature's `%2B`/`%3D` into `+`/`=` and OSS refuses the image.
+  - `utils/config.js` VERSION → `0915-3`.
+
+- **MCP server for the data-analysis workshop** (`CLAUDE.md` §41, `docs/architecture/mcp-server.md`) · 2026-09-15
+  - New FC function `src/functions/mcp/` (`nano-mcp-dev`, `https://nano-dev.gcn.net/mcp`): a
+    stateless Streamable HTTP MCP endpoint exposing **both** dev databases (`nano_db_dev`,
+    `gcn_db_dev`) through `waven_get_data_map`, `waven_list_tables`, `waven_describe_table`,
+    `waven_search_columns` and a read-only `waven_query`.
+  - Read-only three ways: every statement runs inside `SET TRANSACTION READ ONLY` with a statement
+    timeout; a pure SQL guard allows one `SELECT`-shaped statement and refuses `FOR UPDATE`,
+    `pg_sleep`, `lo_*`, `dblink` and friends; pool construction refuses any database name not
+    ending in `_dev`. Pools are capped at 2 connections each (shared cluster, §32).
+  - The transport is hand-rolled on the SDK's `Transport` interface because FC 3.0 HTTP triggers
+    are event functions with no Node request/response objects.
+  - `npm run deploy:mcp` / `npm run mcp:local`; new `.env` keys `MCP_API_TOKEN`, `GCN_DB_PASS`.
+    Dev only — no `mcp` block in `s-prod.yaml`.
+
+- **慢性食物过敏 (food IgG) panels become twin data** (`CLAUDE.md` §40) · 2026-09-11
+  - A 120-item food-sensitivity report uploaded as a 健康文档 is now extracted into its own tables
+    (`food_catalog`, `food_sensitivity_panels`, `food_sensitivity_results`), turned into a
+    deterministic avoidance guideline, and used by both food advice and dots formulation.
+  - **Never `health_events(lab_result)`**: `health_twin.latest_lab_data` keeps only the most recent
+    lab date, so a food panel would have replaced the user's clinical panel with 120 food titres.
+  - `<0.1` travels as `below_detection` with a NULL value rather than as 0.1 — the lab declined to
+    measure it. The 0–3 class is read off the page, never derived from thresholds.
+  - New chat tool `get_food_sensitivity`, force-queued on a deterministic trigger, answering
+    「我对什么食物过敏」/「我能喝牛奶吗」 from the real panel and reporting an untested food as
+    untested. Restrictions reach food advice through the existing `user_memory_facts` recall.
+  - Formulation promotes DOT-N13 肠道焕新 and DOT-N14 免疫韧性 through §31's purely-additive focus
+    channel, and both prompts state plainly that the formulary has no digestive enzyme, glutamine
+    or omega-3 dot.
+  - A free, time-boxed Viva AG review (`food_sensitivity_review`, `bundle_version` 3) is queued for
+    users already on Viva. The review narrates; the restrictions are derived in code before the job
+    exists, so a failed review never costs a user their guideline.
+  - Restrictions are `dietary_restriction`, never `allergy` — IgG is not IgE — and carry the new
+    nullable `severity`/`valid_until`/`food_key` columns on `user_memory_facts`.
+
+### Fixed
+
+- **Miniapp chat: a short (synchronous) reply could vanish — dots for a few seconds, then nothing** · 2026-09-13
+  - `casual_chat`/`emotional_support` turns are acked `{success:true}` *after* the reply is
+    persisted, and the client relied on the destructive `GET /api/notifications` read alone to show
+    it. One poll response the page never received (backgrounded mid-request, a network blip, or in
+    DevTools an orphaned poller left by a hot reload) consumed the only copy; the reply sat in
+    `chat_messages` unrendered until the next app open. Reproduced on dev with 「你好」.
+  - `_sendMessage` now opens the same wait window the async path uses (`_beginChatWait`), so
+    `_poll`'s `chat_messages` replay backstops this path too; it polls immediately instead of
+    waiting for the next 3s tick, and the typing indicator stays up until the reply actually
+    lands. The sync wait budget is 30s (`CHAT_WAIT_SYNC_MS`) rather than the async 285s, since the
+    reply already exists when the ack arrives. Verified in the DevTools automator with a
+    dropped-response harness: the reply renders from `chat_messages` within one tick, no duplicate.
+
+- **A food-named dietary restriction could silently delete a dot from a formula** · 2026-09-11
+  - `formulationQuality._collides` is bidirectional substring containment and `allergy_conflict`
+    removes the dot from both recipes, so a restriction on `玉米` matches the ingredient `玉米黄质`
+    and would drop **DOT-N8 明眸**. Food restrictions now match through
+    `food_catalog.dot_conflict_keys` (empty for every seeded food) instead of prose; facts without
+    a `food_key` are unchanged.
+
+- **Illustrated end-user manual** (`docs/user-manual/end-user-guide.md`, `docs/user-manual/images/`) · 2026-09-11
+  - Rewrote the end-user guide against the shipping app and illustrated it with 21 screenshots captured live from WeChat DevTools (`tools/wechat-automator` + a window-scoped `screencapture`; the automator's own `page.screenshot()` still fails here, but macOS screen capture now works, so the tool README's "screenshots don't work in this environment" gotcha is stale for the `screencapture` half).
+  - Corrected what had gone stale since the guide was last written: Dots is a **28-day / 56-capsule** cycle, not 7-day; the formula card proposes **three packages**; packages are bought with a **redeem code**, not the retired direct checkout; a **Kino test is a precondition** for formulating at all; and the package **stage vocabulary** is documented as the user sees it.
+  - Newly covered: the Dots package journey and stage table, redeem codes, box-scan activation, Health Records upload + extraction (`Read again` / `Misread`), Viva AG deep analysis, and multi-phone login.
+  - Screenshots are from a development account on an Aeviva-branded channel and contain that account's real test health data; the guide says so up front.
+  - **PDF edition** (`docs/user-manual/end-user-guide.pdf`, built by `tools/manual-pdf/`) — 27 pages, cover, hyperlinked TOC, page-numbered footers. Markdown stays the source of truth; `tools/manual-pdf/build.sh` regenerates it, and the build **fails** on a missing screenshot or a dead cross-link because Chrome renders both silently (a blank box, and ordinary text).
+  - Two Chrome quirks are encoded in that tool rather than rediscovered: `--print-to-pdf` cannot set a footer template and CSS `@page` margin boxes aren't supported, so page numbers need CDP `printToPDF` — and since a footer template can't be suppressed per page, the cover prints in its own pass and is merged back in.
+  - Two headings lost their em dashes (`Viva AG — Deep Analysis` → `Viva AG: Deep Analysis`) because GitHub and python-markdown slugify them differently — GitHub keeps two hyphens where python-markdown collapses to one, so an anchor that worked in one renderer was dead in the other.
+
+- **Viva can answer "what have I bought?" — `get_formulation_packages`** (`worker/lib/agenticTools.js`, `worker/lib/agenticChat.js`, `worker/handlers/{dots,chat}.js`, `worker/prompts/chat/formulationPackageBlock.js`, `tests/chat-formulation-package-tool.test.js`) · 2026-09-10
+  - A user asked 「我已经买了什么原粒套餐?」 and Viva answered *"你目前已激活并正在使用的原粒共17款…剩余800粒…"*. That user had **no active plan at all**, nothing paid, and two 28天 orders sitting at `pending_payment`. The 17 dots came from `get_dot_inventory` → `user_cartridges`, the **Neo dispenser's** cartridge table for hardware §28d gated off — legacy rows narrated as a live regimen. Nothing in chat could see an order: `llmContext` had no package field, `AGENTIC_TOOL_DEFS` had no commerce tool, and no prompt had any vocabulary for the product, so GENERATE reached for the only tool that sounded close.
+  - **JUDGE passed it, and would again** — the answer *was* grounded, in the wrong table (§27: JUDGE checks facts, not relevance). So the fix is structural, not stricter grading.
+  - New tool reads `_fetchFormulationPackages`/`_fetchFormulationCodes`/`fetchFormulationTiers` live at ask time, never cached. Forced **deterministically** by a trigger regex on the model of `messageNeedsBiomarkerHistory`, because PLAN decides `tools_needed` with an LLM. The same regex promotes two intents to `nutrition_question`: `formulate_dots`, since a purchase question misread as a request starts a whole new formulation, and `casual_chat`, where 「我的订单到哪了」 landed on dev and came back with the canned 联系客服 refusal because that intent has no tools at all.
+  - **The model narrates; the server writes the sentence.** `PACKAGE_STAGE_NARRATION` (beside `PACKAGE_STAGES`) supplies `stage_meaning`/`next_step` per stage per language, so the chat prompt never learns a stage string — a prompt enumerating them would be a third definition of that vocabulary in the one medium where drift is invisible.
+  - **Two raw fields are withheld, each after a live failure.** Given `stage`, the model wrote 状态均为"pending_payment" into user prose. Given a bare null `plan_status`, it invented a dot roster for two unformulated orders — *"两套方案中都已包含原粒6号、9号、7号"* — and **JUDGE passed it**, because every dot named was real. Both are replaced by server-written sentences (`stage_meaning`, `formula_status`): a null field is an invitation to fill it in, a sentence saying nobody has decided yet is not.
+  - **`get_dot_inventory` removed from the tool set** (handler and table kept). Three shipping prompts named it by name and the formulation turn runs the *same* tool defs, so leaving one would burn a GENERATE iteration on `unknown tool`; a test now scans every prompt for a tool name that does not exist.
+  - Three details each with a bug behind them: a **flat kinded array** rather than a `{packages, codes, tiers}` wrapper, because `extractToolGroundTruth` harvests nothing from a wrapper and `verifyBiomarkerGrounding` would then rewrite a correct order date away as a fabrication; **date-only** timestamps, because `formatToShanghai` is offsetless and `addDate` re-applies +8, throwing every instant at or after 16:00 Shanghai onto the next day; and **degraded ≠ empty** — all three sources empty at once returns `ok:false` with an explicit "do not tell them they have no packages", since a dead GCN and an empty cart are otherwise byte-identical.
+  - No `order_id`/`plan_id`/`sku_id`/`label_code`, **not the redeem code string**, and no price anywhere — nano does not price this product.
+  - **Latent bug fixed in passing:** three forced tools consumed all three GENERATE iterations and left `rawReply === ''`, which JUDGE graded and `finalizeChatReply` shipped as a canned acknowledgement. `buildForcedToolQueue` now caps at `GENERATE_MAX_ITERS - 1` and the last iteration pins `tool_choice: 'none'` (verified live against DashScope qwen-plus).
+  - **No GCN change, no migration, no miniapp change** — all three endpoints were already served. Full writeup: `CLAUDE.md` §28g.
+
+- **健康文档 are extracted into the digital twin by an external agent** (`worker/handlers/doc_extraction*.js`, `worker/lib/docExtraction.js`, `worker/docs/doc-extract-*`, 4 migrations, `components/health-documents/*`, `tests/doc-extraction-*.test.js`)
+  - An uploaded 体检报告 or discharge summary was read by **nothing but Viva AG** — for anyone without the paid add-on it was an inert archive, and even the row's own `doc_type` / `doc_date` / `institution` columns stayed empty because no client has ever sent them, so every document rendered the generic 文档 badge. A new pull queue, `doc_extraction_jobs`, lets Curia's Viva agent claim a document, read it, and post structured data back.
+  - **A second queue, not a `job_type` on `viva_ag_jobs`.** AG is a paid add-on capped at one in-flight job per user and runs for minutes to hours; extraction is available to every user (§38), is scoped per **document** so ten uploads extract concurrently, and finishes in seconds. Sharing one table would mean splitting the per-user cap by type and letting a cheap backlog starve a paid run. Own token (`DOC_EXTRACT_API_TOKEN`, `dex_` + 32 hex, per environment), own exact-path allowlist above the `ch.` prefix branch, own `X-Doc-Extract-Job-Token` fencing header. Everything else is mirrored from `viva_ag.js`: `FOR UPDATE SKIP LOCKED` claim, token-rotated-per-claim as both credential and idempotency key, lazy lease sweep, no EventBridge and no cron.
+  - **The twin pipeline already existed and is reused unchanged.** `handlePostHealthReport` → `biomarker_catalog` whitelist → `health_events(lab_result)` was already there; what was missing was the step that turns a document into the payload it accepts. Extraction calls it in-process with `source: 'document_extraction'`, then calls `updateHealthTwin` itself — that handler only refreshes the twin via its `compute_bioage` branch, so without the explicit call the panel would never reach `health_twin.latest_lab_data`.
+  - **`compute_bioage: false`, deliberately.** `updateHealthTwin` reads BioAge only from `test_type='kino_chip'`, so a `lab_import` row could never reach the displayed BioAge anyway — but it would create a biomarkers row stamped `NOW()` rather than the report date, with the absent Kino markers **fabricated** by `BiomarkerEstimator` (which range-checks only hsCRP). Manufacturing a BioAge out of an OCR'd document is not what filling the twin should mean; §28b already holds the line that a lab panel does not qualify for formulation. A test pins it.
+  - **`lib/docExtraction.js` rejects, never repairs**, and is pure so every rule is testable offline. Four of its six observation rules exist because the path it feeds does **not** check them: `handlePostHealthReport` does a bare `parseFloat` with no NaN check; the model's `unit` string *overrides* the catalog's with no conversion, so an mg/dL value lands in an mmol/L column reading ~18× low; `biomarker_catalog.ref_low`/`ref_high` have never been read by anything; and `report_date` silently backfills to **today** when absent, which for a paper report from 2019 is a lie the twin reads as current. With no readable date, document metadata and the summary are still written but **no observations are**.
+  - **Findings go to `user_memory_facts`, never `users.bio_data`** — those writes are a shallow `||` merge, so `health_conditions` would be replaced wholesale by OCR output. New `'condition'` category and `'document_extracted'` source, plus `source_document_id`. Held to a **higher** confidence floor than observations (0.8 vs 0.6) and refused outright without one: an `allergy` row filters store recommendations (§37) and reaches dot formulation, so a misread is sharper than a wrong lab value.
+  - **Auto-write needs a way back, so correction is in scope.** New `DELETE /health-reports/:id` (there was none — only GET and POST), which deletes the observations **explicitly** before their parent because `health_events.report_id` is `ON DELETE SET NULL` and would otherwise orphan them into the twin's lab panel. Per-document 重新解析 / 解析有误 in 健康文档; the re-run clears the previous extraction **first**, which is mandatory rather than tidy — `health_events` dedupes on `(user_id, source, external_id)` with `DO NOTHING`, so a corrected value would otherwise be a silent no-op.
+  - **The contract is served from the function**: `GET /doc-extract/docs` (Markdown) and `/openapi.json`, read at module load from `worker/docs/` which ships with the code, so it cannot drift. Plus `GET /doc-extract/catalog` (the extraction vocabulary, generated from the live table rather than the hand-maintained 25-key literal in the existing vision prompt) and `POST /doc-extract/validate`, which runs the **real** validator against a candidate payload with no job, claim or write — so an external implementer can iterate before touching live data. A test asserts the spec's paths and the token allowlist agree **in both directions**, that the worked example in the contract actually validates against the real catalog, and that the documented units, limits and reason codes match the code. (The CHANGELOG claimed an equivalent check for the AG spec; it did not exist.)
+  - Found and fixed while writing this: the documented `VitaminD` conversion was inverted — the catalog is nmol/L, not ng/mL.
+  - **Deploy order: migrate first, then the worker.** The document list degrades to no extraction state if `doc_extraction_jobs` is missing, so the wrong order is survivable rather than breaking a user's only view of their own records.
+
+### Changed
+
+- **`handlers/dots.js` split into five modules — no behaviour change** · 2026-09-16 (`worker/lib/{formulation,chatCards}.js`, `worker/handlers/{formulation_orders,store}.js`, `worker/handlers/dots.js`, `worker/index.js`, `worker/handlers/{chat,users}.js`, `worker/lib/agenticTools.js`, 12 tests, 4 `temp/` scripts, comment pointers in `lib/dotsProductModel.js`, `prompts/chat/{formulationPackageBlock,productRecommendBlock}.js`, `utils/markdown.js`, `pages/main/main.{js,wxml}`, `CLAUDE.md` §28/§36, `docs/architecture/{dots-formulation,dots-formulation-lifecycle,store-product-recommendation}.md`)
+  - The file had grown to 4,294 lines and 89 functions across four unrelated concerns. It is now 1,290 lines and owns only the I/O side of 营养定制: `handlePostFormulaDots`/`_handleFormulaDotsAgentic`, `_runDeterministicFormulation`, the plan writes (`_commitProposedPlan`, `_activateProposedPlan`, `_commitAgFormulation`), `handleGetNutritionPlan`, the checkout/label/review snapshots and dots CRUD.
+  - `lib/formulation.js` (1,437 lines) is the arithmetic — ranking → doses → daily budget → capsule levelling → tier ladder → `_expandPlanDay` — and is **pure**: no DB, no LLM, no network. That is the point of the cut: §28's "single expansion rule set for four consumers" is now a property of a module with no I/O, and the eight test files that exercised these functions require it directly instead of loading a handler that pulls in `openai`, `luxon` prompts and the pool.
+  - `lib/chatCards.js` — `_buildFormulaChartBlock`, `_buildProductCardBlock`, `_tierPitch`, `_formatDayRanges`. `handlers/formulation_orders.js` — `PACKAGE_STAGES`/`PACKAGE_STAGE_NARRATION`, `_mergeFormulationPackages`, `_fetchFormulationPackages`/`_fetchFormulationCodes`, `_resolveOrderContext`, `_awaitingOrders`, `handleGetFormulationOrders`, `handlePostFormulationSubmit`, `handlePostFormulationRedeem` (`lib/agenticTools.js` and `handlers/users.js` now require it). `handlers/store.js` already existed (item/SKU CRUD, order listings); the storefront read, channel inventory, order placement and Neo cartridge handlers moved into it verbatim, so the store is now one module.
+  - Every function moved by line range with its comment block; three doc comments that had been stranded hundreds of lines from their functions by earlier insertions (`_splitDotTiming`, `_emphasisPosition`, `_applyTierLadder`/`_selectTierVariant`) were re-attached, and one superseded description of the formula card was dropped. A dead `debitUser` import went with it. `_formulationLabelUrl` stays in `dots.js` for the card-parser test that still recognises the URL shape from chat history.
+  - Verified: `npm test` 769/769; `tests/health-plan-focus-mapping.test.js` no longer has to `new Function()` two functions out of the handler's source text — it requires `lib/formulation.js`. Miniapp VERSION `0916-1` (comment-only changes there).
+
+- **The 营养定制 tool's own opening message says 原粒, not DOTS** (`pages/main/main.js`, `pages/coach/coach.js`, `src/web/user-app/src/i18n.js`)
+  - Tapping the tool posts a user message on the user's behalf, and the zh copy read `请帮我配制我的 DOTS 方案` — the only zh string in that block still naming the product in Latin, everything else already says 原粒. It is `persist: true`, so it is written to `chat_messages` and becomes part of the history the model reads on later turns; it now matches the vocabulary every prompt, `humanizeDotCodes` and the formula card already use. English is unchanged — Dots is the product's English name.
+
+- **营养定制 proposes three packages, not one formula with two upgrade rungs** (nano: `worker/handlers/{dots,chat}.js`, `worker/lib/tierCopy.js` (was `rungCopy.js`), `worker/lib/gcnClient.js`, both `systemFormulaGenerate.js`, `prompts/chat/{factConstraint,planTemplate}.js`, `prompts/viva/judgeTemplate.js`, `lib/knowledgeBase.js`, `migration_knowledge_tier_copy.sql`, `utils/markdown.js`, `pages/main/main.{js,wxml,wxss}`, `pages/coach/coach.js`, `tests/formula-tier-packages.test.js`, `tests/tier-copy.test.js`; GCN: `migration_0111`, `mall/formulation-orders.js`, `mall/index.js`, `site/aeviva/{dashboard,dashboard-supplier}.html`, `tests/formulation-label-code.test.js`)
+  - GCN's `migration_0107`/`0108` renamed the three variants off their dot counts and gave each a positioning line (轻享套装 —— 基础均衡，科学入门 · 臻选套装 —— 精准强化，靶向升级 · 尊享套装 —— 全维覆盖，专属顶配), so a shopper now reads three **products**. The chat card still drew one formula with two "+2" rungs bolted underneath, styled as deliberately subordinate, and the prompt told the model in as many words to *write the prose about the core six; what the wider tiers add is described separately*. That was right when the tiers were 6种/8种/10种.
+  - **The three tiers were the same formula seen through three apertures.** Every variant was `_capDistinctDots` applied to one allocation, so doses were byte-identical. Measured on dev proposal 38864: **79 dots a day at 6-wide against 109 at 10-wide**, out of a 144 capacity — 轻享 at ¥2,980 was the ¥4,980 formula with four dots deleted and 45% of the capsule empty.
+  - **`_equalizeToTarget` doses each package as its own formula**, levelling a narrower one up toward the widest's daily load. The same dev allocation now delivers **98 / 109 / 109**. It is the mirror of `_fitRecipeToDailyBudget`, which by contract only ever takes away, and it runs after `_capDistinctDots` so **membership is untouched and nesting still holds** — an upgrade adds dots and never removes one.
+  - **The target is the widest variant's own total, never the raw 2 × `MAX_DOTS_PER_CAPSULE`.** This equalises what the packages deliver; it does not fill capsules. Dosing above what the formulator prescribed for the whole formulary is padding, which every other dose path here refuses to do — so the widest package is the ceiling and comes back byte-identical. No dot passes its own `target_dots_max`, and a locked (`timing_flexible: false`) dot is never raised past its own capsule: it cannot be moved between them, so an over-full locked slot is resolved downstream by **dropping a whole dot**.
+  - **Parity is the goal, not a guarantee**, and the live dev run makes that concrete (plan 38865): **61 → 91** at 6-wide, where 91 is exactly the sum of that package's own six ceilings — several real dots top out at 1-3 — and **100 → 144** at 8-wide, stopped by the capsule budget, against 150 unchanged at 10-wide. A package landing short is at an authored limit, which is the honest outcome rather than something to repair.
+  - **The card carries `#tier|<label>|<width>|<rec>` plus `#note` and `#pitch`**, one block per package, each with its complete day groups. The recommended package renders open; the other two collapse to a name, the store's tagline and their dot roster, and expand on tap (`handleFormulaTierToggle`). `#rung` is retired and no longer written — but still **parsed**, because chat history is permanent. A card with no `#tier` becomes one unnamed open package, so the page has one code path rather than two.
+  - **The card states no dot count**, and no "+N over the one below" — reversing the rule CLAUDE.md §28c carried ("never stop showing the width beside the name"). What separates the packages is a product decision moving beyond "how many kinds of dot", so a number there would be the first thing to go stale, and it is the one claim on the card a user cannot check for themselves. A collapsed package shows its name, the store's positioning line and its **actual dot roster**. `<width>` still rides in the `#tier` line as data; nothing renders it, and the parser derives no `dotCount`/`more` for anything to reach for. The two surfaces that still print `最多 N 种原粒` — the Plans ▸ Dots package row and the submit picker — describe a package already bought rather than one being chosen, and are left for whatever replaces the width.
+  - **The whole collapsed package is the tap target, not just its title row.** Reported from a real device and then measured: with `bindtap` on the header alone, a 17px strip was live and the other **81%** of the block — the positioning line and the dot roster, everything a finger aims at — did nothing, so the packages read as unclickable. An automator `tap()` by selector hits the handler either way, which is why the earlier passing tap test proved nothing here. Coverage is now 73% collapsed; when open, only the title row and positioning line collapse it, so a tap on the chart being read never closes it. A `⌄`/`⌃` chevron supplies the affordance that was missing. Also found in passing: **`bindtap` on a bare `<text>` does not fire** — it works on a wrapping `<view>`; both gotchas are recorded in `tools/wechat-automator/README.md`.
+  - **The CTA follows the open package**, reversing §28f's one-shared-CTA rule ("a per-package button would offer a choice that does not exist") — it now does exist, since a shopper can buy a specific tier's 兑换码 from their own store. Three branches: an order at `pending_payment` for that tier shows `<tier>订单待支付` + 去支付; an unredeemed fast-track code shows `你已购买<tier>` + 开始配制 (the sheet, prefilled with that code); neither shows 购买<tier>, which opens the store on that tier via a new `buy_formulation_package` intent. **The unpaid check runs first** — Pin's real dev state is two unpaid orders and no codes, and sending them to buy again dead-ends on GCN's `formulation_already_in_progress`. Match is on **exact** width: a wider code compounds its own variant, so offering 开始配制 on a narrower package would compound a formula other than the one on screen. Addressed by **width, never a sku id** (§28c); GCN resolves it against the buyer's own listed items, which for this product is the 兑换码 sku. A store that does not stock that tier says so rather than no-opping.
+  - **The label/QR CTA is gone from the card** (`查看配方标签与二维码`). It offered the formulation's printed-label page at proposal time — before anything is paid for and before a box exists — so it pointed at a label for capsules nobody was compounding. It belongs to whoever compounds the box: `handlePostFormulationSubmit` now sends `label_code` to GCN with the fast-track submission, and 维秋云健's supplier dashboard prints it (GCN `migration_0111`). Sending the code, never a URL — where GCN hosts the label page is GCN's decision. The server stops emitting `#label` and the client renders nothing for it, so **cards already in chat history lose the button too**; the parser and its https check are kept for those. `label_code` is still minted with the plan and the public label page is untouched. Two per-delivery `SELECT label_code` round trips went with it.
+  - **The recommended package is the narrowest that carries every dot the model itself asked for**, measured *before* the server's own padding. A padded dot completes the ladder rather than the protocol, so letting one widen the recommendation would recommend the top package on every proposal and make the badge mean nothing. Server-computed, never model prose, so it sits outside everything JUDGE grades.
+  - **The tagline comes from the store, not from us.** GCN's `formulation-packages` endpoint now returns `skus.description` as `tier_description` (one SELECT, one mapped field, no migration). A package reading one way on the shelf and another in chat is the defect `migration_0107` fixed for the tier *name*, applied to the line under it.
+  - `lib/rungCopy.js` → **`lib/tierCopy.js`**: one line per package including the narrowest, written by the same short scoped call that is shown the dots it describes. `_rungPitch` → `_tierPitch`, and its drop rule widens from "names a dot outside its own rung" to "names any dot this package does not hold". Still drops, never repairs.
+  - **Guardrail rescoped in all three copies together** (§26/§37): the aspirational-copy exception named the `"upgrades"` field, which no prompt has asked for since 2026-09-07 and which never covered the narrowest package at all. It is now scoped to the card's per-package positioning line. Every hard ban is restated verbatim — no onset window, improvement magnitude, numeric forecast, guarantee, invented mechanism, or price. PLAN and JUDGE were taught the same, so a deliberately narrow package is still not graded as `plan_drift`.
+  - Two live defects fixed in passing: `weeksNote` in both prompts was a ternary whose every branch was `''` **and whose nano and viva conditions were logical negations of each other**; and task item 2 asked for an intensity `level` per dot while the output format asked for a `ranking` with no `level` — two contracts in one prompt.
+- **The 28-day dots package tiers are named, not numbered** (GCN `migration_0107`; fixtures in `tests/formula-tier-ladder.test.js`, `tests/formulation-orders.test.js`, `tests/formulation-codes.test.js`, `tests/tier-copy.test.js`, `tests/dot-code-humanization.test.js`)
+  - 原粒 · 定制营养素 · 28天 merchandised its three tiers as `6种原粒` / `8种原粒` / `10种原粒`, which buyers read as the whole 28-day box — six things, total — when it is a **weekly** width (§28c). They are now **轻享套装 / 臻选套装 / 尊享套装**, and they reach nano as `tier_label` on the package row, the redeem-code row, the submit picker and every rung of the formula card.
+  - **No nano code changed.** `max_distinct_dots` is untouched and is still the only thing enforced (`_capDistinctDots`, `handlePostFormulationSubmit`) — the label was already opaque pass-through everywhere. The count also still shows: 最多 6 种原粒 beside the tier name on a package row, and 轻享套装：任意一周最多 6 种 for every rung in `systemFormulaGenerate`. **Never parse a width out of `tier_label`.**
+  - Renaming is retroactive by design — GCN's `order_items` snapshots no name and `sku_activation_codes` resolves its label live — so past orders and already-minted codes read the new name. Same product, new name; the width bought does not move.
+  - **Applied to GCN dev and prod** (2026-09-09), verified on both through `GET /api/mall/nano/formulation-packages`: three new names, widths 6/8/10, same cheapest-first order.
+  - **The tier is part of the row title, not a line under it** (`pkgTitle` in `pages/main/main.js`, shared by the package rows, the 兑换码 rows and the submit picker). Two packages of one product differ in nothing but their tier, so a title stopping at `原粒 · 定制营养素 · 28天` read as a duplicate. It now reads `原粒 · 定制营养素 · 28天 · 臻选套装`, and the meta line carries `最多 8 种原粒` **unconditionally** — the rename took the count out of the name and nothing else on the row was saying it.
+  - The composition is a plain join, which holds only while GCN returns a **bare** tier. `handleNanoFormulationCodes` returned the code sku's own name (`原粒 · 定制营养素 · 轻享套装 · 兑换码`), so it now derives `tier_label` from attributes like its three siblings, with the name as fallback — composing with the old value printed the product twice.
+
+- **An invited user now inherits the inviter's coach** (`worker/handlers/login.js`, `tests/coach-referral-code-assignment.test.js`)
+  - A plain user's share link is their own `referral_code` (`pages/referral` shares `pages/login/login?invite=<code>`). That arrives as `invite_code`, misses the `invitations` table — only coaches and admins have rows there — and fell through to the referral branch, which set `referred_by_user_id` and inherited the channel but left `coach_id` NULL. The friend of a coached user therefore landed coachless inside a coached channel, invisible to the coach whose client made the introduction. The "if the channel has exactly one coach, auto-assign them" fallback never applied either: it sits inside the `invitations`-matched branch only.
+  - `coachIdForReferrer` now resolves both halves in **one** query: the referrer's own active `coaches` row if they have one, else `COALESCE` down to their `users.coach_id`. **The order is load-bearing** — a referrer who is themselves a coach *and* somebody else's client must collect the signup for themselves rather than hand it upward. Both halves are gated on `status = 'active'`, so a superseded row can never pick up new clients. Verified against dev, including a real user who is coach 2 while being assigned to coach 54, and correctly resolves to 2.
+  - Inheritance is **transitive by construction** (B inherits C from A, then D inherits C from B), which mirrors how `channel_id` already flows down a referral chain one line above. Nothing about the existing precedence changed: an explicit `coach_id` on the request still wins, an existing `coach_id` is never reassigned, and a chain with no coach anywhere in it still assigns nobody.
+  - **The `ref=<user_id>` deep link was extended to match.** `pages/login/login.js` accepts it and persists it to wx storage, and it is the same invitation act as sharing a code — leaving it out would make one invitation inherit a coach and the other not, purely on link shape. Resolved **after** the `invite_code` block so a coach's explicit invitation code still beats a `ref` that may have been sitting in storage for weeks.
+  - The existing-user back-assignment path (a channel-less account supplying a code) inherits this through the same shared function; its narrow `!channel_id && invite_code` gate is unchanged.
+  - The prior test asserted the opposite — "a non-coach referrer must not produce a coach assignment" — as a deliberate guard after the 2026-08-29 prod incident. That assertion is reversed here by product decision; the guard it protected (never fabricating a coach that does not exist) is retained as its own case.
+
+- **健康文档 uploads show an indeterminate progress bar and three phases** (`components/health-documents/*`, `utils/config.js`, `tests/health-documents-access.test.js`)
+  - The upload button's own label was the entire indicator, and it took two values: `上传中…` then `保存中…`. The first covered presign, `readFile` and the transfer — roughly 95% of the wait — and never moved while it did, so a large scan over a slow uplink was indistinguishable from a hang against a dimmed, static button.
+  - Now three phases: **准备中…** through presign and `readFile` (which pulls the whole file into the JS heap and is seconds on a 20MB PDF, reporting nothing), **上传中…** for the PUT itself, **保存中…** for register. A 4rpx bar runs beneath the button for the duration.
+  - **The bar is indeterminate by necessity, not preference.** `wx.request` exposes no upload progress events, and `wx.uploadFile` — the only Mini Program API that does — sends `multipart/form-data`, which breaks the OSS presigned PUT's signature (it signs the raw body plus Content-Type). A true percentage needs an OSS POST-policy upload and a different presign shape server-side, which `utils/tool-actions.js`'s `_doUpload` shares and would want too. Motion says "still working" without claiming a number nothing can measure; a test fails if a real progress source appears and the bar stays indeterminate.
+  - Both hosts get it from the one shared component (§38): the 数字孪生 subtab for everyone, the Viva AG subtab for add-on holders. A coach sees neither — the bar is gated on `canUpload` alongside the button it sits under.
+
+- **待付款 opens the GCN order with its payment QR** (`worker/handlers/dots.js`, `pages/main/main.{js,wxml}`, GCN `site/aeviva/dashboard.html`, `tests/{formulation-orders,dots-subtab-order-card}.test.js`)
+  - A 待付款 row in Plans ▸ Dots was a status with no action behind it, while the order it named blocked every later step of the journey. It now carries 去支付, which opens the GCN store on the orders panel with that order's payment QR already showing.
+  - **New `can_pay` on the package row** (`stage === 'pending_payment' && !!order`), first in the CTA chain — an unpaid order blocks each later step, so paying it is the only thing worth offering there. A plan-only row is never payable: the proposal exists only in nano and its route to capsules is a redeem code, not a checkout. `mapPackages` had to carry the flag too; an existing test caught that it didn't, which would have left the CTA permanently unrendered.
+  - **GCN gains `openOrderPayment(orderId)` and a `pay_order` intent.** Checkout showed the payment modal once, at the moment the order was placed, and closing it left the buyer with no way back — the orders table offered only **Cancel** on a `pending_payment` row. That row now has a 去支付 button of its own, independent of the miniapp. The opener re-reads the order rather than trusting the row it was launched from, and refuses to show a QR for one that is no longer `pending_payment` — paid or cancelled on another device in the meantime.
+  - Payment is a manual scan-and-upload flow the seller confirms out of band, so there is nothing nano can settle itself; the whole job is landing the user on the right screen. **Deploy GCN before nano** — `dashboard.html` owns the intent route, and an older dashboard falls through to its normal mall load rather than failing.
+  - Verified live in the WeChat DevTools simulator on dev: the two 待付款 rows render 去支付, tapping one navigates to `pages/appview/appview` at `aeviva-dev.gcn.net/dashboard.html?wvt=…`, and the minted `webview_tokens.context` reads `{"intent":"pay_order","order_id":"b8b05b52-…"}` with `used = true` — the dashboard loaded and consumed it.
+
+- **Cancelled orders are no longer listed under 我的原粒套餐** (`worker/handlers/dots.js`, `tests/formulation-orders.test.js`)
+  - Reported from the miniapp: the Dots subtab showed a 已取消 row alongside two live 待付款 ones. 我的原粒套餐 is what the user is currently on; a cancelled order is a dead row they read past every time they open the tab.
+  - **Filtered before the merge loop, not after it** — an order can hold a plan through `gcn_order_id`, so dropping the finished row at the end would take the user's formula with it. Filtered first, that plan is simply never claimed and re-emerges on its own row at its real status: a proposal whose order was cancelled becomes orderable again, which is the same release §28d already gives it by keeping `cancelled` out of `AWAITING_FORMULA_STAGES`. A cancelled order whose plan is `active` still shows as an active plan — the box was scanned, and that is a truer statement about the user than the commerce side having closed the order out.
+  - **`refunded` is deliberately still shown**: money moved, and someone looking for where a refund came from should find the order it belongs to.
+
+- **营养定制 asks which direction to formulate in, before it formulates** (`worker/handlers/dots.js`, `pages/main/main.{js,wxml,wxss}`, `utils/tool-actions.js`, `tests/formula-focus-confirmation.test.js` *(new)*)
+  - The tool read the user's active health-plan focus and **never mentioned it**: no gate, no prompt, nothing user-facing anywhere in `handlePostFormulaDots` or `runFormulaDs`. A user with a plan was silently steered by it, a user without one silently wasn't, and neither was told which had happened — which matters because a focus decides which dots survive the weekly tier cap and doses the listed ones toward the top of their range. On a 6种 package it effectively chooses the six dots.
+  - A sheet now opens **before** the request. With a focus: the plan(s) with their goal, and 按此方向定制 / 去选择方案 / 不设方向. Without one: 你还没有选择健康方案 plus 去选择方案 and 直接定制. The Plans tab is `tab` state on this same page, so the link is a local `switchTab` — routed through it rather than a hand-rolled `setData` so that tab's staleness reloads still run.
+  - **Deliberately not a gate**, unlike the BioAge refusal directly above. There, nothing exists to dose against; here, formulating from biomarkers alone is a correct result and most users hold no focus, so "proceed anyway" is always present. A test pins that it is reachable in both branches.
+  - Client-side rather than a chat round-trip: nothing is generated until the user answers, so no wasted agentic turn and no plan row. All three entry points — toolbox button, action chip, and the chat classifier's `launch_tool` — route through one `_startFormulaDots`, so the question cannot be skipped through a different door. Plans are fetched on demand, since `activePlans` is loaded by the Plans tab and this runs in the chat tab.
+  - **`ignore_focus` is honoured by dropping the plan rows**, in exactly one place, not by skipping only the dose bias — the plan's goal text would otherwise keep steering the model, which is not what 不设方向 means. The resulting `nutrition_plans` row therefore records no primary/secondary link, which is correct: no focus shaped it. Omitting the flag keeps today's behaviour, so it can never default on.
+
+- **A health-plan focus recommends the right dots again, and only ever promotes them** (`src/schemas/migration_health_plan_recommended_dot_keys.sql` *(new)*, `worker/handlers/{dots,health-plans}.js`, `worker/prompts/{nano,viva}/systemFormulaGenerate.js`, `pages/main/main.{js,wxml}`, `user-app/src/components/PlanDetailSheet.jsx`, `admin-panel/src/tabs/HealthPlansTab.jsx`, `tests/health-plan-focus-mapping.test.js` *(new)*)
+  - `health_plan_templates.recommended_dot_ids` held numeric `dots.id` values authored against the pre-2026-07-25 formulary. `migration_dots_new_lineup.sql` replaced every dot but **reused the ids**, so all six seeded lists silently began resolving to different dots — no error, no filter-out, `_resolveCandidateDotKeys`' lookup succeeding on every entry and returning the wrong keys.
+  - **Not cosmetic.** A focus applies at three points: `_rankDotsBySeverity`'s `+0.15` on a 0–1 severity scale (which decides what survives `_capDistinctDots`' weekly tier cap), `_fallbackCountForDot`'s range bias, and `_padCandidatesFor`'s §28f rung filling. Under a 6种 tier that combination effectively *chooses the six dots*. 焕能减重 was pulling toward 明眸 (macular) and 肌光焕采 (skin); 深度睡眠 excluded 静心夜 — the only sleep dot in the formulary — and had **zero** defensible entries. Live scope: **7 of 24** `proposed` nutrition plans on prod belonged to users with an active focus.
+  - **The column now stores `key_name`.** An id is a row number that survives a lineup change while meaning a different dot; `key_name` is the stable identity used everywhere else (§11, `sub_age_target`, and `_resolveCandidateDotKeys`' own *output*). Integers are still accepted and resolved — the worker, miniapp and admin panel deploy separately — but an entry matching neither shape is now **dropped, not guessed**, which is the loud failure the key format buys.
+  - **A focus is now purely additive.** `_fallbackCountForDot` used to demote off-list dots to 25% of their range — *below* the 50% they get with no focus at all — so joining a plan actively suppressed everything the plan did not name (on `DOT-N15`, 45 against a 52 baseline). That made list accuracy load-bearing and contradicted the promise `docs/architecture/health-plan-system.md` already made. Listed dots still get 75%; everything else sits at the baseline.
+  - **`DOT-N7` is on no list.** It is `dosing_protocol='pulse'`, filtered out of both `_rankDotsBySeverity` and `_padCandidatesFor`, lifted out of the everyday recipe by `_planExpansionContext`, and not counted toward a tier — so it is in every plan regardless and listing it only wasted ranking weight. It was in two.
+  - **Three copies of the id→key resolution collapsed to one.** Both `systemFormulaGenerate.js` prompts re-derived it inline from `active_health_plans` + `dots`; they now read a `recommended_dot_keys` field resolved once by the caller, keeping the inline path only as a fallback for an in-flight event from an older worker. A test asserts all three input shapes render a byte-identical prompt.
+  - **No client prints a raw dot id.** The miniapp guidance tab and the web user-app both rendered `DOT7` — an internal identifier, in a format matching no current key, and after the lineup change not even the dot it named. The detail endpoint now returns a resolved `recommended_dots`; both render 静心夜 / Quiet Mind per the §28b convention. Template save also rejects a dot that does not exist, so a typo fails loudly instead of becoming a silently shorter focus list.
+  - Two descriptions promised actives that left with the old lineup — `immunity` offered 谷胱甘肽 and `metabolic_health` Ca-AKG, neither in any current dot. Corrected in the same migration.
+  - The migration declares `-- @requires: migration_health_plans.sql`: plain ASCII sort puts it *before* the seed it converts, so on a fresh database the conversion would have run first and the seed would then have inserted the very ids it removes. Pinned by a test.
+  - Verified against both databases: all 141 dev users with a focus resolve to a non-empty set with **zero** dropped entries, prod still reproduces the old mapping exactly as diagnosed, and the additive property holds across all 18 real dots.
+
+- **Internal dot codes are rewritten out of user-facing prose** (`worker/lib/dotNames.js` *(new)*, `worker/handlers/{chat,dots,checkin,viva_ag}.js`, `worker/lib/rungCopy.js`, `tests/dot-code-humanization.test.js` *(new)*)
+  - `D-N9` is how the formulation prompt addresses a dot and `DOT-N9` is its `dots.key_name`; neither is a name a user can read. Both `systemFormulaGenerate.js` prompts already forbid writing them, and prod shows the model doing it anyway in **13 of 4394 AI replies over 30 days** — e.g. 故D-N6、D-N9、D-N11作为代谢年龄与细胞年龄双维核心 (msg 60798). Asking again would not have helped; a code has exactly one correct rendering, taken from the same `dots` row the card is drawn from, so it is now rewritten deterministically. No detector, no retry, nothing to judge.
+  - **`:::` blocks are never touched.** A `:::formula` row is `key|name|color|am|pm` and `utils/markdown.js` parses that key — rewriting it there breaks the card outright. Fences are tracked exactly as the client tracks them (an opening `:::name` line, closed by a bare `:::` or implicitly by the next `:::name`), and a test asserts card rows come through byte-identical.
+  - **Applied once per delivery, to the single assembled string.** A `chat_messages` row and its `notifications` row differing by one token would defeat the client's text-keyed de-dup (`_aiKey`) and render the bubble twice, so the rewrite sits where the content is settled — not inside either writer.
+  - Six call sites: chat replies, the formula card's prose, health advice, the deterministic fail-open formulation, daily check-ins, and **rung pitches** — those last are rendered *inside* the fence (`#rung|label|width|pitch`), so they are rewritten in `rungCopy.js` on the bare string before the card is built. `checkin.js`'s dots query gained `key_name_zh`, which it now needs.
+  - **Viva AG summaries too.** 4 of the 13 leaks were written by the external agent (`source='viva_ag'`), and an internal code is no more readable coming from them. Done in `_sanitizeSummary`, the existing ingest sanitiser that already strips `:::` — it fetches the formulary itself because it runs once per completed job, not per turn, and leaves the text untouched if that lookup fails.
+  - zh renders the 对话中称呼 the prompts already name (`key_name_zh`, 原粒9号); en has no such column and its formulary line shows the dot's name, so that is what English gets. **An unmapped code is left exactly as written** — a code for a dot that does not exist is a fabrication for `factCheck.js` to flag, and renaming it to something plausible would hide it.
+
+- **Formulate Dots refuses to formulate without a BioAge, and "信息不足" stops being a whole reply** (`worker/handlers/dots.js`, `worker/lib/knowledgeBase.js`, `worker/prompts/chat/factConstraint.js`, `worker/prompts/viva/systemReport.js`, `src/schemas/migration_knowledge_refusal_wording.sql` *(new)*, `tests/formulation-requires-bioage.test.js` *(new)*)
+  - Reported from the prod miniapp: 营养定制 returned a fully rendered 28-day `:::formula` card with the whole narrative above it replaced by a single sentence — **"目前没有足够信息支持这个判断。"** A card the user is invited to order, under a line saying it could not be reasoned about.
+  - **Cause, confirmed against prod:** the user had never completed a Kino scan, so `data.bioage_profile` was empty. Every dose this tool assigns is scaled by how far a sub-age sits above chronological age (`_doseFromRanking`, `_fallbackCountForDot`, the severity ranking the prompt asks for), so with no BioAge there is nothing to scale against — the formula came out of age and BMI alone, and the model was asked to narrate biology it had not been given. Users whose only biomarker rows are `lab_import` land in the same place: the query is `kino_chip`-only, which is the product's definition of a Kino test at all 13 of its call sites and is not changed here.
+  - **`handlePostFormulaDots` now stops before it formulates.** No plan row, no LLM call, no card — it delivers a chat message asking for a Kino scan and explaining why the scan is what the dosing depends on. Placed before `getEssentialBlock`/`getCurrentSolarTerm` so the gate short-circuits the work, and a test pins that it precedes `_handleFormulaDotsAgentic`.
+  - Delivered as a normal AI bubble on **both** channels (`chat_messages` + a `formulation_proposal` notification, a type already in the deployed client's `AI_ECHO_TYPES`) and returns `processing: true` — **no client change**, which matters because the prod miniapp is on v0907-7 and any non-`processing` success prints its canned "配方已生成" line beside the refusal.
+  - **The second half is the guardrail that supplied the sentence.** The essential block handed the model a quoted, ready-made refusal to copy verbatim; prod shows it reaching for it 25 times in 30 days, either as the entire reply (also messages 59250, 58763) or — worse — as a refusal followed by three paragraphs of the very advice it had just declined to give (61136, 61129). The clause now tells it to name the missing data and continue with what the available data does support, and adds two bans that did not exist: never the whole reply, never contradicted by advice that follows. With no canned string in the prompt there is nothing to copy out.
+  - Changed in all four synced copies together per CLAUDE.md §26/§37 — the `knowledge_entries` row (migration), `FALLBACK_ESSENTIAL_BLOCK`, `FALLBACK_ZH`/`FALLBACK_EN`, and `systemReport.js`'s own copy — because a drifted fallback silently restores the old behaviour on any DB hiccup. A test asserts the four are byte-identical.
+  - Verified on dev: a user with no Kino scan gets the message on both channels with **no** `nutrition_plans` row written; a user with 27 scans still returns `{success:true, processing:true}` and formulates as before.
+
+- **健康文档 upload moved onto the 数字孪生 subtab** (`components/health-documents/` *(new)*, `worker/handlers/health_documents.js`, `components/{viva-ag-panel,user-health}/*`, `pages/coach/*`, `tests/health-documents-access.test.js`)
+  - Uploading a clinic note, a 体检报告 PDF or a photo of a paper printout was reachable from exactly one place — the **Viva AG** subtab — and all five `/api/health-documents` endpoints required the AG add-on. But `health_documents` is **twin layer 3, Medical Records** (CLAUDE.md §34), not an AG artifact. The 数字孪生 subtab, which every user sees, now ends with the same 健康文档 section, and the endpoints ask only who the caller is.
+  - **`requireVivaAgAccess` → `_resolveOwner`.** The AG check was an *entitlement* gate, never access control — it never stopped one AG user from passing another user's openid. The four protections that actually guard the object are untouched: keys minted server-side under `health-documents/<user_id>/`, `oss_key` never returned to the client, 300s download URLs, and never routing through `/oss/presign`. `health_documents.js`'s security header now says that instead of a claim that stopped being true.
+  - **A coach reads a client's records, and never writes to them.** `can-upload="{{mode === 'self'}}"` hides the upload button *and* the per-row delete, `deleteDocument` re-checks it, and `coach-id` reaches the server where `_resolveOwner` runs the same coarse ownership check `handleGetUserFacts`/`handleGetCoachUserChat` already use — only when the caller supplies one, so the admin panel and the user's own view are unaffected. `_refuseCoach` rejects a `coach_id` on presign/register/delete; that is a statement of intent, not a barrier, and is commented as such.
+  - **One component, two hosts.** `components/health-documents/` was extracted from `viva-ag-panel` rather than copied into `user-health` — two copies would be two upload paths drifting apart against one backend, and `user-health` is already 3800 lines. No host variant was needed: `.ag-section` and `.health-section` are byte-identical and the two title rules differ by 4rpx, so one set of section chrome reads as native in both. The panel keeps `_sizeLabel` and `DOC_EXTENSIONS`, which its job/report viewer still needs.
+  - Both hosts sit behind a `wx:if`, so an AG holder toggling subtabs remounts and refetches; a user with no AG subtab mounts it once per app launch, which is why the component has the `lang` observer `viva-ag-panel` lacks (`typeLabel` is baked into each row at fetch time, so rows are relabelled too).
+  - `this._coachId` in `coach.js` lives outside `data` and so is unreachable from WXML; it is mirrored into `data.coachId` at **both** sites it is assigned — miss the second and a repaired session reads unscoped. A test pins the count.
+  - Nothing but Viva AG reads `health_documents` today, so for a user without the add-on this is an archive that pays off when they buy one. The section's footnote says so without naming a product they may not have.
+  - **No migration**, and **no route changes** — `coach_id` already arrives in `query`/`parsedBody`.
+
+- **Formulate Dots evens the two capsules** (`worker/handlers/dots.js` `_balanceCapsules`, `worker/handlers/chat.js`, `worker/lib/agFormulation.js`, `worker/docs/viva-ag-api.md`, `tests/capsule-balance.test.js`)
+  - `_splitDotTiming` decides one dot at a time and cannot see the day, so whatever total fell out was what the user got: a real dev proposal came back **71 capsule-dots in the morning against 31 in the evening**, purely because four of its six dots default to Morning. Both capsules were under `MAX_DOTS_PER_CAPSULE`, so `_fitRecipeToDailyBudget` — which only ever acts under capsule pressure — correctly left it alone. Nothing was wrong with it except that one capsule was more than twice the other. The same plan now expands to **51 / 51**.
+  - **Timing-locked dots are placed first, whole, into their own capsule** (`timing_flexible = false` — today `DOT-N3` 静心夜 evening, `DOT-N4` 持续精力 and `DOT-N12` 敏锐心智 morning), and nothing afterwards may move them. The flexible dots then hand dose from the heavier capsule to the lighter one, largest first, until the two meet. Locked dots are the only thing that can leave a day uneven, and that is deliberate.
+  - **`slot_minority` removed from `validateAgFormulation`.** It failed a flexible dot that had more of its daily dose in the other capsule than in its own, and it was the one thing preventing an exactly level day. Three reasons it goes, in order of weight: (1) `timing_flexible` already means precisely this — it is what the column says, rendered to the model verbatim as 早晚皆可，可自由拆分, and `timing_flexible = false` is what exists to express a real diurnal requirement; a dot needing a majority in its own slot is a dot that is not flexible. (2) It contradicted the AG contract's own enforcement summary (`viva-ag-api.md` §8), which lists what nano checks on submission and says only "non-flexible dots confined to their own slot". (3) It is a **loosening**, so nothing that validated before stops validating, and an external AG agent already building to the stricter reading is unaffected. `slot_violation` — non-flexible dots confined to their own slot — is untouched and still enforced.
+  - Daily totals are never changed, only which capsule they are taken in — so it cannot underdose a dot (`agFormulation` checks the daily total), cannot change which dots the formula contains, and cannot change what a tier counts. The move is bounded by half the gap, so a capsule can only get closer to the other, never overshoot, and the worst capsule is never made worse.
+  - Applied at all three points a recipe is built: the agentic path (`finalizeFormulaDotsGenerate`), the deterministic fallback (`_runDeterministicFormulation`), and **per week** inside `_planExpansionContext` — a week that rotates an evening dot out is lopsided in a way the stored recipe cannot anticipate, and the budget fitter will not touch it because it fits. Balancing there is what makes the card, the checkout snapshot, the fast-track submission and the schedules the box scan writes all agree.
+  - Two existing tests changed with it, both honestly rather than by loosening: the card's "a reset day is visibly a smaller capsule" assertion was fixture-specific and is now the real invariant (every group's bar is its true share of the fullest capsule) — a levelled everyday capsule is roughly half the day and can legitimately be smaller than a `DOT-N7` reset day's. And the slot-illegal-recipe test now feeds `validateAgFormulation` hand-built capsules, because the expansion normalises a locked dot back into its own slot before the validator ever sees it; a second test pins that normalisation.
+  - **Worth a second look from the nutrition side:** a big flexible dot can now move wholly into its non-default capsule (Pin's `NAD焕新`, 34, went entirely to the evening). That is exactly what `timing_flexible = true` grants, so the lever if it is wrong for a given dot is that column, not the balancer.
+  - `_splitDotTiming` is unchanged and still the per-dot baseline. The prompts needed no change — both `systemFormulaGenerate.js` already tell the model the server owns the AM/PM split.
+
 - **`/coach-users` and `/coach-list`'s client count are channel-scoped** (`worker/handlers/coaches.js`, `worker/index.js`, `tests/coach-channel-scope.test.js`)
   - `users.coach_id` is **not** channel-scoped — a coach can hold clients in several channels at once. Prod: `coaches.id` 8 has 20 assigned users, 7 in channel 2 and 13 in channel 1. Both bugs below grew out of that fact, and neither is visible from reading either query on its own.
   - `/coach-users/<id>` was `WHERE u.coach_id = $1` with `adminCtx` never passed to it at all. A channel-2 admin sees coach 8 in their own `/coach-list` — that list is keyed on the **coach's** channel, not the clients' — and could then read all 20, 13 of them outside their channel. It now takes the caller's `adminCtx.channelId`.

@@ -5,7 +5,10 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const D = require('../src/functions/worker/handlers/dots.js');
+// The engine, the card renderer, and the handler (for the label URL the parser must still
+// recognise from chat history) in one namespace.
+const D = { ...require('../src/functions/worker/lib/formulation.js'), ...require('../src/functions/worker/lib/chatCards.js'),
+    ...require('../src/functions/worker/handlers/dots.js') };
 const md = require('../src/mini/nano-miniapp/utils/markdown.js');
 const { PLAN_DAYS, MAX_DOTS_PER_CAPSULE, N7_KEY, N7_ISOLATION_DAY_INDEXES } =
     require('../src/functions/worker/lib/dotsProductModel.js');
@@ -117,9 +120,15 @@ test('the card the server writes is the card the miniapp reads', () => {
         // The widest capsule in the whole card fills its track; everything else is read against it.
         if (g.am === fullest) assert.ok(Math.abs(amWidth - 100) < 0.0001, 'the largest capsule fills the track');
     }
-    const reset = seg.groups.find(g => g.kind === 'n7');
-    const everyday = seg.groups.find(g => g.kind === 'regular');
-    assert.ok(reset.am < everyday.am, 'a reset day is visibly a smaller capsule than an everyday one');
+    // Every group's bar is its own capsule read against that fullest one — which is the property
+    // that keeps the two comparable. (An everyday capsule is roughly half the daily total once
+    // _balanceCapsules has levelled it, so it can be smaller than a reset day's, and the card has
+    // to draw either way round honestly.)
+    for (const g of seg.groups) {
+        const amWidth = g.items.reduce((s2, it) => s2 + it.amPct, 0);
+        assert.ok(Math.abs(amWidth - (g.am / fullest) * 100) < 0.01,
+            `group ${g.days} AM is drawn at its true share of the fullest capsule`);
+    }
 });
 
 test('a card saved before the 28-day rework still renders', () => {
@@ -207,18 +216,35 @@ test('the card CTA mode round-trips, and anything unrecognised means "buy"', () 
     assert.strictEqual(bogus.orderMode, 'buy');
 });
 
-test('the validator still rejects a slot-illegal recipe, if one ever reaches it', () => {
-    // _splitDotTiming makes this unreachable from either real path, which is exactly why it is
-    // worth pinning: the guarantee lives in that one function, and this fails loudly if a future
-    // caller ever assembles a recipe without it.
-    const illegal = D._expandProposalToCapsules(
-        { dots: { 'DOT-N3': 1, 'DOT-N17': 60 } },   // N3 is not timing-flexible, and this is its
-        { dots: { 'DOT-N3': 2 } },                   // dose split across both slots
-        FORMULARY,
-    );
-    const check = validateAgFormulation({ capsules: illegal }, FORMULARY);
+test('the validator rejects a slot-illegal recipe, if one ever reaches it', () => {
+    // Hand-built capsules, deliberately bypassing the expansion: DOT-N3 is not timing-flexible
+    // and this splits its dose across both slots. Nothing in nano assembles a recipe this way,
+    // and the point of pinning it is that validateAgFormulation is the only thing standing
+    // between an externally-authored formula (an AG agent's) and real capsules.
+    const capsules = [];
+    for (let day = 1; day <= 28; day++) {
+        capsules.push({ day, slot: 'AM', dots: { 'DOT-N3': 1, 'DOT-N17': 30 } });
+        capsules.push({ day, slot: 'PM', dots: { 'DOT-N3': 2, 'DOT-N17': 30 } });
+    }
+    const check = validateAgFormulation({ capsules }, FORMULARY);
     assert.strictEqual(check.valid, false);
     assert.ok(check.violations.some(v => v.code === 'slot_violation' && v.detail?.key === 'DOT-N3'));
+});
+
+test('the expansion puts a timing-locked dot back in its own capsule', () => {
+    // The same illegal recipe through the real path. _balanceCapsules lays locked dots into their
+    // own capsule from the daily total before anything else is placed, so a caller that assembled
+    // the split by hand cannot leak one into the wrong slot.
+    const capsules = D._expandProposalToCapsules(
+        { dots: { 'DOT-N3': 1, 'DOT-N17': 60 } },
+        { dots: { 'DOT-N3': 2 } },
+        FORMULARY,
+    );
+    for (const c of capsules) {
+        if (c.slot === 'AM') assert.ok(!c.dots['DOT-N3'], `day ${c.day} AM still carries DOT-N3`);
+    }
+    const check = validateAgFormulation({ capsules }, FORMULARY);
+    assert.strictEqual(check.valid, true, 'violations: ' + JSON.stringify(check.violations));
 });
 
 const sumDots = o => Object.values(o).reduce((a, b) => a + b, 0);
@@ -399,18 +425,27 @@ test('handlePostBoxClaim can read the code back out of the QR URL', () => {
     }
 });
 
-test('the card carries the label URL, and the renderer refuses a non-https one', () => {
+test('the card carries NO label URL — a proposal is not a purchase', () => {
+    // Retired 2026-09-10. The card used to offer the formulation's label/QR page, but at proposal
+    // time nothing has been paid for and no box exists, so the QR pointed at a label for capsules
+    // nobody was compounding. The label belongs after payment, on the GCN order. `label_code` is
+    // still minted with the plan and the public label page is unchanged — only the chat CTA is gone.
     const block = D._buildFormulaChartBlock(MORNING, EVENING, FORMULARY, 'zh',
         { planId: 9, orderMode: 'buy', labelCode: 'WVB1A2B3C4D5E6F' });
-    const seg = md.mdToSegments(block).find(s => s.t === 'formula');
+    assert.ok(!block.includes('#label'), 'even given a code, the card must not advertise the label');
+    assert.strictEqual(md.mdToSegments(block).find(s => s.t === 'formula').labelUrl, '');
+});
+
+test('a card already in history keeps its #label parsing, and still refuses a non-https one', () => {
+    // Chat history is permanent: cards written before this contain a #label line, and the parser
+    // must keep reading them rather than mangling the card around them. Nothing renders the URL any
+    // more, but the scheme check stays — it is one WXML edit away from being live again.
+    const legacy = ':::formula\n#label|https://aeviva.gcn.net/formulation-label.html?c=WVB1A2B3C4D5E6F\n'
+        + '#day|1-28|regular\nDOT-N1|x|#4A5D7B|1|0\n:::';
+    const seg = md.mdToSegments(legacy).find(s => s.t === 'formula');
     assert.strictEqual(seg.labelUrl, D._formulationLabelUrl('WVB1A2B3C4D5E6F'));
+    assert.strictEqual(seg.groups.length, 1, 'the rest of the card still parses around it');
 
-    // No code minted (a legacy card, or a proposal whose write failed) — no button, not a broken one.
-    const none = D._buildFormulaChartBlock(MORNING, EVENING, FORMULARY, 'zh', { planId: 9 });
-    assert.ok(!none.includes('#label'));
-    assert.strictEqual(md.mdToSegments(none).find(s => s.t === 'formula').labelUrl, '');
-
-    // It reaches wx.navigateTo, so anything that is not an https URL is dropped.
     for (const bad of ['javascript:alert(1)', 'http://evil.example/x', '/pages/admin/admin']) {
         const seg2 = md.mdToSegments(`:::formula\n#label|${bad}\n#day|1-28|regular\nDOT-N1|x|#4A5D7B|1|0\n:::`)
             .find(s => s.t === 'formula');
