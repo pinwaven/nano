@@ -38,7 +38,8 @@ firmware:
 | ~20 opcodes (time, battery, MAC, steps, sleep, HR, HRV, temp, auto-monitoring, …) | | **same opcode values**, same payload field offsets |
 | Opcode `0x57` | Detailed SpO2 history | **Clock/alarm read** — reused for something else entirely |
 | Notification reassembly | one record per BLE notification | **one notification can hold multiple stacked records** (see §3) |
-| Alarms, sedentary reminder, device name, ECG, PPI, blood glucose, SOS, OTA/DFU | not present | present in the vendor SDK, **not ported** (out of scope — see §6) |
+| ECG (live raw stream, `0x28`+`0x07`) | not present | **ported into `tools/halo` CLI only** (`ecg --device v8`); confirmed live at ≈255 Hz on two units; contact, duration and stop semantics settled — see §6 |
+| Alarms, sedentary reminder, device name, PPI, blood glucose, SOS, OTA/DFU | not present | present in the vendor SDK, **not ported** (out of scope — see §6) |
 | Advertised name | `X3`/`X6`/`X9`/`V4` | `JCV8B` |
 
 The practical upshot: most of Halo's protocol knowledge transfers directly,
@@ -216,7 +217,7 @@ out of scope for this pass (see §6).
 | `0x56` | `CMD_Get_HrvTestData` | HRV + stress + BP history | **implemented, confirmed** |
 | `0x62` | `ReadTempHisrory` | Skin/body temperature history | **implemented, confirmed** |
 | `0x66` | `Oxygen_data` | Auto SpO2 history | **implemented, confirmed** |
-| `0x28` | `MeasurementWithType` | Trigger on-demand HRV/HR/SpO2/ECG measurement | not implemented |
+| `0x28` | `MeasurementWithType` | Trigger on-demand HRV/HR/SpO2/ECG measurement | **CLI only** (`tools/halo/src/v8-protocol.js` `setMeasurementPacket`); not in the miniapp adapter; confirmed live on a charged unit, ≈255 Hz (§6) |
 | `0x19` | `CMD_Start_EXERCISE` | Enter/exit/query exercise mode | not implemented |
 | `0x17` | `CMD_heart_package` | Sport-session heartbeat (host→band) | not implemented |
 | `0x18` | `CMD_HeartPackageFromDevice` | Sport-session HR push (band→host) | not implemented |
@@ -226,7 +227,7 @@ out of scope for this pass (see §6).
 | `0x6B` | `Obtain_detailed_sleep_data` | Combined detailed sleep + activity | not implemented |
 | `0x14` | `Temperature_3NTC` | Real-time 3-sensor temperature | not implemented |
 | `0x03`/`0x04` | `SetBasic_parameters_of_equipment`/`Get...` | Sports-mode LED flash settings | not implemented |
-| `0x07` | `PPG` | Enable ECG/PPG-during-HRV streaming | not implemented |
+| `0x07` | `PPG` | Enable ECG realtime streaming; data notifications carry `packetId` + 3-byte LE raw samples | **CLI only** (`setEcgRealtimePacket` / `parseEcgChunk`); not in the miniapp adapter; confirmed live on a charged unit, ≈255 Hz (§6) |
 | `0x23` | `CMD_Set_Clock` | Set alarms | not implemented |
 | `0x57` | `CMD_Get_Clock` / `deleteAllClock` | Get/delete alarms — **reuses Halo's SpO2-detail opcode** | not implemented |
 | `0x25`/`0x26` | `CMD_Set_ActivityAlarm`/`Get...` | Sedentary reminder | not implemented |
@@ -391,9 +392,25 @@ per-notification, per §3), except `0x53` which uses the 2-byte
 - **Sleep multi-record (34-byte) path, `mode=0x02` continue, `mode=0x99`
   delete**: ported from the vendor source but not exercised against real
   hardware.
-- **Everything in §4 marked "not implemented"**: alarms/clock, sedentary
-  reminder, device name, on-demand measurement (`0x28`), exercise mode,
-  ECG, PPI, blood glucose, SOS, OTA/DFU. `0x57` in particular needs care —
+- **ECG (`0x28` type 4 + `0x07`)**: ported into the debugging CLI only
+  (`tools/halo` — `node bin/cli.js ecg --device v8`, see its README's "ECG"
+  section), not the miniapp adapter. **Confirmed working live 2026-09-19 on
+  two units**: continuous raw 24-bit stream at ≈255 Hz (3 × 80-sample
+  packets/s), real QRS morphology, derived HR matching the band's optical HR.
+  The firmware model the README records in full: the measurement needs wrist
+  contact plus a finger on the electrode and aborts within ~3 s without it
+  (`9525CA` emits nothing at all in that case — a zero-packet capture is a
+  contact miss, never a wedge); `duration` is **seconds from the start
+  command**, a start sent onto a running measurement re-times it, and an
+  expired measurement needs the finger lifted before another will start; the
+  SDK's stop pair stops nothing — the band buffers ~50–60 s while the tap is
+  closed and flushes it on the next `0x07 on` (the CLI splits that backlog
+  off); the only clean end is the measurement's own `duration`, so the CLI
+  asks for exactly the capture length and lets the band end it (verified).
+- **Everything else in §4 marked "not implemented"**: alarms/clock, sedentary
+  reminder, device name, on-demand HR/HRV/SpO2 measurement (`0x28` types
+  1–3 — the builder exists in the CLI, no command drives it), exercise mode,
+  PPI, blood glucose, SOS, OTA/DFU. `0x57` in particular needs care —
   it means something completely different on V8 than on Halo.
 
 ---
@@ -440,9 +457,14 @@ to `syncWearableData()`:
   `totalMinutes`/`onset`/`sleepStart`/`sleepEnd` are still computed (pure
   arithmetic on block/timestamp data, no semantic assumption about
   individual stage values) and do sync correctly.
-- Everything listed "not implemented" in §4 (alarms, ECG, blood glucose,
-  OTA, etc.) still isn't — `V8Band` only implements what §4 marks
-  "implemented, confirmed".
+- Everything listed "not implemented" in §4 (alarms, blood glucose, OTA,
+  etc.) still isn't — `V8Band` only implements what §4 marks "implemented,
+  confirmed". ECG exists only in the Node CLI (§6) — working on both units,
+  contact/duration/stop semantics settled; nothing in
+  the miniapp, sync, or backend reads or stores it, and there is no twin
+  layer (§34 of CLAUDE.md) declared for it yet. Any adapter must expect up
+  to a minute of buffered stale samples when it opens the tap, and must
+  treat a zero-packet start as "lift the finger and retry".
 
 ---
 
