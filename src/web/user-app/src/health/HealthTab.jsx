@@ -174,6 +174,16 @@ export default function HealthTab({ visible, onGuestTap }) {
   const wearableBound = !!hint || !!d.ringData;
   const wearableName = hint?.name || (hint?.brand === 'halo' ? 'Halo Ring' : hint?.brand === 'v8' ? 'V8 Band' : hint?.brand === 'aizo' ? 'Aizo Ring' : hint?.brand ? 'Colmi Ring' : '');
   const brand = hint?.brand === 'x3' ? 'halo' : hint?.brand;
+  const ecgWhen = (iso) => {
+    const dt = new Date(iso); if (isNaN(dt)) return '';
+    const now = new Date(); const same = (a, b) => a.toDateString() === b.toDateString();
+    const hm = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+    if (now - dt < 5 * 60 * 1000) return t.ecgJustNow;
+    if (same(dt, now)) return `${t.ecgToday} ${hm}`;
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    if (same(dt, y)) return `${t.ecgYesterday} ${hm}`;
+    return `${dt.getMonth() + 1}/${dt.getDate()} ${hm}`;
+  };
   const rd = d.ringData;
   const sa = d.subAgeZ;
   const zoneStyle = key => sa[key] ? { background: sa[key].fill, boxShadow: `0 0 ${sa[key].glow}px ${sa[key].color}`, borderColor: `${tc(sa[key].color)}88` } : {};
@@ -447,6 +457,29 @@ export default function HealthTab({ visible, onGuestTap }) {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* 心电节律 — V8 strips from GET /api/ecg. Read-only here: recording needs the
+                    band over BLE, which only the Mini Program has. */}
+                {(brand === 'v8' || d.ecgLatest) && (
+                  <div className="ecg-card">
+                    <div className="ecg-card-row">
+                      <div className="ecg-card-main">
+                        <span className="ecg-card-title">{t.ecgTitle}</span>
+                        {d.ecgLatest ? (
+                          <div className="ecg-card-hero">
+                            <span className="ecg-card-bpm">{d.ecgLatest.bpm}</span><span className="ecg-card-unit">bpm</span>
+                            <span className="ecg-card-meta">{ecgWhen(d.ecgLatest.recorded_at)} · {d.ecgLatest.accepted_beats} {t.ecgBeats} · RR±{d.ecgLatest.rr_sd_ms}ms</span>
+                          </div>
+                        ) : <span className="ecg-card-empty">{t.ecgEmptySelf}</span>}
+                      </div>
+                      {brand === 'v8' && <div className="wd-sync-btn" onClick={wearableNotice}><span className="wd-sync-btn-text">{t.ecgRecord}</span></div>}
+                    </div>
+                    {d.ecgList.length > 1 && (
+                      <div className="ecg-card-list">{d.ecgList.slice(1, 5).map(it => <div key={it.id} className="ecg-card-list-row"><span className="ecg-card-list-when">{ecgWhen(it.recorded_at)}</span><span className="ecg-card-list-val">{it.bpm} bpm · RR±{it.rr_sd_ms}ms</span></div>)}</div>
+                    )}
+                    <span className="ecg-card-foot">{t.ecgNotDiagnosis}</span>
                   </div>
                 )}
 

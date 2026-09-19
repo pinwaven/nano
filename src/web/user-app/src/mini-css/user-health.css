@@ -3471,3 +3471,17 @@
   font-size: var(--fs-22, 11px);
   font-weight: 600;
 }
+
+/* ── 心电节律 card (twin layer 2, V8 only; read-only on the web) ─────────── */
+.ecg-card { margin-top: 10px; background: rgba(15, 37, 64, 0.5); border: 0.5px solid var(--navy-border); border-radius: 12px; padding: 9px 10px; }
+.ecg-card-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ecg-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ecg-card-title { font-size: var(--fs-24, 12px); font-weight: 600; color: var(--text); }
+.ecg-card-hero { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 5px; }
+.ecg-card-bpm { font-size: 22px; font-weight: 700; line-height: 1; color: #1fb7a6; font-variant-numeric: tabular-nums; }
+.ecg-card-unit { font-size: var(--fs-22, 11px); color: var(--text-muted, rgba(255,255,255,0.6)); }
+.ecg-card-meta { width: 100%; font-size: var(--fs-22, 11px); color: var(--text-muted, rgba(255,255,255,0.6)); font-variant-numeric: tabular-nums; }
+.ecg-card-empty { font-size: var(--fs-22, 11px); color: var(--text-muted, rgba(255,255,255,0.6)); line-height: 1.5; }
+.ecg-card-list { margin-top: 6px; border-top: 0.5px solid rgba(var(--blue-rgb), 0.12); padding-top: 4px; display: flex; flex-direction: column; gap: 2px; }
+.ecg-card-list-row { display: flex; justify-content: space-between; font-size: var(--fs-22, 11px); color: var(--text-muted, rgba(255,255,255,0.6)); font-variant-numeric: tabular-nums; }
+.ecg-card-foot { display: block; margin-top: 6px; font-size: var(--fs-20, 10px); line-height: 1.5; color: rgba(var(--wave-rgb), 0.45); }
