@@ -104,7 +104,8 @@ async function handleDailyCheckinEvent({ user_id, period, persona_type }) {
             // by the prompt, not fabricated here.
             pool.query(
                 `SELECT avg_hrv_ms, avg_resting_hr, avg_spo2, avg_sleep_hours, avg_sleep_score,
-                        avg_deep_sleep_pct, avg_daily_steps, avg_active_minutes, trend_data
+                        avg_deep_sleep_pct, avg_daily_steps, avg_active_minutes, trend_data,
+                        wearable_insights
                  FROM health_twin WHERE user_id = $1`,
                 [user_id]
             ),

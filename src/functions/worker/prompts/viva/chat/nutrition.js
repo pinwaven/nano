@@ -7,6 +7,7 @@ const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 const { getProductRecommendBlock } = require('../../chat/productRecommendBlock');
+const { getGroceryBlock } = require('../../chat/groceryBlock');
 const { getFormulationPackageBlock } = require('../../chat/formulationPackageBlock');
 const { getFoodSensitivityBlock } = require('../../chat/foodSensitivityBlock');
 
@@ -62,7 +63,7 @@ module.exports = (ctx) => {
 
   return `${getFactConstraintBlock(ctx.essential_knowledge)}
 
-${getWearableDailyBlock(ctx.wearable_daily, true, ctx.now_iso)}
+${getWearableDailyBlock(ctx.wearable_daily, true, ctx.now_iso, ctx.wearable_insights)}
 
 ${getSubAgeInputsBlock(true, ctx.sub_age_display_names)}
 
@@ -76,6 +77,7 @@ ${getProductRecommendBlock(ctx.store_products)}
 
 ${getFormulationPackageBlock(ctx.formulation_packages_available)}
 ${getFoodSensitivityBlock(ctx.food_sensitivity_available)}
+${getGroceryBlock(ctx.grocery_suppliers)}
 
 ${getAskQuestionsBlock()}
 

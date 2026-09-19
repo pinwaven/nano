@@ -7,6 +7,26 @@
  * Also syncs latest_bio_age / latest_sub_ages from the biomarkers table.
  */
 const { buildLabPanel } = require('./labHistory');
+const { fetchWearableDaily, fetchHrvReadings } = require('./wearableDaily');
+const { analyzeWearable } = require('./wearableAnalysis');
+const { formatToShanghai } = require('./time-utils');
+
+// The analysis layer over the same 30 days (lib/wearableAnalysis.js). Its own try/catch:
+// an analysis bug must never cost the twin upsert, so a failure here is a NULL column and a
+// WARN, nothing more. Recomputed every call — never COALESCEd on the upsert below.
+async function computeWearableInsights(userId, pool) {
+    try {
+        const [daily, readings] = await Promise.all([
+            fetchWearableDaily(pool, userId, 30),
+            fetchHrvReadings(pool, userId, 30),
+        ]);
+        if (!daily.length) return null;
+        return analyzeWearable({ daily, readings, today: formatToShanghai(new Date()).slice(0, 10) });
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'wearable_insights_failed', userId, error: err.message }));
+        return null;
+    }
+}
 
 async function updateHealthTwin(userId, pool) {
     try {
@@ -71,6 +91,8 @@ async function updateHealthTwin(userId, pool) {
             GROUP BY category
         `, [userId]);
 
+        const wearableInsights = await computeWearableInsights(userId, pool);
+
         const agg = aggResult.rows[0] || {};
         const body = bodyResult.rows[0]?.data || {};
         const kino = kinoResult.rows[0] || null;
@@ -96,7 +118,7 @@ async function updateHealthTwin(userId, pool) {
                 latest_weight_kg, latest_bmi, latest_body_fat_pct,
                 latest_lab_data, latest_lab_date,
                 latest_bio_age, latest_sub_ages, latest_kino_scan_at,
-                trend_data, data_coverage, last_updated_at
+                trend_data, data_coverage, wearable_insights, last_updated_at
             ) VALUES (
                 $1,
                 $2, $3, $4,
@@ -105,7 +127,7 @@ async function updateHealthTwin(userId, pool) {
                 $10, $11, $12,
                 $13, $14,
                 $15, $16, $17,
-                $18, $19, NOW()
+                $18, $19, $20, NOW()
             )
             ON CONFLICT (user_id) DO UPDATE SET
                 avg_hrv_ms            = EXCLUDED.avg_hrv_ms,
@@ -130,6 +152,7 @@ async function updateHealthTwin(userId, pool) {
                 latest_kino_scan_at   = COALESCE(EXCLUDED.latest_kino_scan_at, health_twin.latest_kino_scan_at),
                 trend_data            = EXCLUDED.trend_data,
                 data_coverage         = EXCLUDED.data_coverage,
+                wearable_insights     = EXCLUDED.wearable_insights,
                 last_updated_at       = NOW()
         `, [
             userId,
@@ -151,6 +174,7 @@ async function updateHealthTwin(userId, pool) {
             kino?.tested_at ?? null,
             JSON.stringify(trendData),
             JSON.stringify(dataCoverage),
+            wearableInsights ? JSON.stringify(wearableInsights) : null,
         ]);
 
     } catch (err) {
@@ -167,4 +191,4 @@ function computeTrend(current, previous) {
     return 'stable';
 }
 
-module.exports = { updateHealthTwin };
+module.exports = { updateHealthTwin, computeWearableInsights };

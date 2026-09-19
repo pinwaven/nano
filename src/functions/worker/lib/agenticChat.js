@@ -27,6 +27,7 @@ const { findRelevantEntries } = require('./knowledgeBase');
 const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
 const { messageAsksAboutFoodSensitivity } = require('../prompts/chat/foodSensitivityBlock');
 const { messageAsksAboutWearable } = require('./wearableDaily');
+const { insightDates } = require('./wearableAnalysis');
 
 const GENERATE_MAX_ITERS = 3;
 const REVISE_MAX_ROUNDS = 2;
@@ -152,7 +153,8 @@ function extractToolGroundTruth(toolCallLog) {
 
 // Dates carried by the pre-fetched context rather than by a tool call (see extraValidDates).
 function contextDates(llmContext) {
-    return (llmContext?.wearable_daily || []).map(r => r && r.date).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d || ''));
+    const daily = (llmContext?.wearable_daily || []).map(r => r && r.date).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d || ''));
+    return [...new Set([...daily, ...insightDates(llmContext?.wearable_insights)])];
 }
 
 // A dimension is "elevated" the same way every prompt template already computes and shows it

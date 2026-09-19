@@ -1328,3 +1328,35 @@ Published reports are completed `viva_ag_jobs` rows (`claimed_by='claude-code-an
 surface on the 数字孪生 subtab's **综合报告 card** (`GET /api/twin-reports`,
 `handlers/twin_reports.js` — ownership-gated, not AG-entitlement-gated, files by index) and in the
 Viva AG panel.
+
+## 44. Wearable Insights — analysis over synced ring data — Rules
+
+`lib/wearableAnalysis.js` turns the last 30 days of `health_events` ring data into a
+codes-and-numbers `insights` object (personal HRV baseline/band, z-scores, readiness, sleep
+debt/regularity, stress balance, anomaly flags), stored on `health_twin.wearable_insights` at
+every sync and recomputed fresh by `GET /api/wearable-insights`. Twin layer 2 (§34). Record:
+[docs/architecture/wearable-insights.md](docs/architecture/wearable-insights.md).
+
+- **Everything is relative to the user's own history, never an absolute cut.** Halo/V8 give a
+  vendor HRV *index* (no RR intervals — §18), so "80ms = good" means nothing; "12% below your
+  30-day mean" does. z-scores exclude the day being judged. Under 3 HRV days: nothing but
+  sleep; under 7: no flags; under 14: `provisional: true`, readiness still shown.
+- **`strain_watch` needs all three signals** (HRV z ≤ −1, resting HR z ≥ +1, skin temp
+  ≥ +0.3 °C) and is worded 负荷 / strain at every surface — a rest nudge, never illness. Stress
+  `balance` requires HRV to agree with the stress byte (the byte was inverted once, §18); a
+  "high-stress reading" is above the user's own p75, never a fixed value.
+- **Copy lives in two places only**: the miniapp's `insight*` `T` keys (both languages) and
+  `describeWearableInsights()` / `summarizeInsightsLine()` in the lib — the `PACKAGE_STAGES`
+  split from §28. The object carries no prose; the prompt block states no threshold (a test
+  greps for it). A new driver/flag code needs `insightDriver_*` / `insightFlag_*` in both `T`
+  blocks and in `DRIVER_TEXT` / `FLAG_TEXT`.
+- The lib is pure: no DB, no `data.actual`, no date formatting — `today` is supplied by the
+  caller as a Shanghai `YYYY-MM-DD`. Per-reading input comes from `fetchHrvReadings()`, whose
+  measurement time is the 14-digit tail of the `_hrv_` external_id, never `recorded_at` first.
+- Chat reads the **stored** copy (`llmContext.wearable_insights`, rendered by
+  `wearableDailyBlock.js`; `contextDates()` allow-lists its dates); the health tab reads the
+  **fresh** endpoint ("today" moves at midnight). `updateHealthTwin` computes it in its own
+  try/catch and never COALESCEs it. **Deploy order: migrate, then the worker** — the twin
+  upsert, the check-in SELECT and `twinBundle` all name the column.
+- Not synced yet: nightly RMSSD (`HaloRing.getSleepHrv()`, 0x60). When it is, attach it to the
+  per-night sleep event, Halo only, and leave V8 `null` (§18).

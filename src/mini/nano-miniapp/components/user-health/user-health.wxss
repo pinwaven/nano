@@ -3471,3 +3471,96 @@
   font-size: var(--fs-22, 22rpx);
   font-weight: 600;
 }
+
+/* ---- Wearable insights card (analysis relative to the user's own baseline) ---- */
+.ins-card {
+  background: rgba(15, 37, 64, 0.35);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.14);
+  border-radius: 20rpx;
+  padding: 22rpx 20rpx 18rpx;
+  margin-bottom: 20rpx;
+}
+.ins-head { display: flex; flex-direction: column; gap: 4rpx; margin-bottom: 16rpx; }
+.ins-title { font-size: var(--fs-28, 28rpx); font-weight: 700; color: var(--text); }
+.ins-sub { font-size: var(--fs-20, 20rpx); color: rgba(var(--wave-rgb), 0.55); }
+
+.ins-readiness { display: flex; align-items: center; gap: 20rpx; margin-bottom: 18rpx; }
+.ins-score-wrap {
+  flex: 0 0 auto;
+  width: 120rpx; height: 120rpx;
+  border-radius: 50%;
+  border: 6rpx solid;
+  display: flex; align-items: baseline; justify-content: center;
+  padding-top: 34rpx;
+  box-sizing: border-box;
+}
+.ins-score { font-size: var(--fs-40, 40rpx); font-weight: 800; line-height: 1; }
+.ins-score-of { font-size: var(--fs-18, 18rpx); color: rgba(var(--wave-rgb), 0.5); margin-left: 2rpx; }
+.ins-readiness-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10rpx; }
+.ins-readiness-row { display: flex; align-items: baseline; gap: 10rpx; flex-wrap: wrap; }
+.ins-readiness-label { font-size: var(--fs-24, 24rpx); color: rgba(var(--wave-rgb), 0.7); }
+.ins-level { font-size: var(--fs-30, 30rpx); font-weight: 700; }
+.ins-date { font-size: var(--fs-20, 20rpx); color: rgba(var(--wave-rgb), 0.45); margin-left: auto; }
+.ins-chips { display: flex; flex-wrap: wrap; gap: 8rpx; }
+.ins-chips-tight { margin-top: 8rpx; }
+.ins-chip {
+  font-size: var(--fs-20, 20rpx);
+  color: var(--text);
+  background: rgba(var(--blue-rgb), 0.12);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.22);
+  border-radius: 999rpx;
+  padding: 4rpx 14rpx;
+  line-height: 1.5;
+}
+.ins-chip-dim { color: rgba(var(--wave-rgb), 0.7); background: rgba(var(--blue-rgb), 0.06); border-color: rgba(var(--blue-rgb), 0.12); }
+.ins-chip-warn { color: #f59e0b; background: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.3); }
+
+.ins-block { padding: 12rpx 0; border-top: 1rpx solid rgba(var(--blue-rgb), 0.1); }
+.ins-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12rpx; }
+.ins-row-dim { margin-top: 6rpx; }
+.ins-row-dim .ins-row-label { color: rgba(var(--wave-rgb), 0.55); }
+.ins-row-label { font-size: var(--fs-22, 22rpx); color: rgba(var(--wave-rgb), 0.75); }
+.ins-row-val { font-size: var(--fs-24, 24rpx); font-weight: 600; color: var(--text); white-space: nowrap; }
+.ins-row-delta { font-size: var(--fs-20, 20rpx); font-weight: 500; color: rgba(var(--wave-rgb), 0.55); margin-left: 6rpx; }
+
+.ins-band-track {
+  position: relative;
+  height: 14rpx;
+  margin: 12rpx 0 4rpx;
+  border-radius: 7rpx;
+  background: rgba(var(--blue-rgb), 0.08);
+}
+.ins-band-range {
+  position: absolute; top: 0; bottom: 0;
+  border-radius: 7rpx;
+  background: rgba(14, 165, 233, 0.28);
+}
+.ins-band-marker {
+  position: absolute; top: -6rpx;
+  width: 26rpx; height: 26rpx;
+  margin-left: -13rpx;
+  border-radius: 50%;
+  border: 3rpx solid var(--navy-card, #0f2540);
+  box-shadow: 0 0 10rpx rgba(0, 0, 0, 0.25);
+}
+
+.ins-flag {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12rpx;
+  margin-top: 12rpx;
+  padding: 12rpx 16rpx;
+  border-radius: 14rpx;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1rpx solid rgba(245, 158, 11, 0.3);
+}
+.ins-flag-txt { font-size: var(--fs-22, 22rpx); color: #f59e0b; font-weight: 600; }
+.ins-flag-since { font-size: var(--fs-20, 20rpx); color: rgba(245, 158, 11, 0.7); white-space: nowrap; }
+.ins-provisional { display: block; margin-top: 12rpx; font-size: var(--fs-20, 20rpx); color: rgba(var(--wave-rgb), 0.5); }
+
+.theme-light .ins-card { background: rgba(255, 255, 255, 0.6); }
+.theme-light .ins-sub, .theme-light .ins-date, .theme-light .ins-provisional { color: #9A8A72; }
+.theme-light .ins-readiness-label, .theme-light .ins-row-label, .theme-light .ins-row-delta { color: #7A6342; }
+.theme-light .ins-chip { background: rgba(201, 149, 106, 0.12); border-color: rgba(201, 149, 106, 0.3); }
+.theme-light .ins-chip-dim { color: #7A6342; background: rgba(201, 149, 106, 0.06); border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .ins-block { border-top-color: rgba(201, 149, 106, 0.18); }
+.theme-light .ins-band-track { background: rgba(201, 149, 106, 0.12); }
+.theme-light .ins-band-marker { border-color: #fff; }

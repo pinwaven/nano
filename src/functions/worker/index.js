@@ -104,7 +104,7 @@ const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, hand
 const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm, handleGetMyCoach } = require('./handlers/login');
 const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified, handlePhoneOtpList, handlePhoneOtpRemove, handlePhoneOtpAdminAdd } = require('./handlers/phone-otp');
 const { handleEmailOtpSend, handleEmailOtpVerify, handleEmailOtpBind, handleEmailSetPrimary, handleEmailOtpList, handleEmailOtpRemove, handleEmailOtpAdminAdd } = require('./handlers/email-otp');
-const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handleChatGenerateEvent, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetOssPresign, _fireQuestionnaireAnsweredFollowup } = require('./handlers/chat');
+const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handleChatGenerateEvent, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetWearableInsights, handleGetOssPresign, _fireQuestionnaireAnsweredFollowup } = require('./handlers/chat');
 const { CHAT_EVENT_SOURCE } = require('./lib/chatEventBridge');
 // Same environment-scoping fix as CHAT_EVENT_SOURCE (see chatEventBridge.js's comment for the
 // full 2026-08-01 incident writeup), applied to the other two EventBridge sources this function
@@ -572,6 +572,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetNutritionPlan(query.openid);
             } else if (path === '/health-twin') {
                 result = await handleGetHealthTwin(query.openid);
+            } else if (path === '/wearable-insights') {
+                result = await handleGetWearableInsights(query);
             } else if (path === '/lab-history') {
                 result = await handleGetLabHistory(query);
             } else if (path.match(/\/health-reports\/(\d+)/)) {

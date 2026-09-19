@@ -5,11 +5,12 @@ const { getOutputFormatBlock } = require('../../chat/outputFormat');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 const { getProductRecommendBlock } = require('../../chat/productRecommendBlock');
+const { getGroceryBlock } = require('../../chat/groceryBlock');
 const { getFormulationPackageBlock } = require('../../chat/formulationPackageBlock');
 const { getFoodSensitivityBlock } = require('../../chat/foodSensitivityBlock');
 const { SUB_AGE_LABELS: DIM_LABELS } = require('../../../lib/subAgeLabels');
 
-module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, rich_format, store_products, formulation_packages_available, food_sensitivity_available, sub_age_display_names, wearable_daily }) => {
+module.exports = ({ user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, rich_format, store_products, formulation_packages_available, food_sensitivity_available, sub_age_display_names, wearable_daily, wearable_insights, grocery_suppliers }) => {
   const isZh = user_profile.language === 'zh';
   const hasBioAge = bioage && bioage.BioAge;
 
@@ -48,7 +49,7 @@ Elevated dimensions: ${
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
 
-${getWearableDailyBlock(wearable_daily, isZh, now_iso)}
+${getWearableDailyBlock(wearable_daily, isZh, now_iso, wearable_insights)}
 
 ${getSubAgeInputsBlock(isZh, sub_age_display_names)}
 
@@ -62,6 +63,7 @@ ${getProductRecommendBlock(store_products, isZh)}
 
 ${getFormulationPackageBlock(formulation_packages_available, isZh)}
 ${getFoodSensitivityBlock(food_sensitivity_available, isZh)}
+${getGroceryBlock(grocery_suppliers, isZh)}
 
 You are Nano, a longevity AI built by Waven.
 

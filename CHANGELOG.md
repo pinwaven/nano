@@ -32,6 +32,23 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
     backlog, nothing left running). Reference captures under `temp/v8-ecg/`. CLI only — the
     miniapp V8 adapter, sync and backend are untouched.
 
+- **Wearable insights — analysis over synced ring data** · 2026-09-19
+  - `lib/wearableAnalysis.js` (pure): personal HRV baseline and p10–p90 band, today's z-scores,
+    readiness score + driver codes, sleep debt/regularity, stress balance (HRV must agree with the
+    stress byte), night/day HRV ratio, and three anomaly flags (`hrv_drop`, `low_streak`,
+    `strain_watch` — all three signals required; worded as strain, never illness). Everything is
+    relative to the user's own 30-day history — a vendor HRV index has no meaningful absolute cut.
+  - `lib/wearableDaily.js` `fetchHrvReadings()`; `health_twin.wearable_insights` (migration
+    `migration_health_twin_wearable_insights.sql`) written on every sync; `GET /api/wearable-insights`
+    (fresh, coach-scoped like facts).
+  - AI: rendered under the per-day rows in every chat template via `wearableDailyBlock.js`, one
+    sentence in both daily check-in prompts, `bundle_version` 5 for the AG twin bundle,
+    `contextDates()` allow-lists the analysis dates for grounding.
+  - Miniapp health tab: 洞察 card (readiness, band strip, sleep, stress, flags, provisional note)
+    for self and coach view; the 7-day HRV bars are now coloured against the personal band.
+    A high-stress reading is above the user's own p75, not a fixed 60 (a ring idling at 55 never
+    crossed it). `VERSION` 0919-2. Record: `docs/architecture/wearable-insights.md`.
+
 - **health-report skill: batch tooling + new data traps** · 2026-09-16
   - `scripts/batch/` (gen.py, common.py, digest.py, collect_images.js, wearable.py): one-command per-user digests, photo
     download, ring stats and a notes-driven report generator used to produce reports for 41 GCN premier partners
