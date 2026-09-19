@@ -947,7 +947,7 @@ data source. Canonical definition: [docs/architecture/digital-twin.md](docs/arch
 | # | ZH | EN | Backing |
 |---|---|---|---|
 | 1 | `精准检测` | `Precision Testing` | `biomarkers(kino_chip)`; `health_twin.latest_bio_age/latest_sub_ages` |
-| 2 | `日常监测` | `Daily Monitoring` | `health_events(sleep\|activity\|vitals\|body_composition)`; `health_twin.avg_*`, weight/BMI/body-fat, `trend_data` |
+| 2 | `日常监测` | `Daily Monitoring` | `health_events(sleep\|activity\|vitals\|body_composition\|ecg)`; `health_twin.avg_*`, weight/BMI/body-fat, `trend_data` |
 | 3 | `医疗记录` | `Medical Records` | `health_reports`; `health_events(lab_result)`; `health_documents`; `health_twin.latest_lab_data` |
 | 4 | `个人档案` | `Personal Profile` | `users.bio_data`; `questionnaire_responses`; `user_memory_facts` |
 
@@ -1360,3 +1360,31 @@ every sync and recomputed fresh by `GET /api/wearable-insights`. Twin layer 2 (�
   upsert, the check-in SELECT and `twinBundle` all name the column.
 - Not synced yet: nightly RMSSD (`HaloRing.getSleepHrv()`, 0x60). When it is, attach it to the
   per-night sleep event, Halo only, and leave V8 `null` (§18).
+
+## 45. 心电节律 — ECG Rhythm Strips from the V8 Band — Rules
+
+V8 only (§18; Halo has no ECG opcode). A 30 s single-lead strip recorded by
+`components/ecg-record/` through `V8Band.recordEcg()`, analysed and stored by `POST /api/ecg`
+(`handlers/ecg.js`, `lib/ecgAnalysis.js`), surfaced as the 心电节律 card in the health tab's
+日常监测 section. Twin layer 2 (§34): the summary is a `health_events` row, category `ecg`; the
+waveform is 24-bit packed in OSS under `ecg/<user_id>/…`, never returned as a key. Firmware
+record and every "why": `tools/halo/README.md` "ECG", `docs/architecture/v8-smart-band.md` §6.
+
+- **It is rhythm, not a diagnosis.** The band gives dimensionless counts with no voltage scale
+  and ships no analysis. Every surface says 节律记录 / rhythm strip; nothing may say 心电图诊断
+  or name a condition. A test greps the copy.
+- **Contact owns the measurement.** Wrist + a finger from the other hand on the electrode, or the
+  band aborts within ~3 s — `9525CA`-class units emit nothing at all. A zero-packet or
+  noise-only capture is explained as "lift the finger, place it again", never as an error.
+- **`duration` is seconds from the `0x28` command and is the only stop.** The adapter asks for
+  the capture length; the SDK's `open=0` pair stops nothing (the band buffers ~50–60 s while the
+  tap is closed and flushes it on the next tap open — `analyzeEcg` splits that backlog off).
+  Never re-send `0x28` onto a running measurement to stop it.
+- **The server refuses, never repairs**: fewer than `ECG_MIN_ACCEPTED_BEATS` (10) clean beats or
+  `peak_snr` under 3.5 → `poor_contact`, nothing stored. Quality stays visible on every stored
+  summary (`peak_snr`, `rr_sd_ms`, `rejected_intervals`).
+- Ownership is the health-documents pattern (`_resolveOwner`; a coach reads, never writes).
+  `oss_key` never leaves the server. No chat tool yet — adding one is a §21/§28 change (PLAN and
+  JUDGE must be taught it).
+- The web user-app shows the card read-only (recording needs BLE).
+

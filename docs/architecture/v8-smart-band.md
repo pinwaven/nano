@@ -459,12 +459,13 @@ to `syncWearableData()`:
   individual stage values) and do sync correctly.
 - Everything listed "not implemented" in §4 (alarms, blood glucose, OTA,
   etc.) still isn't — `V8Band` only implements what §4 marks "implemented,
-  confirmed". ECG exists only in the Node CLI (§6) — working on both units,
-  contact/duration/stop semantics settled; nothing in
-  the miniapp, sync, or backend reads or stores it, and there is no twin
-  layer (§34 of CLAUDE.md) declared for it yet. Any adapter must expect up
-  to a minute of buffered stale samples when it opens the tap, and must
-  treat a zero-packet start as "lift the finger and retry".
+  confirmed" — plus ECG, promoted from the CLI on 2026-09-19: `V8Band.recordEcg()`
+  and the `components/ecg-record/` overlay record a 30 s strip that
+  `POST /api/ecg` analyses and stores as `health_events` category `ecg` (twin
+  layer 2, CLAUDE.md §34) with the waveform in OSS. The adapter asks for the
+  capture length as `duration` (the band ends the measurement itself), the
+  server splits off any buffered backlog, and a zero-packet or noise-only
+  capture is explained as "lift the finger and retry", never as an error.
 
 ---
 

@@ -8,6 +8,23 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **心电节律 — ECG rhythm strips from the V8 band, in the miniapp** · 2026-09-19
+  - Miniapp: `utils/wearable/v8/` gains the ECG opcodes (`setMeasurementPacket`,
+    `setEcgRealtimePacket`, `parseEcgChunk`) and `V8Band.recordEcg()`, ported from the CLI;
+    new `components/ecg-record/` overlay (guide → 30 s live strip on paper grid → result), hosted
+    by the health tab's 日常监测 section with a 心电节律 card (latest strip + last four, V8 +
+    self view to record; coach view reads). `VERSION` 0919-3.
+  - Worker: `lib/ecgAnalysis.js` (pure: backlog split, measured rate, R-peak rhythm, peak-SNR
+    quality floor, 24-bit packing) and `handlers/ecg.js` — `POST /api/ecg` analyses, refuses a
+    strip with fewer than 10 clean beats or a noise-only signal (`poor_contact`, a contact miss
+    the UI explains), stores the summary as `health_events` category `ecg` (twin layer 2) and
+    the waveform in OSS under a server-minted key never returned; `GET /api/ecg`,
+    `GET /api/ecg/{id}/waveform`, `DELETE /api/ecg/{id}`; ownership via the health-documents
+    pattern. No migration — `health_events` is schema-free.
+  - Web user-app: read-only 心电节律 card on the health tab (recording needs BLE).
+  - Copy everywhere says rhythm strip, never diagnosis: the band gives dimensionless counts with
+    no voltage scale and ships no analysis. Chat has no ECG tool yet (a later, separate change).
+
 - **V8 CLI: ECG capture** · 2026-09-19
   - `tools/halo` gains `node bin/cli.js ecg --device v8`: runs the vendor demo's on-demand ECG
     sequence (`0x28` type 4 + `0x07`), captures the raw 24-bit sample stream for `--capture`
