@@ -92,6 +92,7 @@ const {
     handlePatchHealthDocument,
 } = require('./handlers/health_documents');
 const { handleGetLabHistory } = require('./handlers/lab_history');
+const { handlePostEcg, handleGetEcgList, handleGetEcgWaveform, handleDeleteEcg } = require('./handlers/ecg');
 const { handleGetAdminUserPersonaSubscription, handlePostAdminUserPersonaSubscription, handleDeleteAdminUserPersonaSubscription, handleGetAdminPersonaSubscriptions, handlePostAdminUserVivaAg, handleDeleteAdminUserVivaAg } = require('./handlers/persona_subscriptions');
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
 const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
@@ -497,6 +498,11 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetHealthDocumentUrl(path.match(/^\/health-documents\/(\d+)\/url$/)[1], query);
             } else if (path === '/health-documents') {
                 result = await handleGetHealthDocuments(query);
+            // --- ECG strips from the V8 band (twin layer 2; summaries here, waveform by id) ---
+            } else if (path.match(/^\/ecg\/(\d+)\/waveform$/)) {
+                result = await handleGetEcgWaveform(path.match(/^\/ecg\/(\d+)\/waveform$/)[1], query);
+            } else if (path === '/ecg') {
+                result = await handleGetEcgList(query);
             } else if (path === '/kino-upgrade') {
                 result = await handleGetKinoUpgrade();
             } else if (path.includes('/kone-apk-releases')) {
@@ -866,6 +872,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostVivaAgJob(parsedBody);
             } else if (path === '/health-documents') {
                 result = await handlePostHealthDocument(parsedBody);
+            } else if (path === '/ecg') {
+                result = await handlePostEcg(parsedBody);
             } else if (path === '/admin/login') {
                 result = await handleAdminLogin(parsedBody);
             } else if (path === '/admin-accounts') {
@@ -1382,7 +1390,9 @@ exports.handler = async (req, resp, context) => {
                 result = { success: false, error: `Unknown PUT route: ${path}` };
             }
         } else if (method === 'DELETE') {
-            if (path.match(/^\/health-documents\/(\d+)\/extraction$/)) {
+            if (path.match(/^\/ecg\/(\d+)$/)) {
+                result = await handleDeleteEcg(path.match(/^\/ecg\/(\d+)$/)[1], query);
+            } else if (path.match(/^\/health-documents\/(\d+)\/extraction$/)) {
                 result = await handleDeleteHealthDocumentExtraction(path.match(/^\/health-documents\/(\d+)\/extraction$/)[1], query);
             } else if (path.match(/^\/health-reports\/(\d+)$/)) {
                 result = await handleDeleteHealthReport(path.match(/^\/health-reports\/(\d+)$/)[1], query);
