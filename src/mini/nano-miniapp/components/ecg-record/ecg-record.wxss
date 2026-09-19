@@ -1,0 +1,33 @@
+/* 心电节律记录 overlay — dark by default like the health tab; .theme-light is applied on the
+   component's own root because the host page's theme class does not cross the boundary. */
+.ecg-overlay { position: fixed; inset: 0; z-index: 900; background: rgba(4, 12, 24, 0.82); display: flex; align-items: flex-end; justify-content: center; }
+.ecg-sheet { width: 100%; max-height: 92vh; overflow-y: auto; background: #0f2540; border-radius: 32rpx 32rpx 0 0; padding: 28rpx 32rpx calc(40rpx + env(safe-area-inset-bottom)); box-sizing: border-box; color: #eaf2ff; }
+.theme-light .ecg-sheet { background: #ffffff; color: #12233a; }
+.ecg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20rpx; }
+.ecg-title { font-size: 32rpx; font-weight: 700; }
+.ecg-close { width: 56rpx; height: 56rpx; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.08); font-size: 26rpx; }
+.theme-light .ecg-close { background: rgba(18,35,58,0.06); }
+.ecg-guide { display: flex; flex-direction: column; align-items: center; gap: 12rpx; padding: 24rpx 12rpx 32rpx; text-align: center; }
+.ecg-guide-glyph { font-size: 72rpx; line-height: 1; margin-bottom: 8rpx; }
+.ecg-guide-line { font-size: 28rpx; line-height: 1.5; }
+.ecg-guide-muted { font-size: 24rpx; opacity: 0.6; }
+.ecg-btn { margin-top: 16rpx; padding: 22rpx; border-radius: 48rpx; text-align: center; font-size: 28rpx; font-weight: 600; }
+.ecg-btn-primary { background: #1fb7a6; color: #04141a; }
+.ecg-btn-ghost { background: transparent; border: 1rpx solid rgba(255,255,255,0.22); color: inherit; font-weight: 500; }
+.theme-light .ecg-btn-ghost { border-color: rgba(18,35,58,0.2); }
+.ecg-footnote { display: block; margin-top: 18rpx; font-size: 22rpx; line-height: 1.5; opacity: 0.55; text-align: center; }
+.ecg-status-row { display: flex; align-items: baseline; justify-content: space-between; margin: 8rpx 0 16rpx; }
+.ecg-status { font-size: 28rpx; font-weight: 600; }
+.ecg-countdown { font-size: 36rpx; font-weight: 700; font-variant-numeric: tabular-nums; color: #1fb7a6; }
+.ecg-canvas-wrap { width: 100%; height: 320rpx; border-radius: 16rpx; overflow: hidden; background: #fbf5f4; }
+.ecg-canvas { width: 100%; height: 320rpx; }
+.ecg-meta-row { display: flex; gap: 32rpx; margin-top: 12rpx; }
+.ecg-meta { font-size: 22rpx; opacity: 0.65; font-variant-numeric: tabular-nums; }
+.ecg-result-hero { display: flex; align-items: baseline; justify-content: center; gap: 10rpx; margin: 8rpx 0 20rpx; }
+.ecg-bpm { font-size: 96rpx; font-weight: 700; line-height: 1; color: #1fb7a6; font-variant-numeric: tabular-nums; }
+.ecg-bpm-unit { font-size: 26rpx; opacity: 0.7; }
+.ecg-result-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12rpx; margin-bottom: 20rpx; }
+.ecg-cell { display: flex; flex-direction: column; align-items: center; gap: 4rpx; padding: 14rpx 6rpx; border-radius: 14rpx; background: rgba(255,255,255,0.06); }
+.theme-light .ecg-cell { background: rgba(18,35,58,0.05); }
+.ecg-cell-v { font-size: 30rpx; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ecg-cell-k { font-size: 20rpx; opacity: 0.6; }

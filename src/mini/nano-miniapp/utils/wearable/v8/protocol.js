@@ -199,6 +199,54 @@ function getOxygenDataPacket(mode, dateFilter) {
   return buildCommand(0x66, buildHistorySyncPayload(mode || 0, dateFilter || null))
 }
 
+// --- ECG (on-demand, streamed live -- NOT a history type) ---
+//
+// Ported verbatim from tools/halo/src/v8-protocol.js after the 2026-09-19 live sessions
+// (docs/architecture/v8-smart-band.md §6 and tools/halo/README.md "ECG"). The band streams
+// raw 24-bit ADC samples on opcode 0x07 while a measurement started by 0x28 (type 4) runs.
+// What the firmware actually does, all confirmed on two units:
+//   - the measurement needs wrist contact AND a finger from the other hand on the electrode;
+//     without it the band aborts within ~3 s (this unit family may emit nothing at all);
+//   - `duration` is SECONDS from the 0x28 command and is the only clean way to end a
+//     measurement -- the SDK's open=0 "stop" ends nothing (the band keeps sampling and buffers
+//     ~50-60 s while the tap is closed, flushing it on the next 0x07 on). Ask for exactly the
+//     capture length; never re-send 0x28 onto a running measurement to stop it;
+//   - after a measurement expires the finger must be lifted before another will start.
+
+const MEASUREMENT_TYPES = { hrv: 0x01, hr: 0x02, spo2: 0x03, ecg: 0x04 }
+
+// 0x28 -- start/stop an on-demand measurement (BleSDK.SetDeviceMeasurementWithType).
+// duration goes to bytes 4-5 LE; the ECG type additionally sets byte 6 = 1 (vendor code).
+function setMeasurementPacket(type, open, durationSeconds) {
+  const typeByte = MEASUREMENT_TYPES[type]
+  if (!typeByte) throw new Error(`Unknown measurement type "${type}"`)
+  const d = Math.max(0, Math.min(0xffff, Math.round(durationSeconds || 0)))
+  const payload = new Array(14).fill(0)
+  payload[0] = typeByte
+  payload[1] = open ? 0x01 : 0x00
+  payload[3] = d & 0xff
+  payload[4] = (d >> 8) & 0xff
+  if (typeByte === MEASUREMENT_TYPES.ecg) payload[5] = 0x01
+  return buildCommand(0x28, payload)
+}
+
+// 0x07 -- open/close the ECG realtime tap (BleSDK.setECGRealtimeDuringHRVEnabled)
+function setEcgRealtimePacket(open) {
+  return buildCommand(0x07, [open ? 0x01 : 0x00])
+}
+
+// 0x07 data notification (ResolveUtil.getECG): byte1 = packetId (uint8, wraps), then
+// (length-2)/3 samples, each an unsigned 24-bit little-endian ADC count. A 16-byte frame on
+// this opcode is the band's ack to the tap command, not data (the SDK gates on length > 16).
+function parseEcgChunk(buf) {
+  if (buf.length <= 16) return null
+  const packetId = buf[1]
+  const count = Math.floor((buf.length - 2) / 3)
+  const samples = new Array(count)
+  for (let i = 0; i < count; i++) samples[i] = readLEInt(buf, 2 + 3 * i, 3)
+  return { packetId, samples }
+}
+
 module.exports = {
   SERVICE_UUID, WRITE_UUID, NOTIFY_UUID, NOTIFY_MAP, V8_NAME_PREFIXES,
   calculateChecksum, buildCommand, decToBcd, bcdToString, parseBcdDate, readLEInt,
@@ -211,4 +259,5 @@ module.exports = {
   getSleepDataPacket,
   getDynamicHrDataPacket, getStaticHrDataPacket,
   getHrvTestDataPacket, getTemperatureHistoryPacket, getOxygenDataPacket,
+  MEASUREMENT_TYPES, setMeasurementPacket, setEcgRealtimePacket, parseEcgChunk,
 }

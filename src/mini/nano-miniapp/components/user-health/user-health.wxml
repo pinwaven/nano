@@ -842,7 +842,36 @@ module.exports.c = function (hex, theme) {
 
         </block>
         <text wx:elif="{{!twinLoading}}" class="health-empty">{{t.noTwinData}}</text>
+              <!-- 心电节律 (ECG rhythm strips, V8 only). Twin layer 2 like the ring data above; the
+             summary rows come from GET /api/ecg, the recording overlay is <ecg-record> below.
+             Copy says "rhythm strip", never "diagnosis" — see components/ecg-record/ecg-record.js. -->
+        <view wx:if="{{ecgSupported || ecgLatest}}" class="ecg-card">
+          <view class="ecg-card-row">
+            <view class="ecg-card-main">
+              <text class="ecg-card-title">{{t.ecgTitle}}</text>
+              <block wx:if="{{ecgLatest}}">
+                <view class="ecg-card-hero">
+                  <text class="ecg-card-bpm">{{ecgLatest.bpm}}</text>
+                  <text class="ecg-card-unit">bpm</text>
+                  <text class="ecg-card-meta">{{ecgLatest.whenLabel}} · {{ecgLatest.accepted_beats}} {{t.ecgBeats}} · RR±{{ecgLatest.rr_sd_ms}}ms</text>
+                </view>
+              </block>
+              <text wx:else class="ecg-card-empty">{{mode === 'self' ? t.ecgEmptySelf : t.ecgEmptyOther}}</text>
+            </view>
+            <view wx:if="{{mode === 'self' && ecgSupported}}" class="wd-sync-btn" catchtap="openEcgRecord">
+              <text class="wd-sync-btn-text">{{t.ecgRecord}}</text>
+            </view>
+          </view>
+          <view wx:if="{{ecgList.length > 1}}" class="ecg-card-list">
+            <view wx:for="{{ecgList}}" wx:key="id" wx:if="{{index > 0 && index < 5}}" class="ecg-card-list-row">
+              <text class="ecg-card-list-when">{{item.whenLabel}}</text>
+              <text class="ecg-card-list-val">{{item.bpm}} bpm · RR±{{item.rr_sd_ms}}ms</text>
+            </view>
+          </view>
+          <text class="ecg-card-foot">{{t.ecgNotDiagnosis}}</text>
+        </view>
       </view>
+
 
       <!-- Twin layer: Precision Testing -->
       <view class="health-section">
@@ -989,6 +1018,9 @@ module.exports.c = function (hex, theme) {
 
   <!-- The AG panel's whole body lives in its own component: keeping it out of this file is what
        stops an already-1000-line template from absorbing another feature. -->
+  <ecg-record wx:if="{{mode === 'self'}}" open="{{ecgRecordOpen}}" user-id="{{userId}}" brand="{{wearableBrand}}"
+    device-id="{{wearableId}}" device-name="{{wearableName}}" lang="{{lang}}" theme="{{theme}}"
+    bind:close="closeEcgRecord" bind:saved="onEcgSaved" />
   <viva-ag-panel wx:if="{{showAgTab && healthSubTab === 'ag'}}" id="viva-ag-panel"
                  user-id="{{userId}}" lang="{{lang}}" theme="{{theme}}"
                  bind:gotochat="onAgGoToChat" />

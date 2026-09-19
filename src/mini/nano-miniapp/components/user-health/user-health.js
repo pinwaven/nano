@@ -364,6 +364,11 @@ const T = {
     ringSmoothedNote: '条读数已平滑处理',
     // Wearable insights card (GET /api/wearable-insights, lib/wearableAnalysis.js codes → copy here)
     insightTitle: '洞察', insightReadiness: '恢复状态', insightNotDiagnosis: '相对个人基线的统计结论，不是诊断',
+    ecgTitle: '心电节律', ecgRecord: '记录心电', ecgBeats: '次有效心搏',
+    ecgEmptySelf: '戴着 V8 手环时，用另一只手指按住电极，记录 30 秒的心电节律。',
+    ecgEmptyOther: '该用户还没有心电节律记录。',
+    ecgNotDiagnosis: '手环单导联节律记录，用于观察心率与节律规律性，不是心电图诊断。',
+    ecgJustNow: '刚刚', ecgToday: '今天', ecgYesterday: '昨天',
     insightLevel_ready: '良好', insightLevel_moderate: '一般', insightLevel_low: '偏低',
     insightDriver_hrv_below_band: 'HRV 低于个人区间', insightDriver_hrv_in_band: 'HRV 在个人区间内', insightDriver_hrv_above_band: 'HRV 高于个人区间',
     insightDriver_rhr_elevated: '静息心率偏高', insightDriver_rhr_low: '静息心率偏低', insightDriver_short_sleep: '睡眠偏短',
@@ -522,6 +527,11 @@ const T = {
     ringSleepWeek: '7-Day Sleep', ringNap: 'Nap', ringNightSleep: 'Night Sleep', ringSleepNoBlocks: 'No sleep recorded yet',
     ringSmoothedNote: ' readings smoothed',
     insightTitle: 'Insights', insightReadiness: 'Recovery', insightNotDiagnosis: 'Relative to your own baseline — not a diagnosis',
+    ecgTitle: 'ECG rhythm', ecgRecord: 'Record ECG', ecgBeats: 'clean beats',
+    ecgEmptySelf: 'While wearing the V8 band, hold a fingertip on its electrode to record a 30-second rhythm strip.',
+    ecgEmptyOther: 'No ECG rhythm strips yet.',
+    ecgNotDiagnosis: 'A single-lead rhythm strip from the band, for heart rate and rhythm regularity — not a diagnostic ECG.',
+    ecgJustNow: 'just now', ecgToday: 'today', ecgYesterday: 'yesterday',
     insightLevel_ready: 'Good', insightLevel_moderate: 'Moderate', insightLevel_low: 'Low',
     insightDriver_hrv_below_band: 'HRV below your range', insightDriver_hrv_in_band: 'HRV in your range', insightDriver_hrv_above_band: 'HRV above your range',
     insightDriver_rhr_elevated: 'Resting HR up', insightDriver_rhr_low: 'Resting HR low', insightDriver_short_sleep: 'Short sleep',
@@ -1330,6 +1340,11 @@ Component({
     stepsChartOpen: false,
     stepsChartW: 300,
     insights: null,        // raw GET /api/wearable-insights object (band drives the HRV bar colours)
+    // 心电节律 (V8 only): GET /api/ecg summaries, newest first; the overlay is <ecg-record>.
+    ecgList: [],
+    ecgLatest: null,
+    ecgSupported: false,   // self view, bound wearable is a V8 — recomputed with the binding
+    ecgRecordOpen: false,
     insightsView: null,    // _buildInsightsView() of the above, rebuilt on lang change
     hrvHistory: [],
     hrvChartOpen: false,
@@ -1441,6 +1456,7 @@ Component({
   },
 
   observers: {
+    'wearableId, wearableBrand, mode'() { if (this._recomputeEcgSupported) this._recomputeEcgSupported() },
     'userId': function(newId) {
       if (!newId) return
       this._loadHealth()
@@ -1577,6 +1593,7 @@ Component({
       this._loadTwinReports()
       this._loadMetricHistory()
       this._loadWearableInsights()
+      this._loadEcg()
       try {
         const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(userId)}`)
         const records = res.data?.records || []
@@ -2141,6 +2158,48 @@ Component({
     // Analysis over the last 30 days of ring data (lib/wearableAnalysis.js), computed fresh on
     // the server. Self and coach view alike; the coach's own id rides along so the server can
     // run the same ownership check it runs for facts/documents. Never gated on subAgeList (§34).
+    // 心电节律 summaries. Coach view passes coach_id and the server re-checks users.coach_id.
+    async _loadEcg() {
+      const userId = this.data.userId
+      if (!userId || this.data.isGuest) return
+      try {
+        const coach = this.data.mode === 'coach' && this.data.coachId ? `&coach_id=${encodeURIComponent(this.data.coachId)}` : ''
+        const res = await this._req(`${BASE}/api/ecg?openid=${encodeURIComponent(userId)}&limit=10${coach}`)
+        const items = (res && res.success && Array.isArray(res.items)) ? res.items : []
+        const list = items.map((it) => ({ ...it, whenLabel: this._ecgWhenLabel(it.recorded_at) }))
+        this.setData({ ecgList: list, ecgLatest: list[0] || null })
+      } catch (_) { /* the card simply shows its empty state */ }
+      this._recomputeEcgSupported()
+    },
+
+    _recomputeEcgSupported() {
+      const brand = _normalizeBrand(this.data.wearableBrand)
+      // '__server__' is the placeholder for a binding known only from the server (no local BLE id).
+      const supported = this.data.mode === 'self' && !!this.data.wearableId && this.data.wearableId !== '__server__' && brand === 'v8'
+      if (supported !== this.data.ecgSupported) this.setData({ ecgSupported: supported })
+    },
+
+    _ecgWhenLabel(iso) {
+      const t = this.data.t
+      const d = new Date(iso); if (isNaN(d)) return ''
+      const now = new Date()
+      const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+      const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      if (now - d < 5 * 60 * 1000) return t.ecgJustNow
+      if (sameDay(d, now)) return `${t.ecgToday} ${hm}`
+      const y = new Date(now); y.setDate(now.getDate() - 1)
+      if (sameDay(d, y)) return `${t.ecgYesterday} ${hm}`
+      return `${d.getMonth() + 1}/${d.getDate()} ${hm}`
+    },
+
+    openEcgRecord() {
+      this._recomputeEcgSupported()
+      if (!this.data.ecgSupported) return
+      this.setData({ ecgRecordOpen: true })
+    },
+    closeEcgRecord() { this.setData({ ecgRecordOpen: false }) },
+    onEcgSaved() { this._loadEcg() },
+
     async _loadWearableInsights() {
       const { userId, mode, coachId, lang } = this.properties
       if (!userId) return

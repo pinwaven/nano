@@ -26,6 +26,7 @@ const {
   getDynamicHrDataPacket, getStaticHrDataPacket,
   getHrvTestDataPacket, getTemperatureHistoryPacket, getOxygenDataPacket,
   parseBcdDate, bcdToString, readLEInt,
+  setMeasurementPacket, setEcgRealtimePacket, parseEcgChunk,
 } = require('./protocol.js')
 
 class V8Band extends WearableDevice {
@@ -291,6 +292,56 @@ class V8Band extends WearableDevice {
       return { totalMinutes: 0, deep: null, light: null, rem: null, awake: null, periods: [], sleepStart: null, sleepEnd: null }
     }
     return history[history.length - 1]
+  }
+
+  // --- ECG (live stream, not history) ---
+
+  // Runs one on-demand ECG measurement and collects the raw sample stream. Mirrors
+  // tools/halo's V8Client.recordEcg(), which is where every rule below was established
+  // (see the ECG note in ./protocol.js).
+  //
+  //   opts.durationSec  measurement length asked of the band (seconds) -- the band ends the
+  //                     measurement itself at expiry, which is the only stop that works.
+  //   opts.captureMs    how long to listen (default durationSec*1000 + 1500 so the last packets
+  //                     land after expiry).
+  //   opts.onPacket     ({ packetId, samples, receivedAt }) => void per data notification.
+  //   opts.onStopSignal (fn) => void -- receives a function that ends the capture early.
+  //
+  // Resolves { packets, startedAt, endedAt }. The demo's open=0 pair is still sent afterwards
+  // (harmless; documented as not a stop). Never rejects on an empty capture -- zero packets is
+  // a contact miss the UI must explain, not an exception.
+  async recordEcg(opts = {}) {
+    const durationSec = Math.max(5, Math.min(300, Math.round(opts.durationSec || 30)))
+    const captureMs = opts.captureMs || durationSec * 1000 + 1500
+    const packets = []
+    const startedAt = Date.now()
+    let stopEarly = null
+    const stopPromise = new Promise((resolve) => { stopEarly = resolve })
+    if (typeof opts.onStopSignal === 'function') opts.onStopSignal(() => stopEarly())
+
+    this._ble.onNotify(NOTIFY_UUID, (data) => {
+      if (data[0] !== 0x07) return
+      const chunk = parseEcgChunk(data)
+      if (!chunk) return
+      const rec = { packetId: chunk.packetId, samples: chunk.samples, receivedAt: Date.now() }
+      packets.push(rec)
+      if (opts.onPacket) opts.onPacket(rec)
+    })
+
+    try {
+      await this._ble.write(this._deviceId, SERVICE_UUID, WRITE_UUID, setMeasurementPacket('ecg', true, durationSec))
+      await this._ble.write(this._deviceId, SERVICE_UUID, WRITE_UUID, setEcgRealtimePacket(true))
+      await Promise.race([new Promise((resolve) => setTimeout(resolve, captureMs)), stopPromise])
+    } finally {
+      this._ble.onNotify(NOTIFY_UUID, null)
+      try {
+        await this._ble.write(this._deviceId, SERVICE_UUID, WRITE_UUID, setEcgRealtimePacket(false))
+        await this._ble.write(this._deviceId, SERVICE_UUID, WRITE_UUID, setMeasurementPacket('ecg', false, durationSec))
+      } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'V8 ECG stop write failed', error: err.message }))
+      }
+    }
+    return { packets, startedAt, endedAt: Date.now() }
   }
 
   // --- Internal helpers ---

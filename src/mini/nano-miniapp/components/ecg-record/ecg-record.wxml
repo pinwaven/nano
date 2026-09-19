@@ -1,0 +1,68 @@
+<!-- 心电节律记录 overlay. Self view, V8 only; hosted by user-health. All copy comes from T —
+     WXML has no key checking, so every t.* here has a zh and an en entry in ecg-record.js. -->
+<view wx:if="{{open}}" class="ecg-overlay {{theme === 'light' ? 'theme-light' : ''}}" catchtouchmove="noop">
+  <view class="ecg-sheet">
+    <view class="ecg-head">
+      <text class="ecg-title">{{t.title}}</text>
+      <view class="ecg-close" catchtap="handleClose"><text>✕</text></view>
+    </view>
+
+    <!-- idle: instructions -->
+    <block wx:if="{{stage === 'idle'}}">
+      <view class="ecg-guide">
+        <view class="ecg-guide-glyph">☝︎</view>
+        <text class="ecg-guide-line">{{t.guide1}}</text>
+        <text class="ecg-guide-line">{{t.guide2}}</text>
+        <text class="ecg-guide-line ecg-guide-muted">{{t.guide3}}</text>
+      </view>
+      <view class="ecg-btn ecg-btn-primary" catchtap="handleStart"><text>{{t.start}}</text></view>
+      <text class="ecg-footnote">{{t.notDiagnosis}}</text>
+    </block>
+
+    <!-- connecting / measuring / saving -->
+    <block wx:if="{{stage === 'connecting' || stage === 'measuring' || stage === 'saving'}}">
+      <view class="ecg-status-row">
+        <text class="ecg-status">{{stage === 'connecting' ? t.connecting : stage === 'saving' ? t.saving : (noSignal ? t.noSignal : t.measuring)}}</text>
+        <text wx:if="{{stage === 'measuring'}}" class="ecg-countdown">{{remaining}}s</text>
+      </view>
+      <view class="ecg-canvas-wrap">
+        <canvas canvas-id="ecg-live" class="ecg-canvas"></canvas>
+      </view>
+      <view class="ecg-meta-row">
+        <text class="ecg-meta">{{t.packets}} {{packetCount}}</text>
+        <text class="ecg-meta">{{t.beatsLive}} {{liveBeats}}</text>
+      </view>
+      <view wx:if="{{stage === 'measuring'}}" class="ecg-btn ecg-btn-ghost" catchtap="handleStop"><text>{{t.stopEarly}}</text></view>
+    </block>
+
+    <!-- result -->
+    <block wx:if="{{stage === 'result'}}">
+      <view class="ecg-result-hero">
+        <text class="ecg-bpm">{{result.bpm}}</text>
+        <text class="ecg-bpm-unit">bpm</text>
+      </view>
+      <view class="ecg-result-grid">
+        <view class="ecg-cell"><text class="ecg-cell-v">{{result.accepted_beats}}</text><text class="ecg-cell-k">{{t.beats}}</text></view>
+        <view class="ecg-cell"><text class="ecg-cell-v">{{result.rr_median_ms}}</text><text class="ecg-cell-k">{{t.rrMedian}}</text></view>
+        <view class="ecg-cell"><text class="ecg-cell-v">{{result.rr_sd_ms}}</text><text class="ecg-cell-k">{{t.rrSd}}</text></view>
+        <view class="ecg-cell"><text class="ecg-cell-v">{{result.duration_seconds}}s</text><text class="ecg-cell-k">{{t.duration}}</text></view>
+      </view>
+      <view class="ecg-canvas-wrap">
+        <canvas canvas-id="ecg-live" class="ecg-canvas"></canvas>
+      </view>
+      <text class="ecg-footnote">{{t.notDiagnosis}}</text>
+      <view class="ecg-btn ecg-btn-primary" catchtap="handleClose"><text>{{t.done}}</text></view>
+    </block>
+
+    <!-- refused / failed -->
+    <block wx:if="{{stage === 'failed'}}">
+      <view class="ecg-guide">
+        <view class="ecg-guide-glyph">⚠</view>
+        <text class="ecg-guide-line">{{failTitle}}</text>
+        <text class="ecg-guide-line ecg-guide-muted">{{failBody}}</text>
+      </view>
+      <view class="ecg-btn ecg-btn-primary" catchtap="handleStart"><text>{{t.retry}}</text></view>
+      <view class="ecg-btn ecg-btn-ghost" catchtap="handleClose"><text>{{t.close}}</text></view>
+    </block>
+  </view>
+</view>
