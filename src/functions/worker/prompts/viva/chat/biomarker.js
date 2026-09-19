@@ -40,7 +40,7 @@ module.exports = (ctx) => {
 
   return `${getFactConstraintBlock(ctx.essential_knowledge)}
 
-${getWearableDailyBlock(ctx.wearable_daily, true, ctx.now_iso)}
+${getWearableDailyBlock(ctx.wearable_daily, true, ctx.now_iso, ctx.wearable_insights)}
 
 ${getSubAgeInputsBlock(true, ctx.sub_age_display_names)}
 

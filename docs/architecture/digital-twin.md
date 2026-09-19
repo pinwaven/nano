@@ -9,7 +9,7 @@ i18n keys, the prompt section headers, and the table below must change together 
 | # | ZH | EN | Backing tables | Miniapp section | Prompt header |
 |---|---|---|---|---|---|
 | 1 | 精准检测 | Precision Testing | `biomarkers(test_type='kino_chip')`; `health_twin.latest_bio_age / latest_sub_ages / latest_kino_scan_at` | `t.layerPrecision` + the BioAge summary card | `DIGITAL TWIN · PRECISION TESTING` |
-| 2 | 日常监测 | Daily Monitoring | `health_events(sleep\|activity\|vitals\|body_composition)`; `health_twin.avg_* / latest_weight_kg / latest_bmi / latest_body_fat_pct / trend_data` | `t.layerDaily` | `DIGITAL TWIN · DAILY MONITORING` |
+| 2 | 日常监测 | Daily Monitoring | `health_events(sleep\|activity\|vitals\|body_composition)`; `health_twin.avg_* / latest_weight_kg / latest_bmi / latest_body_fat_pct / trend_data / wearable_insights` ([wearable-insights.md](wearable-insights.md)) | `t.layerDaily` | `DIGITAL TWIN · DAILY MONITORING` |
 | 3 | 医疗记录 | Medical Records | `health_reports`; `health_documents`; `health_events(category='lab_result')`; `health_twin.latest_lab_data / latest_lab_date` | `t.layerMedical` | (rendered as the lab snapshot) |
 | 4 | 个人档案 | Personal Profile | `users.bio_data`; `questionnaire_responses`; `user_memory_facts` | `t.layerProfile` | `DIGITAL TWIN · PERSONAL PROFILE` |
 

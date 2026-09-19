@@ -8,6 +8,47 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **V8 CLI: ECG capture** · 2026-09-19
+  - `tools/halo` gains `node bin/cli.js ecg --device v8`: runs the vendor demo's on-demand ECG
+    sequence (`0x28` type 4 + `0x07`), captures the raw 24-bit sample stream for `--capture`
+    seconds (Ctrl-C stops early and still sends the stop pair), and prints packet/sample counts,
+    lost packets, the effective sample rate measured on that run, min/max/mean and any `0x28`
+    echo; `--out` writes CSV or JSON. Builders/parsers in `src/v8-protocol.js`
+    (`setMeasurementPacket`, `setEcgRealtimePacket`, `parseEcgChunk`, `parseMeasurementResult`),
+    `V8Client.recordEcg()` in `src/v8.js`, pure summary in `src/ecg-summary.js`.
+  - Offline tests (`tools/halo/test/`, `npm test` there) pin the packets against the vendor SDK's
+    byte layout and round-trip the sample packet published in `V8.xlsx`.
+  - Run live the same day on two units (both firmware `0.0.8.8`): continuous ≈255 Hz stream
+    with real QRS morphology on both; the derived HR (`estimateHeartRate`, new in
+    `src/ecg-summary.js`) matched the band's optical HR log. Firmware model established and
+    recorded in the tool README: the measurement needs wrist + finger contact and aborts within
+    ~3 s without it (one unit emits nothing at all — a zero-packet start is a contact miss, not
+    a wedge; a long run of "wedged" starts, an MCU reboot included, was exactly that); `duration`
+    is seconds from the start command and a start onto a running measurement re-times it; an
+    expired measurement needs the finger lifted before the next start; the SDK's stop pair stops
+    nothing — the band buffers ~50–60 s and flushes on the next tap open, so the summary splits
+    that off as `backlogPackets`; the only clean end is the measurement's own duration, so
+    `--duration` now defaults to the capture length and the band ends it itself (verified: no
+    backlog, nothing left running). Reference captures under `temp/v8-ecg/`. CLI only — the
+    miniapp V8 adapter, sync and backend are untouched.
+
+- **Wearable insights — analysis over synced ring data** · 2026-09-19
+  - `lib/wearableAnalysis.js` (pure): personal HRV baseline and p10–p90 band, today's z-scores,
+    readiness score + driver codes, sleep debt/regularity, stress balance (HRV must agree with the
+    stress byte), night/day HRV ratio, and three anomaly flags (`hrv_drop`, `low_streak`,
+    `strain_watch` — all three signals required; worded as strain, never illness). Everything is
+    relative to the user's own 30-day history — a vendor HRV index has no meaningful absolute cut.
+  - `lib/wearableDaily.js` `fetchHrvReadings()`; `health_twin.wearable_insights` (migration
+    `migration_health_twin_wearable_insights.sql`) written on every sync; `GET /api/wearable-insights`
+    (fresh, coach-scoped like facts).
+  - AI: rendered under the per-day rows in every chat template via `wearableDailyBlock.js`, one
+    sentence in both daily check-in prompts, `bundle_version` 5 for the AG twin bundle,
+    `contextDates()` allow-lists the analysis dates for grounding.
+  - Miniapp health tab: 洞察 card (readiness, band strip, sleep, stress, flags, provisional note)
+    for self and coach view; the 7-day HRV bars are now coloured against the personal band.
+    A high-stress reading is above the user's own p75, not a fixed 60 (a ring idling at 55 never
+    crossed it). `VERSION` 0919-2. Record: `docs/architecture/wearable-insights.md`.
+
 - **health-report skill: batch tooling + new data traps** · 2026-09-16
   - `scripts/batch/` (gen.py, common.py, digest.py, collect_images.js, wearable.py): one-command per-user digests, photo
     download, ring stats and a notes-driven report generator used to produce reports for 41 GCN premier partners

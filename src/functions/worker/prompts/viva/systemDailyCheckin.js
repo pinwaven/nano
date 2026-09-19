@@ -1,5 +1,6 @@
 'use strict';
 const { getFactConstraintBlock } = require('../chat/factConstraint');
+const { summarizeInsightsLine } = require('../../lib/wearableAnalysis');
 const { getVivaLabels } = require('./subAgeLabels');
 
 // Framing per time-of-day period — shares all data-fetching/context with the other two, only
@@ -65,6 +66,10 @@ module.exports = ({ user_profile, period, morning_dots, evening_dots, most_eleva
           ].filter(Boolean).join('，')
         : trendBits.join('，');
 
+    // Analysis relative to the user's own baseline (health_twin.wearable_insights, written at
+    // the last sync by lib/wearableAnalysis.js). One sentence: this is a greeting, not a report.
+    const insightsLine = summarizeInsightsLine(health_twin?.wearable_insights, true);
+
     const seasonLine = current_solar_term
         ? `当前节气：${current_solar_term.name_zh}（${current_solar_term.season_zh}季 · ${current_solar_term.organ_zh}）— ${current_solar_term.theme_zh}（传统节气养生视角，非临床证据，仅作轻微参考，不得掩盖生物标志物驱动的优先级）`
         : '';
@@ -85,6 +90,7 @@ ${PERIOD_FRAMING[period] || PERIOD_FRAMING.morning}
 ${elevatedLine}
 ${planLine ? `进行中的健康计划目标：${planLine}` : ''}
 ${dailyMonitoringLine ? `数字孪生 · 日常监测（仅供参考，可选择性提及，不得优先于上述维度）：${dailyMonitoringLine}` : ''}
+${insightsLine ? `数字孪生 · 日常监测 · 相对个人基线的分析（可以提及其中一点，说明是相对本人基线；「负荷偏高」只对应休息建议，不是诊断）：${insightsLine}` : ''}
 ${seasonLine}
 
 输出要求：

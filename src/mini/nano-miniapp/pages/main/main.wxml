@@ -454,6 +454,32 @@
                         <text class="pcard-arrow">›</text>
                       </view>
                     </view>
+                    <!-- :::grocery — supermarket products for a diet suggestion (CLAUDE.md §44).
+                         Server-written rows with a thumbnail; a tap copies the product name so the
+                         user can search it in the supermarket's own app. -->
+                    <view wx:elif="{{seg.t === 'grocery'}}" class="gcard">
+                      <text class="gcard-title">{{t.groceryCardTitle}}</text>
+                      <view
+                        wx:for="{{seg.items}}"
+                        wx:for-item="gi"
+                        wx:for-index="gk"
+                        wx:key="id"
+                        class="gcard-row"
+                        bindtap="handleGroceryCardTap"
+                        data-name="{{gi.name}}"
+                        data-supplier="{{gi.supplierName}}"
+                      >
+                        <image wx:if="{{gi.image}}" class="gcard-img" src="{{gi.image}}" mode="aspectFill" lazy-load="{{true}}" />
+                        <view wx:else class="gcard-img gcard-img-empty"></view>
+                        <view class="gcard-main">
+                          <text class="gcard-name">{{gi.name}}</text>
+                          <text wx:if="{{gi.reason}}" class="gcard-reason">{{gi.reason}}</text>
+                          <text class="gcard-supplier">{{gi.supplierName}}</text>
+                        </view>
+                        <text wx:if="{{gi.price}}" class="gcard-price">{{gi.price}}</text>
+                      </view>
+                      <text wx:if="{{seg.note}}" class="gcard-note">{{seg.note}}</text>
+                    </view>
                     <!-- :::lesson — a 打卡 program day's Academy lesson, played inline. The <video> is
                          mounted only once the user taps (a fresh presigned URL per tap, never in the
                          message) and reaching the end is what marks it watched. -->

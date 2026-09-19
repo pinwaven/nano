@@ -1,6 +1,6 @@
 # Viva AG — External Agent API
 
-Version 1 · bundle_version 4
+Version 1 · bundle_version 5
 
 This is the complete contract between Waven Nano and the external **Viva AG** (Advanced
 Generation) agent. Nano holds a queue of analysis jobs; your agent **pulls** from it, reads a
@@ -126,7 +126,7 @@ curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
 
 ```json
 { "success": true, "service": "viva-ag", "env": "dev",
-  "bundle_version": 4, "queue_depth": 2, "server_time": "2026-08-23 17:04:11" }
+  "bundle_version": 5, "queue_depth": 2, "server_time": "2026-08-23 17:04:11" }
 ```
 
 ---
@@ -217,7 +217,7 @@ Shape:
 ```jsonc
 {
   "success": true,
-  "bundle_version": 4,
+  "bundle_version": 5,
   "generated_at": "2026-08-23 17:05:40",
   "job": { "job_uid": "…", "command": "…", "command_key": "…", "params": {},
            "questionnaire_rounds_used": 1, "questionnaire_rounds_remaining": 1 },
@@ -248,7 +248,15 @@ Shape:
     "daily_monitoring": {           // wearable ring / band
       "health_twin": { "avg_hrv_ms": …, "avg_resting_hr": …, "avg_sleep_hours": …,
                        "avg_daily_steps": …, "latest_weight_kg": …, "trend_data": {…},
-                       "data_coverage": {…} },
+                       "data_coverage": {…},
+                       // bundle_version 5: nano's own analysis of the last 30 days of ring data,
+                       // relative to THIS user's baseline (codes + numbers, no prose). null when
+                       // fewer than 3 days carry HRV. readiness.level ready|moderate|low;
+                       // anomaly.flags[].code hrv_drop|low_streak|strain_watch — a rest nudge,
+                       // not a diagnosis; data_quality.provisional is true under 14 days.
+                       "wearable_insights": { "version": 1, "data_quality": {…}, "baseline": {…},
+                                              "today": {…}, "readiness": {…}, "sleep": {…},
+                                              "stress": {…}, "anomaly": { "flags": [] } } },
       "weight_history": [ { "weight_kg": 72.4, "tested_at": "…" } ]
     },
     "medical_records": {

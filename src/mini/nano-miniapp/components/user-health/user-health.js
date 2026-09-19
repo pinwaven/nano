@@ -362,6 +362,19 @@ const T = {
     ringHrvTrend: 'HRV 趋势', ringSpo2Trend: 'SpO₂ 趋势', ringBodyTemp: '体温',
     ringSleepWeek: '过去7天睡眠', ringNap: '小睡', ringNightSleep: '夜间睡眠', ringSleepNoBlocks: '暂无睡眠记录',
     ringSmoothedNote: '条读数已平滑处理',
+    // Wearable insights card (GET /api/wearable-insights, lib/wearableAnalysis.js codes → copy here)
+    insightTitle: '洞察', insightReadiness: '恢复状态', insightNotDiagnosis: '相对个人基线的统计结论，不是诊断',
+    insightLevel_ready: '良好', insightLevel_moderate: '一般', insightLevel_low: '偏低',
+    insightDriver_hrv_below_band: 'HRV 低于个人区间', insightDriver_hrv_in_band: 'HRV 在个人区间内', insightDriver_hrv_above_band: 'HRV 高于个人区间',
+    insightDriver_rhr_elevated: '静息心率偏高', insightDriver_rhr_low: '静息心率偏低', insightDriver_short_sleep: '睡眠偏短',
+    insightDriver_low_restorative: '深睡+REM 偏低', insightDriver_good_sleep: '睡眠好于平时', insightDriver_no_sleep_data: '无睡眠记录',
+    insightBand: 'HRV 个人正常区间', insightToday: '今日', insightLatest: '最近', insightVsBaseline: 'vs 30天基线',
+    insightSleep: '睡眠', insightLastNight: '最近一晚', insightVsWeek: 'vs 本周', insightAvg7: '7天均值', insightDebt: '本周欠账', insightRestorative: '深睡+REM',
+    insightRegular: '作息规律', insightIrregular: '作息不规律',
+    insightStress: '压力', insightBalance_recovering: '趋于恢复', insightBalance_balanced: '基本平衡', insightBalance_accumulating: '趋于累积',
+    insightLoadToday: '今日高压读数', insightLoadLatest: '当日高压读数', insightLoad7d: '7天', insightNightDay: '夜/昼 HRV',
+    insightFlag_hrv_drop: 'HRV 明显低于最近一周', insightFlag_low_streak: 'HRV 连续多日低于个人区间', insightFlag_strain_watch: '身体负荷偏高，建议以休息为主',
+    insightSince: '自', insightProvisional: '基线建立中，再戴 {n} 天后更准确',
   },
   en: {
     bioAge: 'Bio Age', chronoAge: 'Chrono Age',
@@ -508,6 +521,18 @@ const T = {
     ringHrvTrend: 'HRV Trend', ringSpo2Trend: 'SpO₂ Trend', ringBodyTemp: 'Body Temp',
     ringSleepWeek: '7-Day Sleep', ringNap: 'Nap', ringNightSleep: 'Night Sleep', ringSleepNoBlocks: 'No sleep recorded yet',
     ringSmoothedNote: ' readings smoothed',
+    insightTitle: 'Insights', insightReadiness: 'Recovery', insightNotDiagnosis: 'Relative to your own baseline — not a diagnosis',
+    insightLevel_ready: 'Good', insightLevel_moderate: 'Moderate', insightLevel_low: 'Low',
+    insightDriver_hrv_below_band: 'HRV below your range', insightDriver_hrv_in_band: 'HRV in your range', insightDriver_hrv_above_band: 'HRV above your range',
+    insightDriver_rhr_elevated: 'Resting HR up', insightDriver_rhr_low: 'Resting HR low', insightDriver_short_sleep: 'Short sleep',
+    insightDriver_low_restorative: 'Low deep+REM', insightDriver_good_sleep: 'Slept better than usual', insightDriver_no_sleep_data: 'No sleep data',
+    insightBand: 'HRV personal range', insightToday: 'Today', insightLatest: 'Latest', insightVsBaseline: 'vs 30-day baseline',
+    insightSleep: 'Sleep', insightLastNight: 'Last night', insightVsWeek: 'vs this week', insightAvg7: '7-day avg', insightDebt: 'Weekly debt', insightRestorative: 'Deep+REM',
+    insightRegular: 'Regular bedtime', insightIrregular: 'Irregular bedtime',
+    insightStress: 'Stress', insightBalance_recovering: 'Recovering', insightBalance_balanced: 'Balanced', insightBalance_accumulating: 'Accumulating',
+    insightLoadToday: 'High-stress today', insightLoadLatest: 'High-stress that day', insightLoad7d: '7d', insightNightDay: 'Night/day HRV',
+    insightFlag_hrv_drop: 'HRV clearly below the past week', insightFlag_low_streak: 'HRV below your range for several days', insightFlag_strain_watch: 'Elevated strain — prioritise rest',
+    insightSince: 'since', insightProvisional: 'Building your baseline — {n} more days to go',
   },
 }
 
@@ -762,6 +787,60 @@ function _shanghaiTimeStr(t) {
 // Returns the Shanghai (UTC+8) hour (0–23) from any timestamp or ISO string
 function _shanghaiHour(t) {
   return new Date(new Date(t).getTime() + _CST_MS).getUTCHours()
+}
+
+// Wearable insights card — turns lib/wearableAnalysis.js's codes-and-numbers object into
+// display strings and bar geometry. Everything user-facing is looked up in `t`, so a lang
+// switch simply rebuilds it. Returns null when the server had too little data to analyse.
+const INSIGHT_LEVEL_COLOR = { ready: '#10b981', moderate: '#f59e0b', low: '#ef4444' }
+const INSIGHT_BALANCE_COLOR = { recovering: '#10b981', balanced: '#0ea5e9', accumulating: '#f59e0b' }
+function _buildInsightsView(ins, t) {
+  if (!ins || (!ins.readiness && !ins.sleep)) return null
+  const signed = (v, unit = '') => (v == null ? '—' : `${v > 0 ? '+' : ''}${v}${unit}`)
+  const mmdd = (d) => (d ? d.slice(5).replace('-', '/') : '')
+  const view = { drivers: [], flags: [], band: null, sleep: null, stress: null, provisional: null }
+  const rd = ins.readiness, td = ins.today, b = ins.baseline
+  if (rd && td) {
+    view.score = rd.score
+    view.level = rd.level
+    view.levelLabel = t[`insightLevel_${rd.level}`] || rd.level
+    view.levelColor = INSIGHT_LEVEL_COLOR[rd.level] || '#0ea5e9'
+    view.refDate = mmdd(td.date)
+    view.isToday = !!td.is_today
+    view.drivers = (rd.drivers || []).map(code => ({ code, label: t[`insightDriver_${code}`] || code }))
+    if (b && b.band_low != null && td.hrv_ms != null) {
+      const lo = Math.min(b.band_low * 0.8, td.hrv_ms * 0.95), hi = Math.max(b.band_high * 1.2, td.hrv_ms * 1.05)
+      const pct = (v) => Math.round(Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100)))
+      view.band = {
+        low: b.band_low, high: b.band_high, hrv: td.hrv_ms,
+        rangeLeftPct: pct(b.band_low), rangeWidthPct: Math.max(2, pct(b.band_high) - pct(b.band_low)),
+        markerPct: pct(td.hrv_ms),
+        vsBaseline: signed(td.hrv_vs_baseline_pct, '%'),
+        color: td.hrv_band_position === 'below' ? '#f59e0b' : td.hrv_band_position === 'above' ? '#10b981' : '#0ea5e9',
+      }
+    }
+  }
+  if (ins.sleep && ins.sleep.last_night) {
+    const sl = ins.sleep, ln = sl.last_night
+    view.sleep = {
+      date: mmdd(ln.date), hours: ln.hours, vsWeek: signed(ln.vs_7d_hours, 'h'),
+      restorative: ln.restorative_pct, avg7: sl.avg_7d_hours, debt: sl.debt_7d_hours,
+      regular: sl.regular, regularLabel: sl.regular == null ? '' : (sl.regular ? t.insightRegular : t.insightIrregular),
+    }
+  }
+  if (ins.stress) {
+    const st = ins.stress
+    view.stress = {
+      balance: st.balance, balanceLabel: t[`insightBalance_${st.balance}`] || st.balance,
+      balanceColor: INSIGHT_BALANCE_COLOR[st.balance] || '#0ea5e9',
+      loadToday: st.load_today, load7d: st.load_7d, nightDay: st.night_day_hrv_ratio,
+    }
+  }
+  view.flags = ((ins.anomaly && ins.anomaly.flags) || []).map(f => ({ code: f.code, label: t[`insightFlag_${f.code}`] || f.code, since: mmdd(f.since) }))
+  if (ins.data_quality && ins.data_quality.provisional) {
+    view.provisional = (t.insightProvisional || '').replace('{n}', String(ins.data_quality.days_until_baseline))
+  }
+  return view
 }
 
 function _getRealtimeReadings(syncedAt) {
@@ -1250,6 +1329,8 @@ Component({
     stepsHistory: [],
     stepsChartOpen: false,
     stepsChartW: 300,
+    insights: null,        // raw GET /api/wearable-insights object (band drives the HRV bar colours)
+    insightsView: null,    // _buildInsightsView() of the above, rebuilt on lang change
     hrvHistory: [],
     hrvChartOpen: false,
     hrvChartW: 300,
@@ -1376,7 +1457,8 @@ Component({
     },
     'lang': function(newLang) {
       const isZh = newLang !== 'en'
-      this.setData({ t: T[newLang] || T.zh, isZh })
+      const t = T[newLang] || T.zh
+      this.setData({ t, isZh, insightsView: _buildInsightsView(this.data.insights, t) })
       if (this.properties.userId && !this.data.bioLoading) this._loadHealth()
     },
     'user': function(newUser) {
@@ -1494,6 +1576,7 @@ Component({
       this._loadFoodSensitivity()
       this._loadTwinReports()
       this._loadMetricHistory()
+      this._loadWearableInsights()
       try {
         const res = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(userId)}`)
         const records = res.data?.records || []
@@ -2053,6 +2136,43 @@ Component({
 
     closeWeightChart() {
       this.setData({ weightChartOpen: false })
+    },
+
+    // Analysis over the last 30 days of ring data (lib/wearableAnalysis.js), computed fresh on
+    // the server. Self and coach view alike; the coach's own id rides along so the server can
+    // run the same ownership check it runs for facts/documents. Never gated on subAgeList (§34).
+    async _loadWearableInsights() {
+      const { userId, mode, coachId, lang } = this.properties
+      if (!userId) return
+      try {
+        const coach = mode === 'coach' && coachId ? `&coach_id=${encodeURIComponent(coachId)}` : ''
+        const res = await this._req(`${BASE}/api/wearable-insights?openid=${encodeURIComponent(userId)}${coach}`)
+        if (res.statusCode !== 200 || res.data?.success === false) {
+          if (IS_DEV) console.error('[wearable][insights]', res.statusCode, res.data)
+          return
+        }
+        const insights = res.data?.insights || null
+        // T[...] directly, as _loadRingDataFromServer does — data.t may still be {} on first load
+        this.setData({ insights, insightsView: _buildInsightsView(insights, T[(lang || 'zh') !== 'en' ? 'zh' : 'en']) })
+        this._applyBandToHrvBars()
+      } catch (e) {
+        if (IS_DEV) console.error('[wearable][insights]', e?.message || e?.errMsg || e)
+      }
+    },
+
+    // The 7-day HRV bars are coloured against the user's own band once it exists (in band =
+    // neutral, below = amber, above = green) instead of the absolute cut _buildRingData falls
+    // back to — a vendor HRV index has no meaningful absolute "good". Called after the insights
+    // load and after every ringData rebuild, so a fresh sync never reverts the colours.
+    _applyBandToHrvBars() {
+      const bars = this.data.ringData && this.data.ringData.hrvDayBars
+      const b = this.data.insights && this.data.insights.baseline
+      if (!bars || !b || b.band_low == null || b.band_high == null) return
+      const recoloured = bars.map(bar => ({
+        ...bar,
+        color: bar.avg < b.band_low ? '#f59e0b' : bar.avg > b.band_high ? '#10b981' : '#0ea5e9',
+      }))
+      this.setData({ 'ringData.hrvDayBars': recoloured })
     },
 
     async _loadMetricHistory() {
@@ -3412,6 +3532,7 @@ Component({
           mood: computeMood(ringData),
           twinLoading: false,
         })
+        this._applyBandToHrvBars()
       } catch (e) {
         if (IS_DEV) console.error('[wearable][server-data]', e?.message || e?.errMsg || e)
       }
@@ -4012,6 +4133,7 @@ Component({
         twinLoading: false,
         ...visuals,
       })
+      this._applyBandToHrvBars()
       return syncPromise
     },
 

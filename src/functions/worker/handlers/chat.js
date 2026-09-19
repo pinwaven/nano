@@ -51,14 +51,16 @@ const { grantSignupTrial } = require('../lib/personaOverride');
 const { _runDeterministicFormulation, _commitProposedPlan } = require('./dots');
 const { _resolveOrderContext } = require('./formulation_orders');
 const { _applyTierLadder, _padCandidatesFor, _fallbackCountForDot, _resolveCandidateDotKeys, _splitDotTiming, _balanceCapsules, _countForLevel, _doseFromRanking, _rankDotsBySeverity } = require('../lib/formulation');
-const { _buildFormulaChartBlock, _buildProductCardBlock } = require('../lib/chatCards');
+const { _buildFormulaChartBlock, _buildProductCardBlock, _buildGroceryCardBlock } = require('../lib/chatCards');
+const { resolveGroceryProducts, fetchActiveSuppliers } = require('../lib/groceryCatalog');
 const { fetchAiCatalog } = require('../lib/gcnClient');
 const { PLAN_WEEKS, N7_KEY } = require('../lib/dotsProductModel');
 const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock');
 const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
 const { messageAsksAboutFoodSensitivity } = require('../prompts/chat/foodSensitivityBlock');
 const { messageAsksForMealPlan } = require('../prompts/chat/mealPlanRequest');
-const { fetchWearableDaily, messageAsksAboutWearable } = require('../lib/wearableDaily');
+const { fetchWearableDaily, fetchHrvReadings, messageAsksAboutWearable } = require('../lib/wearableDaily');
+const { analyzeWearable } = require('../lib/wearableAnalysis');
 
 // Channels with a GCN storefront behind them resolve to their GCN sector through the channel
 // tree (lib/channels.js — aeviva and waven roots). Nothing else has a catalog to recommend
@@ -738,6 +740,7 @@ function _stripActionTails(text) {
         .replace(/\n?\{"action"\s*:\s*"remember_fact"[^}]*\}/g, '')
         .replace(/\n?\{"action"\s*:\s*"ask_questions"[\s\S]*$/, '')
         .replace(/\n?\{"action"\s*:\s*"recommend_product"[\s\S]*$/, '')
+        .replace(/\n?\{"action"\s*:\s*"recommend_grocery"[\s\S]*$/, '')
         .trim();
 }
 
@@ -959,7 +962,9 @@ async function finalizeChatReply({ rawReply, extraValidDates, extraValidValues, 
         // grounding check for the same reason set_reminder is: reason_zh is free prose that can
         // contain a number, and verifyBiomarkerGrounding has no way to tell a product blurb from
         // a biomarker claim.
-        .replace(/\{"action"\s*:\s*"recommend_product"[\s\S]*$/, '');
+        .replace(/\{"action"\s*:\s*"recommend_product"[\s\S]*$/, '')
+        // recommend_grocery: same nesting shape, same reason.
+        .replace(/\{"action"\s*:\s*"recommend_grocery"[\s\S]*$/, '');
     const hasKnownAge = user.birth_date != null;
     const hasKnownBmi = llmContext.user_profile.bmi != null;
     if (Object.keys(llmContext.biomarkers).length > 0 || hasKnownAge || hasKnownBmi) {
@@ -1213,6 +1218,26 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
         }
     }
 
+    // Detect a recommend_grocery action — supermarket products the model picked from
+    // get_grocery_products rows this turn (prompts/chat/groceryBlock.js, CLAUDE.md §44). Same
+    // discipline as recommend_product above, with one difference forced by scale: the catalog is
+    // thousands of rows and was never in the prompt, so validation is a fresh read of the ids
+    // (lib/groceryCatalog.js resolveGroceryProducts) — an id that resolves to no active food row
+    // is dropped, and the allergy/restriction filter runs again on what does resolve.
+    let recommendedGroceries = [];
+    const groceryExtracted = _extractTrailingJson(rawReply, '{"action":"recommend_grocery"');
+    if (groceryExtracted) {
+        try {
+            recommendedGroceries = await resolveGroceryProducts(pool, groceryExtracted.parsed?.items, llmContext.user_facts || []);
+            const dropped = (groceryExtracted.parsed?.items || []).length - recommendedGroceries.length;
+            if (dropped > 0) {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'recommend_grocery_entries_dropped', user_id, dropped }));
+            }
+        } catch (e) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'recommend_grocery action failed', error: e.message }));
+        }
+    }
+
     // A REVISE-round completion can occasionally consist of ONLY the corrected action JSON
     // with no surrounding prose (the model over-focuses on fixing the flagged action param
     // and drops the conversational reply) — stripping it then would ship a blank message.
@@ -1241,9 +1266,11 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
     // for a trailing invitation and is never lost to a blank-prose fallback. rich_format gates it
     // the same way every other ::: card is gated: the coach app and web user-app would render the
     // fence as literal text.
-    const productCard = (llmContext.rich_format && recommendedProducts.length > 0)
+    const productCard = ((llmContext.rich_format && recommendedProducts.length > 0)
         ? _buildProductCardBlock(recommendedProducts, user.language)
-        : '';
+        : '') + ((llmContext.rich_format && recommendedGroceries.length > 0)
+        ? _buildGroceryCardBlock(recommendedGroceries, user.language)
+        : '');
     // The model is told to call a dot by its 对话中称呼 and prod shows it sometimes writing
     // the internal code anyway; rewritten here rather than asked for again. Applied to the
     // single assembled string, so the sandbox return and both delivery channels can never
@@ -1615,6 +1642,22 @@ async function handlePostChat(body) {
                 console.log(JSON.stringify({ level: 'WARN', msg: 'wearable_daily_fetch_failed', user_id, error: err.message }));
                 return [];
             });
+            // And the analysis over the last 30 days (lib/wearableAnalysis.js) — the stored copy
+            // health_twin keeps from the last sync, not a recompute: the chat path wants a cheap
+            // read, and a day-old readiness line is still true for the date it names.
+            fetches.wearable_insights = pool.query(`SELECT wearable_insights FROM health_twin WHERE user_id = $1`, [user_id])
+                .then(r => r.rows[0]?.wearable_insights || null)
+                .catch(err => {
+                    console.log(JSON.stringify({ level: 'WARN', msg: 'wearable_insights_fetch_failed', user_id, error: err.message }));
+                    return null;
+                });
+            // Grocery catalogs on file (§44). Tiny, and fetched on every turn for the same reason
+            // formulation_packages_available is: the block carries no data, only the vocabulary
+            // and the tool name, and only the nutrition templates render it.
+            fetches.grocery_suppliers = fetchActiveSuppliers(pool).catch(err => {
+                console.log(JSON.stringify({ level: 'WARN', msg: 'grocery_suppliers_fetch_failed', user_id, error: err.message }));
+                return [];
+            });
             // Always fetch health_twin — provides wearable/sleep/activity context for all intents
             fetches.health_twin = pool.query(
                 `SELECT avg_hrv_ms, avg_resting_hr, avg_spo2,
@@ -1693,6 +1736,7 @@ async function handlePostChat(body) {
                 last_weight: fetched.weight?.rows[0]?.data?.actual?.weight ?? null,
                 health_twin: twinRow,
                 wearable_daily: Array.isArray(fetched.wearable_daily) ? fetched.wearable_daily : [],
+                wearable_insights: fetched.wearable_insights || null,
                 now_iso: getNowShanghai().toISO(),
                 questionnaire_context: formatQuestionnaireContext(
                     fetched.questionnaire_responses?.rows || [],
@@ -1727,6 +1771,7 @@ async function handlePostChat(body) {
                 // it being present on a turn that doesn't need it is a few lines of prompt.
                 formulation_packages_available: !!gcnSector,
                 food_sensitivity_available: fetched.has_food_panel?.rows?.[0]?.present === true,
+                grocery_suppliers: fetched.grocery_suppliers || [],
                 // Gates prompts/chat/outputFormat.js's ::: display-card syntax. Scoped to the
                 // miniapp because it's the only surface whose renderer understands the fences —
                 // the coach app shows content as a bare <text> and the web user-app uses
@@ -3302,6 +3347,39 @@ async function handleGetHealthTwin(openid) {
     }
 }
 
+// GET /api/wearable-insights?openid=&coach_id= — the analysis layer over synced ring data
+// (lib/wearableAnalysis.js), computed FRESH here rather than read from health_twin: "today"
+// moves at midnight and the stored copy is as old as the last sync. The stored column is
+// for prompts and the check-in, where a cheap read matters more than the date boundary.
+// Coach access is the same coarse users.coach_id ownership check as handleGetUserFacts,
+// enforced only when the caller supplies its own coach_id.
+async function handleGetWearableInsights(query) {
+    const { openid, coach_id } = query || {};
+    if (!openid) return { success: false, error: 'openid required', statusCode: 400 };
+    try {
+        const userResult = await pool.query(
+            `SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
+            [openid]
+        );
+        if (!userResult.rows.length) return { success: false, error: 'User not found', statusCode: 404 };
+        const user_id = userResult.rows[0].user_id;
+        if (coach_id) {
+            const check = await pool.query('SELECT 1 FROM users WHERE user_id = $1 AND coach_id = $2', [user_id, coach_id]);
+            if (check.rows.length === 0) return { success: false, error: 'Access denied', statusCode: 403 };
+        }
+        const today = formatToShanghai(new Date()).slice(0, 10);
+        const [daily, readings] = await Promise.all([
+            fetchWearableDaily(pool, user_id, 30),
+            fetchHrvReadings(pool, user_id, 30),
+        ]);
+        const insights = daily.length ? analyzeWearable({ daily, readings, today }) : null;
+        return { success: true, today, insights, daily };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetWearableInsights failed', error: err.message }));
+        return { success: false, error: err.message, statusCode: 500 };
+    }
+}
+
 async function handleGetOssPresign(query) {
     try {
         const { type, filename, action, key: existingKey, category } = query;
@@ -3352,5 +3430,6 @@ module.exports = {
     handlePostHealthEventsSync,
     handleGetHealthEvents,
     handleGetHealthTwin,
+    handleGetWearableInsights,
     handleGetOssPresign,
 };

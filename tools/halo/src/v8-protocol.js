@@ -459,6 +459,92 @@ function parseOxygenChunk(buf) {
   return { records, done }
 }
 
+// --- ECG (on-demand, streamed live -- NOT a history type) ---
+//
+// Ported from BleSDK.SetDeviceMeasurementWithType / setECGRealtimeDuringHRVEnabled
+// and ResolveUtil.getECG, plus the vendor demo (v8test ECGActivity.java). The
+// band has no ECG history opcode and ships no analysis library: the only ECG
+// output is a live stream of raw 24-bit ADC samples on opcode 0x07 while a
+// measurement is running. Anything derived (HR, rhythm, quality) is ours to
+// compute; the `ECGQualityValue`/`ECGHrValue`/… keys in DeviceKey.java have no
+// producer anywhere in the SDK.
+//
+// Sequence used by the demo (both orderings ship, this is the Java one):
+//   1. 0x28  type=ECG(0x04) open=1 duration          -- start the measurement
+//   2. 0x07  open=1                                  -- enable ECG realtime streaming
+//   … band pushes 0x07 notifications, each `packetId` + N x 3-byte samples …
+//   3. 0x28  type=ECG open=0 ; 0x07 open=0           -- stop
+//
+// Duration field (bytes 4-5 LE, max 65535): SECONDS, counted from the 0x28
+// start command -- confirmed live 2026-09-19 (a fresh duration=30 measurement
+// ended 30 s after the command, start-up latency included). The measurement
+// ends at expiry or ~2 s after electrode contact is lost; the SDK's
+// open=0 "stop" ends nothing (the band keeps sampling and buffers while the
+// 0x07 tap is closed). A 0x28 start sent onto a running measurement does
+// not start a new one -- it re-times/pauses the running one in ways that
+// were not pinned down; the CLI never relies on it. ECG_DEMO_DURATION is
+// the vendor demo's literal (50*1000, presumably a ms value nobody
+// checked), kept only as the fallback when no capture length is known.
+
+const MEASUREMENT_TYPES = { hrv: 0x01, hr: 0x02, spo2: 0x03, ecg: 0x04 }
+const ECG_DEMO_DURATION = 50 * 1000
+
+// 0x28 -- start/stop an on-demand measurement (BleSDK.SetDeviceMeasurementWithType).
+// type: 'hrv' | 'hr' | 'spo2' | 'ecg'. duration goes to bytes 4-5 LE; the ECG
+// type additionally sets byte 6 = 1 (vendor code, purpose undocumented).
+function setMeasurementPacket(type, open, duration) {
+  const typeByte = MEASUREMENT_TYPES[type]
+  if (!typeByte) throw new Error(`Unknown measurement type "${type}"`)
+  const d = duration == null ? ECG_DEMO_DURATION : duration
+  if (!Number.isInteger(d) || d < 0 || d > 0xffff) throw new Error(`duration must be an integer 0..65535, got ${duration}`)
+  const payload = new Array(14).fill(0)
+  payload[0] = typeByte
+  payload[1] = open ? 0x01 : 0x00
+  payload[3] = d & 0xff
+  payload[4] = (d >> 8) & 0xff
+  if (typeByte === MEASUREMENT_TYPES.ecg) payload[5] = 0x01
+  return buildCommand(0x28, payload)
+}
+
+// 0x07 -- enable/disable ECG realtime streaming (BleSDK.setECGRealtimeDuringHRVEnabled)
+function setEcgRealtimePacket(open) {
+  return buildCommand(0x07, [open ? 0x01 : 0x00])
+}
+
+// 0x07 notification (ResolveUtil.getECG): byte1 = packetId (uint8, wraps),
+// then (length-2)/3 samples, each an unsigned 24-bit little-endian ADC value
+// (vendor sample data shows values ~0.5M-1.8M). Frames of exactly 16 bytes on
+// this opcode are the band's ack to the enable command, not data -- the SDK
+// gates on `value.length > 16` and so does this.
+function parseEcgChunk(buf) {
+  if (buf.length <= 16) return null
+  const packetId = buf[1]
+  const count = Math.floor((buf.length - 2) / 3)
+  const samples = new Array(count)
+  for (let i = 0; i < count; i++) samples[i] = readLEInt(buf, 2 + 3 * i, 3)
+  return { packetId, samples }
+}
+
+// 0x28 reply for the hrv/hr/spo2 types (BleSDK.DataParsingWithData, case
+// MeasurementWithType): one spot reading. The SDK has no branch for the ECG
+// type (byte1 == 4) -- whatever the band echoes for ECG is surfaced raw by
+// the client so it can be seen live.
+function parseMeasurementResult(buf) {
+  const typeByte = buf[1]
+  const type = Object.keys(MEASUREMENT_TYPES).find((k) => MEASUREMENT_TYPES[k] === typeByte) || null
+  return {
+    type,
+    typeByte,
+    heartRate: buf[2],
+    spo2: buf[3],
+    hrv: buf[4],
+    stress: buf[5],
+    systolic: buf[6],
+    diastolic: buf[7],
+    raw: Array.from(buf.slice(0, 16)),
+  }
+}
+
 module.exports = {
   SERVICE_UUID, WRITE_UUID, NOTIFY_UUID, V8_NAME_PREFIXES,
   calculateChecksum, buildCommand, decToBcd, bcdToString, parseBcdDate, readLEInt,
@@ -475,4 +561,6 @@ module.exports = {
   parseTotalStepChunk, parseDetailActivityChunk, parseSleepChunk,
   parseDynamicHrChunk, parseStaticHrChunk, parseHrvChunk,
   parseTemperatureChunk, parseOxygenChunk,
+  MEASUREMENT_TYPES, ECG_DEMO_DURATION,
+  setMeasurementPacket, setEcgRealtimePacket, parseEcgChunk, parseMeasurementResult,
 }

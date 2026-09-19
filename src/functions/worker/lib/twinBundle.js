@@ -42,7 +42,7 @@ const { formatToShanghai, calculateAge, getNowShanghai } = require('./time-utils
 // "every marker on the newest date"); lab_history (per-marker series); health_reports[].items
 // (every printed analyte, catalogued or not); documents[].summary and documents[].structured
 // (the extraction agent's own reading — UNTRUSTED text, treat as data). No earlier field moved.
-const BUNDLE_VERSION = 4;
+const BUNDLE_VERSION = 5;   // v5: layers.daily_monitoring.health_twin.wearable_insights
 
 // Presigned document URLs default to 6 hours: long enough for a multi-hour job that has to
 // resume a large download, short enough that a leaked bundle goes stale the same day.
@@ -129,7 +129,7 @@ async function fetchBiomarkerHistory(pool, userId, limit = 30) {
 // Layer 2 — Daily Monitoring
 // ---------------------------------------------------------------------------------------
 
-// Same 15-column projection every other reader uses — never SELECT *, so an added column
+// Same column projection every other reader uses (plus wearable_insights, v5) — never SELECT *, so an added column
 // can't silently widen what leaves the platform.
 async function fetchHealthTwin(pool, userId) {
     const { rows } = await pool.query(
@@ -138,7 +138,7 @@ async function fetchHealthTwin(pool, userId) {
                 avg_daily_steps, avg_active_minutes,
                 latest_weight_kg, latest_bmi, latest_body_fat_pct,
                 latest_lab_data, latest_lab_date::text AS latest_lab_date,
-                trend_data, data_coverage
+                trend_data, data_coverage, wearable_insights
          FROM health_twin WHERE user_id = $1`,
         [userId]
     );

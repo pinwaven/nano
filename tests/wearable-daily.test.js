@@ -71,3 +71,31 @@ test('every chat template of both personas renders the per-day block', () => {
     assert.match(src, /getWearableDailyBlock\(/, `${p} does not render the block`);
   }
 });
+
+// fetchHrvReadings: the per-reading rows lib/wearableAnalysis.js needs. The measurement time is
+// the 14-digit tail of sync.js's external_id, recorded_at only a fallback, and a row with
+// neither is dropped rather than guessed onto a date.
+test('fetchHrvReadings takes the measurement time from the external_id tail, falls back to recorded_at, drops the rest, sorts oldest first', async () => {
+  const { fetchHrvReadings } = require('../src/functions/worker/lib/wearableDaily');
+  let seen = null;
+  const pool = { query: async (sql, params) => {
+    seen = { sql, params };
+    return { rows: [
+      { external_id: 'smart_ring_hrv_20260918073005', recorded_ts: null, hrv_ms: '62', stress: '41', heart_rate: '58' },
+      { external_id: 'smart_ring_hrv_20260917221500', recorded_ts: '20260917221500', hrv_ms: 70, stress: null, heart_rate: null },
+      { external_id: 'smart_ring_hrv_legacy', recorded_ts: '20260916010203', hrv_ms: 55, stress: 30, heart_rate: 60 },
+      { external_id: 'smart_ring_hrv_nodate', recorded_ts: null, hrv_ms: 99, stress: 99, heart_rate: 99 },
+    ] };
+  } };
+  const rows = await fetchHrvReadings(pool, 'u1', 30);
+  assert.deepEqual(rows, [
+    { date: '2026-09-16', hour: 1, hrv_ms: 55, stress: 30, heart_rate: 60 },
+    { date: '2026-09-17', hour: 22, hrv_ms: 70, stress: null, heart_rate: null },
+    { date: '2026-09-18', hour: 7, hrv_ms: 62, stress: 41, heart_rate: 58 },
+  ]);
+  assert.match(seen.sql, /category = 'vitals'/);
+  assert.match(seen.sql, /LIKE '%\\_hrv\\_%'/);  // the LIKE escapes both underscores
+  assert.match(seen.sql, /Asia\/Shanghai/);
+  assert.deepEqual(seen.params, ['u1', 30]);
+  assert.equal((await fetchHrvReadings(pool, 'u1', 999)).length, 3); // days clamp, no throw
+});

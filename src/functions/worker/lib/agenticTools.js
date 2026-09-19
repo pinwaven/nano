@@ -26,6 +26,7 @@ const {
     PACKAGE_STAGE_NARRATION,
 } = require('../handlers/formulation_orders');
 const { fetchFormulationTiers } = require('./gcnClient');
+const { searchGroceryProducts } = require('./groceryCatalog');
 const { resolveGcnSector } = require('./channels');
 // Pure, no DB — the class→window map is a transcription of the report's own 戒断方案 page.
 const { CLASS_WINDOWS } = require('./foodSensitivity');
@@ -105,6 +106,27 @@ const AGENTIC_TOOL_DEFS = [
                         description: 'Specific food names to look up, in Chinese as the user said them (e.g. ["牛奶","鸡蛋"]). Up to 10.',
                     },
                 },
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_grocery_products',
+            // Grocery catalogs (CLAUDE.md §44): products a user can actually order from a
+            // supermarket app, so diet advice can end in a shopping list rather than a food name.
+            description: "Look up real, currently listed products in the supermarket catalogs on file (e.g. 盒马) by ingredient or food keyword — 三文鱼, 西兰花, 燕麦, 无糖酸奶. Use it whenever you are recommending specific foods to eat and the user could buy them: pass the food words from your own meal plan as `keywords` (one product-shaped word each, not a dish name) and pick from the rows returned. Rows already exclude the user's recorded allergies and restrictions. Returns names and ids only — never quote a price; the system renders the product card itself from the ids you return in a recommend_grocery tail.",
+            parameters: {
+                type: 'object',
+                properties: {
+                    keywords: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Food or ingredient words to search for, in Chinese, one item each (e.g. ["三文鱼","西兰花","燕麦"]). Up to 8.',
+                    },
+                    supplier: { type: 'string', description: 'Restrict to one supplier key (e.g. "hema"). Usually omitted.' },
+                },
+                required: ['keywords'],
             },
         },
     },
@@ -767,6 +789,47 @@ function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_na
                 }
             }
             return { ok: true, data: flattened };
+        },
+
+        // Grocery catalog search (lib/groceryCatalog.js, §44). Flat rows, no price (§37: a number
+        // the model was never given is a number it cannot leak — the :::grocery card draws the
+        // price from the table). Allergy/restriction facts filter the rows in code, here and again
+        // when the tail is resolved, so a product the user must not eat is never even offered.
+        async get_grocery_products({ keywords, supplier } = {}) {
+            const kws = (Array.isArray(keywords) ? keywords : [keywords]).map(k => String(k || '').trim()).filter(Boolean);
+            if (kws.length === 0) {
+                return { ok: false, reason: zh ? '请传入 keywords：要查找的食材或食物名，每项一个词。' : 'Pass keywords: one food or ingredient word per item.' };
+            }
+            const { rows: facts } = await pool.query(
+                `SELECT category, fact_zh FROM user_memory_facts
+                  WHERE user_id = $1 AND status = 'active'
+                    AND category IN ('allergy', 'dietary_restriction')
+                    AND (valid_until IS NULL OR valid_until >= CURRENT_DATE)`,
+                [user_id]
+            );
+            const rows = await searchGroceryProducts(pool, { keywords: kws, supplier: supplier || null, userFacts: facts });
+            if (rows.length === 0) {
+                return { ok: true, data: [{
+                    kind: 'no_match',
+                    note: zh
+                        ? '目录里没有匹配这些关键词的在售食品。可以换更通用的食材名再查一次（如"鱼"而不是"清蒸鲈鱼"）；查不到就只给饮食建议，不要编造商品。'
+                        : 'No listed food matched these keywords. Try a more generic ingredient word (e.g. "鱼" rather than a dish name); if nothing matches, give the diet advice without naming a product — never invent one.',
+                }] };
+            }
+            return {
+                ok: true,
+                data: rows.map(r => ({
+                    kind: 'product',
+                    supplier: r.supplier_key,
+                    supplier_name: r.supplier_name,
+                    product_id: r.product_id,
+                    name: r.name,
+                    unit: r.unit || null,
+                    category: r.category || null,
+                    tags: (r.tags || []).slice(0, 6),
+                    matched: r.matched,
+                })),
+            };
         },
 
         async get_reminders(args = {}) {

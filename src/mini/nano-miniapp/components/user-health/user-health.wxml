@@ -458,6 +458,79 @@ module.exports.c = function (hex, theme) {
           </view>
         </view>
 
+        <!-- Wearable insights: the analysis over the last 30 days of ring data, relative to the
+             user's own baseline (GET /api/wearable-insights → _buildInsightsView). Self and
+             coach view; shown whenever the server had enough data, never gated on subAgeList. -->
+        <view wx:if="{{insightsView}}" class="ins-card">
+          <view class="ins-head">
+            <text class="ins-title">{{t.insightTitle}}</text>
+            <text class="ins-sub">{{t.insightNotDiagnosis}}</text>
+          </view>
+
+          <view wx:if="{{insightsView.score != null}}" class="ins-readiness">
+            <view class="ins-score-wrap" style="border-color:{{insightsView.levelColor}};">
+              <text class="ins-score" style="color:{{tc.c(insightsView.levelColor, theme)}}">{{insightsView.score}}</text>
+              <text class="ins-score-of">/100</text>
+            </view>
+            <view class="ins-readiness-body">
+              <view class="ins-readiness-row">
+                <text class="ins-readiness-label">{{t.insightReadiness}}</text>
+                <text class="ins-level" style="color:{{tc.c(insightsView.levelColor, theme)}}">{{insightsView.levelLabel}}</text>
+                <text class="ins-date">{{insightsView.isToday ? t.insightToday : t.insightLatest}} {{insightsView.refDate}}</text>
+              </view>
+              <view class="ins-chips">
+                <text wx:for="{{insightsView.drivers}}" wx:key="code" class="ins-chip">{{item.label}}</text>
+              </view>
+            </view>
+          </view>
+
+          <view wx:if="{{insightsView.band}}" class="ins-block">
+            <view class="ins-row">
+              <text class="ins-row-label">{{t.insightBand}}</text>
+              <text class="ins-row-val">{{insightsView.band.low}}–{{insightsView.band.high}} ms</text>
+            </view>
+            <view class="ins-band-track">
+              <view class="ins-band-range" style="left:{{insightsView.band.rangeLeftPct}}%; width:{{insightsView.band.rangeWidthPct}}%;"></view>
+              <view class="ins-band-marker" style="left:{{insightsView.band.markerPct}}%; background:{{insightsView.band.color}};"></view>
+            </view>
+            <view class="ins-row ins-row-dim">
+              <text class="ins-row-label">{{insightsView.isToday ? t.insightToday : t.insightLatest}} {{insightsView.band.hrv}} ms</text>
+              <text class="ins-row-val" style="color:{{tc.c(insightsView.band.color, theme)}}">{{insightsView.band.vsBaseline}} {{t.insightVsBaseline}}</text>
+            </view>
+          </view>
+
+          <view wx:if="{{insightsView.sleep}}" class="ins-block">
+            <view class="ins-row">
+              <text class="ins-row-label">{{t.insightSleep}} · {{t.insightLastNight}} {{insightsView.sleep.date}}</text>
+              <text class="ins-row-val">{{insightsView.sleep.hours}}h <text class="ins-row-delta">{{insightsView.sleep.vsWeek}} {{t.insightVsWeek}}</text></text>
+            </view>
+            <view class="ins-chips ins-chips-tight">
+              <text wx:if="{{insightsView.sleep.restorative != null}}" class="ins-chip ins-chip-dim">{{t.insightRestorative}} {{insightsView.sleep.restorative}}%</text>
+              <text wx:if="{{insightsView.sleep.avg7 != null}}" class="ins-chip ins-chip-dim">{{t.insightAvg7}} {{insightsView.sleep.avg7}}h</text>
+              <text wx:if="{{insightsView.sleep.debt != null}}" class="ins-chip {{insightsView.sleep.debt >= 3 ? 'ins-chip-warn' : 'ins-chip-dim'}}">{{t.insightDebt}} {{insightsView.sleep.debt}}h</text>
+              <text wx:if="{{insightsView.sleep.regularLabel}}" class="ins-chip {{insightsView.sleep.regular ? 'ins-chip-dim' : 'ins-chip-warn'}}">{{insightsView.sleep.regularLabel}}</text>
+            </view>
+          </view>
+
+          <view wx:if="{{insightsView.stress}}" class="ins-block">
+            <view class="ins-row">
+              <text class="ins-row-label">{{t.insightStress}}</text>
+              <text class="ins-row-val" style="color:{{tc.c(insightsView.stress.balanceColor, theme)}}">{{insightsView.stress.balanceLabel}}</text>
+            </view>
+            <view class="ins-chips ins-chips-tight">
+              <text wx:if="{{insightsView.stress.loadToday != null}}" class="ins-chip ins-chip-dim">{{insightsView.isToday ? t.insightLoadToday : t.insightLoadLatest}} {{insightsView.stress.loadToday}}%</text>
+              <text wx:if="{{insightsView.stress.load7d != null}}" class="ins-chip ins-chip-dim">{{t.insightLoad7d}} {{insightsView.stress.load7d}}%</text>
+              <text wx:if="{{insightsView.stress.nightDay != null}}" class="ins-chip ins-chip-dim">{{t.insightNightDay}} {{insightsView.stress.nightDay}}</text>
+            </view>
+          </view>
+
+          <view wx:for="{{insightsView.flags}}" wx:key="code" class="ins-flag">
+            <text class="ins-flag-txt">{{item.label}}</text>
+            <text class="ins-flag-since">{{t.insightSince}} {{item.since}}</text>
+          </view>
+          <text wx:if="{{insightsView.provisional}}" class="ins-provisional">{{insightsView.provisional}}</text>
+        </view>
+
         <!-- Ring sync summary (shown after first sync) -->
         <view wx:if="{{wearableId && ringData}}" class="ring-summary-card">
           <view class="ring-sum-metrics">

@@ -3,7 +3,7 @@ const { getWearableDailyBlock } = require('../../chat/wearableDailyBlock');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
-module.exports = ({ user_profile, bioage, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, wearable_daily }) => {
+module.exports = ({ user_profile, bioage, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, wearable_daily, wearable_insights }) => {
   const isZh = user_profile.language === 'zh';
   const name = user_profile.nickname || (isZh ? '你' : 'you');
   const hasBioAge = bioage && bioage.BioAge;
@@ -26,7 +26,7 @@ module.exports = ({ user_profile, bioage, questionnaire_context, active_health_p
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
 
-${getWearableDailyBlock(wearable_daily, isZh, now_iso)}
+${getWearableDailyBlock(wearable_daily, isZh, now_iso, wearable_insights)}
 
 ${getCurrentDateBlock(now_iso, isZh)}
 

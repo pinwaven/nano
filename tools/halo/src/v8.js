@@ -27,6 +27,7 @@ const {
   parseTotalStepChunk, parseDetailActivityChunk, parseSleepChunk,
   parseDynamicHrChunk, parseStaticHrChunk, parseHrvChunk,
   parseTemperatureChunk, parseOxygenChunk,
+  setMeasurementPacket, setEcgRealtimePacket, parseEcgChunk, parseMeasurementResult,
 } = protocol;
 
 class V8Client {
@@ -224,6 +225,74 @@ class V8Client {
 
   async getSpo2History(sinceDate) {
     return this._streamRecords(getOxygenDataPacket(sinceDate ? 0x01 : 0, sinceDate || null), 0x66, parseOxygenChunk, 8000);
+  }
+  // --- ECG (live stream, not history) ---
+
+  // Runs one on-demand ECG measurement and collects the raw sample stream.
+  // See v8-protocol.js "ECG" for the vendor sequence this mirrors.
+  //
+  //   opts.duration   value for the 0x28 duration field (default: the demo's
+  //                   50000 -- see the protocol note on seconds vs ms)
+  //   opts.captureMs  how long to listen before sending stop (default 30s).
+  //                   The band never signals "done" on 0x07, so this is the
+  //                   only terminator; the CLI stops early on SIGINT too.
+  //   opts.onPacket   optional ({ packetId, samples, receivedAt }) => void,
+  //                   called per notification for live display.
+  //   opts.onAck      optional (parsedMeasurementResult) => void, for whatever
+  //                   the band echoes on 0x28 (undocumented for the ECG type).
+  //
+  // Resolves { packets, samples, firstPacketAt, lastPacketAt, acks }.
+  // Always sends the stop pair, even on error, so the band isn't left
+  // streaming after we disconnect.
+  async recordEcg(opts = {}) {
+    const captureMs = opts.captureMs == null ? 30000 : opts.captureMs;
+    const packets = [];
+    const acks = [];
+    let firstPacketAt = null;
+    let lastPacketAt = null;
+    let stopEarly = null;
+    const stopPromise = new Promise((resolve) => { stopEarly = resolve; });
+    if (typeof opts.onStopSignal === 'function') opts.onStopSignal(() => stopEarly());
+
+    this._ble.onNotify((data) => {
+      if (data[0] === 0x28) {
+        const ack = parseMeasurementResult(data);
+        acks.push(ack);
+        if (opts.onAck) opts.onAck(ack);
+        return;
+      }
+      if (data[0] !== 0x07) return;
+      const chunk = parseEcgChunk(data);
+      if (!chunk) { acks.push({ type: 'ecg_realtime_ack', raw: Array.from(data) }); return; }
+      const receivedAt = Date.now();
+      if (firstPacketAt == null) firstPacketAt = receivedAt;
+      lastPacketAt = receivedAt;
+      const rec = { packetId: chunk.packetId, samples: chunk.samples, receivedAt };
+      packets.push(rec);
+      if (opts.onPacket) opts.onPacket(rec);
+    });
+
+    try {
+      // Same order as the vendor demo: start the measurement, then open the tap.
+      await this._ble.write(setMeasurementPacket('ecg', true, opts.duration));
+      await this._ble.write(setEcgRealtimePacket(true));
+      await Promise.race([
+        new Promise((resolve) => setTimeout(resolve, captureMs)),
+        stopPromise,
+      ]);
+    } finally {
+      try {
+        await this._ble.write(setMeasurementPacket('ecg', false, opts.duration));
+        await this._ble.write(setEcgRealtimePacket(false));
+      } catch (err) {
+        console.error(`[warn] failed to send ECG stop: ${err.message}`);
+      }
+      this._ble.onNotify(null);
+    }
+
+    const samples = [];
+    for (const p of packets) for (const v of p.samples) samples.push(v);
+    return { packets, samples, firstPacketAt, lastPacketAt, acks };
   }
 }
 

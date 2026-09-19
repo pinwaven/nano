@@ -5380,6 +5380,80 @@ button.consent-row::after { border: none; }
   line-height: 1;
 }
 
+/* :::grocery — supermarket products for a diet suggestion (CLAUDE.md §44). Same shell as
+   .pcard, with a thumbnail column. */
+.gcard {
+  margin: 14rpx 0 18rpx;
+  padding: 20rpx 22rpx 14rpx;
+  border-radius: 20rpx;
+  background: rgba(var(--blue-rgb), 0.10);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.26);
+}
+.gcard-title {
+  display: block;
+  font-size: var(--fs-25, 25rpx);
+  font-weight: 600;
+  color: var(--chat-accent);
+  letter-spacing: 1rpx;
+  margin-bottom: 10rpx;
+}
+.gcard-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 14rpx 0;
+  border-top: 1rpx solid rgba(var(--blue-rgb), 0.18);
+}
+.gcard-row:first-of-type { border-top: none; }
+.gcard-img {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 14rpx;
+  flex-shrink: 0;
+  background: rgba(var(--blue-rgb), 0.08);
+}
+.gcard-img-empty { opacity: 0.5; }
+.gcard-main {
+  flex: 1;
+  min-width: 0;
+}
+.gcard-name {
+  display: block;
+  font-size: var(--fs-26, 26rpx);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.gcard-reason {
+  display: block;
+  margin-top: 4rpx;
+  font-size: var(--fs-21, 21rpx);
+  color: var(--text-sub);
+}
+.gcard-supplier {
+  display: block;
+  margin-top: 4rpx;
+  font-size: var(--fs-20, 20rpx);
+  color: var(--chat-accent);
+  opacity: 0.8;
+}
+.gcard-price {
+  font-size: var(--fs-24, 24rpx);
+  font-weight: 600;
+  color: var(--chat-accent);
+  white-space: nowrap;
+}
+.gcard-note {
+  display: block;
+  margin-top: 10rpx;
+  font-size: var(--fs-20, 20rpx);
+  color: var(--text-sub);
+  line-height: 1.4;
+}
+
 /* :::lesson / :::checkin — a 打卡 program day (CLAUDE.md §42). Both are server-written cards;
    the lesson mounts a native <video> in the bubble only after a tap, so the transcript never
    holds more than one live player. Colours are the chat accent variables, so light/dark follow. */

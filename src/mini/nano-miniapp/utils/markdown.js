@@ -281,7 +281,7 @@ function _zeroLastMargin (block) {
   })
 }
 
-var DIRECTIVE_NAMES = { metric: 1, takeaway: 1, dots: 1, formula: 1, product: 1, lesson: 1, checkin: 1 }
+var DIRECTIVE_NAMES = { metric: 1, takeaway: 1, dots: 1, formula: 1, product: 1, grocery: 1, lesson: 1, checkin: 1 }
 
 // "1-9,12-28" -> "1\u20139 \u00b7 12\u201328". Digits, '-' and ',' only: this string is rendered next
 // to the page's own localised day word, and anything else in it came from somewhere it shouldn't.
@@ -596,6 +596,27 @@ function _buildDirective (name, inner) {
       pitems.push({ sku: pp[0], name: pp[1], price: pp[2] || '', reason: pp[3] || '' })
     }
     return pitems.length ? { t: 'product', items: pitems } : null
+  }
+
+  // :::grocery — supermarket products for a diet suggestion (CLAUDE.md §44). Rows are
+  // supplier|supplierName|id|name|price|image|reason, written by the SERVER from the catalog
+  // table (worker lib/chatCards.js's _buildGroceryCardBlock), never by the model — the same
+  // rule as :::product. One optional '#note' meta line carries the price disclaimer and which
+  // app to order in, so this renderer knows no supplier by name. Only http(s) images render.
+  if (name === 'grocery') {
+    var gitems = []
+    var gnote = ''
+    for (var gi = 0; gi < rows.length; gi++) {
+      var gp = rows[gi].split('|')
+      for (var gj = 0; gj < gp.length; gj++) gp[gj] = gp[gj].trim()
+      if (gp[0] === '#note') { gnote = gp.slice(1).join('|'); continue }
+      if (gp[0].charAt(0) === '#') continue
+      if (!gp[0] || !gp[2] || !gp[3]) continue
+      var gimg = gp[5] || ''
+      if (!/^https?:\/\//.test(gimg)) gimg = ''
+      gitems.push({ supplier: gp[0], supplierName: gp[1] || '', id: gp[2], name: gp[3], price: gp[4] || '', image: gimg, reason: gp[6] || '' })
+    }
+    return gitems.length ? { t: 'grocery', items: gitems, note: gnote } : null
   }
 
   // :::lesson — a 打卡 program day's lesson (CLAUDE.md §42). One row: lesson_id|title. Written by

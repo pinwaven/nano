@@ -200,9 +200,39 @@ function _buildProductCardBlock(items, lang) {
 }
 
 
+// Renders the :::grocery card for a resolved set of supermarket products (CLAUDE.md §44).
+//
+// Same contract as _buildProductCardBlock: the SERVER writes every name, price and image URL,
+// from the rows resolveGroceryProducts read back for the ids the model returned. The model only
+// ever supplied ids and one sentence of reasoning. Rows are
+//   supplier|supplier_name|product_id|name|price|image_url|reason
+// plus one `#note` meta line naming the app(s) to order in, so the renderer never has to know a
+// supplier. The price is a scrape-time snapshot, and the card says so — it is never a quote.
+function _buildGroceryCardBlock(items, lang) {
+    const isZh = (lang || 'zh') !== 'en';
+    const safe = v => String(v == null ? '' : v).replace(/\|/g, '/').replace(/[\r\n]+/g, ' ').trim();
+    const rows = [];
+    const apps = [];
+    for (const it of items || []) {
+        if (!it || !it.supplier_key || !it.product_id) continue;
+        const price = it.price != null && Number.isFinite(Number(it.price))
+            ? `¥${Number(it.price).toFixed(2).replace(/\.00$/, '')}${it.unit ? '/' + safe(it.unit) : ''}`
+            : '';
+        rows.push([it.supplier_key, it.supplier_name, it.product_id, it.name, price, it.image_url, it.reason_zh].map(safe).join('|'));
+        if (it.app_name_zh && !apps.includes(it.app_name_zh)) apps.push(it.app_name_zh);
+    }
+    if (!rows.length) return '';
+    const note = isZh
+        ? `#note|价格为抓取时参考价，以 ${apps.join(' / ') || '超市 App'} 实际为准；点击复制商品名后到 App 搜索下单`
+        : `#note|Prices are a snapshot; the ${apps.join(' / ') || 'supermarket'} app has the current one. Tap a row to copy the name, then search for it there`;
+    return `\n\n:::grocery\n${note}\n${rows.join('\n')}\n:::`;
+}
+
+
 module.exports = {
     _formatDayRanges,
     _tierPitch,
     _buildFormulaChartBlock,
     _buildProductCardBlock,
+    _buildGroceryCardBlock,
 };

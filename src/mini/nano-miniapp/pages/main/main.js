@@ -322,6 +322,8 @@ const T = {
     formulaProcessing: '正在为您深度分析并定制 28 天方案，完成后会发送通知，请稍候…',
     formulaCardTitle: '原粒定制方案',
     productCardTitle: '商城可选',
+    groceryCardTitle: '可选购食材',
+    groceryCopied: '已复制商品名，打开{supplier} App 搜索即可下单',
     formulaEvalNote: '收到实物扫码后启用',
     formulaAm: '早',
     formulaPm: '晚',
@@ -694,6 +696,8 @@ const T = {
     formulaProcessing: "Deeply analyzing your data and building your 28-day formulation — you'll get a notification when it's ready…",
     formulaCardTitle: 'Your formulation',
     productCardTitle: 'From the store',
+    groceryCardTitle: 'Groceries to pick up',
+    groceryCopied: 'Name copied — search for it in the {supplier} app to order',
     formulaEvalNote: 'Starts when you scan your box',
     formulaAm: 'AM',
     formulaPm: 'PM',
@@ -1925,6 +1929,22 @@ Page({
     const skuId = e.currentTarget.dataset.sku
     if (!this.data.isAeviva || !skuId) return
     this._openAevivaStoreGated({ intent: 'view_product', sku_id: skuId })
+  },
+
+  // Tapping a row of the :::grocery card (CLAUDE.md §44). The supermarket's app is not ours
+  // and has no deep link a Mini Program can verify, so the row's one job is to hand the user the
+  // exact product name: copied to the clipboard, with a toast saying which app to search in.
+  handleGroceryCardTap(e) {
+    const name = e.currentTarget.dataset.name
+    const supplier = e.currentTarget.dataset.supplier || ''
+    if (!name) return
+    const t = this.data.t || {}
+    const msg = String(t.groceryCopied || '').replace('{supplier}', supplier)
+    wx.setClipboardData({
+      data: name,
+      success: () => { wx.showToast({ title: msg, icon: 'none', duration: 2500 }) },
+      fail: () => { wx.showToast({ title: name, icon: 'none' }) },
+    })
   },
 
   // ── 打卡 program cards (CLAUDE.md §42) ─────────────────────────────────────

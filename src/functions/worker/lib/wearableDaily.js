@@ -94,6 +94,50 @@ async function fetchWearableDaily(pool, userId, days = 7) {
     }));
 }
 
+// Per-reading HRV rows for lib/wearableAnalysis.js's circadian and stress-load metrics —
+// the daily rows above average a whole day into one number, which is exactly what a
+// night/day ratio or a "share of stressed readings" cannot be computed from. The
+// measurement time is the 14-digit tail of sync.js's `${src}_hrv_${YYYYMMDDHHmmss}`
+// external_id (the miniapp's _tsFromExtId reads the same thing); `recorded_at` is only a
+// fallback, since a sync-time stamp there predates the per-slot timestamps (2026-07).
+// Shape: [{ date, hour, hrv_ms, stress, heart_rate }], oldest first; `hour` is the
+// Shanghai clock hour of the reading. A row whose external_id tail is not 14 digits and
+// whose recorded_at is null is dropped rather than guessed onto a date.
+async function fetchHrvReadings(pool, userId, days = 30) {
+    const n = clampDays(days, 30);
+    const { rows } = await pool.query(
+        `SELECT e.external_id,
+                to_char(e.recorded_at AT TIME ZONE 'Asia/Shanghai', 'YYYYMMDDHH24MISS') AS recorded_ts,
+                (e.data->>'hrv_ms')::float        AS hrv_ms,
+                (e.data->>'stress')::float        AS stress,
+                (e.data->>'heart_rate_hrv')::float AS heart_rate
+           FROM health_events e
+          WHERE e.user_id = $1
+            AND e.category = 'vitals'
+            AND e.external_id LIKE '%\\_hrv\\_%'
+            AND e.data->>'hrv_ms' IS NOT NULL
+            AND e.data_date > (NOW() AT TIME ZONE 'Asia/Shanghai')::date - $2::int
+          ORDER BY e.external_id ASC`,
+        [userId, n]
+    );
+    const out = [];
+    for (const x of rows) {
+        const tail = String(x.external_id || '').slice(-14);
+        const ts = /^\d{14}$/.test(tail) ? tail : (x.recorded_ts || null);
+        if (!ts || !/^\d{14}$/.test(ts)) continue;
+        out.push({
+            ts,
+            date: `${ts.slice(0, 4)}-${ts.slice(4, 6)}-${ts.slice(6, 8)}`,
+            hour: Number(ts.slice(8, 10)),
+            hrv_ms: x.hrv_ms == null ? null : Number(x.hrv_ms),
+            stress: x.stress == null ? null : Number(x.stress),
+            heart_rate: x.heart_rate == null ? null : Number(x.heart_rate),
+        });
+    }
+    out.sort((a, b) => a.ts.localeCompare(b.ts));
+    return out.map(({ ts, ...r }) => r);
+}
+
 // The comparisons a reply needs, done here rather than left to the model (the codebase's
 // standing rule: no arithmetic the LLM does not need to do). `today` is the Shanghai date.
 function summarizeWearableDaily(rows, today) {
@@ -187,4 +231,4 @@ function messageAsksAboutWearable(message) {
     return WEARABLE_TRIGGER_RE.test(message || '');
 }
 
-module.exports = { fetchWearableDaily, summarizeWearableDaily, describeWearableDaily, messageAsksAboutWearable, clampDays, MAX_DAYS };
+module.exports = { fetchWearableDaily, fetchHrvReadings, summarizeWearableDaily, describeWearableDaily, messageAsksAboutWearable, clampDays, MAX_DAYS };
