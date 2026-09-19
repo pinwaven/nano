@@ -97,9 +97,9 @@ program
       ['oxygenVariation', (c) => c.getOxygenVariation()],
     ];
 
-    // V8's task list only covers what v8-protocol.js implements so far
-    // (see tools/halo/README.md) -- ECG, blood glucose, alarms, PPI, and OTA
-    // are follow-ups once this core path is confirmed against real hardware.
+    // V8's task list only covers stored history (see tools/halo/README.md) --
+    // blood glucose, alarms, PPI, and OTA are follow-ups. ECG is a live
+    // measurement, not a history type: `node bin/cli.js ecg --device v8`.
     const V8_TASKS = [
       ['battery', (c) => c.getBattery()],
       ['deviceTime', (c) => c.getDeviceTime()],
@@ -291,6 +291,82 @@ program
       const readBack = await c.getAutoMonitoring(type);
       console.log('Set successfully. Read back:', JSON.stringify(readBack, null, 2));
     });
+    process.exit(0);
+  });
+
+// --- ecg (V8 only) ---
+// Live raw-ADC stream; the band has no ECG history and no analysis library
+// (see src/v8-protocol.js "ECG"). Everything printed is derived here from the
+// raw samples, so treat the effective sample rate as a measurement of this
+// run, not a spec -- the vendor documents no rate.
+const { summarizeEcg, ecgSamplesToCsv } = require('../src/ecg-summary');
+
+program
+  .command('ecg')
+  .description('V8 only: run an on-demand ECG measurement and capture the raw sample stream (0x28 + 0x07). Ctrl-C stops early and still sends the stop command.')
+  .option('--capture <seconds>', 'how long to listen for samples before stopping', '30')
+  .option('--duration <seconds>', 'measurement length the band is asked for (0x28 duration, seconds from the start command). Defaults to --capture so the band ends the measurement itself when the capture ends -- the SDK stop pair does not stop anything')
+  .option('--out <file>', 'write every sample to this file (.csv => index,packetId,value ; anything else => JSON)')
+  .option('--quiet', 'do not print a line per packet', false)
+  .action(async (cmdOpts) => {
+    const opts = program.opts();
+    if (opts.device !== 'v8') {
+      console.error('ecg is only implemented for --device v8 (Halo has no ECG opcode).');
+      process.exit(1);
+    }
+    const captureMs = Math.round(parseFloat(cmdOpts.capture) * 1000);
+    const duration = cmdOpts.duration != null ? parseInt(cmdOpts.duration, 10) : Math.ceil(captureMs / 1000);
+    const client = await makeClient(opts);
+
+    let requestStop = null;
+    process.once('SIGINT', () => {
+      console.error('\nStopping early...');
+      if (requestStop) requestStop();
+    });
+
+    console.error(`Starting ECG (0x28 duration=${duration}s), listening for ${captureMs / 1000}s... (finger on the electrode; a zero-packet result means lift it and re-place it)`);
+    const startedAt = Date.now();
+    const result = await client.run((c) => c.recordEcg({
+      duration,
+      captureMs,
+      onStopSignal: (fn) => { requestStop = fn; },
+      onAck: (ack) => console.error(`[ack] 0x28 type=${ack.type || ack.typeByte} raw=${ack.raw ? Buffer.from(ack.raw).toString('hex') : '-'}`),
+      onPacket: cmdOpts.quiet ? null : (p) => {
+        const t = ((p.receivedAt - startedAt) / 1000).toFixed(2);
+        console.error(`[${t}s] packet ${p.packetId}  n=${p.samples.length}  first=${p.samples[0]}  last=${p.samples[p.samples.length - 1]}`);
+      },
+    }));
+
+    const summary = summarizeEcg(result);
+
+    if (cmdOpts.out) {
+      const fs = require('fs');
+      if (/\.csv$/i.test(cmdOpts.out)) {
+        fs.writeFileSync(cmdOpts.out, ecgSamplesToCsv(result.packets));
+      } else {
+        fs.writeFileSync(cmdOpts.out, JSON.stringify({ summary, acks: result.acks, packets: result.packets }, null, 2));
+      }
+      console.error(`Wrote ${result.samples.length} samples to ${cmdOpts.out}`);
+    }
+
+    if (opts.json) {
+      console.log(JSON.stringify({ summary, acks: result.acks, samples: result.samples }, null, 2));
+    } else {
+      if (summary.backlogPackets) {
+        console.log(`backlog=${summary.backlogPackets} packets (${summary.backlogSamples} samples) flushed from the previous measurement -- excluded from the figures below`);
+      }
+      console.log(`packets=${summary.packetCount}  samples=${summary.sampleCount}  lostPackets=${summary.lostPackets}  streamed=${summary.streamSeconds}s  effectiveRate=${summary.effectiveSampleRateHz == null ? '-' : summary.effectiveSampleRateHz + 'Hz'}`);
+      if (summary.sampleCount) {
+        console.log(`samplesPerPacket=${summary.samplesPerPacket.join('/')}  min=${summary.min}  max=${summary.max}  mean=${summary.mean}`);
+        const hr = summary.heartRate;
+        console.log(hr
+          ? `heartRate~${hr.bpmMedian}bpm (median RR ${hr.rrMedianMs}ms, sd ${hr.rrSdMs}ms, ${hr.beats} beats, ${hr.rejectedIntervals} rejected) -- derived here, not from the band`
+          : 'heartRate: not enough clean beats to estimate (short capture, no electrode contact, or heavy motion)');
+      } else {
+        console.log('No ECG samples received. Is the band on the wrist with the electrode touched by the other hand? (The vendor UI requires a two-point contact for ECG.)');
+      }
+      if (result.acks.length) console.log(`acks=${result.acks.length} (see --json for raw bytes)`);
+    }
     process.exit(0);
   });
 

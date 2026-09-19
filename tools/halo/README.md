@@ -59,9 +59,9 @@ Known rough edges from that run:
   (delete), and `setTime()`/`setUserInfo()` writes are still unverified.
 - Only a first-pass command set is implemented: device time, user profile,
   battery, MAC, firmware version, auto-monitoring schedule, steps, sleep,
-  heart rate (log + history), HRV, temperature, and SpO2. Alarms/clock, the
-  sedentary reminder, device name, ECG, PPI, blood glucose, SOS, and
-  OTA/DFU are out of scope for this pass.
+  heart rate (log + history), HRV, temperature, and SpO2, plus the live ECG
+  stream (see below). Alarms/clock, the sedentary reminder, device name,
+  PPI, blood glucose, SOS, and OTA/DFU are out of scope for this pass.
 
 The advertised BLE name prefix is `JCV8B` (confirmed directly by hand — the
 vendor demo apps don't filter by name at all).
@@ -106,6 +106,10 @@ node bin/cli.js get-auto-monitoring --device v8
 # date filter — used to validate the incremental-sync design, see below
 node bin/cli.js history --type hrv --json
 node bin/cli.js history --type hrv --since 2026-07-30T10:00:00 --json
+
+# V8 only: run an on-demand ECG and capture the raw sample stream for 30s
+node bin/cli.js ecg --device v8
+node bin/cli.js ecg --device v8 --capture 60 --out ecg.csv
 ```
 
 With no arguments, `halo` scans for a nearby X3/X6/X9/V4 device, connects, and
@@ -115,6 +119,116 @@ sleep history, heart rate (log + continuous history), HRV history, SpO2
 sessions, sleep apnea risk, and elevated oxygen variation. `--device v8`
 scans for `JCV8B` instead and dumps the narrower first-pass task list
 described above.
+
+## ECG (V8 only)
+
+The band's ECG is a **live measurement**, not a history type — there is no
+"fetch stored ECGs" opcode, and the vendor SDK ships no analysis library
+(the `ECGHrValue`/`ECGQualityValue`/… keys in `DeviceKey.java` have no
+producer). The only ECG output is a stream of raw 24-bit ADC samples on
+opcode `0x07` while a measurement is running, so everything the CLI prints
+beyond the samples themselves is derived here. Halo has no ECG at all; the
+command refuses `--device halo`.
+
+`node bin/cli.js ecg --device v8` sends the vendor demo's sequence
+(`ECGActivity.java`) — `0x28 type=ECG open=1 duration=<capture seconds>`,
+`0x07 open=1`, listen, then the same two with `open=0` — with one
+deliberate difference: the duration is the capture length rather than the
+demo's `50*1000`, because that is what actually ends the measurement (see
+"The stop is the duration" below). Ctrl-C stops listening early; the band
+then runs on to the end of its duration and buffers, which the next run
+reports as a backlog. Each `0x07` notification is
+`packetId (uint8, wraps) + N × 3-byte LE samples`; 16-byte frames on that
+opcode are the enable ack, not data (the SDK gates on `length > 16`, and so
+does `parseEcgChunk`).
+
+Output: any backlog flushed from a previous measurement (see below),
+packet/sample counts, lost packets (from `packetId` gaps), the effective
+sample rate measured on this run (≈255 Hz on real hardware — the vendor
+documents none), min/max/mean, a heart-rate estimate derived here from
+R-peak detection (`estimateHeartRate`, validated against the band's own
+optical HR), and whatever the band echoes on `0x28`.
+`--out file.csv` writes `index,packetId,value`; any other extension writes
+JSON with the per-packet arrival times. `--json` prints the flat sample array.
+
+### Live findings (2026-09-19, two units, both firmware `0.0.8.8`)
+
+**It works on both units** (`JCV8B 9525CA`, `JCV8B DBE34D`), and the rules
+below account for every run of the day — including a long stretch that
+looked like a firmware wedge and was electrode contact all along.
+
+Stream: continuous, **≈255 Hz** (3 packets × 80 samples per second, a 4th
+every ~5 s), 0 lost packets over a minute, clean QRS with T-waves (plots
+and captures under `temp/v8-ecg/`). Derived heart rate (`estimateHeartRate`)
+matched the band's own optical HR log for the same minutes (108–110 vs
+105–113 bpm). `packetId` restarts at 0 on each new measurement.
+
+**Contact owns the measurement.** The band needs the wrist contact *and* a
+finger from the other hand on the electrode:
+
+- No contact at start → the measurement aborts within ~3 s. `DBE34D` emits
+  ~11 start-up packets first (a settling ramp, then a 5-packet burst);
+  `9525CA` emits **nothing at all**. A start that returns zero packets is a
+  contact miss, not a protocol failure — every "wedged" run of the day
+  (through stop variants, a charger dock, an MCU reboot, a clock sync and
+  `0x78` PPG stop/quit, all of which did nothing) was this.
+- Contact lost while running → the measurement ends within ~2 s (the
+  buffer tail shows the sample value jumping to ~3.8M at the moment the
+  finger leaves).
+- After a measurement ends by **duration expiry** the engine is "done" and
+  will not start again until the finger is **lifted and re-placed** (like
+  any consumer ECG's "measurement complete, remove finger"). A measurement
+  ended by contact loss is already re-armed. Reproduced three times.
+- Skin contact does not gate the *data*: a poor contact still streams, with
+  heavy baseline wander (compare the two `9525CA` captures).
+
+**`duration` is seconds, counted from the `0x28` start command.** A fresh
+`duration=30` measurement stopped at 33 s after a start at 3.7 s (first
+packet at 9 s — start-up latency counts against it). `30`, `300` and
+`50000` all start identically. A `0x28` start sent **onto a running
+measurement re-times it**: `50000` extends it (the backlog run below),
+a value already elapsed ends it at once and leaves the engine in "done".
+That, not a wedge, is what a `duration=30` sent onto a running measurement
+did. The CLI's default is the capture length (below).
+
+**The SDK's stop pair does not stop anything.** After `0x28 open=0` +
+`0x07 off` the band keeps sampling while contact holds and **buffers
+~150–200 packets (the last ~50–60 s)**, flushing them at ~33 packets/s the
+moment `0x07` reopens — minutes later, on a fresh BLE connection — before
+resuming live. `summarizeEcg` splits that flush off as `backlogPackets`
+(everything before the first >500 ms gap when it holds more than a normal
+start's 3 packets) and computes rate/HR on the live part only; the CLI
+prints the count. Any future adapter must expect up to a minute of stale
+samples on tap-open.
+
+Confirmed frame behaviour: `0x28 type=ECG` is acked `28 04 00 00…` for
+both start and stop (byte 2 is a status, not the open flag; the SDK has no
+branch for it — `parseMeasurementResult` surfaces it raw); `0x07` acks by
+echoing the flag in byte 2 (`07 00 01` on, `07 00 00` off); order of the
+pair doesn't matter; `0x07` alone with no measurement streams nothing;
+`0x28 type=HRV` with the tap open streams no ECG (the "During HRV" in the
+SDK method name is misleading).
+
+**The stop is the duration.** Since the SDK pair stops nothing, the CLI
+asks the band for a measurement exactly as long as the capture
+(`--duration` defaults to `--capture`, in seconds): the band ends it itself
+at the end of the capture, so nothing is left running to pollute the next
+run with a backlog. Verified end-to-end: a `--capture 20` run streamed 59
+packets at 256.5 Hz with no backlog, and a tap-open probe straight after
+found no buffered and no live packets. The demo's stop pair is still sent
+afterwards (harmless). **Do not try to stop a running measurement by
+re-sending `0x28` with a short duration**: `duration=1` onto a running one
+paused sampling with the packet counter intact and `0x07 on` resumed it;
+`duration=30` onto an older one killed it; and after the `duration=1`
+experiment the next fresh start returned nothing until the finger had been
+off for a full 5 s. The one reliable rule for a zero-packet start remains:
+lift the finger, re-place it, run again.
+
+Battery: the 1% runs on `DBE34D` were all contact misses in hindsight; no
+battery effect was demonstrated.
+
+Offline tests for the packet builders/parsers and the capture loop (using
+the vendor's published sample packet) live in `test/` — `npm test`.
 
 ## Incremental sync validation
 
