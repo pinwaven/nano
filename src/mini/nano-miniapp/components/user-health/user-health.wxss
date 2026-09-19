@@ -1439,6 +1439,7 @@
 .theme-light .ht-lab-ok-text      { color: #036748; }
 .theme-light .wd-empty-card       { background: rgba(255, 255, 255, 0.6); }
 .theme-light .wd-card             { background: rgba(255, 255, 255, 0.7); }
+.theme-light .ecg-card            { background: rgba(255, 255, 255, 0.7); }
 .theme-light .wd-battery-inline   { color: #036748; }
 .theme-light .wd-unbind-txt       { color: #AF1D1D; }
 .theme-light .ring-summary-card   { background: rgba(255, 255, 255, 0.6); }

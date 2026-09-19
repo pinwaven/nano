@@ -850,7 +850,7 @@ module.exports.c = function (hex, theme) {
             <view class="ecg-card-main">
               <text class="ecg-card-title">{{t.ecgTitle}}</text>
               <block wx:if="{{ecgLatest}}">
-                <view class="ecg-card-hero">
+                <view class="ecg-card-hero" catchtap="openEcgView" data-id="{{ecgLatest.id}}">
                   <text class="ecg-card-bpm">{{ecgLatest.bpm}}</text>
                   <text class="ecg-card-unit">bpm</text>
                   <text class="ecg-card-meta">{{ecgLatest.whenLabel}} · {{ecgLatest.accepted_beats}} {{t.ecgBeats}} · RR±{{ecgLatest.rr_sd_ms}}ms</text>
@@ -863,7 +863,7 @@ module.exports.c = function (hex, theme) {
             </view>
           </view>
           <view wx:if="{{ecgList.length > 1}}" class="ecg-card-list">
-            <view wx:for="{{ecgList}}" wx:key="id" wx:if="{{index > 0 && index < 5}}" class="ecg-card-list-row">
+            <view wx:for="{{ecgList}}" wx:key="id" wx:if="{{index > 0 && index < 5}}" class="ecg-card-list-row" catchtap="openEcgView" data-id="{{item.id}}">
               <text class="ecg-card-list-when">{{item.whenLabel}}</text>
               <text class="ecg-card-list-val">{{item.bpm}} bpm · RR±{{item.rr_sd_ms}}ms</text>
             </view>
@@ -1018,9 +1018,10 @@ module.exports.c = function (hex, theme) {
 
   <!-- The AG panel's whole body lives in its own component: keeping it out of this file is what
        stops an already-1000-line template from absorbing another feature. -->
-  <ecg-record wx:if="{{mode === 'self'}}" open="{{ecgRecordOpen}}" user-id="{{userId}}" brand="{{wearableBrand}}"
+  <ecg-record wx:if="{{mode === 'self' || ecgViewId}}" open="{{ecgRecordOpen}}" user-id="{{userId}}" brand="{{wearableBrand}}"
     device-id="{{wearableId}}" device-name="{{wearableName}}" lang="{{lang}}" theme="{{theme}}"
-    bind:close="closeEcgRecord" bind:saved="onEcgSaved" />
+    view-id="{{ecgViewId}}" coach-id="{{mode === 'coach' ? coachId : ''}}" read-only="{{mode !== 'self'}}"
+    bind:close="closeEcgRecord" bind:saved="onEcgSaved" bind:deleted="onEcgDeleted" />
   <viva-ag-panel wx:if="{{showAgTab && healthSubTab === 'ag'}}" id="viva-ag-panel"
                  user-id="{{userId}}" lang="{{lang}}" theme="{{theme}}"
                  bind:gotochat="onAgGoToChat" />

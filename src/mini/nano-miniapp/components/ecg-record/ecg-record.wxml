@@ -35,8 +35,14 @@
       <view wx:if="{{stage === 'measuring'}}" class="ecg-btn ecg-btn-ghost" catchtap="handleStop"><text>{{t.stopEarly}}</text></view>
     </block>
 
-    <!-- result -->
-    <block wx:if="{{stage === 'result'}}">
+    <!-- loading a stored strip -->
+    <block wx:if="{{stage === 'loading'}}">
+      <view class="ecg-guide"><text class="ecg-guide-line ecg-guide-muted">{{t.loading}}</text></view>
+    </block>
+
+    <!-- result (just recorded) / view (a stored strip): same layout, whole strip stacked in rows -->
+    <block wx:if="{{stage === 'result' || stage === 'view'}}">
+      <text wx:if="{{stage === 'view'}}" class="ecg-when">{{viewWhen}}</text>
       <view class="ecg-result-hero">
         <text class="ecg-bpm">{{result.bpm}}</text>
         <text class="ecg-bpm-unit">bpm</text>
@@ -47,11 +53,12 @@
         <view class="ecg-cell"><text class="ecg-cell-v">{{result.rr_sd_ms}}</text><text class="ecg-cell-k">{{t.rrSd}}</text></view>
         <view class="ecg-cell"><text class="ecg-cell-v">{{result.duration_seconds}}s</text><text class="ecg-cell-k">{{t.duration}}</text></view>
       </view>
-      <view class="ecg-canvas-wrap">
-        <canvas canvas-id="ecg-live" class="ecg-canvas"></canvas>
+      <view class="ecg-canvas-wrap" style="height: {{stripHeightPx}}px;">
+        <canvas canvas-id="ecg-strip" class="ecg-canvas ecg-strip-canvas" style="height: {{stripHeightPx}}px;"></canvas>
       </view>
       <text class="ecg-footnote">{{t.notDiagnosis}}</text>
       <view class="ecg-btn ecg-btn-primary" catchtap="handleClose"><text>{{t.done}}</text></view>
+      <view wx:if="{{stage === 'view' && !readOnly}}" class="ecg-btn ecg-btn-ghost ecg-btn-danger" catchtap="handleDelete"><text>{{t.delete}}</text></view>
     </block>
 
     <!-- refused / failed -->
@@ -61,7 +68,7 @@
         <text class="ecg-guide-line">{{failTitle}}</text>
         <text class="ecg-guide-line ecg-guide-muted">{{failBody}}</text>
       </view>
-      <view class="ecg-btn ecg-btn-primary" catchtap="handleStart"><text>{{t.retry}}</text></view>
+      <view class="ecg-btn ecg-btn-primary" catchtap="handleRetry"><text>{{t.retry}}</text></view>
       <view class="ecg-btn ecg-btn-ghost" catchtap="handleClose"><text>{{t.close}}</text></view>
     </block>
   </view>

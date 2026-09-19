@@ -1342,6 +1342,7 @@ Component({
     insights: null,        // raw GET /api/wearable-insights object (band drives the HRV bar colours)
     // 心电节律 (V8 only): GET /api/ecg summaries, newest first; the overlay is <ecg-record>.
     ecgList: [],
+    ecgViewId: 0,        // a stored strip being viewed in <ecg-record>; 0 = recording mode
     ecgLatest: null,
     ecgSupported: false,   // self view, bound wearable is a V8 — recomputed with the binding
     ecgRecordOpen: false,
@@ -2164,8 +2165,10 @@ Component({
       if (!userId || this.data.isGuest) return
       try {
         const coach = this.data.mode === 'coach' && this.data.coachId ? `&coach_id=${encodeURIComponent(this.data.coachId)}` : ''
+        // user-health's _req resolves with the whole wx.request response; the body is .data.
         const res = await this._req(`${BASE}/api/ecg?openid=${encodeURIComponent(userId)}&limit=10${coach}`)
-        const items = (res && res.success && Array.isArray(res.items)) ? res.items : []
+        const body = res && res.data
+        const items = (body && body.success && Array.isArray(body.items)) ? body.items : []
         const list = items.map((it) => ({ ...it, whenLabel: this._ecgWhenLabel(it.recorded_at) }))
         this.setData({ ecgList: list, ecgLatest: list[0] || null })
       } catch (_) { /* the card simply shows its empty state */ }
@@ -2197,8 +2200,16 @@ Component({
       if (!this.data.ecgSupported) return
       this.setData({ ecgRecordOpen: true })
     },
-    closeEcgRecord() { this.setData({ ecgRecordOpen: false }) },
+    // Tap a stored strip (hero or history row) → the same overlay, read-back from OSS. Self and
+    // coach view alike; only self can delete (the component's read-only prop).
+    openEcgView(e) {
+      const id = parseInt(e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.id, 10)
+      if (!id) return
+      this.setData({ ecgViewId: id, ecgRecordOpen: true })
+    },
+    closeEcgRecord() { this.setData({ ecgRecordOpen: false, ecgViewId: 0 }) },
     onEcgSaved() { this._loadEcg() },
+    onEcgDeleted() { this._loadEcg() },
 
     async _loadWearableInsights() {
       const { userId, mode, coachId, lang } = this.properties

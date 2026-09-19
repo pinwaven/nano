@@ -233,3 +233,58 @@ Miniapp entry point: for aeviva-channel users, tapping the **Store tab** button 
 **`handleNanoSSO` hard-requires a verified phone** (`phone_verified` from nano's `WEBVIEW_USER_SELECT`, i.e. `users.phone_verified_at IS NOT NULL`) — a WeChat-openid-only account with no verified phone gets a `403 phone_not_verified` from GCN, since a GCN account must be backed by a real phone (see "GCN account must be backed by a real, OTP-verified phone" above). Phone verification is otherwise **never a standing gate** anywhere else in nano (`login.js`'s explicit design note — WeChat mini-program review requires free browsing), so most accounts reach this flow unverified. `switchTab` checks `user.phone_verified` **before** calling `_openAevivaStore()` and shows a confirm dialog routing to `pages/verify-phone/verify-phone` (no `?new=1`, so it skips the avatar-capture step and its cancel button won't delete the account — that page's `showAvatarStep`/`handleLogout` guards are both keyed off that param) instead of opening a webview that would just dead-end on GCN's login page with no explanation. `main.js`'s `_initChat` also shows a one-time-per-session, non-persisted chat nudge (`t.verifyPhonePrompt` + an action button) for any unverified user on load, independent of channel — advisory only, never blocking, per the same free-browsing constraint.
 
 **2026-07-27 bug, now fixed:** this whole handoff silently 500'd/401'd in prod for months behind three unrelated, independent gaps that only surfaced once someone actually exercised the full path — see gcn `CLAUDE.md`'s Known Issues entry for the same date. Worth remembering when this flow acts up again: reproduce it directly (mint a real `wvt` via `POST /api/webview-token`, exchange it via `POST https://aeviva(-dev).gcn.net/api/auth/sso/nano`) rather than trying to infer the cause from a WeChat DevTools screenshot alone — none of the three failure modes (wrong domain, missing nano-side token, missing gcn-side table) look different from the user's side, all of them just dead-end on GCN's login page.
+
+---
+
+## From `CLAUDE.md` §19 — GCN Integration (moved verbatim 2026-09-19)
+
+The `aeviva` nano channel's partner storefront, wholesale/resale inventory, and manual-QR checkout live in a separate sibling repo, `/Users/pin/waven/gcn`. **As of 2026-08-09, this is no longer "nano owns partner identity/tier/referral/commission, GCN owns commerce"** — GCN now owns the wholesale tier catalog, tier assignment, the referral tree, and commission computation too (Phases 0-4 of the consolidation roadmap below, shipped). Nano still owns end-user identity/auth (OTP, WeChat) and remains where new recruitment edges are actually created (its own admin panel / self-service apply flow), pushing them to GCN on every provision/re-sync — but nano's own `recordReferralCommission`/`recordSalesCommission` are now disabled (commented out, not removed) to avoid double-paying against GCN's ported computation. Full contract — cross-repo endpoints, SSO bridges, provisioning flow, admin-panel embed, miniapp entry point: `gcn-integration` skill — load it before touching any GCN-linked endpoint, the sibling repo, or aeviva storefront/inventory code.
+
+**Coach relationship now feeds GCN's store bindings (2026-08-27).** `WEBVIEW_USER_SELECT` in
+`worker/handlers/login.js` (the `/exchange-webview-token` GCN SSO exchange) additionally projects
+`p.user_id AS coach_user_id` — one line, next to the `cu.nickname AS coach_name` it already
+returned. It falls into the existing `...user` rest-spread and reaches GCN as
+`nanoUser.coach_user_id`. **No new endpoint and no `GCN_ALLOWED_PATHS` change** — that path was
+already allowlisted. **Deployed to nano prod 2026-08-27** (`nano-worker`), together with the 4
+pending viva-ag migrations and the unreleased viva-ag commits, at the user's explicit direction.
+Verified live: `/api/exchange-webview-token` on prod returns `coach_user_id` matching nano's DB,
+with `coach_id`/`coach_name` unchanged. GCN uses it to bind a coached user to their coach's own aeviva store when that
+coach is also an active GCN premier partner (`silver_store`/`gold_store`/`platinum_store`), which
+was previously only ever created by a first confirmed retail order. Nothing else in nano changed,
+and nano remains the sole owner of the coaching relationship itself (`users.coach_id`) — GCN only
+reads it. **Deployed to nano dev and prod** (2026-08-27) — see the prod note above. GCN side, including
+the backfill script and the conflict policy: GCN's `CLAUDE.md` §"Coach-Client Store Binding".
+
+**All 5 phases shipped 2026-08-09**: GCN now owns aeviva's wholesale tier catalog (key/label/rank/
+entry_fee/active status), tier assignment, the referral tree
+(`partners.aeviva_upline_partner_id` on GCN's side — deliberately not `parent_partner_id`, which
+GCN already uses for two other hierarchies), and commission computation (referral + sales-margin +
+team-income, ported rate-for-rate from nano's `partner_commission_rules`). Phase 5 (retiring
+nano's redundant local surface) turned out to mean UI/logic retirement, not schema deletion —
+`partners.tier`'s `NOT NULL` FK makes dropping the catalog unsafe for no benefit, and
+`referred_by_partner_id` was never meant to retire (nano still creates new recruitment edges).
+What actually retired: `PartnersTab.jsx`'s "Rules" subtab, found to be a live ungated editor for
+the exact rate data GCN's port was sourced from — now disabled with a banner, since editing it
+did nothing to real payouts once nano's own commission functions were disabled. See the
+`gcn-integration` skill's "Partner-system consolidation" section for the full
+mechanics (`managed_by_gcn`, `tier_managed_by_gcn`, all four `*-gcn-sync` endpoints, and which
+nano call sites were disabled), and
+`/Users/pin/waven/gcn/docs/aeviva/10-partner-system-consolidation-roadmap.md` for the complete
+writeup, including the live end-to-end verification performed against aeviva-dev.
+
+**Paying a store order from the miniapp (2026-09-15).** GCN's checkout shows the store's uploaded
+收款码 image inside `pages/appview`'s `<web-view>`, which cannot save an image — so its "save it and
+open it from your album" instruction described something the surface could not do.
+`dashboard.html`'s `renderPaymentScreen` therefore, when `window.__wxjs_environment === 'miniprogram'`,
+hands the signed OSS URL to the native `pages/pay-qr/` via `wx.miniProgram.navigateTo` (jweixin
+loaded for that call only, no `wx.config`), whose one job is 保存到相册; the buyer then scans it from
+the album in WeChat or Alipay. **That scan step is the floor.** Measured on dev (order `df25055b`):
+a Mini Program's `wx.previewImage` long-press menu recognises only 小程序码/公众号/群/名片 codes —
+the store's `wxp://` 收款码 decodes fine locally, but WeChat offers no 识别图中二维码 for it — and
+Alipay cannot be launched from inside WeChat (`alipays://`/alipay.com are blocked). Don't reintroduce
+previewImage as a "pay directly" path; the only thing that removes the scan is a `wx.requestPayment`
+merchant integration (商户号 + settlement to stores), a business change. The signed URL is decoded
+**once, and only if still encoded** — decoding the Signature's `%2B`/`%3D` twice makes OSS refuse it.
+The GCN OSS host must be in the miniapp's downloadFile 合法域名.
+
+**Custom-formulation purchase flow (in-flight, see §31):** a separate, newer cross-repo addition — GCN can now validate and confirm purchases of a user's actual committed Dot formulation (`GET /formulation-checkout-snapshot`, `POST /formulation-purchase-confirmed`, both in `GCN_ALLOWED_PATHS`), and `webview_tokens.context` carries a `{intent, nutrition_plan_id}` payload through the SSO handoff so GCN's checkout knows which formulation to price. Unrelated to the partner/commission consolidation above — this is nano's own Dots product (§14), not aeviva's wholesale inventory.

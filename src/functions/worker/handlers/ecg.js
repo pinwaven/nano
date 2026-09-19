@@ -54,10 +54,11 @@ function _keyFor(userId, startedAtMs) {
     return `ecg/${userId}/${startedAtMs}.ecg24`;
 }
 
-// The row a client sees: the summary, never the OSS key.
+// The row a client sees: the summary — never the OSS key, and not the peak index list, which
+// only means something next to the waveform (handleGetEcgWaveform returns it beside the samples).
 function _publicRow(row) {
     const d = row.data || {};
-    const { oss_key, ...summary } = d;
+    const { oss_key, peaks, ...summary } = d;
     return {
         id: Number(row.id),
         recorded_at: row.recorded_at,

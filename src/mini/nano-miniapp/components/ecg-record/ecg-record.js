@@ -16,7 +16,10 @@ const app = getApp()
 
 const DURATION_SEC = 30
 const NO_SIGNAL_AFTER_MS = 5000
+const CONNECT_TIMEOUT_MS = 15000
 const LIVE_WINDOW_SEC = 4
+const STRIP_ROW_SEC = 5   // a printed strip: 5 s per row
+const STRIP_ROW_PX = 64
 
 const T = {
   zh: {
@@ -49,6 +52,12 @@ const T = {
     failUploadTitle: '保存失败',
     failUploadBody: '网络异常，记录未能保存。请稍后重试。',
     failUnsupported: '当前绑定的设备不支持心电记录。',
+    loading: '正在读取记录…',
+    delete: '删除这条记录',
+    deleteConfirm: '删除后无法恢复，确定删除这条节律记录？',
+    deleteFailed: '删除失败，请稍后重试。',
+    failLoadTitle: '无法读取记录',
+    failLoadBody: '网络异常或记录已被删除。',
   },
   en: {
     title: 'ECG rhythm strip',
@@ -80,6 +89,12 @@ const T = {
     failUploadTitle: 'Could not save',
     failUploadBody: 'Network problem — the strip was not saved. Try again later.',
     failUnsupported: 'The bound device does not support ECG.',
+    loading: 'Loading the strip…',
+    delete: 'Delete this strip',
+    deleteConfirm: 'This cannot be undone. Delete this rhythm strip?',
+    deleteFailed: 'Could not delete. Try again later.',
+    failLoadTitle: "Couldn't load the strip",
+    failLoadBody: 'Network problem, or the strip was deleted.',
   },
 }
 
@@ -92,11 +107,18 @@ Component({
     deviceName: { type: String, value: '' },
     lang: { type: String, value: 'zh' },
     theme: { type: String, value: 'dark' },
+    // Viewing a stored strip: the host passes the health_events id and, in coach view, its
+    // coach id (the server re-checks users.coach_id). readOnly hides delete.
+    viewId: { type: Number, value: 0 },
+    coachId: { type: String, value: '' },
+    readOnly: { type: Boolean, value: false },
   },
 
   data: {
     t: T.zh,
-    stage: 'idle',        // idle | connecting | measuring | saving | result | failed
+    stage: 'idle',        // idle | connecting | measuring | saving | result | failed | loading | view
+    stripHeightPx: 160,   // the stacked full-strip canvas grows with the recording length
+    viewWhen: '',
     remaining: DURATION_SEC,
     packetCount: 0,
     liveBeats: 0,
@@ -108,7 +130,11 @@ Component({
 
   observers: {
     lang(v) { this.setData({ t: T[v === 'en' ? 'en' : 'zh'] }) },
-    open(v) { if (v) this.setData({ stage: 'idle', result: null, noSignal: false, packetCount: 0, liveBeats: 0, remaining: DURATION_SEC }) },
+    'open, viewId'(open, viewId) {
+      if (!open) return
+      this.setData({ stage: 'idle', result: null, noSignal: false, packetCount: 0, liveBeats: 0, remaining: DURATION_SEC })
+      if (viewId) this._loadView(viewId)
+    },
   },
 
   lifetimes: {
@@ -143,7 +169,12 @@ Component({
       const ring = createWearable('v8')
       this._ring = ring
       try {
-        await ring.connect(this.data.deviceId)
+        // The BLE stack can sit in "connecting" indefinitely with the adapter off or the band
+        // out of range (seen in the simulator: no adapter, no rejection). Cap it.
+        await Promise.race([
+          ring.connect(this.data.deviceId),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('connect timeout')), CONNECT_TIMEOUT_MS)),
+        ])
       } catch (err) {
         console.log(JSON.stringify({ level: 'WARN', msg: 'ecg connect failed', error: err && err.message }))
         this._teardown()
@@ -253,8 +284,13 @@ Component({
         return
       }
       if (res && res.success && res.ecg) {
-        this.setData({ stage: 'result', result: res.ecg })
-        this._drawLive()
+        // The result block mounts its own <canvas>; draw once it has rendered,
+        // not synchronously — the node does not exist yet at this line.
+        const all = []
+        for (const p of capture.packets) for (const v of p.samples) all.push(v)
+        const rate = res.ecg.sample_rate_hz || 256
+        this.setData({ stage: 'result', result: res.ecg, stripHeightPx: _stripHeight(all.length, rate) },
+          () => this._drawStrip(all, null, rate))
         this.triggerEvent('saved', { ecg: res.ecg })
         return
       }
@@ -263,6 +299,100 @@ Component({
       else if (reason === 'too_short') this.setData({ stage: 'failed', failTitle: t.failTooShortTitle, failBody: t.failTooShortBody })
       else if (reason === 'unsupported_brand') this.setData({ stage: 'failed', failTitle: t.failUnsupported, failBody: '' })
       else this.setData({ stage: 'failed', failTitle: t.failUploadTitle, failBody: (res && res.error) || t.failUploadBody })
+    },
+
+    handleRetry() {
+      if (this.data.viewId) this._loadView(this.data.viewId)
+      else this.handleStart()
+    },
+
+    // A stored strip: summary from the row, waveform + R-peaks from OSS via the worker.
+    async _loadView(id) {
+      const t = this.data.t
+      this.setData({ stage: 'loading' })
+      try {
+        const coach = this.data.coachId ? `&coach_id=${encodeURIComponent(this.data.coachId)}` : ''
+        const res = await this._req(`${BASE}/api/ecg/${id}/waveform?openid=${encodeURIComponent(this.data.userId)}${coach}`)
+        if (!res || !res.success || !res.ecg || !Array.isArray(res.samples)) throw new Error((res && res.error) || 'load failed')
+        if (this.data.viewId !== id || !this.data.open) return
+        const samples = res.samples, peaks = res.peaks || []
+        const rate = res.ecg.sample_rate_hz || 256
+        this.setData({
+          stage: 'view', result: res.ecg, viewWhen: _whenLabel(res.ecg.recorded_at),
+          stripHeightPx: _stripHeight(samples.length, rate),
+        }, () => this._drawStrip(samples, peaks, rate))
+      } catch (_) {
+        this.setData({ stage: 'failed', failTitle: t.failLoadTitle, failBody: t.failLoadBody })
+      }
+    },
+
+    handleDelete() {
+      const t = this.data.t
+      const id = this.data.viewId
+      if (!id || this.data.readOnly) return
+      wx.showModal({
+        title: '', content: t.deleteConfirm, confirmColor: '#e0565b',
+        success: async (r) => {
+          if (!r.confirm) return
+          try {
+            const res = await this._req(`${BASE}/api/ecg/${id}?openid=${encodeURIComponent(this.data.userId)}`, 'DELETE')
+            if (!res || !res.success) throw new Error('delete failed')
+            this.triggerEvent('deleted', { id })
+            this.handleClose()
+          } catch (_) {
+            wx.showToast({ title: t.deleteFailed, icon: 'none' })
+          }
+        },
+      })
+    },
+
+    // The whole strip on paper, printed-ECG style: rows of STRIP_ROW_SEC each, one scale for
+    // every row, R-peaks (server-detected) ticked along the top of each row. Width is measured
+    // from the layout because the legacy canvas draws in CSS px and phones differ.
+    _drawStrip(samples, peaks, rateHz) {
+      if (!samples || !samples.length) return
+      const rate = rateHz || 256
+      const perRow = Math.round(rate * STRIP_ROW_SEC)
+      const nRows = Math.max(1, Math.ceil(samples.length / perRow))
+      const H = nRows * STRIP_ROW_PX
+      wx.createSelectorQuery().in(this).select('.ecg-strip-canvas').boundingClientRect((rect) => {
+        const W = (rect && rect.width) || 340
+        const ctx = wx.createCanvasContext('ecg-strip', this)
+        ctx.setFillStyle('#fbf5f4'); ctx.fillRect(0, 0, W, H)
+        ctx.setLineWidth(1)
+        ctx.setStrokeStyle('#f0cfcc')
+        const gx = W / (STRIP_ROW_SEC * 5) // 0.2 s squares
+        for (let x = 0; x <= W; x += gx) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke() }
+        for (let y = 0; y <= H; y += STRIP_ROW_PX / 4) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke() }
+        ctx.setStrokeStyle('#e3b3af')
+        for (let r = 1; r < nRows; r++) { ctx.beginPath(); ctx.moveTo(0, r * STRIP_ROW_PX); ctx.lineTo(W, r * STRIP_ROW_PX); ctx.stroke() }
+        const hp = _highPass(samples, Math.round(rate / 2))
+        const sorted = hp.slice().sort((a, b) => a - b)
+        const lo = sorted[Math.floor(sorted.length * 0.02)], hi = sorted[Math.floor(sorted.length * 0.98)]
+        const rng = (hi - lo) || 1
+        const pos = (i) => {
+          const row = Math.floor(i / perRow)
+          const px = (i % perRow) / perRow * W
+          const py = row * STRIP_ROW_PX + STRIP_ROW_PX - 6 - (Math.min(hi, Math.max(lo, hp[i])) - lo) / rng * (STRIP_ROW_PX - 14)
+          return [px, py, row]
+        }
+        ctx.setStrokeStyle('#1a1d21'); ctx.setLineWidth(1.2); ctx.beginPath()
+        let lastRow = -1
+        for (let i = 0; i < hp.length; i++) {
+          const [px, py, row] = pos(i)
+          if (row !== lastRow) { ctx.moveTo(px, py); lastRow = row } else ctx.lineTo(px, py)
+        }
+        ctx.stroke()
+        if (peaks && peaks.length) {
+          ctx.setFillStyle('#1fb7a6')
+          for (const p of peaks) {
+            if (!(p >= 0 && p < hp.length)) continue
+            const row = Math.floor(p / perRow), px = (p % perRow) / perRow * W
+            ctx.fillRect(px - 1, row * STRIP_ROW_PX + 2, 2, 6)
+          }
+        }
+        ctx.draw()
+      }).exec()
     },
 
     _teardown() {
@@ -286,6 +416,16 @@ Component({
     },
   },
 })
+
+function _stripHeight(nSamples, rateHz) {
+  return Math.max(1, Math.ceil(nSamples / Math.round((rateHz || 256) * STRIP_ROW_SEC))) * STRIP_ROW_PX
+}
+
+function _whenLabel(iso) {
+  const d = new Date(iso); if (isNaN(d)) return ''
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 // Moving-average high-pass: v - mean(last w). The same baseline removal the strip page uses.
 function _highPass(a, w) {

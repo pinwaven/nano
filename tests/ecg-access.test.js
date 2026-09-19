@@ -47,7 +47,7 @@ test('every ECG handler resolves the owner server-side; only reads honour coach_
         assert.match(b, /_refuseCoach\(/, `${name} must refuse a coach`);
         assert.match(b, /_resolveOwner\((query|body)\?\.openid, null\)/, `${name} resolves the owner as the caller only`);
     }
-    assert.ok(!/oss_key/.test(bodyOf('_publicRow').replace(/const \{ oss_key, \.\.\.summary \} = d;/, '')), 'oss_key must never reach a client');
+    assert.ok(!/oss_key/.test(bodyOf('_publicRow').replace(/const \{ oss_key, peaks, \.\.\.summary \} = d;/, '')), 'oss_key must never reach a client');
     assert.match(handler, /SUPPORTED_BRANDS = new Set\(\['v8'\]\)/, 'ECG is V8-only (CLAUDE.md §18)');
 });
 
@@ -83,10 +83,19 @@ test('every t.* key the ECG WXML uses exists in both languages', () => {
     }
 });
 
-test('the card and the overlay are hosted for the self view only, and the overlay is registered', () => {
+test('recording is self-only; a stored strip opens read-only for a coach; the overlay is registered', () => {
     assert.strictEqual(uhJson.usingComponents['ecg-record'], '../ecg-record/ecg-record');
-    assert.match(uhWxml, /<ecg-record wx:if="\{\{mode === 'self'\}\}"/);
+    // Mounted for self, or for anyone viewing a stored strip — and then read-only unless self,
+    // with the coach id riding along so the server runs its users.coach_id check.
+    assert.match(uhWxml, /<ecg-record wx:if="\{\{mode === 'self' \|\| ecgViewId\}\}"/);
+    assert.match(uhWxml, /read-only="\{\{mode !== 'self'\}\}"/);
+    assert.match(uhWxml, /coach-id="\{\{mode === 'coach' \? coachId : ''\}\}"/);
+    const recJs = fs.readFileSync(path.join(MINI, 'components/ecg-record/ecg-record.js'), 'utf8');
+    assert.match(recJs, /if \(!id \|\| this\.data\.readOnly\) return/, 'delete re-checks readOnly in code, not only in WXML');
     assert.match(uhWxml, /wx:if="\{\{mode === 'self' && ecgSupported\}\}" class="wd-sync-btn" catchtap="openEcgRecord"/);
     assert.match(uhJs, /brand === 'v8'/, 'ecgSupported is V8-only');
     assert.match(uhJs, /wearableId !== '__server__'/, 'a server-only binding has no BLE id to record with');
+    // user-health's _req resolves with the whole wx.request response (found live: the card never
+    // rendered because the list was read off the response instead of its body).
+    assert.match(uhJs, /const body = res && res\.data\n\s+const items = \(body && body\.success/, '_loadEcg must read the response body');
 });

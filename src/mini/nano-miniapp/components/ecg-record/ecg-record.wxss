@@ -31,3 +31,7 @@
 .theme-light .ecg-cell { background: rgba(18,35,58,0.05); }
 .ecg-cell-v { font-size: 30rpx; font-weight: 700; font-variant-numeric: tabular-nums; }
 .ecg-cell-k { font-size: 20rpx; opacity: 0.6; }
+
+.ecg-when { display: block; font-size: 24rpx; opacity: 0.6; text-align: center; font-variant-numeric: tabular-nums; }
+.ecg-btn-danger { color: #e0565b; border-color: rgba(224,86,91,0.45); }
+.theme-light .ecg-btn-danger { border-color: rgba(224,86,91,0.45); }
