@@ -323,7 +323,7 @@ export function useHealthData({ userId, user, lang, t, coachId = null, mode = 's
 
   useEffect(() => { setD(initial()); if (userId) loadHealth(); }, [userId, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const avatarDisplayUrl = user?.avatar_character ? (resolveAvatarUrl(user.avatar_character, d.mood) || '') : '';
+  const avatarDisplayUrl = user?.avatar_character ? (resolveAvatarUrl(user.avatar_character, d.mood, user.avatar_moods) || '') : '';
 
   return { d, patch, loadHealth, refreshIfStale, loadHealthReports, loadUserFacts, onDocsLoaded, avatarDisplayUrl, recomputeTwinLayers };
 }

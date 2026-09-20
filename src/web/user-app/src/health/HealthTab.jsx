@@ -230,6 +230,8 @@ export default function HealthTab({ visible, onGuestTap }) {
                   <div className="ap-sheet" onClick={e => e.stopPropagation()}>
                     <div className="ap-header"><span className="ap-title">{isZh ? '选择头像' : 'Choose an Avatar'}</span><div className="ap-close" onClick={() => setPickerOpen(false)}><span className="ap-close-icon">✕</span></div></div>
                     <div className="ap-grid-scroll uh-scroll"><div className="ap-grid">
+                      {/* An applied generated set (miniapp-only upload flow, avatar-gallery.md §6) stays selectable here; re-picking it is a no-op. */}
+                      {user?.avatar_moods && (user.avatar_moods.thumb || user.avatar_moods[DEFAULT_MOOD]) && <div className={`ap-item${user?.avatar_character === 'custom' ? ' ap-item-selected' : ''}`} onClick={() => setPickerOpen(false)}><img className="ap-item-img" src={user.avatar_moods.thumb || user.avatar_moods[DEFAULT_MOOD]} alt="" /></div>}
                       {AVATAR_GALLERY.map(item => <div key={item.id} className={`ap-item${item.id === user?.avatar_character ? ' ap-item-selected' : ''}`} onClick={() => chooseAvatar(item.id)}><img className="ap-item-img" src={item.thumb} alt="" /></div>)}
                     </div></div>
                   </div>
