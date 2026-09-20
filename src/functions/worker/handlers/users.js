@@ -350,7 +350,7 @@ async function handleGetDashboardStats(query, adminCtx) {
 }
 
 const GET_USER_SELECT =
-    `SELECT u.user_id, u.nickname, u.avatar_url, u.avatar_character, u.phone, u.email, u.language, u.gender,
+    `SELECT u.user_id, u.nickname, u.avatar_url, u.avatar_character, u.avatar_moods, u.phone, u.email, u.language, u.gender,
             u.birth_date, u.roles, u.coach_id, u.channel_id, u.created_at, u.merged_into_user_id,
             (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
             (u.email_verified_at IS NOT NULL AND u.email IS NOT NULL) AS email_verified,
@@ -598,6 +598,10 @@ async function handlePutUser(user_id, body) {
         // above. language has no real "clear" concept (falls back to 'zh' when provided-but-
         // empty, same as before this change), only "provided" vs "omitted".
         const sets = ['nickname=$1', 'gender=$2', 'birth_date=$3', 'channel_id=COALESCE($4, channel_id)', 'avatar_url=COALESCE($5, avatar_url)', 'avatar_character=COALESCE($6, avatar_character)'];
+        // Picking a gallery character retires a generated set: 'custom' is only ever written by
+        // /avatar-generation/apply together with avatar_moods, so any other character id here
+        // means the moods must not resolve any more.
+        if (avatar_character && avatar_character !== 'custom') sets.push('avatar_moods=NULL');
         const params = [nickname || null, gender || null, birth_date || null, channel_id || null, avatar_url || null, avatar_character || null];
         const addConditional = (column, provided, value) => {
             if (provided) {

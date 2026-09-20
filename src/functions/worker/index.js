@@ -93,6 +93,9 @@ const {
 } = require('./handlers/health_documents');
 const { handleGetLabHistory } = require('./handlers/lab_history');
 const { handlePostEcg, handleGetEcgList, handleGetEcgWaveform, handleDeleteEcg } = require('./handlers/ecg');
+const {
+    handlePostAvatarGenerationPresign, handlePostAvatarGeneration, handleGetAvatarGeneration, handlePostAvatarGenerationApply,
+} = require('./handlers/avatar_generation');
 const { handleGetAdminUserPersonaSubscription, handlePostAdminUserPersonaSubscription, handleDeleteAdminUserPersonaSubscription, handleGetAdminPersonaSubscriptions, handlePostAdminUserVivaAg, handleDeleteAdminUserVivaAg } = require('./handlers/persona_subscriptions');
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
 const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
@@ -503,6 +506,9 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetEcgWaveform(path.match(/^\/ecg\/(\d+)\/waveform$/)[1], query);
             } else if (path === '/ecg') {
                 result = await handleGetEcgList(query);
+            // --- Custom avatar generation (docs/architecture/avatar-gallery.md §6) ---
+            } else if (path === '/avatar-generation') {
+                result = await handleGetAvatarGeneration(query);
             } else if (path === '/kino-upgrade') {
                 result = await handleGetKinoUpgrade();
             } else if (path.includes('/kone-apk-releases')) {
@@ -874,6 +880,12 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostHealthDocument(parsedBody);
             } else if (path === '/ecg') {
                 result = await handlePostEcg(parsedBody);
+            } else if (path === '/avatar-generation/presign') {
+                result = await handlePostAvatarGenerationPresign(parsedBody);
+            } else if (path === '/avatar-generation/apply') {
+                result = await handlePostAvatarGenerationApply(parsedBody);
+            } else if (path === '/avatar-generation') {
+                result = await handlePostAvatarGeneration(parsedBody);
             } else if (path === '/admin/login') {
                 result = await handleAdminLogin(parsedBody);
             } else if (path === '/admin-accounts') {

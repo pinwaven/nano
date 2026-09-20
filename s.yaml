@@ -106,6 +106,8 @@ resources:
         # untestable after three runs — hit live during dev testing. Prod sets its own value
         # (10) in s-prod.yaml.
         VIVA_AG_MAX_JOBS_PER_DAY: "50"
+        AVATAR_GEN_MODEL: "qwen-image-3.0"
+        AVATAR_GEN_MAX_PER_DAY: "3"
         GCN_API_BASE_URL: "https://edge-dev.gcn.net"
         # Public aeviva sector site — where the formulation label QR points. Distinct from
         # GCN_API_BASE_URL (the server-to-server API edge): this one is a link a person opens,

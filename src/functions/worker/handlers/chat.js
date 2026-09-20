@@ -2464,6 +2464,20 @@ async function handleChatGenerateEvent(payload) {
     const markDone = () => pool.query(`UPDATE chat_generate_events SET status = 'done' WHERE event_id = $1`, [event_id])
         .catch(err => console.error('markDone failed:', err));
 
+    // Not a chat turn at all: the custom-avatar pipeline rides this event for its off-request
+    // execution (§22) and nothing else — no LLM chat context, no delivery tail, no watchdog. It
+    // reports through avatar_generations.status, which the picker polls.
+    if (kind === 'avatar_generate') {
+        try {
+            const { runAvatarGeneration } = require('./avatar_generation');
+            await runAvatarGeneration(payload.gen_id);
+        } catch (err) {
+            console.error(JSON.stringify({ level: 'ERROR', msg: 'avatar_generate_event_failed', gen_id: payload.gen_id, error: err.message }));
+        }
+        await markDone();
+        return;
+    }
+
     const client = getLlmClient();
     const model = process.env.MODEL || 'qwen-plus-latest';
     const user = { birth_date, language };

@@ -204,7 +204,7 @@ async function handleWxLogin(body) {
     // Look up existing user — return with channel info and roles
     const WX_LOGIN_USER_SELECT =
         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
+                u.avatar_url, u.avatar_character, u.avatar_moods, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
                 u.referred_by_user_id, u.merged_into_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
                 COALESCE((u.preferences->>'text_scale')::int, 0) AS text_scale,
                 cu.nickname AS coach_name,
@@ -270,7 +270,7 @@ async function handleWxLogin(body) {
                     // Re-fetch with updated channel info
                     const refreshed = await pool.query(
                         `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                                u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
+                                u.avatar_url, u.avatar_character, u.avatar_moods, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
                                 u.referral_code, u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
                                 cu.nickname AS coach_name,
                                 c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
@@ -356,7 +356,7 @@ async function handleWxLogin(body) {
     if (resolvedPhone) {
         const phoneMatch = await pool.query(
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                    u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
+                    u.avatar_url, u.avatar_character, u.avatar_moods, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
                     (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
                     cu.nickname AS coach_name,
                     c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
@@ -476,7 +476,7 @@ async function handleWxLogin(body) {
     const created = await pool.query(
         `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, referral_code, phone, wx_unionid)
          VALUES ($1, $2, 'wechat', 'zh', $3, $4, $5, $6, $7, $8, $9)
-         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
+         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, avatar_moods, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
         [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, resolvedPhone, unionid]
     );
 
@@ -537,7 +537,7 @@ async function handleWxAppLogin(body) {
 
     const bundleSelect = `
         SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-               u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
+               u.avatar_url, u.avatar_character, u.avatar_moods, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
                u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
                cu.nickname AS coach_name,
                c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
@@ -659,7 +659,7 @@ async function handleWxAppLogin(body) {
     const created = await pool.query(
         `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, referral_code, phone, wx_app_openid, wx_unionid)
          VALUES ($1, NULL, 'wechat_app', 'zh', $2, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
+         RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, avatar_moods, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
         [newUserId, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, phone || null, appOpenid, unionid]
     );
 
@@ -815,7 +815,7 @@ async function handleExchangeWebviewToken(body) {
         const context = rows[0].context || null;
         const WEBVIEW_USER_SELECT =
             `SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-                    u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
+                    u.avatar_url, u.avatar_character, u.avatar_moods, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data,
                     u.merged_into_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
                     (u.email_verified_at IS NOT NULL AND u.email IS NOT NULL) AS email_verified, b.bio_age,
                     cu.nickname AS coach_name, p.user_id AS coach_user_id,

@@ -33,7 +33,7 @@ async function logSuperOtpUse(phone, userId) {
 
 const USER_SELECT = `
     SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-           u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
+           u.avatar_url, u.avatar_character, u.avatar_moods, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
            u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
            (u.email_verified_at IS NOT NULL AND u.email IS NOT NULL) AS email_verified, b.bio_age,
            cu.nickname AS coach_name,
@@ -121,7 +121,7 @@ async function handlePhoneOtpVerify(body) {
             const created = await client.query(
                 `INSERT INTO users (user_id, phone, external_app, language, referral_code, created_at, phone_verified_at)
                  VALUES ($1, $2, 'phone', 'zh', $3, NOW(), NOW())
-                 RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character,
+                 RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, avatar_moods,
                            coach_id, channel_id, roles, created_at, bio_data, referral_code, referred_by_user_id,
                            (phone_verified_at IS NOT NULL AND phone IS NOT NULL) AS phone_verified,
                            (email_verified_at IS NOT NULL AND email IS NOT NULL) AS email_verified`,
