@@ -8,6 +8,14 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **Custom avatars — upload your photo, get a 4-mood set in the gallery style** · 2026-09-20 (CLAUDE.md §20, `docs/architecture/avatar-gallery.md` §6)
+  - Migration `migration_avatar_generations.sql`: `avatar_generations` (one row per attempt, partial unique index = one in-flight job per user) + `users.avatar_moods JSONB`.
+  - Worker: `lib/avatarGen.js` (gate with `qwen-vl-plus`; DashScope `qwen-image-3.0` renders the relaxed base from the photo + a gallery style reference, then three *sequential* mood edits of the base — the Qwen-Image quotas are requests/minute account-wide, and `qwen-image-2.0-pro`, best in the spike, allows only 2/min, so it lost to 3.0 (20/min, best likeness on a real photo); the prompts default the subject to Chinese unless the photo clearly shows otherwise and never name an accessory (an edit model paints one); 300/160 px JPEG derivatives via OSS image processing, `ossLib.processObjectSave`, no image lib in the worker; the source photo is deleted in a `finally` on every outcome). `handlers/avatar_generation.js`: `POST /avatar-generation/presign` (server-minted `avatar-uploads/<user_id>/` key), `POST /avatar-generation` (prefix check, 6 MB, `AVATAR_GEN_MAX_PER_DAY`=3, 409 while one runs; publishes `kind:'avatar_generate'` on the existing `chat.generate` event, fails open inline), `GET /avatar-generation`, `POST /avatar-generation/apply` (`avatar_character='custom'`, `avatar_moods`, `avatar_url`=relaxed). `handleChatGenerateEvent` branches on the kind before any chat work. `avatar_moods` added to every self-row select that carries `avatar_character`; `handlePutUser` clears it on a gallery pick. `AVATAR_GEN_MODEL` / `AVATAR_GEN_MAX_PER_DAY` in both yamls.
+  - Miniapp (`0920-1`): `components/avatar-picker/` gains a "我的照片" tile (self view only) and owns pick → 1:1 crop → upload → 5 s poll → 4-up preview → 使用/重新生成 → apply, with `err_<code>` copy in both languages; `utils/mood.js resolveAvatarUrl(avatarId, mood, customMoods)`; `user-health` forwards `customavatar`, `main.js handleHealthCustomAvatar` mirrors the applied fields.
+  - Web user-app: resolves `'custom'` through the shared `mood.js` and shows an applied set as a tile (`HealthTab.jsx`); the upload flow itself is miniapp-only.
+  - One-off: `temp/avatar-gen-spike.js` (the style/mood/throttling findings above); `avatars/style-ref/relaxed.png` uploaded to OSS.
+  - Tests: `tests/avatar-generation.test.js` (pipeline over stubbed clients, handler refusals, static couplings).
+
 - **心电节律 — ECG rhythm strips from the V8 band, in the miniapp** · 2026-09-19
   - Miniapp: `utils/wearable/v8/` gains the ECG opcodes (`setMeasurementPacket`,
     `setEcgRealtimePacket`, `parseEcgChunk`) and `V8Band.recordEcg()`, ported from the CLI;
