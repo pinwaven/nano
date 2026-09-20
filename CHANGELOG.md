@@ -16,6 +16,21 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   - One-off: `temp/avatar-gen-spike.js` (the style/mood/throttling findings above); `avatars/style-ref/relaxed.png` uploaded to OSS.
   - Tests: `tests/avatar-generation.test.js` (pipeline over stubbed clients, handler refusals, static couplings).
 
+- **Grocery catalogs in chat — 盒马 products as a `:::grocery` card** · 2026-09-19 (CLAUDE.md §46)
+  - Migration `migration_food_suppliers.sql`: `food_suppliers` (seeded `hema`) + `supplier_products`
+    keyed `(supplier_key, product_id)` — supplier-generic, no sku/order path, price is a snapshot.
+  - `temp/hema/scrape.py` (adb + accessibility-tree scraper) and `temp/import-supplier-catalog.js`
+    (PNG→JPEG thumbnails to OSS `suppliers/<key>/`, upsert, `is_food` from subcategory/name, tag
+    normalisation, retire missing ids). Dev holds 6,286 rows, 5,469 food, all with images.
+  - Worker: `lib/groceryCatalog.js` (search / resolve / restriction filter),
+    `get_grocery_products` tool, `prompts/chat/groceryBlock.js` gated on an active supplier and
+    rendered by both `nutrition.js` templates, `recommend_grocery` tail resolved by a fresh read in
+    `finalizeChatReply`, `_buildGroceryCardBlock`; PLAN/JUDGE taught the tail.
+  - Miniapp: `:::grocery` in `utils/markdown.js`, thumbnail card in `pages/main/`, tap copies the
+    product name with a "search it in 盒马 App" toast. `VERSION` 0919-7.
+  - Tests: `tests/grocery-recommendation.test.js`. The adb/accessibility-tree scraping method is
+    documented in `docs/architecture/hema-android-scraper.md`.
+
 - **心电节律 — ECG rhythm strips from the V8 band, in the miniapp** · 2026-09-19
   - Miniapp: `utils/wearable/v8/` gains the ECG opcodes (`setMeasurementPacket`,
     `setEcgRealtimePacket`, `parseEcgChunk`) and `V8Band.recordEcg()`, ported from the CLI;
@@ -32,6 +47,15 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   - Web user-app: read-only 心电节律 card on the health tab (recording needs BLE).
   - Copy everywhere says rhythm strip, never diagnosis: the band gives dimensionless counts with
     no voltage scale and ships no analysis. Chat has no ECG tool yet (a later, separate change).
+  - Follow-ups from the first live run (`VERSION` 0919-6): the result view drew nothing because
+    its `<canvas>` is a fresh node that did not exist when the draw ran — now drawn in the
+    `setData` render callback, and it shows the **whole** strip stacked in 5 s rows rather than
+    the last 4 s. Stored strips are viewable: tap the card's hero or a history row → the same
+    overlay reads the waveform + R-peaks back (`GET /api/ecg/{id}/waveform`) and draws it with
+    the peaks ticked; delete from there (self only, confirmed). A coach opens it read-only with
+    `coach_id` riding along. Also: the card read the list off the response instead of its body;
+    a 15 s cap on the BLE connect; `peaks` dropped from list rows; `.theme-light` surface for the
+    card.
 
 - **V8 CLI: ECG capture** · 2026-09-19
   - `tools/halo` gains `node bin/cli.js ecg --device v8`: runs the vendor demo's on-demand ECG

@@ -627,3 +627,40 @@ Moved to the `wearable-insights` skill (`.claude/skills/wearable-insights/SKILL.
 ## 45. 心电节律 — ECG Rhythm Strips from the V8 Band — Rules
 
 Moved to the `wearable-insights` skill (`.claude/skills/wearable-insights/SKILL.md`) on 2026-09-19 — invoke it before working in this area.
+
+## 46. Grocery Catalogs in Chat — `food_suppliers` / `supplier_products` — Rules
+
+Diet advice can end in a shopping list: supermarket products the user can order in the
+supermarket's own app, shown as a `:::grocery` card with thumbnails. First supplier is 盒马
+(`supplier_key='hema'`, 6,286 products scraped 2026-09-17 from the 徐汇·裕德路 store by
+`temp/hema/scrape.py` over adb — how the phone was driven and read is recorded in
+[docs/architecture/hema-android-scraper.md](docs/architecture/hema-android-scraper.md); imported by
+`temp/import-supplier-catalog.js`, thumbnails on OSS under `suppliers/<key>/`). Migration
+`migration_food_suppliers.sql`.
+
+- **Supplier-generic by construction.** A second supermarket is a `food_suppliers` row plus
+  `supplier_products` rows keyed `(supplier_key, product_id)` — never a second table, tool, tail
+  or card. Display copy (app name, tap hint, store note) lives on the supplier row.
+- **Not a store.** No sku, no order path, no price we control: `price` is a scrape-time snapshot
+  the card labels as such. Prices never reach the model (§37) — the tool returns names and ids,
+  the card reads price/image from the table.
+- **Searched, never injected.** The catalog is thousands of rows, so it is a tool
+  (`get_grocery_products({keywords})`, `lib/groceryCatalog.js` — ILIKE over `is_food AND
+  is_active`), not a prompt snapshot. `prompts/chat/groceryBlock.js` is gated on an active
+  supplier existing (`llmContext.grocery_suppliers`, fetched every turn, rendered only by the
+  two `nutrition.js` templates) and carries no data.
+- **The model picks, the server writes.** The `recommend_grocery` tail carries
+  `{supplier, product_id, reason_zh}`; `finalizeChatReply` resolves the ids with a **fresh read**
+  (`resolveGroceryProducts`) — an id that resolves to no active food row is dropped, never
+  repaired — and `_buildGroceryCardBlock` writes the rows. PLAN and JUDGE are taught the tail
+  (§21); ordinary food words in prose are not product claims.
+- **Allergies/restrictions are a code filter on both paths** (`filterGroceryByUserFacts`: the
+  fact's food word after verb-stripping against the product name; 素食 drops animal categories
+  and meat/seafood words). Biased to over-suppression; never a prompt rule.
+- **`is_food` is the diet gate**: flowers, plants and alcohol are in the scrape and out of every
+  result. Set by the import script from subcategory/name; a human may override the column.
+- **Tap = copy the name** (`handleGroceryCardTap`): a Mini Program has no verifiable deep link
+  into 盒马. If one is ever found, it goes in `food_suppliers.config`, not in the card.
+- Re-scrape → re-run the import: upsert by id, images skipped when present, missing ids retired
+  (`is_active=false`). `is_food` overrides are lost on re-import — a known gap; add a column if
+  they are ever hand-edited.
