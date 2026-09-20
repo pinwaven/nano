@@ -245,7 +245,7 @@ Component({
       const x = this._samples
       if (!x.length) return
       const ctx = wx.createCanvasContext('ecg-live', this)
-      const W = 340, H = 160
+      const W = _sheetInnerWidth(), H = 160
       // Paper grid: 0.2 s major squares at ~256 Hz over a 4 s window.
       ctx.setFillStyle('#fbf5f4'); ctx.fillRect(0, 0, W, H)
       ctx.setStrokeStyle('#f0cfcc'); ctx.setLineWidth(1)
@@ -356,7 +356,7 @@ Component({
       const nRows = Math.max(1, Math.ceil(samples.length / perRow))
       const H = nRows * STRIP_ROW_PX
       wx.createSelectorQuery().in(this).select('.ecg-strip-canvas').boundingClientRect((rect) => {
-        const W = (rect && rect.width) || 340
+        const W = (rect && rect.width) || _sheetInnerWidth()
         const ctx = wx.createCanvasContext('ecg-strip', this)
         ctx.setFillStyle('#fbf5f4'); ctx.fillRect(0, 0, W, H)
         ctx.setLineWidth(1)
@@ -416,6 +416,12 @@ Component({
     },
   },
 })
+
+// The sheet is full-width with 32rpx side padding, so the canvas is windowWidth − 64rpx in px.
+// Used when the layout query returns nothing (the legacy canvas draws in CSS px, phones differ).
+function _sheetInnerWidth() {
+  try { const w = wx.getSystemInfoSync().windowWidth; return Math.round(w - 64 * w / 750) } catch (_) { return 340 }
+}
 
 function _stripHeight(nSamples, rateHz) {
   return Math.max(1, Math.ceil(nSamples / Math.round((rateHz || 256) * STRIP_ROW_SEC))) * STRIP_ROW_PX

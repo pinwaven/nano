@@ -1,6 +1,6 @@
 /* 心电节律记录 overlay — dark by default like the health tab; .theme-light is applied on the
    component's own root because the host page's theme class does not cross the boundary. */
-.ecg-overlay { position: fixed; inset: 0; z-index: 900; background: rgba(4, 12, 24, 0.82); display: flex; align-items: flex-end; justify-content: center; }
+.ecg-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 900; background: rgba(4, 12, 24, 0.82); display: flex; align-items: flex-end; justify-content: center; }
 .ecg-sheet { width: 100%; max-height: 92vh; overflow-y: auto; background: #0f2540; border-radius: 32rpx 32rpx 0 0; padding: 28rpx 32rpx calc(40rpx + env(safe-area-inset-bottom)); box-sizing: border-box; color: #eaf2ff; }
 .theme-light .ecg-sheet { background: #ffffff; color: #12233a; }
 .ecg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20rpx; }
