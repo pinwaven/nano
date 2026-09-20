@@ -1931,7 +1931,7 @@ Page({
     this._openAevivaStoreGated({ intent: 'view_product', sku_id: skuId })
   },
 
-  // Tapping a row of the :::grocery card (CLAUDE.md §44). The supermarket's app is not ours
+  // Tapping a row of the :::grocery card (CLAUDE.md §46). The supermarket's app is not ours
   // and has no deep link a Mini Program can verify, so the row's one job is to hand the user the
   // exact product name: copied to the clipboard, with a toast saying which app to search in.
   handleGroceryCardTap(e) {

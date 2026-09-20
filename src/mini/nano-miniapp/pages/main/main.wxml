@@ -454,7 +454,7 @@
                         <text class="pcard-arrow">›</text>
                       </view>
                     </view>
-                    <!-- :::grocery — supermarket products for a diet suggestion (CLAUDE.md §44).
+                    <!-- :::grocery — supermarket products for a diet suggestion (CLAUDE.md §46).
                          Server-written rows with a thumbnail; a tap copies the product name so the
                          user can search it in the supermarket's own app. -->
                     <view wx:elif="{{seg.t === 'grocery'}}" class="gcard">

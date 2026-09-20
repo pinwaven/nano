@@ -598,7 +598,7 @@ function _buildDirective (name, inner) {
     return pitems.length ? { t: 'product', items: pitems } : null
   }
 
-  // :::grocery — supermarket products for a diet suggestion (CLAUDE.md §44). Rows are
+  // :::grocery — supermarket products for a diet suggestion (CLAUDE.md §46). Rows are
   // supplier|supplierName|id|name|price|image|reason, written by the SERVER from the catalog
   // table (worker lib/chatCards.js's _buildGroceryCardBlock), never by the model — the same
   // rule as :::product. One optional '#note' meta line carries the price disclaimer and which
