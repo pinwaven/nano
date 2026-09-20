@@ -200,7 +200,7 @@ function _buildProductCardBlock(items, lang) {
 }
 
 
-// Renders the :::grocery card for a resolved set of supermarket products (CLAUDE.md §44).
+// Renders the :::grocery card for a resolved set of supermarket products (CLAUDE.md §46).
 //
 // Same contract as _buildProductCardBlock: the SERVER writes every name, price and image URL,
 // from the rows resolveGroceryProducts read back for the ids the model returned. The model only
@@ -216,7 +216,7 @@ function _buildGroceryCardBlock(items, lang) {
     for (const it of items || []) {
         if (!it || !it.supplier_key || !it.product_id) continue;
         const price = it.price != null && Number.isFinite(Number(it.price))
-            ? `¥${Number(it.price).toFixed(2).replace(/\.00$/, '')}${it.unit ? '/' + safe(it.unit) : ''}`
+            ? `¥${Number(it.price).toFixed(2).replace(/\.?0+$/, '')}${it.unit ? '/' + safe(it.unit) : ''}`
             : '';
         rows.push([it.supplier_key, it.supplier_name, it.product_id, it.name, price, it.image_url, it.reason_zh].map(safe).join('|'));
         if (it.app_name_zh && !apps.includes(it.app_name_zh)) apps.push(it.app_name_zh);

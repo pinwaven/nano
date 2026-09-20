@@ -1219,7 +1219,7 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
     }
 
     // Detect a recommend_grocery action — supermarket products the model picked from
-    // get_grocery_products rows this turn (prompts/chat/groceryBlock.js, CLAUDE.md §44). Same
+    // get_grocery_products rows this turn (prompts/chat/groceryBlock.js, CLAUDE.md §46). Same
     // discipline as recommend_product above, with one difference forced by scale: the catalog is
     // thousands of rows and was never in the prompt, so validation is a fresh read of the ids
     // (lib/groceryCatalog.js resolveGroceryProducts) — an id that resolves to no active food row
@@ -1651,7 +1651,7 @@ async function handlePostChat(body) {
                     console.log(JSON.stringify({ level: 'WARN', msg: 'wearable_insights_fetch_failed', user_id, error: err.message }));
                     return null;
                 });
-            // Grocery catalogs on file (§44). Tiny, and fetched on every turn for the same reason
+            // Grocery catalogs on file (§46). Tiny, and fetched on every turn for the same reason
             // formulation_packages_available is: the block carries no data, only the vocabulary
             // and the tool name, and only the nutrition templates render it.
             fetches.grocery_suppliers = fetchActiveSuppliers(pool).catch(err => {

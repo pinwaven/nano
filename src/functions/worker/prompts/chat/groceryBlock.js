@@ -2,7 +2,7 @@
 
 /**
  * Shared grocery-catalog block — teaches the model that supermarket catalogs exist on file
- * (food_suppliers / supplier_products, CLAUDE.md §44), that get_grocery_products is where the
+ * (food_suppliers / supplier_products, CLAUDE.md §46), that get_grocery_products is where the
  * rows live, and the recommend_grocery action tail. Carries NO product data: the tool does.
  *
  * Gated on at least one active supplier, the same structural gate getProductRecommendBlock and
