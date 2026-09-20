@@ -8,6 +8,12 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **Portable `deploy:*` scripts — `scripts/s.sh` wrapper** · 2026-09-20
+  - Before: every `deploy:*` npm script was `source .env && s <fn> deploy -y`, which only worked on macOS/zsh. On Linux, npm runs scripts under `/bin/sh` (`sh: 1: source: not found`) and `s` is a local devDependency not on PATH (`s: command not found`). The `scripts/deploy-*.sh` helpers had the same bare `s` calls.
+  - After: `scripts/s.sh` `cd`s to the repo root, exports `.env` (`set -a; . ./.env`), and `exec`s `npx s "$@"`. All 15 `deploy:*` npm scripts and the 7 shell helpers call it; behaviour on macOS is unchanged.
+  - Also recorded from the first Linux deploy: a fresh checkout must `npm ci --omit=dev` inside each `src/functions/<fn>/` before deploying it — `s deploy` zips the directory as-is, and a worker shipped without `node_modules` returns 502 (`Cannot find module 'pg'`) on every `/api/*` route.
+  - Files: `scripts/s.sh` (new), `package.json`, `scripts/deploy-{all,admin,admin-prod,chat,coach,user-app,user-app-prod}.sh`, `CLAUDE.md` §30, `docs/deployment.md`.
+
 - **Channel QR codes for the root Waven miniprogram — branded login screen from a scan** · 2026-09-20
   - Before: only a brand-specific build (`APPID_TO_CHANNEL` in `utils/config.js`) could show a channel's logo before login; on the root app the logo only swapped in after `/wx-login` returned. There was also no 小程序码 generation anywhere in the codebase.
   - Worker: `GET /channel-branding?id=<channels.id>` (`handlers/channels.js`, public display fields only — name/key_name/logo/locale — keyed on the numeric id so a printed code survives a rename) and `GET /channels/:id/miniapp-qrcode` (mints `wxacode.getUnlimited` against `WX_APPID_WAVEN`, `page=pages/login/login`, `scene=ch:<id>`, `check_path:false`; channel admins scoped to their own tree; returns base64 JSON, never cached — the codes don't expire).

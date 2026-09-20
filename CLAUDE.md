@@ -399,10 +399,10 @@ Ported 2026-08-08 from the sibling GCN repo (`/Users/pin/waven/gcn/scripts/dns-o
 `scripts/dns-override.js` works around this **without touching any system/network settings** — it's a `--require`-loaded Node module that monkey-patches `dns.lookup` in that one process only, using `dns.Resolver` (Node's own c-ares client, independent of the OS resolver) pointed at `8.8.8.8`. Nothing persists after the command exits.
 
 ```bash
-source .env && NODE_OPTIONS="--require ./scripts/dns-override.js" s worker deploy -t s-prod.yaml -y
+NODE_OPTIONS="--require ./scripts/dns-override.js" scripts/s.sh worker deploy -t s-prod.yaml -y
 ```
 
-Substitute the function name / `-t s-prod.yaml` as needed for other functions or the dev target.
+Substitute the function name / `-t s-prod.yaml` as needed for other functions or the dev target. `scripts/s.sh` is the portable wrapper every `deploy:*` npm script goes through — it loads `.env` and runs the repo-local `s` via `npx`, so it works under `sh` on Linux as well as bash/zsh on macOS (bare `s` and `source .env` do not).
 
 ## 31. Health-Plan-Focus-Linked Formulation & the GCN Custom-Formulation Bridge — Rules
 
