@@ -769,6 +769,7 @@
         text-scale="{{textScale}}"
         viva-ag-enabled="{{vivaAgActive}}"
         bindchooseavatar="handleHealthChooseAvatar"
+        bindcustomavatar="handleHealthCustomAvatar"
         bindguesttap="openGuestSheet"
         bind:gotochat="handleAgGoToChat"
         bind:textscalestep="onTextScaleStep"

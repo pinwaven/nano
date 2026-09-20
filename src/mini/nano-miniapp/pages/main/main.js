@@ -5254,6 +5254,15 @@ Page({
     }).catch(() => {}).finally(done)
   },
 
+  // A generated ("my photo") avatar was applied by the picker via POST /avatar-generation/apply;
+  // the server row is already updated, so this is only the local mirror of it.
+  handleHealthCustomAvatar(e) {
+    const d = e.detail || {}
+    if (!d.avatar_url || !d.avatar_moods) return
+    const { user } = this.data
+    this._updateUser({ ...user, avatar_url: d.avatar_url, avatar_character: d.avatar_character || 'custom', avatar_moods: d.avatar_moods })
+  },
+
   onProfileUpdated(e) {
     const updated = e.detail
     if (!updated) return

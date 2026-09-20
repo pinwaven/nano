@@ -2531,6 +2531,13 @@ Component({
       this.triggerEvent('chooseavatar', { avatarId })
     },
 
+    // The picker already applied a generated set server-side; the page only needs to refresh
+    // its copy of the user so avatar_character/avatar_moods resolve from here on.
+    onCustomAvatarApplied(e) {
+      this.setData({ avatarPickerVisible: false })
+      this.triggerEvent('customavatar', e.detail)
+    },
+
     // Resolves the currently-displayed avatar image from the selected character
     // + live mood ('mood' data field). Runs for both self and coach mode: self
     // view computes mood from local BLE-synced ring data (_loadWearableFromStorage),
@@ -2539,7 +2546,7 @@ Component({
     _refreshAvatarDisplay() {
       const character = this.properties.user?.avatar_character
       if (!character) { this.setData({ avatarDisplayUrl: '' }); return }
-      const url = resolveAvatarUrl(character, this.data.mood)
+      const url = resolveAvatarUrl(character, this.data.mood, this.properties.user?.avatar_moods)
       this.setData({ avatarDisplayUrl: url || '' })
     },
 

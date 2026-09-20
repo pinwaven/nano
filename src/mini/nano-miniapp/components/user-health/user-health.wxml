@@ -89,7 +89,11 @@ module.exports.c = function (hex, theme) {
         selected-id="{{user.avatar_character}}"
         lang="{{isZh ? 'zh' : 'en'}}"
         theme="{{theme}}"
+        allow-upload="{{mode === 'self'}}"
+        user-id="{{userId}}"
+        custom-moods="{{user.avatar_moods}}"
         bind:select="onAvatarSelect"
+        bind:customapplied="onCustomAvatarApplied"
         bind:close="onAvatarPickerClose"
       />
 

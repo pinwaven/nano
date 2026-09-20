@@ -115,10 +115,19 @@ function findAvatar(avatarId) {
   return AVATAR_GALLERY.find(a => a.id === avatarId) || null
 }
 
-function resolveAvatarUrl(avatarId, mood) {
+const CUSTOM_AVATAR_ID = 'custom'
+
+// `customMoods` is users.avatar_moods — the per-user generated set (docs/architecture/
+// avatar-gallery.md §6). It is only consulted for the 'custom' character id, so a gallery pick
+// can never render a stale generated image and vice versa.
+function resolveAvatarUrl(avatarId, mood, customMoods) {
+  if (avatarId === CUSTOM_AVATAR_ID) {
+    if (!customMoods || typeof customMoods !== 'object') return null
+    return customMoods[mood] || customMoods[DEFAULT_MOOD] || null
+  }
   const avatar = findAvatar(avatarId)
   if (!avatar) return null
   return avatar.moods[mood] || avatar.moods[DEFAULT_MOOD] || null
 }
 
-module.exports = { MOODS, AVATAR_GALLERY, DEFAULT_MOOD, computeMood, findAvatar, resolveAvatarUrl }
+module.exports = { MOODS, AVATAR_GALLERY, DEFAULT_MOOD, CUSTOM_AVATAR_ID, computeMood, findAvatar, resolveAvatarUrl }
