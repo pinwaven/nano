@@ -8,6 +8,13 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **Channel QR codes for the root Waven miniprogram — branded login screen from a scan** · 2026-09-20
+  - Before: only a brand-specific build (`APPID_TO_CHANNEL` in `utils/config.js`) could show a channel's logo before login; on the root app the logo only swapped in after `/wx-login` returned. There was also no 小程序码 generation anywhere in the codebase.
+  - Worker: `GET /channel-branding?id=<channels.id>` (`handlers/channels.js`, public display fields only — name/key_name/logo/locale — keyed on the numeric id so a printed code survives a rename) and `GET /channels/:id/miniapp-qrcode` (mints `wxacode.getUnlimited` against `WX_APPID_WAVEN`, `page=pages/login/login`, `scene=ch:<id>`, `check_path:false`; channel admins scoped to their own tree; returns base64 JSON, never cached — the codes don't expire).
+  - Miniapp (`0920-2`): `pages/login/login.js` reads `?channel=<id>` or the decoded scene `ch:<id>`, fetches the branding *before* `wxLogin()` (bounded 4 s, best-effort) so the first paint is branded, and forwards the channel name as `channel_slug` — the existing new-user assignment path in `handlers/login.js`, no server login change. An explicit `invite`/`coach_id` still wins.
+  - Admin panel: QR icon on every channel row → modal with the code, its `page?scene=` and a PNG download (`ChannelTab.jsx`, `translations.js`).
+  - Tests: `tests/channel-miniapp-qrcode.test.js`.
+
 - **Custom avatars — upload your photo, get a 4-mood set in the gallery style** · 2026-09-20 (CLAUDE.md §20, `docs/architecture/avatar-gallery.md` §6)
   - Migration `migration_avatar_generations.sql`: `avatar_generations` (one row per attempt, partial unique index = one in-flight job per user) + `users.avatar_moods JSONB`.
   - Worker: `lib/avatarGen.js` (gate with `qwen-vl-plus`; DashScope `qwen-image-3.0` renders the relaxed base from the photo + a gallery style reference, then three *sequential* mood edits of the base — the Qwen-Image quotas are requests/minute account-wide, and `qwen-image-2.0-pro`, best in the spike, allows only 2/min, so it lost to 3.0 (20/min, best likeness on a real photo); the prompts default the subject to Chinese unless the photo clearly shows otherwise and never name an accessory (an edit model paints one); 300/160 px JPEG derivatives via OSS image processing, `ossLib.processObjectSave`, no image lib in the worker; the source photo is deleted in a `finally` on every outcome). `handlers/avatar_generation.js`: `POST /avatar-generation/presign` (server-minted `avatar-uploads/<user_id>/` key), `POST /avatar-generation` (prefix check, 6 MB, `AVATAR_GEN_MAX_PER_DAY`=3, 409 while one runs; publishes `kind:'avatar_generate'` on the existing `chat.generate` event, fails open inline), `GET /avatar-generation`, `POST /avatar-generation/apply` (`avatar_character='custom'`, `avatar_moods`, `avatar_url`=relaxed). `handleChatGenerateEvent` branches on the kind before any chat work. `avatar_moods` added to every self-row select that carries `avatar_character`; `handlePutUser` clears it on a gallery pick. `AVATAR_GEN_MODEL` / `AVATAR_GEN_MAX_PER_DAY` in both yamls.
@@ -57,6 +64,17 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
     a 15 s cap on the BLE connect; `peaks` dropped from list rows; `.theme-light` surface for the
     card.
 
+- **V8 CLI: PPG probe** · 2026-09-20
+  - `node bin/cli.js ppg --device v8`: streams the raw optical channel the SDK only exposes as
+    the "blood glucose" collection (`0x78` start/stop/quit, `0x3a` data). Confirmed live on two
+    units: 50 Hz, 24-bit counts, 50 samples per 203-byte frame, contiguous; pulse (0.7 s spacing,
+    dicrotic shoulder) visible after a 0.5 s high-pass, ~88 bpm on a still 60 s capture. Every
+    frame is kept raw; nothing is derived in the CLI. `tools/halo/README.md` "PPG",
+    `v8-smart-band.md` opcode table.
+  - `--device halo` too: the X3 streams the identical `0x78`/`0x3a` frames (confirmed on
+    `X3B 69526`; finger PPG much cleaner — 1.35 Hz constant, dicrotic wave, 83 bpm), while the
+    Halo-only `0x11` real-time path acks and sends nothing. `halo-smart-ring.md` §3.12–3.13 now
+    carry confirmed/unverified status; `HaloRing.startPpgStream()` flagged non-functional.
 - **V8 CLI: ECG capture** · 2026-09-19
   - `tools/halo` gains `node bin/cli.js ecg --device v8`: runs the vendor demo's on-demand ECG
     sequence (`0x28` type 4 + `0x07`), captures the raw 24-bit sample stream for `--capture`

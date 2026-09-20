@@ -302,6 +302,71 @@ program
 const { summarizeEcg, ecgSamplesToCsv } = require('../src/ecg-summary');
 
 program
+  .command('ppg')
+  .description('V8 only: probe the raw PPG stream the SDK exposes as "blood sugar" (0x78 start, 0x3a data frames). Records every frame raw; decodes nothing beyond what BleSDK does.')
+  .option('--capture <seconds>', 'how long to listen before sending stop + quit', '30')
+  .option('--progress', 'also send the vendor demo\'s mode=4 percentage ticks', false)
+  .option('--out <file>', 'write acks + every frame (raw hex, BE and LE decodes) as JSON')
+  .option('--quiet', 'do not print a line per frame', false)
+  .option('--path <which>', 'halo only: which raw path to probe -- stream (0x11), glucose (0x78/0x3a) or both, run one after the other', 'both')
+  .action(async (cmdOpts) => {
+    const opts = program.opts();
+    const captureMs = Math.round(parseFloat(cmdOpts.capture) * 1000);
+    const client = await makeClient(opts);
+    let requestStop = null;
+    process.once('SIGINT', () => { console.error('\nStopping early...'); if (requestStop) requestStop(); });
+    if (opts.device !== 'v8') {
+      const paths = cmdOpts.path === 'both' ? ['stream', 'glucose'] : [cmdOpts.path];
+      const all = {};
+      await client.run(async (c) => {
+        for (const path of paths) {
+          console.error(`\n== Halo PPG path "${path}" (${path === 'stream' ? '0x11' : '0x78 + 0x3a'}), listening for ${captureMs / 1000}s...`);
+          const startedAt = Date.now();
+          const r = await c.recordPpg({
+            path, captureMs,
+            onStopSignal: (fn) => { requestStop = fn; },
+            onAck: (a) => console.error(`[${((a.receivedAt - startedAt) / 1000).toFixed(2)}s] opcode 0x${a.opcode.toString(16)} len=${a.length} raw=${a.raw}`),
+            onPacket: cmdOpts.quiet ? null : (p) => {
+              const t = ((p.receivedAt - startedAt) / 1000).toFixed(2);
+              if (p.opcode === 0x3a) console.error(`[${t}s] 0x3a len=${p.length} hdr=${p.header.map((b) => b.toString(16).padStart(2, '0')).join(' ')} width=${p.width}${p.samples ? ` n=${p.samples.length} first=${p.samples[0]} last=${p.samples[p.samples.length - 1]}` : ''}`);
+              else console.error(`[${t}s] 0x11 len=${p.length} hdr=${p.header.map((b) => b.toString(16).padStart(2, '0')).join(' ')} blocks=${p.blocks.length} first={head_le:${p.blocks[0]?.head_le} ppg_le:${p.blocks[0]?.ppg_le} ppg_be:${p.blocks[0]?.ppg_be}} raw=${p.raw.slice(0, 40)}…`);
+            },
+          });
+          const n = r.frames.length, streamed = n > 1 ? (r.lastAt - r.firstAt) / 1000 : 0;
+          const units = r.frames.reduce((a, f) => a + (f.samples ? f.samples.length : f.blocks ? f.blocks.length : 0), 0);
+          console.log(`path=${path}  frames=${n}  units=${units}  streamed=${streamed.toFixed(1)}s  rate~${streamed > 0 ? (units / streamed).toFixed(1) : '-'}/s  acks=${r.acks.length}`);
+          all[path] = r;
+          requestStop = null;
+        }
+      });
+      if (cmdOpts.out) { require('fs').writeFileSync(cmdOpts.out, JSON.stringify(all, null, 2)); console.error(`Wrote ${cmdOpts.out}`); }
+      return;
+    }
+    console.error(`Starting PPG (0x78 mode=1), listening for ${captureMs / 1000}s...`);
+    const startedAt = Date.now();
+    const result = await client.run((c) => c.recordPpg({
+      captureMs,
+      progress: !!cmdOpts.progress,
+      onStopSignal: (fn) => { requestStop = fn; },
+      onAck: (a) => console.error(`[${((a.receivedAt - startedAt) / 1000).toFixed(2)}s] ${a.opcode != null ? `opcode 0x${a.opcode.toString(16)}` : `0x78 status=${a.status}`} raw=${a.raw}`),
+      onPacket: cmdOpts.quiet ? null : (p) => {
+        const t = ((p.receivedAt - startedAt) / 1000).toFixed(2);
+        const s = p.samples;
+        console.error(`[${t}s] 0x3a len=${p.length} hdr=${p.header.map((b) => b.toString(16).padStart(2, '0')).join(' ')} width=${p.width}${s ? `  n=${s.length} BE first=${s[0]} last=${s[s.length - 1]}  LE first=${p.samplesLE[0]}` : `  raw=${p.raw.slice(0, 64)}…`}`);
+      },
+    }));
+    const n = result.packets.length;
+    const streamed = n > 1 ? (result.lastPacketAt - result.firstPacketAt) / 1000 : 0;
+    const widths = [...new Set(result.packets.map((p) => p.width))];
+    const total = result.packets.reduce((a, p) => a + (p.samples ? p.samples.length : 0), 0);
+    if (cmdOpts.out) {
+      require('fs').writeFileSync(cmdOpts.out, JSON.stringify({ startedAt, acks: result.acks, packets: result.packets }, null, 2));
+      console.error(`Wrote ${n} frames to ${cmdOpts.out}`);
+    }
+    console.log(`frames=${n}  widths=${widths.join('/') || '-'}  samples=${total}  streamed=${streamed.toFixed(1)}s  rate~${streamed > 0 ? (total / streamed).toFixed(1) : '-'}Hz  acks=${result.acks.length}`);
+  });
+
+program
   .command('ecg')
   .description('V8 only: run an on-demand ECG measurement and capture the raw sample stream (0x28 + 0x07). Ctrl-C stops early and still sends the stop command.')
   .option('--capture <seconds>', 'how long to listen for samples before stopping', '30')

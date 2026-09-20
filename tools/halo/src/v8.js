@@ -28,6 +28,7 @@ const {
   parseDynamicHrChunk, parseStaticHrChunk, parseHrvChunk,
   parseTemperatureChunk, parseOxygenChunk,
   setMeasurementPacket, setEcgRealtimePacket, parseEcgChunk, parseMeasurementResult,
+  ppgModePacket, parsePpgChunk,
 } = protocol;
 
 class V8Client {
@@ -293,6 +294,70 @@ class V8Client {
     const samples = [];
     for (const p of packets) for (const v of p.samples) samples.push(v);
     return { packets, samples, firstPacketAt, lastPacketAt, acks };
+  }
+
+  // Probe the PPG stream (0x78 start / 0x3a data). Everything the band sends on either
+  // opcode is kept raw; nothing about the samples is assumed. `progress: true` mirrors
+  // the vendor demo's mode=4 percentage ticks in case the band expects them.
+  async recordPpg(opts = {}) {
+    const captureMs = opts.captureMs == null ? 30000 : opts.captureMs;
+    const packets = [];
+    const acks = [];
+    let firstPacketAt = null, lastPacketAt = null;
+    let stopEarly = null;
+    const stopPromise = new Promise((resolve) => { stopEarly = resolve; });
+    if (typeof opts.onStopSignal === 'function') opts.onStopSignal(() => stopEarly());
+
+    this._ble.onNotify((data) => {
+      const receivedAt = Date.now();
+      if (data[0] === 0x78) {
+        const ack = { status: data[1], raw: Buffer.from(data).toString('hex'), receivedAt };
+        acks.push(ack);
+        if (opts.onAck) opts.onAck(ack);
+        return;
+      }
+      if (data[0] !== 0x3a) {
+        const other = { opcode: data[0], raw: Buffer.from(data).toString('hex'), receivedAt };
+        acks.push(other);
+        if (opts.onAck) opts.onAck(other);
+        return;
+      }
+      const chunk = parsePpgChunk(data);
+      if (firstPacketAt == null) firstPacketAt = receivedAt;
+      lastPacketAt = receivedAt;
+      const rec = { ...chunk, length: data.length, receivedAt };
+      packets.push(rec);
+      if (opts.onPacket) opts.onPacket(rec);
+    });
+
+    let progressTimer = null;
+    try {
+      await this._ble.write(ppgModePacket('start'));
+      if (opts.progress) {
+        const t0 = Date.now();
+        let last = -1;
+        progressTimer = setInterval(() => {
+          const pct = Math.min(100, Math.floor((Date.now() - t0) / captureMs * 100));
+          if (pct !== last) { last = pct; this._ble.write(ppgModePacket('progress', pct)).catch(() => {}); }
+        }, 1000);
+      }
+      await Promise.race([
+        new Promise((resolve) => setTimeout(resolve, captureMs)),
+        stopPromise,
+      ]);
+    } finally {
+      if (progressTimer) clearInterval(progressTimer);
+      try {
+        await this._ble.write(ppgModePacket('stop'));
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await this._ble.write(ppgModePacket('quit'));
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      } catch (err) {
+        console.error(`[warn] failed to send PPG stop/quit: ${err.message}`);
+      }
+      this._ble.onNotify(null);
+    }
+    return { packets, firstPacketAt, lastPacketAt, acks };
   }
 }
 

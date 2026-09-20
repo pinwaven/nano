@@ -50,11 +50,20 @@ Page({
   _coachId: null,
   _inviteCode: null,
   _refCode: null,
+  // Channel picked by a channel QR code (`?channel=<id>` or wxacode scene `ch:<id>`) — resolved
+  // to the channel's display name so it rides the existing channel_slug path in /wx-login.
+  _channelSlug: null,
   _cooldownTimer: null,
 
-  onLoad(options) {
+  async onLoad(options) {
     if (options.coach_id) this._coachId = options.coach_id
     if (options.invite) this._inviteCode = options.invite
+    // A 小程序码 minted by GET /channels/:id/miniapp-qrcode lands here with scene `ch:<id>`
+    // (URL-encoded when launched from a real scan, same as pages/qrlogin). A plain
+    // `?channel=<id>` query covers share links and DevTools compile-mode testing.
+    const scene = decodeURIComponent(options.scene || '')
+    const channelParam = options.channel || (scene.startsWith('ch:') ? scene.slice(3) : '')
+    const channelId = /^\d+$/.test(channelParam) ? parseInt(channelParam, 10) : 0
     if (options.ref) {
       this._refCode = options.ref
       wx.setStorageSync('nano_ref', options.ref)
@@ -83,6 +92,18 @@ Page({
       channel: storedChannel || CHANNEL_DISPLAY || null,
       emailLoginAvailable: EMAIL_LOGIN_AVAILABLE,
     })
+
+    // Channel QR on the root build: fetch the channel's logo/name BEFORE wxLogin so the first
+    // paint is already branded, not the Waven logo swapped after the login round-trip. Awaited
+    // (bounded by the request timeout) because it also decides channel_slug for a brand-new
+    // scanner; a failed fetch degrades to the unbranded flow rather than blocking login.
+    if (channelId && !this._inviteCode && !this._coachId) {
+      const branded = await this._fetchChannelBranding(channelId)
+      if (branded) {
+        this._channelSlug = branded.name
+        this.setData({ channel: { name: branded.name, logo_url: branded.logo_url } })
+      }
+    }
 
     // Landed here from an explicit logout (main.js/coach.js handleLogout) — offer
     // "continue as previous" instead of silently re-authenticating right away.
@@ -411,12 +432,28 @@ Page({
     })
   },
 
+  // Resolves to { name, logo_url } or null — never throws (branding is best-effort).
+  _fetchChannelBranding(channelId) {
+    return new Promise((resolve) => {
+      wx.request({
+        url: `${BASE}/api/channel-branding?id=${channelId}`,
+        method: 'GET',
+        timeout: 4000,
+        header: { 'Authorization': `Bearer ${app.globalData.apiToken}` },
+        success: (res) => resolve(res.data?.success && res.data.channel?.name ? res.data.channel : null),
+        fail: () => resolve(null),
+      })
+    })
+  },
+
   _callWxLogin(code, inviteCode) {
     const { appId } = wx.getAccountInfoSync().miniProgram
     const data = { code, app_id: appId }
     if (this._coachId) data.coach_id = this._coachId
     if (inviteCode) data.invite_code = inviteCode
-    if (!inviteCode && CHANNEL_SLUG) data.channel_slug = CHANNEL_SLUG
+    // A scanned channel QR wins over the build's default: on the root build CHANNEL_SLUG is
+    // null anyway, and on a branded build a QR for another channel is a deliberate choice.
+    if (!inviteCode && (this._channelSlug || CHANNEL_SLUG)) data.channel_slug = this._channelSlug || CHANNEL_SLUG
     const ref = this._refCode || wx.getStorageSync('nano_ref')
     if (ref) data.ref = ref
     return new Promise((resolve, reject) => {

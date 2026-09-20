@@ -110,6 +110,10 @@ node bin/cli.js history --type hrv --since 2026-07-30T10:00:00 --json
 # V8 only: run an on-demand ECG and capture the raw sample stream for 30s
 node bin/cli.js ecg --device v8
 node bin/cli.js ecg --device v8 --capture 60 --out ecg.csv
+
+# V8 / Halo: stream the raw 50 Hz PPG channel for 60s (wrist on V8, finger on the ring)
+node bin/cli.js ppg --device v8 --capture 60 --out ppg.json
+node bin/cli.js ppg --device halo --path glucose --capture 60 --out ppg.json
 ```
 
 With no arguments, `halo` scans for a nearby X3/X6/X9/V4 device, connects, and
@@ -229,6 +233,49 @@ battery effect was demonstrated.
 
 Offline tests for the packet builders/parsers and the capture loop (using
 the vendor's published sample packet) live in `test/` — `npm test`.
+
+## PPG (V8 and Halo)
+
+```
+node bin/cli.js --device v8 ppg --capture 60 --out ppg.json
+node bin/cli.js --device halo ppg --capture 40 --path glucose --out ppg-x3.json
+```
+
+The raw optical channel, which the vendor SDK only exposes as the "blood
+glucose" collection (`BleSDK.ppgWithMode` — the band streams five minutes of
+PPG for a server to grade). Probed live 2026-09-20 on `DBE34D` and `9525CA`:
+
+- **Command `0x78 [mode, status]`**: mode 1 start, 3 stop, 5 quit (2 = send a
+  result to the band, 4 = progress % for its display — neither is needed for
+  the stream). The band echoes every one back as `78 00 <mode>`.
+- **Data `0x3a`**: 203-byte frames = `3a 00 <seq>` + **50 × 4-byte big-endian
+  samples** (top byte always 0 → 24-bit counts, ~3–6 M on-wrist). One frame
+  per second, contiguous (junction steps equal within-frame steps), so the
+  stream is **50 Hz**. The SDK's other branch (153-byte frames, 3-byte samples)
+  was never seen. No gain, LED or channel is documented; the SDK's own
+  sample frame shows the same slow, smooth trace.
+- **The pulse is small.** The AC swing is a few % of the DC level and the
+  band re-ranges its gain on motion (a 5.2 M → 0.6 M step in one frame);
+  low-frequency wander dominates unless the arm rests still. High-passed at
+  0.5 s the plethysmogram is clear — 0.7 s peak spacing, fast upstroke,
+  dicrotic shoulder — and a 60 s still capture gave PPI median 680 ms
+  (88 bpm) with 51/77 intervals accepted, sd 70 ms. Good enough for heart
+  rate; not for beat-level HRV without a better detector and a snug strap.
+- No finger, no electrode: unlike ECG this runs from the wrist alone, and
+  starts within ~3 s of the command.
+
+`--out` keeps every frame raw (hex) plus the BE and LE decodes; the CLI
+derives nothing from the samples.
+
+**Halo** (`--device halo`, probed 2026-09-20 on `X3B 69526`) has the same
+`0x78`/`0x3a` path and streams the **identical** 203-byte, 50 Hz frames —
+`--path glucose`. On a finger the pulse is much cleaner than the V8's wrist
+signal (AC ≈ 0.5 % of DC but a constant 1.35 Hz peak, dicrotic wave visible;
+PPI median 720 ms, 38/50 accepted, sd 51 ms over 40 s still). The ring also
+pushes `0xaa …` after start and `0xab …` after stop (not in the SDK; ignored).
+The SDK's second, Halo-only path `0x11` (`--path stream`) is **acked but sends
+no data** on this ring — recorded as unverified in `halo-smart-ring.md` §3.13.
+`--path both` (the default for halo) runs stream then glucose back to back.
 
 ## Incremental sync validation
 

@@ -98,7 +98,7 @@ const {
 } = require('./handlers/avatar_generation');
 const { handleGetAdminUserPersonaSubscription, handlePostAdminUserPersonaSubscription, handleDeleteAdminUserPersonaSubscription, handleGetAdminPersonaSubscriptions, handlePostAdminUserVivaAg, handleDeleteAdminUserVivaAg } = require('./handlers/persona_subscriptions');
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
-const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
+const { handleGetChannelBranding, handleGetChannelMiniappQrcode, handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
 const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleSetIdentity, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation, handlePostFormulationPurchaseConfirmed } = require('./handlers/users');
 const { handleGetDotsInventory, handleGetNutritionPlan, handleGetFormulationCheckoutSnapshot, handleGetFormulationLabelByCode, handleGetFormulationReviewSnapshot, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
 const { handleGetFormulationOrders, handlePostFormulationSubmit, handlePostFormulationRedeem } = require('./handlers/formulation_orders');
@@ -685,6 +685,11 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetPartnerPayouts(ppQuery);
             } else if (path.includes('/partners')) {
                 result = await handleGetPartners(query, adminCtx);
+            } else if (path === '/channel-branding') {
+                result = await handleGetChannelBranding(query);
+            } else if (path.match(/\/channels\/(\d+)\/miniapp-qrcode$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/miniapp-qrcode$/)[1];
+                result = await handleGetChannelMiniappQrcode(channelId, adminCtx);
             } else if (path.match(/\/channels\/(\d+)\/rewards-config$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/rewards-config$/)[1];
                 result = await handleGetChannelRewardsConfig(channelId, adminCtx);

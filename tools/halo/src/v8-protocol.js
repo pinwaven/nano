@@ -545,6 +545,47 @@ function parseMeasurementResult(buf) {
   }
 }
 
+// ---- PPG stream (the SDK calls it "blood sugar") --------------------------------
+//
+// BleSDK.ppgWithMode(mode, status) -> 0x78 [mode, status]. mode: 1 start, 2 send a
+// result back to the band (status 0 fail / 1 low / 2 normal / 3 high), 3 stop,
+// 4 send progress 0-100 (the band's display only), 5 quit. The band answers
+// 0x78 [status] (demo: status 0 == started, then a 5-minute timer) and streams
+// 0x3a data frames: byte1-2 header, then 50 samples -- 3-byte each for a
+// 153-byte frame, 4-byte each for a 203-byte frame (BleSDK.DataParsingWithData
+// case Bloodsugar_data; the SDK reads them big-endian). Nothing about what the
+// samples are (channel, gain, rate) is documented; the probe records raw bytes.
+const PPG_MODES = { start: 1, result: 2, stop: 3, progress: 4, quit: 5 }
+
+function ppgModePacket(mode, status) {
+  const m = typeof mode === 'string' ? PPG_MODES[mode] : mode
+  if (!m) throw new Error(`Unknown PPG mode "${mode}"`)
+  const payload = [m]
+  if (m !== PPG_MODES.start) payload.push(status | 0)
+  return buildCommand(0x78, payload)
+}
+
+function readBEInt(buffer, offset, bytesCount) {
+  let val = 0
+  for (let i = 0; i < bytesCount; i++) val = val * 256 + buffer[offset + i]
+  return val
+}
+
+// 0x3a data frame -> { header: [b1, b2], width, samples (BE, as the SDK decodes),
+// samplesLE, raw }. Frames of other lengths are surfaced raw with samples: null.
+function parsePpgChunk(buf) {
+  const width = buf.length === 153 ? 3 : buf.length === 203 ? 4 : 0
+  const raw = Buffer.from(buf).toString('hex')
+  if (!width) return { header: [buf[1], buf[2]], width: 0, samples: null, samplesLE: null, raw }
+  const count = Math.floor((buf.length - 3) / width)
+  const samples = new Array(count), samplesLE = new Array(count)
+  for (let i = 0; i < count; i++) {
+    samples[i] = readBEInt(buf, 3 + width * i, width)
+    samplesLE[i] = readLEInt(buf, 3 + width * i, width)
+  }
+  return { header: [buf[1], buf[2]], width, samples, samplesLE, raw }
+}
+
 module.exports = {
   SERVICE_UUID, WRITE_UUID, NOTIFY_UUID, V8_NAME_PREFIXES,
   calculateChecksum, buildCommand, decToBcd, bcdToString, parseBcdDate, readLEInt,
@@ -563,4 +604,5 @@ module.exports = {
   parseTemperatureChunk, parseOxygenChunk,
   MEASUREMENT_TYPES, ECG_DEMO_DURATION,
   setMeasurementPacket, setEcgRealtimePacket, parseEcgChunk, parseMeasurementResult,
+  PPG_MODES, ppgModePacket, parsePpgChunk, readBEInt,
 }

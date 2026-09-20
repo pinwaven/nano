@@ -39,6 +39,7 @@ firmware:
 | Opcode `0x57` | Detailed SpO2 history | **Clock/alarm read** — reused for something else entirely |
 | Notification reassembly | one record per BLE notification | **one notification can hold multiple stacked records** (see §3) |
 | ECG (live raw stream, `0x28`+`0x07`) | not present | **ported into `tools/halo` CLI only** (`ecg --device v8`); confirmed live at ≈255 Hz on two units; contact, duration and stop semantics settled — see §6 |
+| PPG (live raw stream, `0x78`+`0x3a`) | not present | **CLI only** (`ppg --device v8`); 50 Hz from the wrist, no finger; pulse is a few % of DC and the band re-ranges on motion — see `tools/halo/README.md` "PPG" |
 | Alarms, sedentary reminder, device name, PPI, blood glucose, SOS, OTA/DFU | not present | present in the vendor SDK, **not ported** (out of scope — see §6) |
 | Advertised name | `X3`/`X6`/`X9`/`V4` | `JCV8B` |
 
@@ -223,7 +224,7 @@ out of scope for this pass (see §6).
 | `0x18` | `CMD_HeartPackageFromDevice` | Sport-session HR push (band→host) | not implemented |
 | `0x3d`/`0x3e` | `CMD_Set_Name`/`CMD_Get_Name` | Device display name | not implemented |
 | `0x5C` | `CMD_Get_SPORTData` | Exercise session logs | not implemented |
-| `0x78`/`0x3a` | `CMD_Get_Bloodsugar`/`Bloodsugar_data` | Blood glucose PPG session (server-interpreted) | not implemented |
+| `0x78`/`0x3a` | `CMD_Get_Bloodsugar`/`Bloodsugar_data` | Raw PPG stream (the SDK's "blood glucose" collection) | **CLI only** (`ppg --device v8`); confirmed live 2026-09-20: 50 Hz, 24-bit, 50 samples per 203-byte frame, pulse visible once high-passed — see `tools/halo/README.md` "PPG" |
 | `0x6B` | `Obtain_detailed_sleep_data` | Combined detailed sleep + activity | not implemented |
 | `0x14` | `Temperature_3NTC` | Real-time 3-sensor temperature | not implemented |
 | `0x03`/`0x04` | `SetBasic_parameters_of_equipment`/`Get...` | Sports-mode LED flash settings | not implemented |
@@ -407,10 +408,44 @@ per-notification, per §3), except `0x53` which uses the 2-byte
   closed and flushes it on the next `0x07 on` (the CLI splits that backlog
   off); the only clean end is the measurement's own `duration`, so the CLI
   asks for exactly the capture length and lets the band end it (verified).
+- **PPG (`0x78` + `0x3a`)**: the raw optical channel, which the vendor SDK
+  exposes only as its "blood glucose" collection (`BleSDK.ppgWithMode` —
+  the phone is meant to stream five minutes of PPG to a server that grades
+  it; nano has no such server and none is planned). Ported into the CLI only
+  (`node bin/cli.js ppg --device v8`, README "PPG"), not the miniapp adapter.
+  **Confirmed live 2026-09-20 on two units.** Access sequence:
+
+  1. write `0x78 [01]` — the band echoes `78 00 01` within ~1 s and, ~3 s
+     after the command, starts streaming;
+  2. `0x3a` notifications, **203 bytes** each: `3a 00 <seq>` then 50 samples
+     of 4 bytes, big-endian, top byte always 0 (24-bit counts, ~3–6 M
+     on-wrist; the first frame starts near 0.9 M while the LED/gain settles).
+     `seq` counts from 0 per session. One frame per second and the junction
+     step between frames equals the within-frame step → a contiguous
+     **50 Hz** stream. Needs MTU ≥ 203 (the client negotiates 244). The SDK's
+     other branch — 153-byte frames of 3-byte samples — was never seen;
+  3. write `0x78 [03]` (stop) then `0x78 [05]` (quit); each is echoed
+     (`78 00 03`, `78 00 05`) and the stream ends at once. Mode 2 (a result
+     for the band's screen) and mode 4 (progress %) are display-only and
+     not required — the stream ran a full minute without them.
+
+  What is not known: LED colour/channel, gain, or how the band's own HR/SpO2
+  pipeline relates to it. What the data showed: the pulse is a few percent of
+  the DC level, low-frequency wander dominates a raw trace, and the band
+  **re-ranges its gain on motion** (a 5.2 M → 0.6 M step inside one frame),
+  so any consumer must high-pass (~0.5 s) and treat a >20 % single-sample
+  step as a discontinuity. Done that way the plethysmogram is clean — 0.7 s
+  peak spacing, fast upstroke, dicrotic shoulder — and a still 60 s capture
+  gave PPI median 680 ms (88 bpm, 51/77 intervals within ±25 %, sd 70 ms).
+  Usable for heart rate; beat-level HRV would need a snug strap and a real
+  pulse detector. Unlike ECG it needs no finger: the wrist alone starts it,
+  and a band that is not against skin streams wander with no pulse at all
+  (`9525CA`, first probe). Captures: `temp/v8-ecg/ppg-*.json` (git-ignored).
 - **Everything else in §4 marked "not implemented"**: alarms/clock, sedentary
   reminder, device name, on-demand HR/HRV/SpO2 measurement (`0x28` types
   1–3 — the builder exists in the CLI, no command drives it), exercise mode,
-  PPI, blood glucose, SOS, OTA/DFU. `0x57` in particular needs care —
+  PPI, the blood-glucose grading itself (only its PPG stream, above), SOS,
+  OTA/DFU. `0x57` in particular needs care —
   it means something completely different on V8 than on Halo.
 
 ---
