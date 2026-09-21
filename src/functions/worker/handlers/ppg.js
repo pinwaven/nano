@@ -1,28 +1,25 @@
 'use strict';
 
-// 心电节律记录 — single-lead ECG strips recorded from the V8 band (CLAUDE.md §18) by the
-// miniapp's <strip-record kind="ecg"> component. Twin layer 2, Daily Monitoring (§34): the SUMMARY (rate,
-// R–R statistics, beat counts, sample rate) is a health_events row with category 'ecg' — what
-// the twin, chat and the AG bundle may consume — and the WAVEFORM (24-bit packed samples,
-// ~23 KB for 30 s) lives in OSS under a server-minted key that is never returned to a client.
+// 脉搏波记录 — raw PPG pulse-wave strips recorded from the V8 band or the Halo ring by the
+// miniapp's <strip-record kind="ppg"> component. Same architecture as ecg.js (read its header):
+// twin layer 2 (§34), the SUMMARY (rate, beat-interval statistics, quality) is a health_events
+// row with category 'ppg', the WAVEFORM (24-bit packed, ~9 KB for 60 s at 50 Hz) lives in OSS
+// under a server-minted key never returned to a client. Ownership is the health-documents
+// pattern: openid resolved server-side, a coach reads through users.coach_id and never writes.
 //
-// Security header, same shape as health_documents.js: openid is a client-supplied string and
-// every handler resolves the owner server-side through _resolveOwner; a coach reads a client's
-// strips through the same coarse users.coach_id check as user facts and never writes one.
-//
-// What this is NOT: a diagnosis. The band gives dimensionless counts with no voltage scale and
-// ships no analysis; lib/ecgAnalysis.js derives rhythm only. Copy in every surface says so.
+// The stream is the vendor SDK's "blood glucose" collection (0x78/0x3a) — a plain optical tap
+// the vendor meant to feed a grading server nano does not have and does not want. Nothing here
+// is glucose, SpO2 or a diagnosis: lib/ppgAnalysis.js derives heart rate and beat regularity.
 
 const { pool } = require('../lib/db');
 const ossLib = require('../lib/oss');
-const { analyzeEcg, packSamples, unpackSamples, ECG_MIN_ACCEPTED_BEATS } = require('../lib/ecgAnalysis');
+const { analyzePpg, packSamples, unpackSamples, PPG_MIN_ACCEPTED_BEATS } = require('../lib/ppgAnalysis');
 
-const SUPPORTED_BRANDS = new Set(['v8']);
-const MAX_PACKETS = 2000;              // ~10 minutes at 3 packets/s; a 30 s strip is ~90
-const MAX_SAMPLES_PER_PACKET = 200;    // the band sends 80
+const SUPPORTED_BRANDS = new Set(['v8', 'halo']);
+const MAX_PACKETS = 600;               // 10 minutes at one 50-sample frame per second; a 60 s strip is ~60
+const MAX_SAMPLES_PER_PACKET = 100;    // both devices send 50
 const LIST_LIMIT = 30;
-const SOURCE = 'v8';
-const CATEGORY = 'ecg';
+const CATEGORY = 'ppg';
 
 async function _resolveOwner(openid, coachId) {
     if (!openid) {
@@ -47,15 +44,15 @@ async function _resolveOwner(openid, coachId) {
 // A coach never records or deletes a strip. Intent, not enforcement — see health_documents.js.
 function _refuseCoach(coachId) {
     if (!coachId) return null;
-    return { success: false, reason: 'coach_cannot_write', error: 'A coach cannot record a client\'s ECG', statusCode: 403 };
+    return { success: false, reason: 'coach_cannot_write', error: 'A coach cannot record a client\'s pulse wave', statusCode: 403 };
 }
 
 function _keyFor(userId, startedAtMs) {
-    return `ecg/${userId}/${startedAtMs}.ecg24`;
+    return `ppg/${userId}/${startedAtMs}.ppg24`;
 }
 
 // The row a client sees: the summary — never the OSS key, and not the peak index list, which
-// only means something next to the waveform (handleGetEcgWaveform returns it beside the samples).
+// only means something next to the waveform (handleGetPpgWaveform returns it beside the samples).
 function _publicRow(row) {
     const d = row.data || {};
     const { oss_key, peaks, ...summary } = d;
@@ -68,20 +65,21 @@ function _publicRow(row) {
     };
 }
 
-// POST /api/ecg — body: { openid, brand, device_name?, duration_seconds?, started_at (ms),
-// packets: [{ packetId, samples: number[], receivedAt: ms }] }.
-// Refuses (200, success:false) a strip with too few clean beats — that is a contact miss the
-// UI explains, not a server error — and never stores it.
-async function handlePostEcg(body) {
+// POST /api/ppg — body: { openid, brand ('v8' | 'halo'; 'x3' accepted as halo), device_name?,
+// duration_seconds?, started_at (ms), packets: [{ packetId, samples: number[], receivedAt: ms }] }.
+// Refuses (200, success:false) a strip whose beats are too few or too irregular to trust — a
+// loose strap or a moving hand, which the UI explains — and never stores it.
+async function handlePostPpg(body) {
     try {
         const refusal = _refuseCoach(body?.coach_id);
         if (refusal) return refusal;
         const owner = await _resolveOwner(body?.openid, null);
         if (!owner.ok) return owner.error;
 
-        const brand = String(body?.brand || '').toLowerCase();
+        let brand = String(body?.brand || '').toLowerCase();
+        if (brand === 'x3') brand = 'halo';   // legacy binding value from before the rename (§18)
         if (!SUPPORTED_BRANDS.has(brand)) {
-            return { success: false, reason: 'unsupported_brand', error: 'ECG is only supported on the V8 band', statusCode: 400 };
+            return { success: false, reason: 'unsupported_brand', error: 'Pulse-wave recording is only supported on the V8 band and the Halo ring', statusCode: 400 };
         }
         const packets = Array.isArray(body?.packets) ? body.packets : [];
         if (!packets.length || packets.length > MAX_PACKETS ||
@@ -90,12 +88,12 @@ async function handlePostEcg(body) {
         }
         const startedAt = Number(body?.started_at) || Number(packets[0].receivedAt) || Date.now();
 
-        const result = analyzeEcg(packets);
+        const result = analyzePpg(packets);
         if (!result.ok) {
             return {
                 success: false,
                 reason: result.reason,
-                min_accepted_beats: ECG_MIN_ACCEPTED_BEATS,
+                min_accepted_beats: PPG_MIN_ACCEPTED_BEATS,
                 summary: result.summary,
             };
         }
@@ -116,26 +114,26 @@ async function handlePostEcg(body) {
              VALUES ($1, $2, $3, ($4::timestamptz AT TIME ZONE 'Asia/Shanghai')::date, $4, $5, $6, $7)
              ON CONFLICT (user_id, source, external_id) WHERE external_id IS NOT NULL DO NOTHING
              RETURNING id, recorded_at, data_date::text AS data_date, data, wearable_name`,
-            [owner.userId, SOURCE, CATEGORY, recordedAt.toISOString(), JSON.stringify(data), `ecg_${startedAt}`, body?.device_name || null]
+            [owner.userId, brand, CATEGORY, recordedAt.toISOString(), JSON.stringify(data), `ppg_${startedAt}`, body?.device_name || null]
         );
         if (!rows[0]) {
             // Same started_at twice — the first write stands.
             const { rows: existing } = await pool.query(
                 `SELECT id, recorded_at, data_date::text AS data_date, data, wearable_name FROM health_events
-                 WHERE user_id = $1 AND source = $2 AND external_id = $3`, [owner.userId, SOURCE, `ecg_${startedAt}`]
+                 WHERE user_id = $1 AND source = $2 AND external_id = $3`, [owner.userId, brand, `ppg_${startedAt}`]
             );
-            return { success: true, duplicate: true, ecg: existing[0] ? _publicRow(existing[0]) : null };
+            return { success: true, duplicate: true, ppg: existing[0] ? _publicRow(existing[0]) : null };
         }
-        console.log(JSON.stringify({ level: 'INFO', msg: 'ecg_recorded', userId: owner.userId, id: rows[0].id, bpm: result.summary.bpm, beats: result.summary.accepted_beats, seconds: result.summary.duration_seconds }));
-        return { success: true, ecg: _publicRow(rows[0]) };
+        console.log(JSON.stringify({ level: 'INFO', msg: 'ppg_recorded', userId: owner.userId, id: rows[0].id, brand, bpm: result.summary.bpm, beats: result.summary.accepted_beats, seconds: result.summary.duration_seconds }));
+        return { success: true, ppg: _publicRow(rows[0]) };
     } catch (err) {
-        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostEcg failed', error: err.message }));
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handlePostPpg failed', error: err.message }));
         return { success: false, error: err.message };
     }
 }
 
-// GET /api/ecg?openid=[&coach_id=][&limit=] — newest first, summaries only.
-async function handleGetEcgList(query) {
+// GET /api/ppg?openid=[&coach_id=][&limit=] — newest first, summaries only.
+async function handleGetPpgList(query) {
     try {
         const owner = await _resolveOwner(query?.openid, query?.coach_id);
         if (!owner.ok) return owner.error;
@@ -147,14 +145,14 @@ async function handleGetEcgList(query) {
         );
         return { success: true, items: rows.map(_publicRow) };
     } catch (err) {
-        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetEcgList failed', error: err.message }));
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetPpgList failed', error: err.message }));
         return { success: false, error: err.message };
     }
 }
 
-// GET /api/ecg/{id}/waveform?openid=[&coach_id=] — the samples inline (a 30 s strip is a few
-// tens of KB; a presigned URL would only add a download the miniapp then has to parse).
-async function handleGetEcgWaveform(eventId, query) {
+// GET /api/ppg/{id}/waveform?openid=[&coach_id=] — the samples inline (a 60 s strip at 50 Hz is
+// ~3000 numbers).
+async function handleGetPpgWaveform(eventId, query) {
     try {
         const owner = await _resolveOwner(query?.openid, query?.coach_id);
         if (!owner.ok) return owner.error;
@@ -162,20 +160,20 @@ async function handleGetEcgWaveform(eventId, query) {
             `SELECT id, recorded_at, data_date::text AS data_date, data, wearable_name FROM health_events
              WHERE id = $1 AND user_id = $2 AND category = $3`, [eventId, owner.userId, CATEGORY]
         );
-        if (!row) return { success: false, error: 'ECG not found', statusCode: 404 };
+        if (!row) return { success: false, error: 'Pulse wave not found', statusCode: 404 };
         const key = row.data?.oss_key;
         if (!key) return { success: false, error: 'Waveform not stored', statusCode: 404 };
         const buf = await ossLib.getObjectBuffer(key);
-        return { success: true, ecg: _publicRow(row), samples: unpackSamples(buf), peaks: row.data?.peaks || [] };
+        return { success: true, ppg: _publicRow(row), samples: unpackSamples(buf), peaks: row.data?.peaks || [] };
     } catch (err) {
-        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetEcgWaveform failed', error: err.message }));
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleGetPpgWaveform failed', error: err.message }));
         return { success: false, error: err.message };
     }
 }
 
-// DELETE /api/ecg/{id}?openid= — the owner's alone. Hard delete of the row; the object is left
+// DELETE /api/ppg/{id}?openid= — the owner's alone. Hard delete of the row; the object is left
 // for a future purge like health documents.
-async function handleDeleteEcg(eventId, query) {
+async function handleDeletePpg(eventId, query) {
     try {
         const refusal = _refuseCoach(query?.coach_id);
         if (refusal) return refusal;
@@ -184,12 +182,12 @@ async function handleDeleteEcg(eventId, query) {
         const { rowCount } = await pool.query(
             'DELETE FROM health_events WHERE id = $1 AND user_id = $2 AND category = $3', [eventId, owner.userId, CATEGORY]
         );
-        if (!rowCount) return { success: false, error: 'ECG not found', statusCode: 404 };
+        if (!rowCount) return { success: false, error: 'Pulse wave not found', statusCode: 404 };
         return { success: true };
     } catch (err) {
-        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleDeleteEcg failed', error: err.message }));
+        console.error(JSON.stringify({ level: 'ERROR', msg: 'handleDeletePpg failed', error: err.message }));
         return { success: false, error: err.message };
     }
 }
 
-module.exports = { handlePostEcg, handleGetEcgList, handleGetEcgWaveform, handleDeleteEcg, _publicRow };
+module.exports = { handlePostPpg, handleGetPpgList, handleGetPpgWaveform, handleDeletePpg, _publicRow };

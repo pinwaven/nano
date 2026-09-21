@@ -13,6 +13,13 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   - Now: every site builds its URL from `DASHSCOPE_HOST` (`\`${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/compatible-mode/v1\``), so an unset variable is byte-for-byte the old behaviour. `s.yaml` (worker + agent) sets it to `https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com`; `s-prod.yaml` carries the same line commented out for the later flip. Per Aliyun's migration guide the dedicated domain is a pure host substitution (same paths, same key — provided the key belongs to that 业务空间), with a 3600 s request timeout instead of 600 s and a 99.9% SLA.
   - Verified live against the new host with the existing key: chat, tool calling, streaming, `json_object`, `qwen-vl-plus`, and both native `/api/v1/services/aigc/*` routes; identical output to the shared host at `temperature: 0`, comparable latency. `docs/deployment.md` env table updated.
 
+- **Sessions are scoped to the backend that issued them — no more cross-environment ghost accounts** · 2026-09-21
+  - Incident: a phone ran a 预览 build (trial → prod) then 真机调试 (develop → dev). `wx.storage` is shared per appid, so the prod `user_id` `82ae9e14` was sent to dev, where `resolveOrUpsertUser()` (`handlers/chat.js`) treated the unknown value as a WeChat openid and minted `c2e34ddf` (`external_id` = the prod id, `waven` channel, signup trial granted). Two days of ring syncs and six V8 ECG strips landed on the ghost while the header kept showing the cached 轻逍 profile.
+  - Worker: `resolveOrUpsertUser` now refuses an 8-hex (our `user_id` format) openid that matches no row with `404 user_not_found` instead of creating a user; the top-level catch in `index.js` honours `error.statusCode`/`reason` instead of a blanket 500.
+  - Miniapp (`0921-1`): `login.js` records `nano_base` (the `BASE` in force) at every session write; `app.js` clears `nano_user`/`nano_channel`/`nano_coach`/`nano_last_session` on launch when the stored base differs from the current one. Pre-marker sessions are grandfathered on prod builds and cleared under `develop`.
+  - Data (dev): `temp/rehome-cross-env-ghost.js` merged the ghost into `c40d46a4` through `mergeUsers()` (185 events incl. the 6 ECG strips, zero conflicts), dropped its trial grant and twin row, cleared its `external_id`, and recomputed the winner's twin.
+  - Tests: `tests/session-env-scope.test.js`.
+
 - **Channel QR codes for the root Waven miniprogram — branded login screen from a scan** · 2026-09-20
   - Before: only a brand-specific build (`APPID_TO_CHANNEL` in `utils/config.js`) could show a channel's logo before login; on the root app the logo only swapped in after `/wx-login` returned. There was also no 小程序码 generation anywhere in the codebase.
   - Worker: `GET /channel-branding?id=<channels.id>` (`handlers/channels.js`, public display fields only — name/key_name/logo/locale — keyed on the numeric id so a printed code survives a rename) and `GET /channels/:id/miniapp-qrcode` (mints `wxacode.getUnlimited` against `WX_APPID_WAVEN`, `page=pages/login/login`, `scene=ch:<id>`, `check_path:false`; channel admins scoped to their own tree; returns base64 JSON, never cached — the codes don't expire).
@@ -69,6 +76,22 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
     a 15 s cap on the BLE connect; `peaks` dropped from list rows; `.theme-light` surface for the
     card.
 
+- **脉搏波 — raw PPG pulse-wave strips from the V8 band and the Halo ring, in the miniapp** · 2026-09-20
+  - Miniapp: `V8Band.recordPpg()` (+ `ppgModePacket`/`parsePpgChunk` in `v8/protocol.js`) and
+    `HaloRing.recordPpg()` stream the SDK's "blood glucose" tap (`0x78`/`0x3a`, 50 Hz) for 60 s;
+    `components/ecg-record/` becomes `components/strip-record/` with `kind="ecg"|"ppg"` — same
+    overlay (guide → live strip → result / stored-strip viewer with delete), per-kind copy and
+    adapter; `user-health` hosts one instance switched by `data-kind` and adds the 脉搏波 card
+    (V8 + Halo, self view to record; coach reads). `VERSION` 0920-3.
+  - Worker: `lib/ppgAnalysis.js` (0.5 s high-pass, settling/discontinuity blanking, 400 ms
+    refractory so the dicrotic wave is not a beat, regularity + amplitude-consistency quality
+    gate calibrated on the day's five captures) and `handlers/ppg.js` — `POST /api/ppg`
+    refuses `poor_contact`/`too_short` storing nothing, otherwise `health_events` category
+    `ppg` (source = brand) + 24-bit waveform in OSS under `ppg/<user_id>/`; `GET /api/ppg`,
+    `GET /api/ppg/{id}/waveform`, `DELETE /api/ppg/{id}`. No migration.
+  - Web user-app: read-only 脉搏波 card. Copy everywhere: pulse wave, not an oxygen or glucose
+    reading, not a diagnosis (test-enforced). Docs: `wearable-insights` skill §45, twin layer 2
+    gains `ppg`, `v8-smart-band.md`, `halo-smart-ring.md`.
 - **V8 CLI: PPG probe** · 2026-09-20
   - `node bin/cli.js ppg --device v8`: streams the raw optical channel the SDK only exposes as
     the "blood glucose" collection (`0x78` start/stop/quit, `0x3a` data). Confirmed live on two

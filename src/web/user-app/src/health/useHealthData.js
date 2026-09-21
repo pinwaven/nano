@@ -26,6 +26,7 @@ const initial = () => ({
   stepsHistory: [], hrvHistory: [], stressHistory: [], bpHistory: [], glucoseHistory: [], latestBp: null, latestGlucose: null,
   ringData: null, wearableConnected: false, wearableServerHint: null, mood: null,
   ecgList: [], ecgLatest: null,
+  ppgList: [], ppgLatest: null,
   docCount: 0, latestDocDate: null,
   twinLayers: [], twinLayersDone: 0,
 });
@@ -196,14 +197,18 @@ export function useHealthData({ userId, user, lang, t, coachId = null, mode = 's
     } catch { /* ignore */ }
   }, [userId, patch]);
 
-  // 心电节律 summaries (V8 band; twin layer 2). Read-only on the web — recording needs BLE.
+  // 心电节律 / 脉搏波 summaries (V8 band, Halo ring; twin layer 2). Read-only on the web —
+  // recording needs BLE.
   const loadEcg = useCallback(async () => {
     if (!userId) return;
-    try {
-      const res = await api.get(`/ecg?openid=${q(userId)}&limit=10${mode === 'coach' && coachId ? `&coach_id=${q(coachId)}` : ''}`);
-      const items = res?.success && Array.isArray(res.items) ? res.items : [];
-      patch({ ecgList: items, ecgLatest: items[0] || null });
-    } catch { /* the card shows its empty state */ }
+    const coach = mode === 'coach' && coachId ? `&coach_id=${q(coachId)}` : '';
+    await Promise.all(['ecg', 'ppg'].map(async (kind) => {
+      try {
+        const res = await api.get(`/${kind}?openid=${q(userId)}&limit=10${coach}`);
+        const items = res?.success && Array.isArray(res.items) ? res.items : [];
+        patch({ [`${kind}List`]: items, [`${kind}Latest`]: items[0] || null });
+      } catch { /* the card shows its empty state */ }
+    }));
   }, [userId, mode, coachId, patch]);
 
   // _loadRingDataFromServer — the server is the single source of truth for ring charts.

@@ -368,6 +368,10 @@ const T = {
     ecgEmptySelf: '戴着 V8 手环时，用另一只手指按住电极，记录 30 秒的心电节律。',
     ecgEmptyOther: '该用户还没有心电节律记录。',
     ecgNotDiagnosis: '手环单导联节律记录，用于观察心率与节律规律性，不是心电图诊断。',
+    ppgTitle: '脉搏波', ppgRecord: '记录脉搏',
+    ppgEmptySelf: '戴着手环或指环、手保持不动时，记录 60 秒的脉搏波形。',
+    ppgEmptyOther: '该用户还没有脉搏波记录。',
+    ppgNotDiagnosis: '光学传感器的脉搏波形，用于观察心率与搏动规律性，不是血氧或血糖测量，也不是诊断。',
     ecgJustNow: '刚刚', ecgToday: '今天', ecgYesterday: '昨天',
     insightLevel_ready: '良好', insightLevel_moderate: '一般', insightLevel_low: '偏低',
     insightDriver_hrv_below_band: 'HRV 低于个人区间', insightDriver_hrv_in_band: 'HRV 在个人区间内', insightDriver_hrv_above_band: 'HRV 高于个人区间',
@@ -531,6 +535,10 @@ const T = {
     ecgEmptySelf: 'While wearing the V8 band, hold a fingertip on its electrode to record a 30-second rhythm strip.',
     ecgEmptyOther: 'No ECG rhythm strips yet.',
     ecgNotDiagnosis: 'A single-lead rhythm strip from the band, for heart rate and rhythm regularity — not a diagnostic ECG.',
+    ppgTitle: 'Pulse wave', ppgRecord: 'Record pulse',
+    ppgEmptySelf: 'With the band or ring on and your hand still, record a 60-second pulse waveform.',
+    ppgEmptyOther: 'No pulse-wave strips yet.',
+    ppgNotDiagnosis: 'An optical pulse waveform, for heart rate and beat regularity — not an oxygen or glucose reading, and not a diagnosis.',
     ecgJustNow: 'just now', ecgToday: 'today', ecgYesterday: 'yesterday',
     insightLevel_ready: 'Good', insightLevel_moderate: 'Moderate', insightLevel_low: 'Low',
     insightDriver_hrv_below_band: 'HRV below your range', insightDriver_hrv_in_band: 'HRV in your range', insightDriver_hrv_above_band: 'HRV above your range',
@@ -1340,11 +1348,15 @@ Component({
     stepsChartOpen: false,
     stepsChartW: 300,
     insights: null,        // raw GET /api/wearable-insights object (band drives the HRV bar colours)
-    // 心电节律 (V8 only): GET /api/ecg summaries, newest first; the overlay is <ecg-record>.
+    // 心电节律 (V8 only) and 脉搏波 (V8 + Halo): GET /api/ecg + /api/ppg summaries, newest first; the overlay is <strip-record>.
     ecgList: [],
-    ecgViewId: 0,        // a stored strip being viewed in <ecg-record>; 0 = recording mode
     ecgLatest: null,
     ecgSupported: false,   // self view, bound wearable is a V8 — recomputed with the binding
+    ppgList: [],           // 脉搏波 strips, same shape; V8 and Halo
+    ppgLatest: null,
+    ppgSupported: false,
+    stripKind: 'ecg',      // which kind the single <strip-record> instance is showing
+    stripViewId: 0,        // a stored strip being viewed in it; 0 = recording mode
     ecgRecordOpen: false,
     insightsView: null,    // _buildInsightsView() of the above, rebuilt on lang change
     hrvHistory: [],
@@ -2159,27 +2171,36 @@ Component({
     // Analysis over the last 30 days of ring data (lib/wearableAnalysis.js), computed fresh on
     // the server. Self and coach view alike; the coach's own id rides along so the server can
     // run the same ownership check it runs for facts/documents. Never gated on subAgeList (§34).
-    // 心电节律 summaries. Coach view passes coach_id and the server re-checks users.coach_id.
-    async _loadEcg() {
+    // 心电节律 / 脉搏波 summaries — both kinds, same shape (GET /api/ecg, GET /api/ppg). Coach
+    // view passes coach_id and the server re-checks users.coach_id.
+    async _loadEcg() { await Promise.all([this._loadStrips('ecg'), this._loadStrips('ppg')]) },
+
+    async _loadStrips(kind) {
       const userId = this.data.userId
       if (!userId || this.data.isGuest) return
       try {
         const coach = this.data.mode === 'coach' && this.data.coachId ? `&coach_id=${encodeURIComponent(this.data.coachId)}` : ''
         // user-health's _req resolves with the whole wx.request response; the body is .data.
-        const res = await this._req(`${BASE}/api/ecg?openid=${encodeURIComponent(userId)}&limit=10${coach}`)
+        const res = await this._req(`${BASE}/api/${kind}?openid=${encodeURIComponent(userId)}&limit=10${coach}`)
         const body = res && res.data
         const items = (body && body.success && Array.isArray(body.items)) ? body.items : []
         const list = items.map((it) => ({ ...it, whenLabel: this._ecgWhenLabel(it.recorded_at) }))
-        this.setData({ ecgList: list, ecgLatest: list[0] || null })
+        this.setData({ [`${kind}List`]: list, [`${kind}Latest`]: list[0] || null })
       } catch (_) { /* the card simply shows its empty state */ }
       this._recomputeEcgSupported()
     },
 
+    // ECG is V8-only (the ring has no electrode); the pulse wave streams from both (§18, §45).
     _recomputeEcgSupported() {
       const brand = _normalizeBrand(this.data.wearableBrand)
       // '__server__' is the placeholder for a binding known only from the server (no local BLE id).
-      const supported = this.data.mode === 'self' && !!this.data.wearableId && this.data.wearableId !== '__server__' && brand === 'v8'
-      if (supported !== this.data.ecgSupported) this.setData({ ecgSupported: supported })
+      const bound = this.data.mode === 'self' && !!this.data.wearableId && this.data.wearableId !== '__server__'
+      const ecg = bound && brand === 'v8'
+      const ppg = bound && (brand === 'v8' || brand === 'halo')
+      const patch = {}
+      if (ecg !== this.data.ecgSupported) patch.ecgSupported = ecg
+      if (ppg !== this.data.ppgSupported) patch.ppgSupported = ppg
+      if (Object.keys(patch).length) this.setData(patch)
     },
 
     _ecgWhenLabel(iso) {
@@ -2195,21 +2216,24 @@ Component({
       return `${d.getMonth() + 1}/${d.getDate()} ${hm}`
     },
 
-    openEcgRecord() {
+    // One <strip-record> instance serves both kinds; data-kind on the tap target picks which.
+    openEcgRecord(e) {
+      const kind = (e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.kind) || 'ecg'
       this._recomputeEcgSupported()
-      if (!this.data.ecgSupported) return
-      this.setData({ ecgRecordOpen: true })
+      if (!this.data[`${kind}Supported`]) return
+      this.setData({ stripKind: kind, stripViewId: 0, ecgRecordOpen: true })
     },
     // Tap a stored strip (hero or history row) → the same overlay, read-back from OSS. Self and
     // coach view alike; only self can delete (the component's read-only prop).
     openEcgView(e) {
-      const id = parseInt(e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.id, 10)
+      const ds = (e && e.currentTarget && e.currentTarget.dataset) || {}
+      const id = parseInt(ds.id, 10)
       if (!id) return
-      this.setData({ ecgViewId: id, ecgRecordOpen: true })
+      this.setData({ stripKind: ds.kind || 'ecg', stripViewId: id, ecgRecordOpen: true })
     },
-    closeEcgRecord() { this.setData({ ecgRecordOpen: false, ecgViewId: 0 }) },
-    onEcgSaved() { this._loadEcg() },
-    onEcgDeleted() { this._loadEcg() },
+    closeEcgRecord() { this.setData({ ecgRecordOpen: false, stripViewId: 0 }) },
+    onEcgSaved(e) { this._loadStrips((e && e.detail && e.detail.kind) || 'ecg') },
+    onEcgDeleted(e) { this._loadStrips((e && e.detail && e.detail.kind) || 'ecg') },
 
     async _loadWearableInsights() {
       const { userId, mode, coachId, lang } = this.properties

@@ -846,15 +846,16 @@ module.exports.c = function (hex, theme) {
 
         </block>
         <text wx:elif="{{!twinLoading}}" class="health-empty">{{t.noTwinData}}</text>
-              <!-- 心电节律 (ECG rhythm strips, V8 only). Twin layer 2 like the ring data above; the
-             summary rows come from GET /api/ecg, the recording overlay is <ecg-record> below.
-             Copy says "rhythm strip", never "diagnosis" — see components/ecg-record/ecg-record.js. -->
+        <!-- 心电节律 (ECG, V8 only) and 脉搏波 (PPG, V8 + Halo) strips. Twin layer 2 like the ring
+             data above; summary rows come from GET /api/ecg and GET /api/ppg, the recording /
+             viewing overlay is the single <strip-record> below, switched by data-kind. Copy says
+             "rhythm strip" / "pulse wave", never "diagnosis" — see components/strip-record. -->
         <view wx:if="{{ecgSupported || ecgLatest}}" class="ecg-card">
           <view class="ecg-card-row">
             <view class="ecg-card-main">
               <text class="ecg-card-title">{{t.ecgTitle}}</text>
               <block wx:if="{{ecgLatest}}">
-                <view class="ecg-card-hero" catchtap="openEcgView" data-id="{{ecgLatest.id}}">
+                <view class="ecg-card-hero" catchtap="openEcgView" data-kind="ecg" data-id="{{ecgLatest.id}}">
                   <text class="ecg-card-bpm">{{ecgLatest.bpm}}</text>
                   <text class="ecg-card-unit">bpm</text>
                   <text class="ecg-card-meta">{{ecgLatest.whenLabel}} · {{ecgLatest.accepted_beats}} {{t.ecgBeats}} · RR±{{ecgLatest.rr_sd_ms}}ms</text>
@@ -862,17 +863,42 @@ module.exports.c = function (hex, theme) {
               </block>
               <text wx:else class="ecg-card-empty">{{mode === 'self' ? t.ecgEmptySelf : t.ecgEmptyOther}}</text>
             </view>
-            <view wx:if="{{mode === 'self' && ecgSupported}}" class="wd-sync-btn" catchtap="openEcgRecord">
+            <view wx:if="{{mode === 'self' && ecgSupported}}" class="wd-sync-btn" catchtap="openEcgRecord" data-kind="ecg">
               <text class="wd-sync-btn-text">{{t.ecgRecord}}</text>
             </view>
           </view>
           <view wx:if="{{ecgList.length > 1}}" class="ecg-card-list">
-            <view wx:for="{{ecgList}}" wx:key="id" wx:if="{{index > 0 && index < 5}}" class="ecg-card-list-row" catchtap="openEcgView" data-id="{{item.id}}">
+            <view wx:for="{{ecgList}}" wx:key="id" wx:if="{{index > 0 && index < 5}}" class="ecg-card-list-row" catchtap="openEcgView" data-kind="ecg" data-id="{{item.id}}">
               <text class="ecg-card-list-when">{{item.whenLabel}}</text>
               <text class="ecg-card-list-val">{{item.bpm}} bpm · RR±{{item.rr_sd_ms}}ms</text>
             </view>
           </view>
           <text class="ecg-card-foot">{{t.ecgNotDiagnosis}}</text>
+        </view>
+        <view wx:if="{{ppgSupported || ppgLatest}}" class="ecg-card">
+          <view class="ecg-card-row">
+            <view class="ecg-card-main">
+              <text class="ecg-card-title">{{t.ppgTitle}}</text>
+              <block wx:if="{{ppgLatest}}">
+                <view class="ecg-card-hero" catchtap="openEcgView" data-kind="ppg" data-id="{{ppgLatest.id}}">
+                  <text class="ecg-card-bpm">{{ppgLatest.bpm}}</text>
+                  <text class="ecg-card-unit">bpm</text>
+                  <text class="ecg-card-meta">{{ppgLatest.whenLabel}} · {{ppgLatest.accepted_beats}} {{t.ecgBeats}} · PP±{{ppgLatest.rr_sd_ms}}ms</text>
+                </view>
+              </block>
+              <text wx:else class="ecg-card-empty">{{mode === 'self' ? t.ppgEmptySelf : t.ppgEmptyOther}}</text>
+            </view>
+            <view wx:if="{{mode === 'self' && ppgSupported}}" class="wd-sync-btn" catchtap="openEcgRecord" data-kind="ppg">
+              <text class="wd-sync-btn-text">{{t.ppgRecord}}</text>
+            </view>
+          </view>
+          <view wx:if="{{ppgList.length > 1}}" class="ecg-card-list">
+            <view wx:for="{{ppgList}}" wx:key="id" wx:if="{{index > 0 && index < 5}}" class="ecg-card-list-row" catchtap="openEcgView" data-kind="ppg" data-id="{{item.id}}">
+              <text class="ecg-card-list-when">{{item.whenLabel}}</text>
+              <text class="ecg-card-list-val">{{item.bpm}} bpm · PP±{{item.rr_sd_ms}}ms</text>
+            </view>
+          </view>
+          <text class="ecg-card-foot">{{t.ppgNotDiagnosis}}</text>
         </view>
       </view>
 
@@ -1022,9 +1048,9 @@ module.exports.c = function (hex, theme) {
 
   <!-- The AG panel's whole body lives in its own component: keeping it out of this file is what
        stops an already-1000-line template from absorbing another feature. -->
-  <ecg-record wx:if="{{mode === 'self' || ecgViewId}}" open="{{ecgRecordOpen}}" user-id="{{userId}}" brand="{{wearableBrand}}"
+  <strip-record wx:if="{{mode === 'self' || stripViewId}}" kind="{{stripKind}}" open="{{ecgRecordOpen}}" user-id="{{userId}}" brand="{{wearableBrand}}"
     device-id="{{wearableId}}" device-name="{{wearableName}}" lang="{{lang}}" theme="{{theme}}"
-    view-id="{{ecgViewId}}" coach-id="{{mode === 'coach' ? coachId : ''}}" read-only="{{mode !== 'self'}}"
+    view-id="{{stripViewId}}" coach-id="{{mode === 'coach' ? coachId : ''}}" read-only="{{mode !== 'self'}}"
     bind:close="closeEcgRecord" bind:saved="onEcgSaved" bind:deleted="onEcgDeleted" />
   <viva-ag-panel wx:if="{{showAgTab && healthSubTab === 'ag'}}" id="viva-ag-panel"
                  user-id="{{userId}}" lang="{{lang}}" theme="{{theme}}"

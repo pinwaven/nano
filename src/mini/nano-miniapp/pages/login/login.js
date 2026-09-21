@@ -205,6 +205,7 @@ Page({
     user.maskedPhone = maskedPhone
     wx.setStorageSync('nano_user', { ...userToStore, phoneSet: !!_ph, phone_verified: !!user.phone_verified, email_verified: !!user.email_verified, maskedPhone })
     wx.setStorageSync('nano_channel', channel)
+    wx.setStorageSync('nano_base', BASE)   // the backend this session is valid against — app.js checks it on launch
     wx.reLaunch({ url: '/pages/verify-phone/verify-phone?new=1' })
   },
 
@@ -229,6 +230,7 @@ Page({
     user.maskedPhone = maskedPhone
     wx.setStorageSync('nano_user', { ...userToStore, phoneSet: !!_ph, phone_verified: !!user.phone_verified, email_verified: !!user.email_verified, maskedPhone })
     wx.setStorageSync('nano_channel', channel)
+    wx.setStorageSync('nano_base', BASE)   // the backend this session is valid against — app.js checks it on launch
     wx.setStorageSync('nano_coach', coach)
     wx.reLaunch({ url: '/pages/main/main' })
   },
@@ -251,6 +253,7 @@ Page({
     wx.setStorageSync('nano_user', lastSession.user)
     wx.setStorageSync('nano_channel', lastSession.channel || null)
     wx.setStorageSync('nano_coach', lastSession.coach || null)
+    wx.setStorageSync('nano_base', BASE)
     wx.reLaunch({ url: '/pages/main/main' })
   },
 

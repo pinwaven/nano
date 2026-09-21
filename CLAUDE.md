@@ -496,7 +496,7 @@ data source. Canonical definition: [docs/architecture/digital-twin.md](docs/arch
 | # | ZH | EN | Backing |
 |---|---|---|---|
 | 1 | `精准检测` | `Precision Testing` | `biomarkers(kino_chip)`; `health_twin.latest_bio_age/latest_sub_ages` |
-| 2 | `日常监测` | `Daily Monitoring` | `health_events(sleep\|activity\|vitals\|body_composition\|ecg)`; `health_twin.avg_*`, weight/BMI/body-fat, `trend_data` |
+| 2 | `日常监测` | `Daily Monitoring` | `health_events(sleep\|activity\|vitals\|body_composition\|ecg\|ppg)`; `health_twin.avg_*`, weight/BMI/body-fat, `trend_data` |
 | 3 | `医疗记录` | `Medical Records` | `health_reports`; `health_events(lab_result)`; `health_documents`; `health_twin.latest_lab_data` |
 | 4 | `个人档案` | `Personal Profile` | `users.bio_data`; `questionnaire_responses`; `user_memory_facts` |
 

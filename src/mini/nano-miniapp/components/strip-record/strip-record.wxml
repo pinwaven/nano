@@ -1,0 +1,75 @@
+<!-- 心电节律记录 overlay. Self view, V8 only; hosted by user-health. All copy comes from T —
+     WXML has no key checking, so every t.* here has a zh and an en entry in strip-record.js. -->
+<view wx:if="{{open}}" class="strip-overlay {{theme === 'light' ? 'theme-light' : ''}}" catchtouchmove="noop">
+  <view class="strip-sheet">
+    <view class="strip-head">
+      <text class="strip-title">{{t.title}}</text>
+      <view class="strip-close" catchtap="handleClose"><text>✕</text></view>
+    </view>
+
+    <!-- idle: instructions -->
+    <block wx:if="{{stage === 'idle'}}">
+      <view class="strip-guide">
+        <view class="strip-guide-glyph">{{t.guideGlyph}}</view>
+        <text class="strip-guide-line">{{t.guide1}}</text>
+        <text class="strip-guide-line">{{t.guide2}}</text>
+        <text class="strip-guide-line strip-guide-muted">{{t.guide3}}</text>
+      </view>
+      <view class="strip-btn strip-btn-primary" catchtap="handleStart"><text>{{t.start}}</text></view>
+      <text class="strip-footnote">{{t.notDiagnosis}}</text>
+    </block>
+
+    <!-- connecting / measuring / saving -->
+    <block wx:if="{{stage === 'connecting' || stage === 'measuring' || stage === 'saving'}}">
+      <view class="strip-status-row">
+        <text class="strip-status">{{stage === 'connecting' ? t.connecting : stage === 'saving' ? t.saving : (noSignal ? t.noSignal : t.measuring)}}</text>
+        <text wx:if="{{stage === 'measuring'}}" class="strip-countdown">{{remaining}}s</text>
+      </view>
+      <view class="strip-canvas-wrap">
+        <canvas canvas-id="strip-live" class="strip-canvas"></canvas>
+      </view>
+      <view class="strip-meta-row">
+        <text class="strip-meta">{{t.packets}} {{packetCount}}</text>
+        <text class="strip-meta">{{t.beatsLive}} {{liveBeats}}</text>
+      </view>
+      <view wx:if="{{stage === 'measuring'}}" class="strip-btn strip-btn-ghost" catchtap="handleStop"><text>{{t.stopEarly}}</text></view>
+    </block>
+
+    <!-- loading a stored strip -->
+    <block wx:if="{{stage === 'loading'}}">
+      <view class="strip-guide"><text class="strip-guide-line strip-guide-muted">{{t.loading}}</text></view>
+    </block>
+
+    <!-- result (just recorded) / view (a stored strip): same layout, whole strip stacked in rows -->
+    <block wx:if="{{stage === 'result' || stage === 'view'}}">
+      <text wx:if="{{stage === 'view'}}" class="strip-when">{{viewWhen}}</text>
+      <view class="strip-result-hero">
+        <text class="strip-bpm">{{result.bpm}}</text>
+        <text class="strip-bpm-unit">bpm</text>
+      </view>
+      <view class="strip-result-grid">
+        <view class="strip-cell"><text class="strip-cell-v">{{result.accepted_beats}}</text><text class="strip-cell-k">{{t.beats}}</text></view>
+        <view class="strip-cell"><text class="strip-cell-v">{{result.rr_median_ms}}</text><text class="strip-cell-k">{{t.rrMedian}}</text></view>
+        <view class="strip-cell"><text class="strip-cell-v">{{result.rr_sd_ms}}</text><text class="strip-cell-k">{{t.rrSd}}</text></view>
+        <view class="strip-cell"><text class="strip-cell-v">{{result.duration_seconds}}s</text><text class="strip-cell-k">{{t.duration}}</text></view>
+      </view>
+      <view class="strip-canvas-wrap" style="height: {{stripHeightPx}}px;">
+        <canvas canvas-id="strip-strip" class="strip-canvas strip-strip-canvas" style="height: {{stripHeightPx}}px;"></canvas>
+      </view>
+      <text class="strip-footnote">{{t.notDiagnosis}}</text>
+      <view class="strip-btn strip-btn-primary" catchtap="handleClose"><text>{{t.done}}</text></view>
+      <view wx:if="{{stage === 'view' && !readOnly}}" class="strip-btn strip-btn-ghost strip-btn-danger" catchtap="handleDelete"><text>{{t.delete}}</text></view>
+    </block>
+
+    <!-- refused / failed -->
+    <block wx:if="{{stage === 'failed'}}">
+      <view class="strip-guide">
+        <view class="strip-guide-glyph">⚠</view>
+        <text class="strip-guide-line">{{failTitle}}</text>
+        <text class="strip-guide-line strip-guide-muted">{{failBody}}</text>
+      </view>
+      <view class="strip-btn strip-btn-primary" catchtap="handleRetry"><text>{{t.retry}}</text></view>
+      <view class="strip-btn strip-btn-ghost" catchtap="handleClose"><text>{{t.close}}</text></view>
+    </block>
+  </view>
+</view>

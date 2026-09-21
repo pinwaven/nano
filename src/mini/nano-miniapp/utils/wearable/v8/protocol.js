@@ -247,6 +247,37 @@ function parseEcgChunk(buf) {
   return { packetId, samples }
 }
 
+// ---- PPG stream (the SDK's "blood glucose" collection) ------------------------------------
+// BleSDK.ppgWithMode(mode, status) -> 0x78 [mode, status]: 1 start, 3 stop, 5 quit (2 = a
+// result for the band's screen, 4 = progress %, neither needed). The band echoes each as
+// `78 00 <mode>` and streams 0x3a frames: `3a 00 <seq>` then 50 samples, 4-byte big-endian
+// (top byte always 0 -> 24-bit counts) in a 203-byte frame, 3-byte in a 153-byte one. One frame
+// per second, contiguous -> 50 Hz. Confirmed live 2026-09-20 (tools/halo README "PPG"); byte-
+// identical on the Halo ring. Needs the negotiated MTU (>= 203).
+const PPG_MODES = { start: 1, result: 2, stop: 3, progress: 4, quit: 5 }
+
+function ppgModePacket(mode, status) {
+  const m = typeof mode === 'string' ? PPG_MODES[mode] : mode
+  if (!m) throw new Error(`Unknown PPG mode "${mode}"`)
+  const payload = [m]
+  if (m !== PPG_MODES.start) payload.push(status | 0)
+  return buildCommand(0x78, payload)
+}
+
+// 0x3a data frame -> { packetId (the seq byte), samples } or null for any other length.
+function parsePpgChunk(buf) {
+  const width = buf.length === 153 ? 3 : buf.length === 203 ? 4 : 0
+  if (!width) return null
+  const count = Math.floor((buf.length - 3) / width)
+  const samples = new Array(count)
+  for (let i = 0; i < count; i++) {
+    let v = 0
+    for (let k = 0; k < width; k++) v = v * 256 + buf[3 + width * i + k]
+    samples[i] = v
+  }
+  return { packetId: buf[2], samples }
+}
+
 module.exports = {
   SERVICE_UUID, WRITE_UUID, NOTIFY_UUID, NOTIFY_MAP, V8_NAME_PREFIXES,
   calculateChecksum, buildCommand, decToBcd, bcdToString, parseBcdDate, readLEInt,
@@ -260,4 +291,5 @@ module.exports = {
   getDynamicHrDataPacket, getStaticHrDataPacket,
   getHrvTestDataPacket, getTemperatureHistoryPacket, getOxygenDataPacket,
   MEASUREMENT_TYPES, setMeasurementPacket, setEcgRealtimePacket, parseEcgChunk,
+  PPG_MODES, ppgModePacket, parsePpgChunk,
 }

@@ -39,7 +39,7 @@ firmware:
 | Opcode `0x57` | Detailed SpO2 history | **Clock/alarm read** — reused for something else entirely |
 | Notification reassembly | one record per BLE notification | **one notification can hold multiple stacked records** (see §3) |
 | ECG (live raw stream, `0x28`+`0x07`) | not present | **ported into `tools/halo` CLI only** (`ecg --device v8`); confirmed live at ≈255 Hz on two units; contact, duration and stop semantics settled — see §6 |
-| PPG (live raw stream, `0x78`+`0x3a`) | not present | **CLI only** (`ppg --device v8`); 50 Hz from the wrist, no finger; pulse is a few % of DC and the band re-ranges on motion — see `tools/halo/README.md` "PPG" |
+| PPG (live raw stream, `0x78`+`0x3a`) | present, identical frames (confirmed on `X3B 69526`) | CLI (`ppg --device v8`) **and the miniapp** (`V8Band.recordPpg()` → `<strip-record kind="ppg">` → `POST /api/ppg`, 2026-09-20); 50 Hz from the wrist, no finger; pulse is a few % of DC and the band re-ranges on motion — see `tools/halo/README.md` "PPG" and the `wearable-insights` skill §45 |
 | Alarms, sedentary reminder, device name, PPI, blood glucose, SOS, OTA/DFU | not present | present in the vendor SDK, **not ported** (out of scope — see §6) |
 | Advertised name | `X3`/`X6`/`X9`/`V4` | `JCV8B` |
 
@@ -224,7 +224,7 @@ out of scope for this pass (see §6).
 | `0x18` | `CMD_HeartPackageFromDevice` | Sport-session HR push (band→host) | not implemented |
 | `0x3d`/`0x3e` | `CMD_Set_Name`/`CMD_Get_Name` | Device display name | not implemented |
 | `0x5C` | `CMD_Get_SPORTData` | Exercise session logs | not implemented |
-| `0x78`/`0x3a` | `CMD_Get_Bloodsugar`/`Bloodsugar_data` | Raw PPG stream (the SDK's "blood glucose" collection) | **CLI only** (`ppg --device v8`); confirmed live 2026-09-20: 50 Hz, 24-bit, 50 samples per 203-byte frame, pulse visible once high-passed — see `tools/halo/README.md` "PPG" |
+| `0x78`/`0x3a` | `CMD_Get_Bloodsugar`/`Bloodsugar_data` | Raw PPG stream (the SDK's "blood glucose" collection) | **implemented, confirmed** — CLI `ppg --device v8` and miniapp `V8Band.recordPpg()` (`ppgModePacket` / `parsePpgChunk`); live 2026-09-20: 50 Hz, 24-bit, 50 samples per 203-byte frame, pulse visible once high-passed — see `tools/halo/README.md` "PPG" |
 | `0x6B` | `Obtain_detailed_sleep_data` | Combined detailed sleep + activity | not implemented |
 | `0x14` | `Temperature_3NTC` | Real-time 3-sensor temperature | not implemented |
 | `0x03`/`0x04` | `SetBasic_parameters_of_equipment`/`Get...` | Sports-mode LED flash settings | not implemented |
@@ -495,7 +495,7 @@ to `syncWearableData()`:
 - Everything listed "not implemented" in §4 (alarms, blood glucose, OTA,
   etc.) still isn't — `V8Band` only implements what §4 marks "implemented,
   confirmed" — plus ECG, promoted from the CLI on 2026-09-19: `V8Band.recordEcg()`
-  and the `components/ecg-record/` overlay record a 30 s strip that
+  and the `components/strip-record/` overlay (`kind="ecg"`; it also records PPG) record a 30 s strip that
   `POST /api/ecg` analyses and stores as `health_events` category `ecg` (twin
   layer 2, CLAUDE.md §34) with the waveform in OSS. The adapter asks for the
   capture length as `duration` (the band ends the measurement itself), the

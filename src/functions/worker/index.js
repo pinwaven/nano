@@ -93,6 +93,7 @@ const {
 } = require('./handlers/health_documents');
 const { handleGetLabHistory } = require('./handlers/lab_history');
 const { handlePostEcg, handleGetEcgList, handleGetEcgWaveform, handleDeleteEcg } = require('./handlers/ecg');
+const { handlePostPpg, handleGetPpgList, handleGetPpgWaveform, handleDeletePpg } = require('./handlers/ppg');
 const {
     handlePostAvatarGenerationPresign, handlePostAvatarGeneration, handleGetAvatarGeneration, handlePostAvatarGenerationApply,
 } = require('./handlers/avatar_generation');
@@ -506,6 +507,11 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetEcgWaveform(path.match(/^\/ecg\/(\d+)\/waveform$/)[1], query);
             } else if (path === '/ecg') {
                 result = await handleGetEcgList(query);
+            // --- PPG pulse-wave strips from the V8 band / Halo ring (same shape as /ecg) ---
+            } else if (path.match(/^\/ppg\/(\d+)\/waveform$/)) {
+                result = await handleGetPpgWaveform(path.match(/^\/ppg\/(\d+)\/waveform$/)[1], query);
+            } else if (path === '/ppg') {
+                result = await handleGetPpgList(query);
             // --- Custom avatar generation (docs/architecture/avatar-gallery.md §6) ---
             } else if (path === '/avatar-generation') {
                 result = await handleGetAvatarGeneration(query);
@@ -885,6 +891,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostHealthDocument(parsedBody);
             } else if (path === '/ecg') {
                 result = await handlePostEcg(parsedBody);
+            } else if (path === '/ppg') {
+                result = await handlePostPpg(parsedBody);
             } else if (path === '/avatar-generation/presign') {
                 result = await handlePostAvatarGenerationPresign(parsedBody);
             } else if (path === '/avatar-generation/apply') {
@@ -1409,6 +1417,8 @@ exports.handler = async (req, resp, context) => {
         } else if (method === 'DELETE') {
             if (path.match(/^\/ecg\/(\d+)$/)) {
                 result = await handleDeleteEcg(path.match(/^\/ecg\/(\d+)$/)[1], query);
+            } else if (path.match(/^\/ppg\/(\d+)$/)) {
+                result = await handleDeletePpg(path.match(/^\/ppg\/(\d+)$/)[1], query);
             } else if (path.match(/^\/health-documents\/(\d+)\/extraction$/)) {
                 result = await handleDeleteHealthDocumentExtraction(path.match(/^\/health-documents\/(\d+)\/extraction$/)[1], query);
             } else if (path.match(/^\/health-reports\/(\d+)$/)) {
@@ -1621,13 +1631,16 @@ exports.handler = async (req, resp, context) => {
         return responsePayload;
 
     } catch (error) {
+        // A handler may throw with its own statusCode (e.g. resolveOrUpsertUser's 404 for an
+        // unknown user_id-shaped openid); anything else is a genuine 500.
+        const errStatus = Number.isInteger(error.statusCode) ? error.statusCode : 500;
         const errPayload = {
-            statusCode: 500,
+            statusCode: errStatus,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ error: error.message, debug: { path, method } })
+            body: JSON.stringify({ error: error.message, ...(error.reason ? { reason: error.reason } : {}), debug: { path, method } })
         };
         if (isStandardHttp) {
-            resp.setStatusCode(500);
+            resp.setStatusCode(errStatus);
             resp.send(errPayload.body);
             return;
         }

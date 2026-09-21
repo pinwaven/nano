@@ -28,7 +28,7 @@ switch (envVersion) {
 // uploads — no build pipeline exists, so this is the only way to confirm WeChat DevTools
 // is actually running the latest code rather than a stale cached compile. See CLAUDE.md
 // "Miniapp VERSION Marker". Format: MMDD-N (month+day, build number that day).
-const VERSION = '0920-2';
+const VERSION = '0921-1';
 const WX_VERSION = accountInfo.miniProgram.version || '';
 const IS_DEV = envVersion === 'develop' || envVersion === 'trial';
 
@@ -50,4 +50,4 @@ const CHANNEL_DISPLAY = _channelCfg ? { logo_url: _channelCfg.logo, name: _chann
 // hides it once a stored aeviva channel is known (pages/login/login.js).
 const EMAIL_LOGIN_AVAILABLE = !CHANNEL_SLUG;
 
-module.exports = { BASE, VERSION, WX_VERSION, IS_DEV, CHANNEL_SLUG, CHANNEL_DISPLAY, EMAIL_LOGIN_AVAILABLE };
+module.exports = { BASE, ENV_VERSION: envVersion, VERSION, WX_VERSION, IS_DEV, CHANNEL_SLUG, CHANNEL_DISPLAY, EMAIL_LOGIN_AVAILABLE };

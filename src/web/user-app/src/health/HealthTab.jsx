@@ -484,6 +484,27 @@ export default function HealthTab({ visible, onGuestTap }) {
                     <span className="ecg-card-foot">{t.ecgNotDiagnosis}</span>
                   </div>
                 )}
+                {/* 脉搏波 — raw PPG strips from GET /api/ppg, V8 band and Halo ring. Same card. */}
+                {(brand === 'v8' || brand === 'halo' || d.ppgLatest) && (
+                  <div className="ecg-card">
+                    <div className="ecg-card-row">
+                      <div className="ecg-card-main">
+                        <span className="ecg-card-title">{t.ppgTitle}</span>
+                        {d.ppgLatest ? (
+                          <div className="ecg-card-hero">
+                            <span className="ecg-card-bpm">{d.ppgLatest.bpm}</span><span className="ecg-card-unit">bpm</span>
+                            <span className="ecg-card-meta">{ecgWhen(d.ppgLatest.recorded_at)} · {d.ppgLatest.accepted_beats} {t.ecgBeats} · PP±{d.ppgLatest.rr_sd_ms}ms</span>
+                          </div>
+                        ) : <span className="ecg-card-empty">{t.ppgEmptySelf}</span>}
+                      </div>
+                      {(brand === 'v8' || brand === 'halo') && <div className="wd-sync-btn" onClick={wearableNotice}><span className="wd-sync-btn-text">{t.ppgRecord}</span></div>}
+                    </div>
+                    {d.ppgList.length > 1 && (
+                      <div className="ecg-card-list">{d.ppgList.slice(1, 5).map(it => <div key={it.id} className="ecg-card-list-row"><span className="ecg-card-list-when">{ecgWhen(it.recorded_at)}</span><span className="ecg-card-list-val">{it.bpm} bpm · PP±{it.rr_sd_ms}ms</span></div>)}</div>
+                    )}
+                    <span className="ecg-card-foot">{t.ppgNotDiagnosis}</span>
+                  </div>
+                )}
 
                 {d.hasTwinData ? (d.twinBodyBar && (
                   <div className="ht-body-card">

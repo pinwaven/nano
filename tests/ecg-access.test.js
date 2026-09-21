@@ -15,17 +15,21 @@ const read = (...p) => fs.readFileSync(path.join(...p), 'utf8');
 
 const handler = read(ROOT, 'src', 'functions', 'worker', 'handlers', 'ecg.js');
 const index = read(ROOT, 'src', 'functions', 'worker', 'index.js');
-const recJs = read(MINI, 'components', 'ecg-record', 'ecg-record.js');
-const recWxml = read(MINI, 'components', 'ecg-record', 'ecg-record.wxml');
+const recJs = read(MINI, 'components', 'strip-record', 'strip-record.js');
+const recWxml = read(MINI, 'components', 'strip-record', 'strip-record.wxml');
 const uhJs = read(MINI, 'components', 'user-health', 'user-health.js');
 const uhWxml = read(MINI, 'components', 'user-health', 'user-health.wxml');
 const uhJson = JSON.parse(read(MINI, 'components', 'user-health', 'user-health.json'));
 const v8Index = read(MINI, 'utils', 'wearable', 'v8', 'index.js');
 const v8Proto = read(MINI, 'utils', 'wearable', 'v8', 'protocol.js');
 
+// The component's T is { ecg: { zh, en }, ppg: { zh, en } } built over a COMMON block; the
+// host's is the flat { zh, en }. Both are evaluated from `const COMMON`/`const T` to the end of T.
 function loadT(src) {
-    const i = src.indexOf('const T = {');
-    const j = src.indexOf('\n}\n', i) + 3;
+    const c = src.indexOf('const COMMON = {');
+    const i = c >= 0 ? c : src.indexOf('const T = {');
+    const t = src.indexOf('const T = {', i);
+    const j = src.indexOf('\n}\n', t) + 3;
     const ctx = vm.createContext({});
     vm.runInContext(src.slice(i, j) + '\nglobalThis.T = T;', ctx);
     return ctx.T;
@@ -63,37 +67,55 @@ test('the miniapp adapter ports the CLI\'s ECG protocol and asks for the capture
     assert.match(v8Proto, /function parseEcgChunk\(buf\)/);
     assert.match(v8Index, /async recordEcg\(opts = \{\}\)/);
     assert.match(v8Index, /setMeasurementPacket\('ecg', true, durationSec\)/, 'the band ends the measurement itself at the requested duration — the only stop that works');
-    assert.ok(!/utils\/wearable\/halo\/.*ecg/i.test(read(MINI, 'utils', 'wearable', 'halo', 'index.js')), 'Halo has no ECG opcode');
+    const haloIndex = read(MINI, 'utils', 'wearable', 'halo', 'index.js');
+    assert.ok(!/recordEcg/.test(haloIndex), 'Halo has no ECG opcode');
+    // PPG: both adapters expose the same recordPpg() contract over the 0x78/0x3a tap.
+    assert.match(v8Proto, /function ppgModePacket\(mode, status\)/);
+    assert.match(v8Proto, /function parsePpgChunk\(buf\)/);
+    assert.match(v8Index, /async recordPpg\(opts = \{\}\)/);
+    assert.match(haloIndex, /async recordPpg\(opts = \{\}\)/);
+    assert.match(haloIndex, /ppgControlPacket\(3, 0\)[\s\S]{0,200}ppgControlPacket\(5, 0\)/, 'stop then quit');
 });
 
-test('every t.* key the ECG WXML uses exists in both languages', () => {
+test('every t.* key the strip WXML uses exists in both languages, for both kinds', () => {
     const recT = loadT(recJs);
     const uhT = loadT(uhJs);
-    for (const [wxml, T, label] of [[recWxml, recT, 'ecg-record'], [uhWxml, uhT, 'user-health']]) {
-        const keys = new Set([...wxml.matchAll(/\bt\.(ecg[A-Za-z0-9_]*|title|guide\d|start|connecting|measuring|noSignal|saving|stopEarly|packets|beatsLive|beats|rrMedian|rrSd|duration|done|retry|close|notDiagnosis)\b/g)].map((m) => m[1]));
-        assert.ok(keys.size > 0, `${label}: no keys found`);
-        for (const k of keys) {
-            assert.ok(k in T.zh, `${label}: zh lacks ${k}`);
-            assert.ok(k in T.en, `${label}: en lacks ${k}`);
-        }
+    const recKeys = new Set([...recWxml.matchAll(/\bt\.([A-Za-z0-9_]+)\b/g)].map((m) => m[1]));
+    assert.ok(recKeys.size > 10, 'strip-record: no keys found');
+    for (const kind of ['ecg', 'ppg']) for (const lang of ['zh', 'en']) for (const k of recKeys) {
+        assert.ok(k in recT[kind][lang], `strip-record ${kind}/${lang} lacks ${k}`);
+    }
+    const uhKeys = new Set([...uhWxml.matchAll(/\bt\.((?:ecg|ppg)[A-Za-z0-9_]*)\b/g)].map((m) => m[1]));
+    assert.ok(uhKeys.size > 0, 'user-health: no keys found');
+    for (const k of uhKeys) {
+        assert.ok(k in uhT.zh, `user-health: zh lacks ${k}`);
+        assert.ok(k in uhT.en, `user-health: en lacks ${k}`);
     }
     for (const lang of ['zh', 'en']) {
-        assert.ok(!/诊断心电图|diagnos(e|tic ECG) (your|the) heart/i.test(JSON.stringify(recT[lang])), 'copy must not claim a diagnosis');
-        assert.match(recT[lang].notDiagnosis, /不是心电图诊断|not a diagnostic ECG/);
+        assert.ok(!/诊断心电图|diagnos(e|tic ECG) (your|the) heart/i.test(JSON.stringify(recT.ecg[lang])), 'ECG copy must not claim a diagnosis');
+        assert.match(recT.ecg[lang].notDiagnosis, /不是心电图诊断|not a diagnostic ECG/);
+        // PPG: never an oxygen or glucose reading — the stream is the SDK's "blood glucose" tap.
+        assert.match(recT.ppg[lang].notDiagnosis, /不是血氧或血糖|not an oxygen or glucose/);
+        assert.match(uhT[lang].ppgNotDiagnosis, /不是血氧或血糖|not an oxygen or glucose/);
+        assert.ok(!/血糖测量结果|glucose level|blood sugar reading/i.test(JSON.stringify(recT.ppg[lang])), 'PPG copy must not promise glucose');
     }
 });
 
 test('recording is self-only; a stored strip opens read-only for a coach; the overlay is registered', () => {
-    assert.strictEqual(uhJson.usingComponents['ecg-record'], '../ecg-record/ecg-record');
+    assert.strictEqual(uhJson.usingComponents['strip-record'], '../strip-record/strip-record');
     // Mounted for self, or for anyone viewing a stored strip — and then read-only unless self,
     // with the coach id riding along so the server runs its users.coach_id check.
-    assert.match(uhWxml, /<ecg-record wx:if="\{\{mode === 'self' \|\| ecgViewId\}\}"/);
+    assert.match(uhWxml, /<strip-record wx:if="\{\{mode === 'self' \|\| stripViewId\}\}" kind="\{\{stripKind\}\}"/);
     assert.match(uhWxml, /read-only="\{\{mode !== 'self'\}\}"/);
     assert.match(uhWxml, /coach-id="\{\{mode === 'coach' \? coachId : ''\}\}"/);
-    const recJs = fs.readFileSync(path.join(MINI, 'components/ecg-record/ecg-record.js'), 'utf8');
     assert.match(recJs, /if \(!id \|\| this\.data\.readOnly\) return/, 'delete re-checks readOnly in code, not only in WXML');
-    assert.match(uhWxml, /wx:if="\{\{mode === 'self' && ecgSupported\}\}" class="wd-sync-btn" catchtap="openEcgRecord"/);
-    assert.match(uhJs, /brand === 'v8'/, 'ecgSupported is V8-only');
+    assert.match(uhWxml, /wx:if="\{\{mode === 'self' && ecgSupported\}\}" class="wd-sync-btn" catchtap="openEcgRecord" data-kind="ecg"/);
+    assert.match(uhWxml, /wx:if="\{\{mode === 'self' && ppgSupported\}\}" class="wd-sync-btn" catchtap="openEcgRecord" data-kind="ppg"/);
+    assert.match(uhJs, /const ecg = bound && brand === 'v8'/, 'ecgSupported is V8-only');
+    assert.match(uhJs, /const ppg = bound && \(brand === 'v8' \|\| brand === 'halo'\)/, 'ppgSupported is V8 + Halo');
+    // The component itself refuses a kind its brand cannot record, with the same brand table.
+    assert.match(recJs, /ecg: \{ durationSec: 30, method: 'recordEcg', path: 'ecg', brands: \['v8'\]/);
+    assert.match(recJs, /ppg: \{ durationSec: 60, method: 'recordPpg', path: 'ppg', brands: \['v8', 'halo'\]/);
     assert.match(uhJs, /wearableId !== '__server__'/, 'a server-only binding has no BLE id to record with');
     // user-health's _req resolves with the whole wx.request response (found live: the card never
     // rendered because the list was read off the response instead of its body).

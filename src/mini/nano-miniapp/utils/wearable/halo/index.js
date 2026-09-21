@@ -571,7 +571,48 @@ class HaloRing extends WearableDevice {
       .catch(() => {})
   }
 
+  // Streams the raw optical channel (0x78 start / 0x3a frames — the same "blood glucose" tap
+  // startBloodGlucose() drives, confirmed live on X3B 69526 2026-09-20: 203-byte frames, 50 ×
+  // 4-byte BE samples, 50 Hz, byte-identical to the V8) for opts.durationSec seconds (default
+  // 60). Same contract as V8Band.recordPpg(): { packets: [{ packetId, samples, receivedAt }],
+  // startedAt, endedAt }, never rejects on an empty capture. The ring also pushes 0xAA/0xAB
+  // status frames around start/stop; they are ignored.
+  async recordPpg(opts = {}) {
+    const durationSec = Math.max(10, Math.min(300, Math.round(opts.durationSec || 60)))
+    const captureMs = opts.captureMs || durationSec * 1000 + 500
+    const packets = []
+    const startedAt = Date.now()
+    let stopEarly = null
+    const stopPromise = new Promise((resolve) => { stopEarly = resolve })
+    if (typeof opts.onStopSignal === 'function') opts.onStopSignal(() => stopEarly())
+
+    this._ble.onNotify(NOTIFY_UUID, (data) => {
+      if (data[0] !== 0x3A) return
+      const samples = _parsePpgPacket3A(data)
+      if (!samples.length) return
+      const rec = { packetId: data[2], samples, receivedAt: Date.now() }
+      packets.push(rec)
+      if (opts.onPacket) opts.onPacket(rec)
+    })
+
+    try {
+      await this._ble.write(this._deviceId, SERVICE_UUID, WRITE_UUID, ppgControlPacket(1, 0))
+      await Promise.race([new Promise((resolve) => setTimeout(resolve, captureMs)), stopPromise])
+    } finally {
+      this._ble.onNotify(NOTIFY_UUID, null)
+      try {
+        await this._ble.write(this._deviceId, SERVICE_UUID, WRITE_UUID, ppgControlPacket(3, 0))
+        await this._ble.write(this._deviceId, SERVICE_UUID, WRITE_UUID, ppgControlPacket(5, 0))
+      } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'Halo PPG stop write failed', error: err.message }))
+      }
+    }
+    return { packets, startedAt, endedAt: Date.now() }
+  }
+
   // --- Raw PPG waveform streaming (0x11) ---
+  // Probed live 2026-09-20 on X3B 69526: the ring acks 11 01 and streams NOTHING. Treat as
+  // non-functional until a ring produces a frame (halo-smart-ring.md §3.13).
   //
   // Streams high-frequency raw sensor values for signal analysis.
   // cb: ({ points: number[] }) => void  — each point is a 32-bit BE PPG intensity value

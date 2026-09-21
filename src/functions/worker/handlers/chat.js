@@ -219,6 +219,22 @@ async function resolveOrUpsertUser(body) {
     );
     if (byUserId.rows.length > 0) return byUserId.rows[0];
 
+    // An 8-hex value is OUR user_id format (lib/auth generateUserId), never a WeChat openid
+    // (28 chars, starts with 'o'). One that matches no row here is an id issued by a
+    // different environment — a prod session carried into dev by wx.storage (see
+    // app.js's nano_base check) — or a deleted/mistyped id. Falling through would mint a
+    // brand-new account keyed on it (external_id = a foreign user_id, default channel,
+    // signup trial granted) and every later request would silently land there while the
+    // client keeps showing the cached profile. Live incident 2026-09-19: dev ghost
+    // c2e34ddf, external_id '82ae9e14' (a prod user_id), 185 health_events and 6 ECG
+    // strips before it was noticed. Refuse instead; the client re-logs in.
+    if (/^[0-9a-f]{8}$/.test(openid)) {
+        const err = new Error('User not found');
+        err.statusCode = 404;
+        err.reason = 'user_not_found';
+        throw err;
+    }
+
     const userQuery = `
         INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, bio_data, channel_id)
         VALUES ($1, $2, 'wechat', $3, $4, $5, $6, $7, $8, $9, (SELECT id FROM channels WHERE key_name = 'waven' LIMIT 1))

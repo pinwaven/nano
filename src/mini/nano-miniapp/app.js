@@ -1,3 +1,5 @@
+const { BASE, ENV_VERSION } = require('./utils/config.js')
+
 App({
   globalData: {
     user: null,
@@ -17,6 +19,23 @@ App({
 
   onLaunch() {
     try {
+      // A stored session is only valid against the backend that issued it. wx.storage is
+      // shared per appid across envVersions, so a phone that ran a 预览 build (trial → prod)
+      // and then 真机调试 (develop → dev) would carry the prod user_id into dev, where the
+      // server does not know it. Live incident 2026-09-19: dev minted a ghost account for the
+      // prod id and two days of ring syncs + ECG strips landed there while the header kept
+      // showing the cached prod profile. nano_base records the issuing BASE at login
+      // (login.js); a mismatch clears the session and last-session snapshot so the user
+      // re-logs in on this backend. Sessions from before the marker existed are grandfathered
+      // on prod builds (nothing else they could have come from) and cleared in the IDE/
+      // 真机调试, where a wrong guess is cheap and the leak actually happens.
+      const storedBase = wx.getStorageSync('nano_base')
+      if (storedBase !== BASE) {
+        if (storedBase || ENV_VERSION === 'develop') {
+          for (const k of ['nano_user', 'nano_channel', 'nano_coach', 'nano_last_session']) wx.removeStorageSync(k)
+        }
+        wx.setStorageSync('nano_base', BASE)
+      }
       const user = wx.getStorageSync('nano_user')
       const channel = wx.getStorageSync('nano_channel')
       const coach = wx.getStorageSync('nano_coach')

@@ -178,10 +178,10 @@ constant 1.35 Hz with 4–6× prominence over its neighbours, AC ≈ 0.5 % of DC
 PPI median 720 ms (83 bpm), 38/50 intervals accepted, sd 51 ms; the systolic
 peak **and** the dicrotic wave are both visible. Motion swings the DC level 2–3×
 within seconds (typing during the first run), so a consumer must high-pass
-(~0.5 s) and reject windows whose DC range exceeds a few tens of percent. The
-`HaloRing.startBloodGlucose()` family in `halo/index.js` was written from the
-SDK and is still unexercised from the miniapp; its `0x3A` parser matches what
-the ring sends.
+(~0.5 s) and reject windows whose DC range exceeds a few tens of percent. `HaloRing.recordPpg()` (same contract as `V8Band.recordPpg()`) drives this tap
+for the miniapp's `<strip-record kind="ppg">` → `POST /api/ppg`; the older
+`startBloodGlucose()` family, written from the SDK, is still unexercised but
+shares the `0x3A` parser, which matches what the ring sends.
 
 ### 3.13 Real-time PPG / PPI Streaming (`0x11`)
 ```
