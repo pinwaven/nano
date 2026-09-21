@@ -77,6 +77,9 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
+        # Unset = shared dashscope.aliyuncs.com host. Uncomment to move prod onto the
+        # workspace-dedicated domain once dev has soaked on it (2026-09-21).
+        # DASHSCOPE_HOST: "https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com"
         MODEL: "qwen-plus-latest"
         WX_APPID: "wxecbcf00ce480fcf2"
         WX_SECRET: ${env(WX_SECRET)}
@@ -180,6 +183,9 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
+        # Unset = shared dashscope.aliyuncs.com host. Uncomment to move prod onto the
+        # workspace-dedicated domain once dev has soaked on it (2026-09-21).
+        # DASHSCOPE_HOST: "https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com"
         MODEL: "qwen-plus-latest"
         # EVENT_SOURCE_SUFFIX intentionally left unset — see worker's comment above.
       triggers:

@@ -80,6 +80,9 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
+        # Workspace-dedicated Model Studio domain (cn-beijing). Code falls back to the shared
+        # dashscope.aliyuncs.com host when unset — see docs/deployment.md.
+        DASHSCOPE_HOST: "https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com"
         MODEL: "qwen-plus-latest"
         WX_APPID: "wxecbcf00ce480fcf2"
         WX_SECRET: ${env(WX_SECRET)}
@@ -193,6 +196,9 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
+        # Workspace-dedicated Model Studio domain (cn-beijing). Code falls back to the shared
+        # dashscope.aliyuncs.com host when unset — see docs/deployment.md.
+        DASHSCOPE_HOST: "https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com"
         MODEL: "qwen-plus-latest"
         # See worker's EVENT_SOURCE_SUFFIX comment — same 2026-08-01 fix, applied here since
         # nano-agent/nano-agent-dev's eb-agent-triggers had the identical unscoped filter.

@@ -8,6 +8,11 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **LLM endpoint is configurable — dev moved to the Model Studio workspace-dedicated domain** · 2026-09-21
+  - Before: `https://dashscope.aliyuncs.com` was hardcoded at 13 sites (12 OpenAI-compatible `getLlmClient`s across the worker handlers, `agent/index.js`, both `reports/workflow.js` copies and `scripts/update-changelog.js`, plus the native `GEN_URL` in `lib/avatarGen.js`).
+  - Now: every site builds its URL from `DASHSCOPE_HOST` (`\`${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/compatible-mode/v1\``), so an unset variable is byte-for-byte the old behaviour. `s.yaml` (worker + agent) sets it to `https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com`; `s-prod.yaml` carries the same line commented out for the later flip. Per Aliyun's migration guide the dedicated domain is a pure host substitution (same paths, same key — provided the key belongs to that 业务空间), with a 3600 s request timeout instead of 600 s and a 99.9% SLA.
+  - Verified live against the new host with the existing key: chat, tool calling, streaming, `json_object`, `qwen-vl-plus`, and both native `/api/v1/services/aigc/*` routes; identical output to the shared host at `temperature: 0`, comparable latency. `docs/deployment.md` env table updated.
+
 - **Channel QR codes for the root Waven miniprogram — branded login screen from a scan** · 2026-09-20
   - Before: only a brand-specific build (`APPID_TO_CHANNEL` in `utils/config.js`) could show a channel's logo before login; on the root app the logo only swapped in after `/wx-login` returned. There was also no 小程序码 generation anywhere in the codebase.
   - Worker: `GET /channel-branding?id=<channels.id>` (`handlers/channels.js`, public display fields only — name/key_name/logo/locale — keyed on the numeric id so a printed code survives a rename) and `GET /channels/:id/miniapp-qrcode` (mints `wxacode.getUnlimited` against `WX_APPID_WAVEN`, `page=pages/login/login`, `scene=ch:<id>`, `check_path:false`; channel admins scoped to their own tree; returns base64 JSON, never cached — the codes don't expire).
