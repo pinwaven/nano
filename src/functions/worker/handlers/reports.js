@@ -4,7 +4,7 @@ const systemAdminReportTemplate = require('../prompts/systemAdminReport');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
-    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    baseURL: `${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/compatible-mode/v1`,
 });
 
 // ── Admin: Saved Reports ──────────────────────────────────────────────────────

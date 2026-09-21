@@ -13,7 +13,7 @@ const OpenAI = require('openai');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
-    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    baseURL: `${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/compatible-mode/v1`,
 });
 
 // Flattens a nutrition_schedules.recipe JSONB ({dots: {DOT01: 2, ...}}) into a display list

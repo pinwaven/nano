@@ -51,7 +51,7 @@ const systemHealthReportTemplate = require('./prompts/nano/systemHealthReport');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
-    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    baseURL: `${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/compatible-mode/v1`,
 });
 
 const { handleGetAcademyCourses, handlePostAcademyCourse, handlePutAcademyCourse, handleDeleteAcademyCourse, handleGetAcademyLibrary, handlePostAcademyLibraryItem, handlePutAcademyLibraryItem, handleDeleteAcademyLibraryItem, handleGetAcademyLessons, handlePostAcademyLesson, handlePutAcademyLesson, handleDeleteAcademyLesson, handleGetAcademyProgress, handlePostAcademyProgress, handleGetAcademyCourseProgress, handleGetAcademyLibraryContent, handleGetAcademyLessonById, handlePostQuizAttempt, handleGetCoachCredits, handleGetCoachDashboard, handleGetAcademyLeaderboard, handleGetAcademyCertifications, handlePostAcademyCertification, handlePutAcademyCertification, handleDeleteAcademyCertification, handleGetCoachCertifications, handleGetAcademyTemplateImage, handleGetIssuedCertifications, handlePostCoachCertification, handlePutCoachCertification, handleVerifyCertificate, handleVerifyCertificatesByGovernmentId, handleGetCertImageUrl, handleGetAcademyLearningPaths, handlePostAcademyLearningPath, handlePutAcademyLearningPath, handleDeleteAcademyLearningPath, handlePostAcademyQuizQuestion, handlePutAcademyQuizQuestion, handleDeleteAcademyQuizQuestion, handleGetAcademyCourseProgressAll, handleGetAcademyEnrollments, handlePostAcademyEnrollment, handlePutAcademyEnrollment, handleDeleteAcademyEnrollment } = require('./handlers/academy');

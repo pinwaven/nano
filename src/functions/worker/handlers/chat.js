@@ -112,7 +112,7 @@ const HIGH_RISK_INTENTS = new Set(['biomarker_question', 'nutrition_question', '
 // catch/fail-open handling instead.
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
-    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    baseURL: `${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/compatible-mode/v1`,
     timeout: 60_000,
     maxRetries: 1,
 });

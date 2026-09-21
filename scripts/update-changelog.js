@@ -20,7 +20,7 @@ if (!process.env.DASHSCOPE_API_KEY) {
 const pool = new Pool({ connectionString: process.env.DATABASE_URL_PROD });
 const llm = new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
-    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    baseURL: `${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/compatible-mode/v1`,
 });
 
 function parseChangelog(text) {

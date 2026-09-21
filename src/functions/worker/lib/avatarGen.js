@@ -26,7 +26,7 @@ const DEFAULT_MOOD = 'relaxed';
 // (2 req/s) drifts the face and paints accessories when the prompt names one.
 const DEFAULT_MODEL = 'qwen-image-3.0';
 const GATE_MODEL = 'qwen-vl-plus';
-const GEN_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation';
+const GEN_URL = `${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/api/v1/services/aigc/multimodal-generation/generation`;
 const OUTPUT_SIZE = '1024*1024';
 const STYLE_REF_KEY = 'avatars/style-ref/relaxed.png';   // 512 px gallery PNG, uploaded once
 const MAX_SOURCE_BYTES = 6 * 1024 * 1024;                 // the API caps input at 10 MB; base64 inflates it
