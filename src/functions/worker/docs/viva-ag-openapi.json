@@ -32,6 +32,10 @@
     {
       "name": "data",
       "description": "Reading the subject's twin and documents"
+    },
+    {
+      "name": "twin",
+      "description": "The subject's digital twin"
     }
   ],
   "paths": {
@@ -918,6 +922,158 @@
           }
         }
       }
+    },
+    "/viva-ag/twin-versions": {
+      "get": {
+        "tags": [
+          "twin"
+        ],
+        "summary": "Change feed for the agent's twin mirror: every AG subject and when its twin last changed",
+        "description": "Bearer only, no job token. Names subjects by subject_ref only. A subject whose account no longer exists is reported with removed: true regardless of `since`.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only subjects changed after this instant; omit for every subject."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000,
+              "default": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subjects and change instants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "as_of": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "since": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "subjects": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "subject_ref": {
+                            "type": "string"
+                          },
+                          "changed_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "removed": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed since",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Failure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/viva-ag/subject-bundle": {
+      "get": {
+        "tags": [
+          "twin"
+        ],
+        "summary": "The twin bundle for one subject, outside any job",
+        "description": "Bearer only. Same shape as /viva-ag/twin-bundle but scoped to every active document, with no `job` and empty `job_questionnaires`. Flips no job status. Carries twin_version (stable across mints of an unchanged twin) and twin_changed_at.",
+        "parameters": [
+          {
+            "name": "subject_ref",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bundle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/TwinBundle"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "subject_ref": {
+                          "type": "string"
+                        },
+                        "twin_version": {
+                          "type": "string",
+                          "description": "sha256 over the bundle minus generated_at, presigned URLs and job fields"
+                        },
+                        "twin_changed_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "subject_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Failure"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1042,6 +1198,16 @@
           },
           "twin_bundle_url": {
             "type": "string"
+          },
+          "subject_ref": {
+            "type": "string",
+            "description": "Opaque, stable per subject; the key of the agent's twin mirror"
+          },
+          "twin_changed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When this subject's twin last changed, by nano's change columns"
           }
         }
       },
@@ -1513,6 +1679,12 @@
                 }
               }
             }
+          },
+          "subject_ref": {
+            "type": "string"
+          },
+          "twin_version": {
+            "type": "string"
           }
         }
       },

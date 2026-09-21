@@ -8,6 +8,12 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **Viva AG: `subject_ref`, a change feed and a per-subject bundle for the agent's twin mirror** · 2026-09-20
+  - Before: every `/viva-ag/*` read was job-scoped and `job_uid` the only handle, so the agent (Curia, now on a server in Japan) re-downloaded a subject's whole twin on every claim, across a border, whether or not it had changed.
+  - After: `viva_ag_subjects` mints an opaque `subject_ref` (`vs_` + 24 hex) per AG subject at first claim — random, never derived from `user_id`, only for subjects who have invoked the agent. The claim carries `subject_ref` + `twin_changed_at`; `GET /viva-ag/twin-versions?since=` lists `{subject_ref, changed_at, removed}` for every AG subject in one query (`GREATEST` over every bundle table's change columns, `lib/twinMirror.js`); `GET /viva-ag/subject-bundle?subject_ref=` returns the twin-bundle shape outside any job with `twin_version` (sha256 over the bundle minus `generated_at`, presigned URLs and job fields — stable across mints). Both bearer-only, both in `VIVA_AG_ALLOWED_PATHS` and the OpenAPI spec; `subject_not_found` added to the reason vocabulary. No `user_id` leaves any of it.
+  - Migrations: `migration_viva_ag_subjects.sql`, `migration_viva_ag_subjects_backfill.sql` (dev applied; prod pending).
+  - Files: `lib/twinMirror.js` (new), `handlers/viva_ag.js`, `index.js`, `docs/viva-ag-{api.md,openapi.json}`, `tests/viva-ag-twin-mirror.test.js`.
+
 - **Portable `deploy:*` scripts — `scripts/s.sh` wrapper** · 2026-09-20
   - Before: every `deploy:*` npm script was `source .env && s <fn> deploy -y`, which only worked on macOS/zsh. On Linux, npm runs scripts under `/bin/sh` (`sh: 1: source: not found`) and `s` is a local devDependency not on PATH (`s: command not found`). The `scripts/deploy-*.sh` helpers had the same bare `s` calls.
   - After: `scripts/s.sh` `cd`s to the repo root, exports `.env` (`set -a; . ./.env`), and `exec`s `npx s "$@"`. All 15 `deploy:*` npm scripts and the 7 shell helpers call it; behaviour on macOS is unchanged.

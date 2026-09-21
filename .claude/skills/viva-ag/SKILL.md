@@ -64,6 +64,13 @@ Nothing in §21–§29 applies — that machinery is for work nano performs itse
   `'viva_ag_questionnaire'` **must stay in `AI_ECHO_TYPES`**. `result_summary` is sanitized on
   ingest (`:::` stripped, dot codes humanized); never feed `viva_ag_jobs.result` to a later prompt
   as trusted content.
+- **The agent's twin mirror is fed by `subject_ref`, never `user_id`** (2026-09-20). `viva_ag_subjects`
+  mints an opaque `vs_…` per AG subject at first claim; `GET /viva-ag/twin-versions?since=` and
+  `GET /viva-ag/subject-bundle?subject_ref=` are bearer-only reads (`lib/twinMirror.js`). The
+  `CHANGED_AT_SQL` list there must be kept in step with the tables `buildTwinBundle` reads — a table
+  read there and missing here is a change the agent sees only on its daily full pass. `twin_version`
+  strips `generated_at`, presigned URLs, `job`, `job_questionnaires` and `subject.ref` before hashing;
+  add any new volatile field to `VOLATILE_TOP`/`VOLATILE_DOC` or every mint reads as a change.
 - **`lib/twinBundle.js` is AG-only, on purpose** — its SQL duplicates `agenticTools.js` and the
   `llmContext` builders, and unifying them would touch the contract 20+ prompts and JUDGE consume.
   Conventions: fetchers never throw, biomarkers from `data.validated`, timestamps through

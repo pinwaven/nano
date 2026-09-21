@@ -40,6 +40,7 @@ const { processAgFormulationResult } = require('./ag_formulation');
 const { validateAgQuestions, sanitizeDisplayText } = require('../lib/agQuestionnaire');
 const { createDynamicQuestionnaire } = require('./questionnaires');
 const { formatToShanghai } = require('../lib/time-utils');
+const { ensureSubjectRef, listTwinVersions, twinChangedAtFor, twinVersionOf } = require('../lib/twinMirror');
 
 // ---------------------------------------------------------------------------------------
 // Constants
@@ -130,6 +131,7 @@ const REASONS = {
     TOO_MANY_RESULT_FILES: 'too_many_result_files',
     INVALID_QUESTIONS: 'invalid_questions',
     QUESTIONNAIRE_LIMIT_REACHED: 'questionnaire_limit_reached',
+    SUBJECT_NOT_FOUND: 'subject_not_found',
     INTERNAL_ERROR: 'internal_error',
 };
 
@@ -594,11 +596,17 @@ async function handlePostVivaAgClaim(body) {
                      FOR UPDATE SKIP LOCKED
                      LIMIT 1
               )
-            RETURNING job_uid, command, command_key, params, attempts, max_attempts,
+            RETURNING job_uid, user_id, command, command_key, params, attempts, max_attempts,
                       claim_expires_at, created_at, document_ids`,
             [workerId, String(leaseSeconds), resultToken]
         );
         if (!job) return { success: true, job: null };
+
+        // The subject's opaque handle and the twin's change signal ride with the claim so a
+        // worker holding a mirror can decide whether to re-pull before it fetches anything.
+        // user_id itself never leaves this function.
+        const subjectRef = await ensureSubjectRef(pool, job.user_id);
+        const twinChangedAt = await twinChangedAtFor(pool, job.user_id);
 
         console.log(JSON.stringify({ level: 'INFO', msg: 'viva_ag job claimed', job_uid: job.job_uid, worker_id: workerId, attempt: job.attempts }));
         return {
@@ -615,6 +623,8 @@ async function handlePostVivaAgClaim(body) {
                 result_token: resultToken,
                 document_count: Array.isArray(job.document_ids) ? job.document_ids.length : 0,
                 twin_bundle_url: `/api/viva-ag/twin-bundle?job_uid=${encodeURIComponent(job.job_uid)}`,
+                subject_ref: subjectRef,
+                twin_changed_at: twinChangedAt,
             },
         };
     } catch (err) {
@@ -652,6 +662,8 @@ async function handleGetVivaAgTwinBundle(query, jobToken) {
         return {
             success: true,
             ...bundle,
+            subject_ref: await ensureSubjectRef(pool, job.user_id),
+            twin_version: twinVersionOf(bundle),
             job: {
                 job_uid: job.job_uid,
                 command: job.command,
@@ -672,6 +684,69 @@ async function handleGetVivaAgTwinBundle(query, jobToken) {
 
 // Re-mints a document URL. Exists so a job that runs for hours — or has to resume a large,
 // partially-downloaded PDF — never dies on an expired signature.
+// Every AG subject and when its twin last changed — the agent's change feed for its
+// mirror. Bearer only, no job token: it names subjects by subject_ref and nothing else,
+// and a subject_ref reaches the agent only through a claim it was handed.
+async function handleGetVivaAgTwinVersions(query) {
+    try {
+        let since = null;
+        if (query?.since != null && query.since !== '') {
+            const t = new Date(String(query.since));
+            if (Number.isNaN(t.getTime())) return _fail(REASONS.MISSING_PARAMS, 'since must be an ISO-8601 timestamp');
+            since = t.toISOString();
+        }
+        const limit = clampInt(query?.limit, 500, 1, 2000);
+        const subjects = await listTwinVersions(pool, { since, limit });
+        return {
+            success: true,
+            as_of: new Date().toISOString(),
+            since,
+            subjects,
+            truncated: subjects.length === limit,
+        };
+    } catch (err) {
+        _logError('handleGetVivaAgTwinVersions failed', err);
+        return _fail(REASONS.INTERNAL_ERROR, err.message);
+    }
+}
+
+// The same bundle a job receives, for one subject, outside any job. Bearer only. Flips no
+// job status, scopes to every active document rather than a job's list, and carries no
+// job_questionnaires (there is no job). Presigned URLs still expire; the mirror fetches
+// bytes at sync time and never relies on a stored URL.
+async function handleGetVivaAgSubjectBundle(query) {
+    try {
+        const subjectRef = String(query?.subject_ref || '').trim();
+        if (!subjectRef) return _fail(REASONS.MISSING_PARAMS, 'subject_ref is required');
+
+        const { rows: [user] } = await pool.query(
+            `SELECT u.user_id, u.nickname, u.gender, u.birth_date, u.language, u.bio_data
+               FROM viva_ag_subjects s JOIN users u ON u.user_id = s.user_id
+              WHERE s.subject_ref = $1`,
+            [subjectRef]
+        );
+        if (!user) return _fail(REASONS.SUBJECT_NOT_FOUND, 'No such subject, or the subject no longer exists');
+
+        const bundle = await buildTwinBundle(pool, {
+            user,
+            ref: subjectRef,
+            documentIds: null,
+            urlTtlSeconds: DEFAULT_DOC_URL_TTL_SECONDS,
+            questionnaireAssignmentIds: null,
+        });
+        return {
+            success: true,
+            ...bundle,
+            subject_ref: subjectRef,
+            twin_version: twinVersionOf(bundle),
+            twin_changed_at: await twinChangedAtFor(pool, user.user_id),
+        };
+    } catch (err) {
+        _logError('handleGetVivaAgSubjectBundle failed', err, { subject_ref: query?.subject_ref });
+        return _fail(REASONS.INTERNAL_ERROR, err.message);
+    }
+}
+
 async function handleGetVivaAgDocumentUrl(query, jobToken) {
     try {
         const { error, job } = await _loadClaimedJob(query?.job_uid, jobToken);
@@ -1355,6 +1430,8 @@ module.exports = {
     handleGetVivaAgPing,
     handlePostVivaAgClaim,
     handleGetVivaAgTwinBundle,
+    handleGetVivaAgTwinVersions,
+    handleGetVivaAgSubjectBundle,
     handleGetVivaAgDocumentUrl,
     handleGetVivaAgHealthEvents,
     handleGetVivaAgLabResults,

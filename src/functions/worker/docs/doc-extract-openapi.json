@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Nano — Document Extraction External Agent API",
-    "version": "3.0.0",
+    "version": "4.0.0",
     "description": "Pull queue for an external agent that turns uploaded health documents (体检报告 PDFs, photographed paper lab printouts, discharge summaries) into structured digital-twin data.\n\nEvery response is HTTP 200 with a JSON body, INCLUDING routine failures — branch on `reason`, never on a status code.\n\nSeparate service from the Viva AG API (`/viva-ag/*`): different token, different queue, no shared state. The prose contract, which is the authoritative one, is served at `GET /doc-extract/docs`.\n\nContract version 3 (2026-09-16): `structured.version: 2` keeps tables as tables; a `source` cell reference on every item; `unmapped[].suggested_key` (stored, never promoted); a third catalog `tag_catalog`; and `tags` — facts about the person with a key, a status and an anchor — the only path into what nano acts on. `findings` is still accepted and stored as descriptors. Every version is a superset of the one before."
   },
   "servers": [
@@ -660,6 +660,38 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TagCatalogEntry"
+            }
+          },
+          "group": {
+            "type": "object",
+            "description": "Contract 4: present when this job is the head of a page group. Read every page as one document and submit one result to this job_uid.",
+            "properties": {
+              "group_uid": {
+                "type": "string"
+              },
+              "page_count": {
+                "type": "integer"
+              },
+              "pages": {
+                "type": "array",
+                "items": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    {
+                      "$ref": {
+                        "$ref": "#/components/schemas/Document"
+                      }
+                    }
+                  ]
+                }
+              }
             }
           }
         }
