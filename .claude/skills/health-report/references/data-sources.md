@@ -128,3 +128,24 @@ user turn; quote sparingly.
   (`0.2 ≤ actual.hsCRP ≤ 2.5`) — they are the only B-grade blood numbers such a user has.
 - **Chats hold the clinical facts** for users with no documents: medications (阿立哌唑, 安博维 + 洛活喜, 二甲双胍,
   GLP-1 intent), pregnancy, POI, HBV carriage, home BP readings, pasted CBCs. Read every user turn.
+
+
+## `lab_orders` — QCS (量康) result PDFs nobody reads (found 2026-09-21)
+
+`lab_orders` rows (`lab_name='qcs'`, imported by a one-off `import-qcs-orders` script) carry
+`report_pdf_key` — an OSS key under `lab-reports/qcs/<order_id>/<goods_id>-<hash>.pdf` — for
+completed dried-blood-spot panels: 维生素 D, 同型半胱氨酸, 糖化血红蛋白, 尿酸, 120 项 IgG, AMH,
+NAD+, DNA 甲基化年龄, 有机酸 76 项, 基因检测, 肝脏健康评估 (N-glycan score), 免疫年龄评估.
+`lab_final_result.goods[].bodyindex_panels[].bodyindexes` is **empty** — the numbers live only in
+the PDF. `download-docs.js` only fetches `health_documents`, so these were missed for 23 of 41
+premier partners in the 2026-09-17 batch. Always list `lab_orders`, download every
+`report_pdf_key`, and note that an order with several goods stores only one key (乔通宇's
+免疫年龄评估 PDF was never saved). 2021-dated orders exist (墨霏) — old panels are 体质倾向, not
+current state.
+
+## Dev is a snapshot — real uploads land on prod
+
+Release miniapp builds talk to prod. On 2026-09-21 dev matched prod for most users but was
+missing 乔通宇's 21 screenshots, 黄毅's 6 new documents, 胡仿璇's 2, and recent chat turns.
+Before writing a report, compare the `extract.js` inventory on both, or extract with `--prod`
+(read-only) when the user's data is what matters.

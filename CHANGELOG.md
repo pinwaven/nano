@@ -8,6 +8,8 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- health-report skill: `references/data-sources.md` gains two traps found 2026-09-21 — `lab_orders.report_pdf_key` (QCS 量康 result PDFs that `download-docs.js` never fetches; 38 orders across 23 premier partners) and "dev is a snapshot, uploads land on prod". Batch README updated accordingly.
+
 - **LLM endpoint is configurable — dev moved to the Model Studio workspace-dedicated domain** · 2026-09-21
   - Before: `https://dashscope.aliyuncs.com` was hardcoded at 13 sites (12 OpenAI-compatible `getLlmClient`s across the worker handlers, `agent/index.js`, both `reports/workflow.js` copies and `scripts/update-changelog.js`, plus the native `GEN_URL` in `lib/avatarGen.js`).
   - Now: every site builds its URL from `DASHSCOPE_HOST` (`\`${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/compatible-mode/v1\``), so an unset variable is byte-for-byte the old behaviour. `s.yaml` (worker + agent) sets it to `https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com`; `s-prod.yaml` carries the same line commented out for the later flip. Per Aliyun's migration guide the dedicated domain is a pure host substitution (same paths, same key — provided the key belongs to that 业务空间), with a 3600 s request timeout instead of 600 s and a 99.9% SLA.
