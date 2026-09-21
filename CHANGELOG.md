@@ -20,6 +20,18 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
   - Data (dev): `temp/rehome-cross-env-ghost.js` merged the ghost into `c40d46a4` through `mergeUsers()` (185 events incl. the 6 ECG strips, zero conflicts), dropped its trial grant and twin row, cleared its `external_id`, and recomputed the winner's twin.
   - Tests: `tests/session-env-scope.test.js`.
 
+- **Viva AG: `subject_ref`, a change feed and a per-subject bundle for the agent's twin mirror** · 2026-09-20
+  - Before: every `/viva-ag/*` read was job-scoped and `job_uid` the only handle, so the agent (Curia, now on a server in Japan) re-downloaded a subject's whole twin on every claim, across a border, whether or not it had changed.
+  - After: `viva_ag_subjects` mints an opaque `subject_ref` (`vs_` + 24 hex) per AG subject at first claim — random, never derived from `user_id`, only for subjects who have invoked the agent. The claim carries `subject_ref` + `twin_changed_at`; `GET /viva-ag/twin-versions?since=` lists `{subject_ref, changed_at, removed}` for every AG subject in one query (`GREATEST` over every bundle table's change columns, `lib/twinMirror.js`); `GET /viva-ag/subject-bundle?subject_ref=` returns the twin-bundle shape outside any job with `twin_version` (sha256 over the bundle minus `generated_at`, presigned URLs and job fields — stable across mints). Both bearer-only, both in `VIVA_AG_ALLOWED_PATHS` and the OpenAPI spec; `subject_not_found` added to the reason vocabulary. No `user_id` leaves any of it.
+  - Migrations: `migration_viva_ag_subjects.sql`, `migration_viva_ag_subjects_backfill.sql` (dev applied; prod pending).
+  - Files: `lib/twinMirror.js` (new), `handlers/viva_ag.js`, `index.js`, `docs/viva-ag-{api.md,openapi.json}`, `tests/viva-ag-twin-mirror.test.js`.
+
+- **Portable `deploy:*` scripts — `scripts/s.sh` wrapper** · 2026-09-20
+  - Before: every `deploy:*` npm script was `source .env && s <fn> deploy -y`, which only worked on macOS/zsh. On Linux, npm runs scripts under `/bin/sh` (`sh: 1: source: not found`) and `s` is a local devDependency not on PATH (`s: command not found`). The `scripts/deploy-*.sh` helpers had the same bare `s` calls.
+  - After: `scripts/s.sh` `cd`s to the repo root, exports `.env` (`set -a; . ./.env`), and `exec`s `npx s "$@"`. All 15 `deploy:*` npm scripts and the 7 shell helpers call it; behaviour on macOS is unchanged.
+  - Also recorded from the first Linux deploy: a fresh checkout must `npm ci --omit=dev` inside each `src/functions/<fn>/` before deploying it — `s deploy` zips the directory as-is, and a worker shipped without `node_modules` returns 502 (`Cannot find module 'pg'`) on every `/api/*` route.
+  - Files: `scripts/s.sh` (new), `package.json`, `scripts/deploy-{all,admin,admin-prod,chat,coach,user-app,user-app-prod}.sh`, `CLAUDE.md` §30, `docs/deployment.md`.
+
 - **Channel QR codes for the root Waven miniprogram — branded login screen from a scan** · 2026-09-20
   - Before: only a brand-specific build (`APPID_TO_CHANNEL` in `utils/config.js`) could show a channel's logo before login; on the root app the logo only swapped in after `/wx-login` returned. There was also no 小程序码 generation anywhere in the codebase.
   - Worker: `GET /channel-branding?id=<channels.id>` (`handlers/channels.js`, public display fields only — name/key_name/logo/locale — keyed on the numeric id so a printed code survives a rename) and `GET /channels/:id/miniapp-qrcode` (mints `wxacode.getUnlimited` against `WX_APPID_WAVEN`, `page=pages/login/login`, `scene=ch:<id>`, `check_path:false`; channel admins scoped to their own tree; returns base64 JSON, never cached — the codes don't expire).

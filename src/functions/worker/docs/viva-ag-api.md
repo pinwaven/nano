@@ -320,6 +320,47 @@ inferring around a gap.
 
 ---
 
+### `GET /viva-ag/twin-versions?since=…` and `GET /viva-ag/subject-bundle?subject_ref=…`
+
+For a worker that keeps a **mirror** of each subject's twin so it does not re-download an
+unchanged twin on every claim. Both are bearer-only (no job token) and read-only.
+
+Every claimed job now carries `subject_ref` — an opaque handle, stable for the subject's
+lifetime, minted at their first claim and never derived from anything you could learn a user
+from — and `twin_changed_at`, nano's cheapest answer to "did this twin change", computed as
+the latest change instant across every table the bundle reads. Compare it to what your mirror
+holds; if it moved, pull before you work.
+
+```bash
+# who changed since my cursor (omit `since` for everyone; `removed: true` = account gone)
+curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
+  "https://nano-dev.gcn.net/api/viva-ag/twin-versions?since=2026-09-20T00:00:00Z"
+# → { "success": true, "as_of": "…", "since": "…", "truncated": false,
+#     "subjects": [ { "subject_ref": "vs_…", "changed_at": "…", "removed": false } ] }
+
+# the bundle for one subject, outside any job
+curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
+  "https://nano-dev.gcn.net/api/viva-ag/subject-bundle?subject_ref=vs_…"
+```
+
+`subject-bundle` is the `twin-bundle` shape (§4 above) with three differences: it scopes to
+every active document rather than a job's list, it has no `job` and an empty
+`job_questionnaires`, and it carries `twin_version` — a sha256 over the bundle with
+`generated_at`, presigned URLs and job fields removed, so two mints of an unchanged twin
+hash the same — plus `twin_changed_at`. The job-scoped `twin-bundle` carries `subject_ref`
+and `twin_version` too.
+
+Rules for a mirror, since this is the one place a subject's data may persist outside nano:
+
+- **Nano is the record.** Never write anything back; never serve the mirror to anyone.
+- **Removal propagates.** A subject listed with `removed: true` must be deleted from the
+  mirror in the same pass that learns of it. `removed` is reported regardless of `since`.
+- **`twin_changed_at` is a signal, not a proof.** Several of nano's tables carry `created_at`
+  only and are updated in place. Run a periodic full pass (omit `since`) and trust
+  `twin_version` for whether a bundle actually changed.
+- **Presigned URLs expire.** Fetch bytes at sync time; never store a URL.
+- Failure vocabulary adds `subject_not_found` (404-class) for an unknown or deleted subject.
+
 ## 5. Documents (large file download)
 
 Each entry in `layers.medical_records.documents`:

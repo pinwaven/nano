@@ -10,7 +10,7 @@ what survives.
 **This document is intended to be sufficient on its own.** If something here is ambiguous enough
 that you had to ask, that is a bug in this file — say so.
 
-**Contract version 3.** `GET /doc-extract/ping` declares the version the server speaks; every
+**Contract version 4.** `GET /doc-extract/ping` declares the version the server speaks; every
 version is a superset of the one before it, so a worker built against 1 or 2 keeps working. What 3
 added, in one list: `structured.version: 2` keeps tables as tables (§7); every item may carry a
 `source` cell reference into it; an `unmapped` row may carry a `suggested_key` that nano stores
@@ -169,6 +169,29 @@ them on the document themselves (a photographed report with no printed date is t
 `document.doc_date`.** A printed date still wins over it; never invent one, and never send today.
 Nano applies the same fallback on its side, and a user-set type/date/institution is never
 overwritten by your reading.
+
+**Contract 4 — page groups.** Photos of one report uploaded together arrive as one job. When
+the claim carries `group`, read **every page as one document**, in `pages[].page` order, and
+submit **one** result to this `job_uid`; nano stamps every page with your reading and closes
+their jobs. `document` is page 1 (the head) and is repeated as `pages[0]`, so a reader that
+takes `group.pages` as the document loses nothing. A single upload has no `group`.
+
+```jsonc
+"group": {
+  "group_uid": "…",
+  "page_count": 21,
+  "pages": [
+    { "page": 1, "document_id": 131, "url": "…", "etag": "…", "content_type": "image/jpeg", "size_bytes": 788503, "uploaded_at": "…", "url_expires_at": "…", "supports_range": true },
+    { "page": 2, "document_id": 132, "…": "…" }
+  ]
+}
+```
+
+How nano groups: queued jobs of one user whose documents are **images** uploaded within ten
+minutes of the previous one, never yet attempted. A PDF is already a whole document and is
+never grouped. Grouping happens at claim time, so a page uploaded after the head was claimed
+is a new job of its own. The date printed on page 1 applies to the whole report; `doc_date`
+on page 2 of a group is therefore no longer "undated" — it is page 1's.
 
 **`subject` carries no user id, name or contact of any kind.** `ref` is the `job_uid`. Enough to
 read an age- or sex-dependent reference range off a report, and nothing more.

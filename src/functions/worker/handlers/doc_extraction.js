@@ -63,7 +63,16 @@ const { formatToShanghai, calculateAge } = require('../lib/time-utils');
 // `findings` as the path into user_memory_facts. `findings` is still accepted and stored as
 // descriptors, which nothing acts on. A v2 worker keeps working; its findings just stop
 // reaching product filtering and formulation.
-const CONTRACT_VERSION = 3;
+// 4 (2026-09-21): page groups. Photos of one report uploaded together are grouped at claim time;
+// the head job's claim carries `group.pages[]` (every page, presigned, in upload order) and one
+// result submitted to the head closes every page. A single upload has no `group`. Additive: a v3
+// worker sees the head's own `document` exactly as before and reads page 1 alone, which is what it
+// did anyway. The members are then closed with the head's reading.
+const CONTRACT_VERSION = 4;
+// Photos uploaded within this many seconds of the previous one, by the same user, are pages of
+// one report. Three minutes covered 21 pages on the case that motivated this; ten is generous
+// without reaching a report uploaded the next morning.
+const DOC_GROUP_WINDOW_SECONDS = 600;
 
 const DEFAULT_LEASE_SECONDS = 600;
 const MIN_LEASE_SECONDS = 60;
@@ -137,6 +146,14 @@ async function _sweepExpiredLeases() {
               WHERE status IN ('claimed','processing')
                 AND claim_expires_at < NOW()
                 AND attempts >= max_attempts`
+        );
+        // Pages whose head just died of exhaustion die with it (see handlePostDocExtractFail).
+        await pool.query(
+            `UPDATE doc_extraction_jobs m
+                SET status = 'failed', error_reason = 'group_head_failed', completed_at = NOW(), updated_at = NOW()
+              WHERE m.status = 'grouped'
+                AND EXISTS (SELECT 1 FROM doc_extraction_jobs h
+                             WHERE h.group_uid = m.group_uid AND h.group_role = 'head' AND h.status = 'failed')`
         );
     } catch (err) {
         // A failed sweep must never block a claim — the next tick retries it.
@@ -402,12 +419,79 @@ async function handlePostDocExtractValidate(body) {
 
 // Atomically claims the head of the queue.
 //
+// Turn runs of queued photo uploads by one user into groups. Runs at claim time, like the sweep,
+// inside one transaction with the candidate rows locked, so two pollers cannot both group the
+// same run. Only images: a PDF is already a whole document. Only jobs never grouped and never
+// attempted: a head that failed retryably is back in the queue with its group intact.
+async function _groupQueuedJobs() {
+    // Grouping is a convenience for the reader; a claim must never fail because of it.
+    let client;
+    try { client = await pool.connect(); }
+    catch (err) { _logError('_groupQueuedJobs could not take a connection', err); return; }
+    try {
+        await client.query('BEGIN');
+        const { rows } = await client.query(
+            `SELECT j.id, j.user_id, j.created_at
+               FROM doc_extraction_jobs j
+               JOIN health_documents d ON d.id = j.document_id
+              WHERE j.status = 'queued' AND j.group_uid IS NULL AND j.attempts = 0
+                AND d.status = 'active' AND d.content_type LIKE 'image/%'
+              ORDER BY j.user_id, j.created_at
+              FOR UPDATE OF j SKIP LOCKED`
+        );
+        const runs = [];
+        let run = [];
+        for (const r of rows) {
+            const prev = run[run.length - 1];
+            if (prev && prev.user_id === r.user_id
+                && (new Date(r.created_at) - new Date(prev.created_at)) / 1000 <= DOC_GROUP_WINDOW_SECONDS) {
+                run.push(r);
+            } else {
+                if (run.length >= 2) runs.push(run);
+                run = [r];
+            }
+        }
+        if (run.length >= 2) runs.push(run);
+        for (const pages of runs) {
+            const groupUid = crypto.randomUUID();
+            const [head, ...members] = pages;
+            await client.query(
+                `UPDATE doc_extraction_jobs SET group_uid = $2, group_role = 'head', updated_at = NOW() WHERE id = $1`,
+                [head.id, groupUid]);
+            await client.query(
+                `UPDATE doc_extraction_jobs SET group_uid = $2, group_role = 'member', status = 'grouped', updated_at = NOW()
+                  WHERE id = ANY($1)`,
+                [members.map(m => m.id), groupUid]);
+            console.log(JSON.stringify({ level: 'INFO', msg: 'doc_extraction pages grouped', group_uid: groupUid, pages: pages.length }));
+        }
+        await client.query('COMMIT');
+    } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        _logError('_groupQueuedJobs failed', err);
+    } finally {
+        if (typeof client.release === 'function') client.release();
+    }
+}
+
+// Every page of a group, head first, in upload order — the documents the agent reads as one.
+async function _groupPages(groupUid) {
+    const { rows } = await pool.query(
+        `SELECT d.id, d.oss_key, d.filename, d.content_type, d.size_bytes, d.etag, d.doc_type,
+                d.doc_date::text AS doc_date, d.institution, d.note, d.created_at, j.group_role, j.id AS job_id
+           FROM doc_extraction_jobs j JOIN health_documents d ON d.id = j.document_id
+          WHERE j.group_uid = $1 AND d.status = 'active'
+          ORDER BY (j.group_role = 'head') DESC, j.created_at ASC`,
+        [groupUid]);
+    return rows;
+}
+
 // FOR UPDATE SKIP LOCKED is the correctness core: two pollers hitting this simultaneously get two
 // DIFFERENT jobs (or one job and null), never the same row twice. Do not rewrite this as a SELECT
 // followed by an UPDATE.
 async function handlePostDocExtractClaim(body) {
     try {
         await _sweepExpiredLeases();
+        await _groupQueuedJobs();
 
         const workerId = String(body?.worker_id || '').trim().slice(0, 120) || 'unknown';
         const leaseSeconds = clampInt(body?.lease_seconds, DEFAULT_LEASE_SECONDS, MIN_LEASE_SECONDS, MAX_LEASE_SECONDS);
@@ -424,12 +508,12 @@ async function handlePostDocExtractClaim(body) {
               WHERE id = (
                     SELECT id FROM doc_extraction_jobs
                      WHERE status = 'queued'
-                     ORDER BY created_at ASC
+                     ORDER BY priority DESC, created_at ASC
                      FOR UPDATE SKIP LOCKED
                      LIMIT 1
               )
             RETURNING id, job_uid, document_id, user_id, attempts, max_attempts,
-                      claim_expires_at, created_at`,
+                      claim_expires_at, created_at, group_uid`,
             [workerId, String(leaseSeconds), resultToken]
         );
         if (!job) return { success: true, job: null };
@@ -461,6 +545,19 @@ async function handlePostDocExtractClaim(body) {
         // previous summary would anchor a re-run on the reading the user is trying to correct.
         const [document] = presignDocuments([doc], DEFAULT_DOC_URL_TTL_SECONDS, { includeReading: false });
 
+        // Contract 4: the whole report when this job is the head of a page group. Page 1 is the
+        // head's own document, repeated here so a reader can take `group.pages` as the document.
+        let group = null;
+        if (job.group_uid) {
+            const pages = await _groupPages(job.group_uid);
+            const presigned = presignDocuments(pages, DEFAULT_DOC_URL_TTL_SECONDS, { includeReading: false });
+            group = {
+                group_uid: job.group_uid,
+                page_count: presigned.length,
+                pages: presigned.map((p, i) => ({ page: i + 1, ...p })),
+            };
+        }
+
         console.log(JSON.stringify({ level: 'INFO', msg: 'doc_extraction job claimed', job_uid: job.job_uid, worker_id: workerId, attempt: job.attempts }));
         return {
             success: true,
@@ -472,6 +569,7 @@ async function handlePostDocExtractClaim(body) {
                 lease_expires_at: formatToShanghai(job.claim_expires_at),
                 result_token: resultToken,
                 document,
+                ...(group ? { group } : {}),
                 subject: {
                     ref: job.job_uid,
                     age: user?.birth_date ? calculateAge(user.birth_date) : null,
@@ -855,6 +953,40 @@ async function handlePostDocExtractResult(body) {
                 JSON.stringify(rejected), reportId]
         );
 
+        // Contract 4: the pages read with this one. Each member document takes the head's type,
+        // date and institution (unless the person set them), a summary that says which page of
+        // what it is, and a structured pointer at the head; each member job closes as completed
+        // with the head's job_uid in its result. One report row, under the head; one message.
+        let pagesClosed = 0;
+        if (job.group_uid) {
+            const pages = await _groupPages(job.group_uid);
+            const total = pages.length;
+            for (let i = 0; i < pages.length; i++) {
+                const p = pages[i];
+                if (p.group_role === 'head') continue;
+                await pool.query(
+                    `UPDATE health_documents
+                        SET doc_type = CASE WHEN user_edited_at IS NOT NULL THEN doc_type ELSE $2 END,
+                            doc_date = CASE WHEN user_edited_at IS NOT NULL THEN doc_date ELSE COALESCE($3::date, doc_date) END,
+                            institution = CASE WHEN user_edited_at IS NOT NULL THEN institution ELSE COALESCE($4, institution) END,
+                            summary = $5, summary_generated_at = NOW(),
+                            extracted_json = $6::jsonb, extracted_json_at = NOW()
+                      WHERE id = $1`,
+                    [p.id, effectiveDocType, reportDate, document.institution,
+                     `第 ${i + 1} 页，共 ${total} 页 · 已与第 1 页合并解析`,
+                     JSON.stringify({ version: 2, grouped_into: doc.id, page: i + 1, of: total })]
+                );
+                await pool.query(
+                    `UPDATE doc_extraction_jobs
+                        SET status = 'completed', completed_at = NOW(), result = $2, health_report_id = $3,
+                            result_token = NULL, updated_at = NOW()
+                      WHERE id = $1 AND status = 'grouped'`,
+                    [p.job_id, JSON.stringify({ grouped_into: job.job_uid, page: i + 1, of: total }), reportId]
+                );
+                pagesClosed += 1;
+            }
+        }
+
         // Delivery failure must never make the agent think its work was rejected and retry the
         // whole extraction — the writes above are already committed.
         try {
@@ -880,7 +1012,7 @@ async function handlePostDocExtractResult(body) {
             _logError('doc_extraction delivery failed', deliverErr, { job_uid: job.job_uid });
         }
 
-        console.log(JSON.stringify({ level: 'INFO', msg: 'doc_extraction completed', job_uid: job.job_uid, ...counts, report_id: reportId }));
+        console.log(JSON.stringify({ level: 'INFO', msg: 'doc_extraction completed', job_uid: job.job_uid, ...counts, report_id: reportId, pages_closed: pagesClosed }));
         return {
             success: true,
             job_uid: job.job_uid,
@@ -913,6 +1045,16 @@ async function handlePostDocExtractFail(body) {
               WHERE id = $1`,
             [job.id, retryable ? 'queued' : 'failed', reason]
         );
+        // A head that dies terminally takes its pages with it: a grouped member is not
+        // claimable on its own and would otherwise sit in 'grouped' forever. A retryable
+        // failure leaves the group intact for the next attempt.
+        if (!retryable && job.group_uid) {
+            await pool.query(
+                `UPDATE doc_extraction_jobs
+                    SET status = 'failed', error_reason = 'group_head_failed', completed_at = NOW(), updated_at = NOW()
+                  WHERE group_uid = $1 AND status = 'grouped'`,
+                [job.group_uid]);
+        }
         return { success: true, requeued: retryable };
     } catch (err) {
         _logError('handlePostDocExtractFail failed', err, { job_uid: body?.job_uid });

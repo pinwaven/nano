@@ -77,7 +77,7 @@ const { handleGetFoodSensitivity } = require('./handlers/food_sensitivity');
 const { handleGetCreditBalance, handleGetCreditHistory, handlePostCreditWithdraw, handleGetUserWithdrawals, handleGetAdminWithdrawals, handlePutAdminWithdrawal, handleGetAdminUserCreditHistory, handlePostAdminUserCreditAdjustment } = require('./handlers/credits');
 const {
     handlePostVivaAgJob, handleGetVivaAgJobs, handleGetVivaAgJobDetail, handlePostVivaAgJobCancel, handleGetVivaAgResultUrl,
-    handleGetVivaAgPing, handlePostVivaAgClaim, handleGetVivaAgTwinBundle, handleGetVivaAgDocumentUrl,
+    handleGetVivaAgPing, handlePostVivaAgClaim, handleGetVivaAgTwinBundle, handleGetVivaAgTwinVersions, handleGetVivaAgSubjectBundle, handleGetVivaAgDocumentUrl,
     handleGetVivaAgHealthEvents, handleGetVivaAgLabResults, handleGetVivaAgBiomarkerHistory, handleGetVivaAgChatHistory,
     handlePostVivaAgHeartbeat, handlePostVivaAgResultUploadUrl, handlePostVivaAgResult, handlePostVivaAgFail,
     handlePostVivaAgQuestionnaire, resumeVivaAgJobForAssignment,
@@ -358,6 +358,8 @@ exports.handler = async (req, resp, context) => {
                 '/viva-ag/jobs/result', '/viva-ag/jobs/fail', '/viva-ag/result-upload-url',
                 '/viva-ag/jobs/questionnaire',
                 '/viva-ag/twin-bundle', '/viva-ag/document-url',
+                // The agent's twin mirror: a change feed and a per-subject bundle (bearer only).
+                '/viva-ag/twin-versions', '/viva-ag/subject-bundle',
                 // Paginated bulk-history resources the digest bundle deliberately omits.
                 '/viva-ag/health-events', '/viva-ag/lab-results',
                 '/viva-ag/biomarker-history', '/viva-ag/chat-history',
@@ -469,6 +471,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetVivaAgOpenApi();
             } else if (path === '/viva-ag/twin-bundle') {
                 result = await handleGetVivaAgTwinBundle(query, vivaAgJobToken);
+            } else if (path === '/viva-ag/twin-versions') {
+                result = await handleGetVivaAgTwinVersions(query);
+            } else if (path === '/viva-ag/subject-bundle') {
+                result = await handleGetVivaAgSubjectBundle(query);
             } else if (path === '/viva-ag/document-url') {
                 result = await handleGetVivaAgDocumentUrl(query, vivaAgJobToken);
             } else if (path === '/viva-ag/health-events') {
@@ -1620,6 +1626,34 @@ exports.handler = async (req, resp, context) => {
             headers: responseHeaders,
             body: isBinary ? (content || '') : (isText ? (content || '') : JSON.stringify(resultBody))
         };
+
+        // gzip for the two external agents when they ask for it and the body is
+        // worth it. Measured 2026-09-20 from the agent's host in Japan: the path out
+        // of this gateway is shaped to ~1-2 KB/s once a response lasts more than a
+        // few seconds, so a 245 KB subject-bundle stalled and was cut every time
+        // while a 48 KB response took 3 s. JSON of a twin compresses 6-10x, which
+        // puts every bundle in the regime that completes. Scoped to /viva-ag/ and
+        // /doc-extract/ so nothing about the miniapp's responses changes. The
+        // custom domain invokes this function in event mode (isStandardHttp is
+        // false there — confirmed via /viva-ag/ping), where a binary body travels
+        // base64 with isBase64Encoded: true; the standard path is kept in step.
+        const acceptEnc = String((event.headers && (event.headers['accept-encoding'] || event.headers['Accept-Encoding'])) || '');
+        const compressible = !isBinary && /gzip/i.test(acceptEnc)
+            && (path.startsWith('/viva-ag/') || path.startsWith('/doc-extract/'))
+            && Buffer.byteLength(responsePayload.body) >= 4096;
+        if (compressible) {
+            const gz = require('zlib').gzipSync(responsePayload.body);
+            responsePayload.headers = { ...responseHeaders, 'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding' };
+            responsePayload.isBase64Encoded = true;
+            responsePayload.body = gz.toString('base64');
+            if (isStandardHttp) {
+                resp.setStatusCode(statusCode);
+                Object.entries(responsePayload.headers).forEach(([k, v]) => resp.setHeader(k, v));
+                resp.send(gz);
+                return;
+            }
+            return responsePayload;
+        }
 
         if (isStandardHttp) {
             resp.setStatusCode(statusCode);

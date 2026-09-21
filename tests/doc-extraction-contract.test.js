@@ -412,5 +412,5 @@ test('the documented contract-3 limits match the code', () => {
         assert.ok(limits.includes(String(n)), `limit ${n} is enforced but not in the limits table`);
     }
     assert.ok(limits.includes(`depth ${val.MAX_STRUCTURED_DEPTH}`));
-    assert.ok(mdFlat.includes('Contract version 3'));
+    assert.ok(mdFlat.includes('Contract version 4'));
 });

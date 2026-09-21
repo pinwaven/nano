@@ -17,8 +17,8 @@ npx vite build
 
 echo "==> [4/4] Deploying Worker + Admin Panel..."
 cd "$ROOT"
-s worker deploy -y
-s admin-panel deploy -y
+"$ROOT/scripts/s.sh" worker deploy -y
+"$ROOT/scripts/s.sh" admin-panel deploy -y
 
 echo ""
 echo "Done! Worker, simulators, and admin panel deployed."

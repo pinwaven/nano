@@ -44,6 +44,14 @@ s dispatcher deploy  -y
 s worker deploy -y
 s admin-panel deploy -y
 
+# Or via npm — these go through scripts/s.sh, which loads .env and runs the
+# repo-local `s` with npx, so they work from sh on Linux as well as zsh on macOS.
+# On a fresh checkout, run `npm ci --omit=dev` inside src/functions/<fn>/ first:
+# `s deploy` zips the directory as-is and a function shipped without
+# node_modules answers 502 (`Cannot find module 'pg'`).
+npm run deploy:worker
+npm run deploy:worker:prod
+
 # Deploy only the domain routing
 s nano-domain deploy -y
 ```
