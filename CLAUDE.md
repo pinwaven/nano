@@ -664,3 +664,47 @@ supermarket's own app, shown as a `:::grocery` card with thumbnails. First suppl
 - Re-scrape → re-run the import: upsert by id, images skipped when present, missing ids retired
   (`is_active=false`). `is_food` overrides are lost on re-import — a known gap; add a column if
   they are ever hand-edited.
+
+## 47. Intent Routing — the UNDERSTAND Step — Rules
+
+A chat turn's intent label does not pick the wording of the answer, it picks the **template** —
+which rules, data, tools and vocabulary the model is handed — so a misread label does not degrade
+an answer, it writes it in the wrong world. `prompts/chat/understanding.js` + `lib/understanding.js`
+replace the message-only classifier with one reasoning call that reads the message with the last
+4 turns and a one-line user state. Full record, including the three end-to-end rounds and what
+was deliberately not built: [docs/ai-persona/11-intent-understanding.md](docs/ai-persona/11-intent-understanding.md).
+The harness that produced the numbers stays local (`temp/understanding-harness/`) — its data files
+are real prod chat text.
+
+- **`CHAT_UNDERSTANDING_MODE` decides who routes**: `off` (classifier alone, the pre-2026-09-22
+  behaviour), `shadow` (both run, the classifier still decides, every disagreement logged as
+  `msg:'route_disagreement'`), `on` (the understanding decides, the classifier runs only when it
+  fails). **The code default is `shadow`** — deploying it changes nothing until the env var says
+  so. `s.yaml` sets `on` (dev), `s-prod.yaml` `shadow`.
+- **Every failure returns `{ok:false}` and falls through to the classifier** — unparseable JSON, a
+  route outside `VALID_ROUTES`, a timeout (`UNDERSTANDING_TIMEOUT_MS`, 25s, inside the client's
+  own 60s). The understanding is never a new way for a turn to die.
+- **The route set is exactly the two prompt maps** in `handlers/chat.js` plus `formulate_dots`
+  (which has no template — it hands off to the miniapp's formulation tool). A new intent is a new
+  entry in `VALID_ROUTES`, both prompt maps and the prompt's ROUTES list, together.
+- **The five regex backstops are classifier-era patches.** When the understanding routed, only
+  the demotions **away from `formulate_dots`** still apply — that route starts a real formulation,
+  and a message matching one of those regexes is never a request to formulate. The promotions out
+  of `casual_chat`/`nutrition_question` are gated on `!understandingRoutes`: the mid-90s accuracy
+  (96–99% eval, 94–97% held out, over repeated runs) was measured without them, and left on they
+  would override a route chosen deliberately.
+- **Routing only.** The measured win is entirely in the turns where the two routers disagree;
+  injecting the understanding into GENERATE made same-route replies *worse* over 14 e2e pairs
+  (round 2). The one exception is `resolvedRequestLine()` — a single line, appended to the system
+  prompt, **only when `continuation_of` is set** («那运动呢？» is not answerable from the message).
+  It rides in `systemPrompt` so it crosses the EventBridge boundary (§22) with no new field.
+- `needs` maps to the old `required_data` keys for the three optional fetches only
+  (`plan`, `weight_history`, `store_products`); everything else is fetched unconditionally, by
+  design. **`store_products` requires a `required` need** — "helpful" is not the user asking, and
+  §37's reactive-only property is structural, not a prompt rule.
+- **Model: `qwen3.8-flash` with `enable_thinking: false`** (`UNDERSTANDING_THINKING`, default `off`) —
+  ties qwen3-max on accuracy; with its default reasoning on, every call hit the 25 s timeout. Re-measure
+  latency before turning it on or changing model; qwen-plus was slower and falsely routed to `formulate_dots`.
+- Cost: ~6 s / ~3.3k tokens against 0.7 s / 1.3k for the classifier, plus two small
+  indexed queries for history and state. Relevance on same-route turns is within run-to-run noise;
+  do not expect a general quality lift from it.
