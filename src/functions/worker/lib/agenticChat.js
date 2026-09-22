@@ -608,7 +608,16 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         const languagePin = /[\u4e00-\u9fff]/.test(rawReply)
             ? '\n\nLANGUAGE: the reply is in Simplified Chinese. Every sentence of your rewrite must be in Simplified Chinese too — never leave an English sentence, clause or parenthetical in it, and never translate a flagged sentence into English while fixing it. The correction hints above are written in English FOR YOU: never paste a hint\'s wording into the reply (「classified as normal (elevated threshold: >15%)」 reached a user this way) — restate what it means in Simplified Chinese. If a flagged claim cannot be supported, delete that sentence rather than hedging it in English.'
             : '';
-        const correctionPrompt = `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}${dimensionConstraintBlock}${actionPreserveBlock}${directivePreserveBlock}${languagePin}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
+        // An off_topic verdict (judgeTemplate.js) cannot be fixed by patching clauses: the whole
+        // reply is about the wrong subject, so "rewrite the SAME reply" would keep it wrong.
+        // Prod 2026-09-22: 「根据我的情况定制运动方案」 got a 盒马 substitution list; a clause-level
+        // REVISE round only tidied its availability claims. Restate the user's message and ask
+        // for a new answer to it instead.
+        const isOffTopic = (latestResult.violations || []).some(v => v.category === 'off_topic');
+        const rewriteFraming = isOffTopic
+            ? `Your previous reply answered the wrong question. The user's message this turn was:\n«${message}»\nWrite a NEW reply, in the same language and tone, that directly answers THAT message from the system prompt's rules and the data you have — do not keep the previous reply's subject, structure or tool-result narration, and do not describe why the earlier reply went elsewhere. Also fix:\n`
+            : `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n`;
+        const correctionPrompt = `${rewriteFraming}${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}${dimensionConstraintBlock}${actionPreserveBlock}${directivePreserveBlock}${languagePin}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
         try {
             // Timed as one unit (REVISE completion + RE-JUDGE) — that whole cost is what the
             // next round's fit check has to budget for.
