@@ -18,4 +18,15 @@ function messageAsksForMealPlan(message) {
   return MEAL_PLAN_TRIGGER_RE.test(message || '');
 }
 
-module.exports = { messageAsksForMealPlan, MEAL_PLAN_TRIGGER_RE };
+// Wider than MEAL_PLAN_TRIGGER_RE: does the message mention food at all? This is the gate
+// lib/agenticChat.js's buildForcedToolQueue puts on get_grocery_products — PLAN may still name
+// the tool for a message that never mentions food (it did, for 「根据我的情况定制运动方案」 on prod
+// 2026-09-22), but it is only FORCED when the user's own words are about eating. A false positive
+// here costs one advisory tool call; a false negative leaves tool_choice:'auto', not a ban.
+const FOOD_MENTION_RE = /(吃|餐|食|饮|菜|忌口|蔬|水果|坚果|肉|蛋|奶|豆|谷|粥|汤|零食|烹|煮|炒|超市|盒马|采购|购买)|(eat|food|meal|diet|recipe|ingredient|grocer|cook|breakfast|lunch|dinner|snack|vegetable|fruit|supermarket|shopping)/i;
+
+function messageMentionsFood(message) {
+  return FOOD_MENTION_RE.test(message || '');
+}
+
+module.exports = { messageAsksForMealPlan, messageMentionsFood, MEAL_PLAN_TRIGGER_RE, FOOD_MENTION_RE };

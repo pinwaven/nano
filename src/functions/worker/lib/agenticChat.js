@@ -1,6 +1,6 @@
 /**
  * Agentic plan -> generate -> judge -> revise loop for Viva's high-risk chat intents
- * (biomarker_question, nutrition_question, longevity_science, record_action).
+ * (biomarker_question, nutrition_question, lifestyle_question, longevity_science, record_action).
  *
  * Extends the existing single-retry pattern in handlers/chat.js (grounding-check retry,
  * fabrication-risk retry) into a bounded loop with an up-front PLAN step and a semantic
@@ -27,6 +27,7 @@ const { findRelevantEntries } = require('./knowledgeBase');
 const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
 const { messageAsksAboutFoodSensitivity } = require('../prompts/chat/foodSensitivityBlock');
 const { messageAsksAboutWearable } = require('./wearableDaily');
+const { messageMentionsFood } = require('../prompts/chat/mealPlanRequest');
 const { insightDates } = require('./wearableAnalysis');
 
 const GENERATE_MAX_ITERS = 3;
@@ -65,9 +66,16 @@ function buildForcedToolQueue(plan, message, validToolNames, maxForced) {
         // full window rather than the model extrapolating from three days.
         ...(messageAsksAboutWearable(message) ? ['get_wearable_daily'] : []),
     ];
+    // PLAN never sees the conversation or the system prompt — only the message and the intent
+    // label — and it named get_grocery_products for 「根据我的情况定制运动方案」 on prod
+    // 2026-09-22 because the label said nutrition_question. Forcing that call made GENERATE mine
+    // a week-old meal plan out of history for keywords and then answer the (empty) lookup instead
+    // of the user. So the grocery tool is forced only when the user's own words mention food;
+    // otherwise it stays available under tool_choice:'auto', which is a hint, not a mandate.
+    const advisoryOnly = (t) => t === 'get_grocery_products' && !messageMentionsFood(message);
     const queue = Array.from(new Set([
         ...deterministic,
-        ...(plan?.tools_needed || []),
+        ...(plan?.tools_needed || []).filter(t => !advisoryOnly(t)),
     ])).filter(t => validToolNames.has(t));
     return queue.slice(0, Math.max(0, maxForced));
 }
