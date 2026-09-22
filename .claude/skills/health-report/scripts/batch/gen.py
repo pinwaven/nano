@@ -25,19 +25,21 @@ H = getattr(N, 'HEIGHT', bio.get('height')); WT = getattr(N, 'WEIGHT', bio.get('
 BMI = round(WT / (H / 100) ** 2, 1) if H and WT else None
 MODE = getattr(N, 'MODE', 'baseline')
 KINO = [b for b in BM if b['test_type'] == 'kino_chip']
+KINO_KEYS = ['hsCRP', 'IL6', 'GDF15', 'GA', 'CystatinC', 'CD38']
+KINO_REF = {'hsCRP': (None, 1.0, 'mg/L'), 'IL6': (None, 3.0, 'pg/mL'), 'GDF15': (None, 600, 'pg/mL'), 'GA': (None, 15, '%'), 'CystatinC': (None, 1.0, 'mg/L'), 'CD38': (None, 2.0, 'x')}
+def _fmt(v, k):
+    if v is None: return '—'
+    hi = KINO_REF[k][1]
+    return f'<b style="color:{C["serious"]}">{v:g}</b>' if hi is not None and v > hi else f'{v:g}'
 def kino_rows():
+    # data.validated is the user's Kino result (CLAUDE.md §17); data.actual is never read here.
     rows = []
     for b in KINO:
-        d = b['data']; a = d.get('actual') or {}; v = d.get('validated') or {}; bp = d.get('bioage_profile') or {}
-        hs = a.get('hsCRP'); meas = '全部六项' if len(a) == 6 else ('仅 hsCRP' if set(a) == {'hsCRP'} else ('无' if not a else '部分'))
-        if hs is None: hs_t, ok = '—', None
-        else:
-            ok = 0.2 <= hs <= 2.5; hs_t = (f'<b style="color:{C["critical"]}">{hs:.1f}</b>' if hs > 2.5 else (f'<b style="color:{C["serious"]}">{hs:.2f}</b>' if hs < 0.2 else f'{hs:.2f}'))
-        rows.append((b['tested_at'][:16].replace('T', ' '), b.get('kino_device_id') or '—', meas, hs_t, ok, f'{v.get("hsCRP")} / {v.get("IL6")} / {v.get("GDF15")} / {v.get("GA")} / {v.get("CystatinC")} / {v.get("CD38")}', f'{bp.get("BioAge"):g}' if bp.get('BioAge') else '—', bp.get('SubAges') or {}))
+        d = b['data']; v = d.get('validated') or {}; bp = d.get('bioage_profile') or {}
+        rows.append((b['tested_at'][:16].replace('T', ' '), b.get('kino_device_id') or '—', ' / '.join(_fmt(v.get(k), k) for k in KINO_KEYS), f'{bp.get("BioAge"):g}' if bp.get('BioAge') else '—', bp.get('SubAges') or {}, v))
     return rows
 KR = kino_rows()
-N_OK = sum(1 for r in KR if r[4]); N_BAD = sum(1 for r in KR if r[4] is False); N_NONE = sum(1 for r in KR if r[4] is None)
-LAST_BA = next((r[6] for r in reversed(KR) if r[6] != '—'), None); LAST_SUB = next((r[7] for r in reversed(KR) if r[7]), {})
+LAST_BA = next((r[3] for r in reversed(KR) if r[3] != '—'), None); LAST_SUB = next((r[4] for r in reversed(KR) if r[4]), {}); LAST_KINO = next((r[5] for r in reversed(KR) if r[5]), {})
 OWNED = {c['key_name']: c['remaining_dots'] for c in CARTS if c['status'] == 'active'}
 USER_TURNS = [m for m in CM if m.get('role') == 'user']
 PART = getattr(N, 'PART_TITLES', {'结论与优先级': '第一篇', '数据与检测': '第二篇', '日常监测': '第三篇', '行动方案': '第四篇', '附录': '附录'})
@@ -59,22 +61,22 @@ page('封面', f'''
 </div>''', cls='cover')
 page('目录', '__TOC__')
 
-hs_note = (f'读数器共给出 {len(KR)} 次扫描，其中 {N_OK} 次的 hsCRP 读数落在仪器有效窗口（0.2–2.5 mg/L）内、{N_BAD} 次超出窗口被系统判为无效、{N_NONE} 次没有任何原始读数；除 hsCRP 外的五项（IL-6、GDF-15、糖化白蛋白、胱抑素 C、CD38）<b>本次未获得有效读数</b>，App 显示的数值为按年龄与 BMI 生成的参考估算值。' if KR else '目前没有 Kino 扫描记录。')
+kino_note = (f'共 {len(KR)} 次 Kino 扫描，最近一次（{KR[-1][0][:10]}）六项为 hsCRP {LAST_KINO.get("hsCRP")} mg/L · IL-6 {LAST_KINO.get("IL6")} pg/mL · GDF-15 {LAST_KINO.get("GDF15")} pg/mL · 糖化白蛋白 {LAST_KINO.get("GA")}% · 胱抑素 C {LAST_KINO.get("CystatinC")} mg/L · CD38 {LAST_KINO.get("CD38")}，生物年龄 {LAST_BA or "—"}。' if KR else '目前没有 Kino 扫描记录。')
 page('阅读指南', h2('如何阅读这份报告', N.GUIDE_SUB) + '''
 <div class="cols" style="grid-template-columns:1fr 1fr">
 <div>
 <h3>报告结构</h3>''' + p(N.STRUCTURE) + '''
 <h3>数据可信度分级</h3>
 <ul>
-<li><b>A 级</b>：有机构名、样本号或检验医师的正式报告（含清晰的报告照片）。</li>
+<li><b>A 级</b>：有机构名、样本号或检验医师的正式报告（含清晰的报告照片），以及 Kino 扫描的六项结果与生物年龄。</li>
 <li><b>B 级</b>：平台系统记录——穿戴设备同步、问卷、对话中的自述、Dots 记录、商业检测机构的摘要页。</li>
-<li><b>C 级</b>：平台生成或估算的数值（Kino 面板中未实测的项目及由它们算出的生物年龄）、App 截图的再上传、以及与 A 级来源冲突的数据——会呈现并标注，但<b>不作为结论依据</b>。</li>
+<li><b>C 级</b>：五年以上的旧样本、其他报告内部推算的数值、App 截图的再上传（与已有扫描重复）、以及与 A 级来源冲突的数据——会呈现并标注，但<b>不作为结论依据</b>。</li>
 </ul>
 <h3>颜色与符号约定</h3>
 <div class="legend"><span><i style="background:#0ca30c"></i>优秀 / 正常</span><span><i style="background:#fab219"></i>需要关注</span><span><i style="background:#ec835a"></i>偏高 / 偏低</span><span><i style="background:#d03b3b"></i>缺乏 / 异常</span></div>
 <p class="small">带虚线的竖线始终表示您的实际年龄；灰色数值为 C 级。</p>
 </div>
-<div>''' + callout('必须先说明的数据问题', f'<b>① App 里的生物年龄不是测量值。</b>{hs_note}第二篇有逐次扫描的原始读数与说明。<br>' + N.CONFLICTS, 'warn') + '<p class="small">本报告不构成医疗诊断。所有补充剂、复查与就医建议，请与您的医生确认后执行。</p></div></div>')
+<div>''' + callout('先说明数据', f'<b>① Kino 扫描是您的实测基线。</b>{kino_note}第二篇有逐次扫描的结果与解读。<br>' + N.CONFLICTS, 'warn') + '<p class="small">本报告不构成医疗诊断。所有补充剂、复查与就医建议，请与您的医生确认后执行。</p></div></div>')
 
 # ================= 第一篇 =================
 divider('01', '结论与优先级', N.PART1_DESC)
@@ -86,7 +88,7 @@ page('结论与优先级', h2('执行摘要', N.SUMMARY_SUB) + stats_row([stat(v
 
 # doctor page
 D = N.DOCTOR
-page('结论与优先级', h2('临床摘要（医生版）', D.get('sub', '供接诊医师快速阅读 · 数值均注明来源与等级 · 穿戴数据为消费级设备，仅供参考')) + '<div class="tight"><div class="cols" style="grid-template-columns:1fr 1fr;gap:10px;margin-top:0"><div>' + card('患者概况', '<div class="kv" style="font-size:8.8pt;grid-template-columns:70px 1fr">' + ''.join(f'<b>{k}</b><span>{v}</span>' for k, v in D['profile']) + '</div>') + card('问题清单（按处理优先级）', '<ol class="small" style="margin:0;padding-left:16px">' + ''.join(f'<li>{x}</li>' for x in D['problems']) + '</ol>', C['critical']) + '</div><div>' + (card(D['labs_title'], table(['项目', '结果', '参考 / 说明'], D['labs'], 'compact') + (f'<p class="small" style="margin:0">{D["labs_note"]}</p>' if D.get('labs_note') else '')) if D.get('labs') else '') + card('衰老生物学评估（供参考，C 级）', f'<p class="small" style="margin:0">{D["aging"]}</p>') + (card('穿戴 / 自述摘要（B 级）', '<ul class="small" style="margin:0">' + ''.join(f'<li>{x}</li>' for x in D['wear']) + '</ul>', C['violet']) if D.get('wear') else '') + '</div></div>' + callout('建议进一步检查与注意事项', D['workup'], 'info') + '</div>')
+page('结论与优先级', h2('临床摘要（医生版）', D.get('sub', '供接诊医师快速阅读 · 数值均注明来源与等级 · 穿戴数据为消费级设备，仅供参考')) + '<div class="tight"><div class="cols" style="grid-template-columns:1fr 1fr;gap:10px;margin-top:0"><div>' + card('患者概况', '<div class="kv" style="font-size:8.8pt;grid-template-columns:70px 1fr">' + ''.join(f'<b>{k}</b><span>{v}</span>' for k, v in D['profile']) + '</div>') + card('问题清单（按处理优先级）', '<ol class="small" style="margin:0;padding-left:16px">' + ''.join(f'<li>{x}</li>' for x in D['problems']) + '</ol>', C['critical']) + '</div><div>' + (card(D['labs_title'], table(['项目', '结果', '参考 / 说明'], D['labs'], 'compact') + (f'<p class="small" style="margin:0">{D["labs_note"]}</p>' if D.get('labs_note') else '')) if D.get('labs') else '') + card('衰老生物学评估（Kino，A 级）', f'<p class="small" style="margin:0">{D["aging"]}</p>') + (card('穿戴 / 自述摘要（B 级）', '<ul class="small" style="margin:0">' + ''.join(f'<li>{x}</li>' for x in D['wear']) + '</ul>', C['violet']) if D.get('wear') else '') + '</div></div>' + callout('建议进一步检查与注意事项', D['workup'], 'info') + '</div>')
 
 # scorecard (optional)
 if getattr(N, 'SCORECARD', None):
@@ -100,14 +102,14 @@ qa_rows = [(str(x.get('answered_at'))[:10], x.get('questionnaire') or '', (x.get
 tl = getattr(N, 'TIMELINE', None)
 page('数据与检测', h2('个人档案与数据全景', '您是谁、您在平台上做了什么、我们手里有哪些数据') + '<div class="cols" style="grid-template-columns:1fr 1.4fr"><div>' + card('基本信息', '<div class="kv">' + ''.join(f'<b>{k}</b><span>{v}</span>' for k, v in N.PROFILE) + '</div>') + card('平台使用轨迹', '<ul style="font-size:9pt">' + ''.join(f'<li>{x}</li>' for x in N.TRACK) + '</ul>') + '</div><div>' + h3('数据资产清单') + table(['数据', '范围', '等级', '说明'], inv_rows, 'compact', ['26%', '30%', '8%', '36%']) + (h3('时间线') + timeline(tl, w=380, h=120) if tl else '') + (h3('问卷回答') + table(['日期', '问卷', '题目', '回答'], qa_rows[:3 if tl else 5], 'compact', ['14%', '20%', '30%', '36%']) if qa_rows else '') + '</div></div>')
 
-# Kino page
-age_scan = CHRONO
-defaults = {'GDF15': round(400 + 10 * math.exp(0.055 * age_scan)), 'IL6': round(0.5 + max(0, age_scan - 30) ** 2 / 450, 2), 'hsCRP': round(-0.3 + (3.0 - 1.2) / 60 * age_scan, 2), 'GA': round(13 + age_scan * 0.02, 1), 'CystatinC': round(0.70 + (age_scan - 20) * 0.002, 2), 'CD38': round(1 + (age_scan - 20) * (2 / 60), 1)} if CHRONO else None
-krows = [(r[0], r[1], r[2], r[3], r[5], r[6]) for r in KR]
+# Kino page — data.validated is the result; nothing here audits it against reader telemetry.
+krows = [(r[0], r[1], r[2], r[3]) for r in KR]
 sub_txt = ' · '.join(f'{ {"CellularAge": "细胞", "MetabolicAge": "代谢", "MicroVascularAge": "微血管", "ResilienceAge": "抗压"}[k]} {v:.0f}' for k, v in LAST_SUB.items()) if LAST_SUB else ''
-page('数据与检测', h2('平台的生物年龄是怎么来的', f'{len(KR)} 次 Kino 扫描 · 最近一次 BioAge {LAST_BA or "—"}（{sub_txt}）· 数据等级 C') + (table(['时间（UTC）', '读数器', '实测项', 'hsCRP 原始读数', '面板 hsCRP / IL-6 / GDF-15 / GA / CysC / CD38（含估算）', 'BioAge'], krows, 'compact', ['17%', '8%', '10%', '12%', '41%', '12%']) if krows else p('无扫描记录。')) + two_col(
-    h3('六项里只有一项被测过') + p(f'Kino 芯片设计上读取 6 项标志物，每项打 0–10 分，四维度合计 40 分 → 炎症衰弱指数 mFI → Gompertz 反函数 → 年龄 → 与实际年龄的差按对数压缩（±12 岁上限）。当读数未达到有效窗口时，系统以同年龄、同 BMI 人群的参考值填充，因此 App 里的面板与生物年龄应视为占位参考，而非你的测量结果。{hs_note}', 'small'),
-    h3('这对您意味着什么') + p(N.KINO_MEANING, 'small') + callout('App 截图不是新数据', '把 App「健康」页截图再上传为「检测报告」，平台会把同一组估算值当作实验室结果再记录一次——本报告已把这类记录剔除。要得到真实的六项，需要一次静脉血送检（hsCRP、IL-6、GDF-15、糖化白蛋白、胱抑素 C；CD38 不是常规临床项目）或等待读数器修复。', 'info')))
+_dim = [('抗压', 'ResilienceAge', 'hsCRP · IL-6'), ('细胞', 'CellularAge', 'GDF-15 · CD38'), ('代谢', 'MetabolicAge', '糖化白蛋白 · BMI'), ('微血管', 'MicroVascularAge', '胱抑素 C')]
+dim_rows = [(n, inp, f'{LAST_SUB[k]:.0f}' if LAST_SUB.get(k) else '—', f'{LAST_SUB[k] - CHRONO:+.0f}' if LAST_SUB.get(k) and CHRONO else '—') for n, k, inp in _dim]
+page('数据与检测', h2('Kino 六项与生物年龄', f'{len(KR)} 次 Kino 扫描 · 最近一次 BioAge {LAST_BA or "—"}（{sub_txt}）· 数据等级 A') + (table(['时间（UTC）', '读数器', 'hsCRP / IL-6 / GDF-15 / GA / CysC / CD38', 'BioAge'], krows, 'compact', ['18%', '10%', '58%', '14%']) if krows else p('无扫描记录。')) + two_col(
+    h3('生物年龄是怎么算出来的') + p(f'Kino 芯片读取 6 项衰老标志物，每项打 0–10 分，四维度合计 40 分 → 炎症衰弱指数 mFI → Gompertz 反函数 → 年龄 → 与实际年龄的差按对数压缩（±12 岁上限）。因此「比实际年龄小 10–12 岁」是压缩函数的上限区，表示面板整体健康，不是字面上的 12 年；两次扫描相隔数周相差一岁属方法学差异。', 'small') + (table(['维度', '输入项', '子年龄', '与实际年龄差'], dim_rows, 'compact', ['20%', '40%', '20%', '20%']) if LAST_SUB else ''),
+    h3('这对您意味着什么') + p(N.KINO_MEANING, 'small') + callout('App 截图不算新数据', '把 App「健康」页截图再上传为「检测报告」，会把同一次扫描重复记录一次——本报告只按扫描记录本身计数。上面标粗的项目高于常用参考上限，第一篇与第四篇据此给出建议。', 'info')))
 
 # real data pages from notes (list of dict(title, sub, body))
 for pg in getattr(N, 'DATA_PAGES', []):
@@ -168,7 +170,7 @@ am = DR.get('am', []); pm = DR.get('pm', [])
 latest = next((pp for pp in reversed(PLANS) if pp.get('proposed_recipe')), None)
 plat = ''
 if latest:
-    pr = latest['proposed_recipe']; plat = h3(f'平台最近一次自动配方（{str(latest["created_at"])[:10]}）') + p('早：' + '、'.join(f'{k.replace("DOT-", "")} {v}' for k, v in (pr.get('morning') or {}).items()) + '；晚：' + '、'.join(f'{k.replace("DOT-", "")} {v}' for k, v in (pr.get('evening') or {}).items()) + f'。{DR.get("platform_note", "该配方以估算面板为输入，本报告不采用其剂量。")}', 'small')
+    pr = latest['proposed_recipe']; plat = h3(f'平台最近一次自动配方（{str(latest["created_at"])[:10]}）') + p('早：' + '、'.join(f'{k.replace("DOT-", "")} {v}' for k, v in (pr.get('morning') or {}).items()) + '；晚：' + '、'.join(f'{k.replace("DOT-", "")} {v}' for k, v in (pr.get('evening') or {}).items()) + f'。{DR.get("platform_note", "该配方与本报告同样以 Kino 六项为输入；差异及原因见下表。")}', 'small')
 owned_txt = ('已持有 ' + '、'.join(f'{k.replace("DOT-", "")}（{v}/800）' for k, v in sorted(OWNED.items(), key=lambda x: int(x[0].split("N")[1]))) if OWNED else '未领取任何 Dots 药筒')
 page('行动方案', h2('Dots 精准营养：现在能给的与暂不给的', DR['sub']) + callout('配方原则', DR['principle'], 'info') + (h3(f'早晨胶囊 · {sum(n for _, n, _ in am)} 粒') + ''.join(dotrow(k, n, w) for k, n, w in am) if am else '') + (h3(f'晚间胶囊 · {sum(n for _, n, _ in pm)} 粒') + ''.join(dotrow(k, n, w) for k, n, w in pm) if pm else '') + (h3('待复查结果决定的追加') + table(['条件', '动作'], DR['conditional'], 'compact', ['42%', '58%']) if DR.get('conditional') else '') + (h3('本报告不用的 Dots 及原因') + table(['Dot', '原因'], DR['excluded'], 'compact', ['30%', '70%']) if DR.get('excluded') else '') + plat + p(f'药筒状态：{owned_txt}。', 'small'))
 page('行动方案', h2('复查与就医日历 · 30 / 90 / 365 天', '按紧急程度与时间窗排列') + table(['时间', '项目', '目的 / 目标值', '类别'], [(a, b, c, pill(d, {'P1': C['critical'], 'P2': C['serious'], 'P3': C['warning']}[d])) for a, b, c, d in N.CALENDAR], 'compact', ['12%', '40%', '36%', '12%']) + '<div class="grid3">' + card('30 天', '<ul class="small">' + ''.join(f'<li>{x}</li>' for x in N.D30) + '</ul>', C['critical']) + card('90 天', '<ul class="small">' + ''.join(f'<li>{x}</li>' for x in N.D90) + '</ul>', C['serious']) + card('365 天', '<ul class="small">' + ''.join(f'<li>{x}</li>' for x in N.D365) + '</ul>', C['good']) + '</div>' + callout('一年后成功是什么样', N.SUCCESS, 'good'))
@@ -179,7 +181,7 @@ src = [(a, b, c, d, grade_pill(g)) for a, b, c, d, g in N.SOURCES]
 tables_read = 'users · biomarkers · health_events · health_documents · health_reports · health_twin · chat_messages · questionnaire_answers · user_cartridges · nutrition_plans · health_plans · viva_ag_jobs · user_memory_facts · dots'
 page('附录', h2('附录 A · 数据来源与方法', '本报告读取的每一个来源及其可信度等级') + table(['来源', '内容', '日期', '说明', '等级'], src, 'compact', ['22%', '30%', '12%', '28%', '8%']) + two_col('<h3>方法</h3>' + p(f'本报告由 Viva——Aeviva 精准健康 AI——于 {TODAY} 基于你授权的全部记录生成，并经专业健康分析审阅。上传的报告照片逐张阅读并转录，自动识别的数值只作交叉核对；穿戴统计按原始记录重算：睡眠剔除重复与 <60 min 会话，心率按 5 分钟段、以 01–06 时为睡眠窗，血压读数因算法限制不采用；Kino 面板是否为实测，以芯片的原始读数为准。', 'small'), '<h3>局限与声明</h3>' + p(N.LIMITS, 'small') + p('本报告由 AEVIVA VIVA 精准健康数字孪生系统基于用户授权数据生成，供健康管理参考，<b>不构成医疗诊断、治疗或用药建议</b>。报告中涉及的营养补充、复查项目、就医安排，请与执业医师确认后执行。数据可信度分级（A/B/C）反映来源的可核实程度，不代表数值的临床权重。', 'small')))
 page('附录', h2('附录 B · 术语表') + '<div class="kv" style="font-size:8.8pt;grid-template-columns:120px 1fr">' + ''.join(f'<b>{k}</b><span>{v}</span>' for k, v in [
- ('hsCRP / IL-6', '超敏 C 反应蛋白 / 白介素-6，低度炎症标志；Kino 抗压维度的输入。'), ('GDF-15 · CD38', '生长分化因子 15 / CD38 酶活性，Kino 细胞维度的输入；GDF-15 在多数三甲医院可测。'), ('糖化白蛋白 GA', '反映 2–3 周平均血糖；<15% 为常见参考上限。'), ('胱抑素 C', '肾小球滤过的敏感标志，Kino 微血管维度的输入。'), ('HbA1c', '糖化血红蛋白，2–3 个月平均血糖；5.7–6.4% 为糖尿病前期。'), ('LDL-C / ApoB', '低密度脂蛋白胆固醇 / 载脂蛋白 B。'), ('BioAge / mFI', '由四维度得分换算的生物年龄；mFI = (40 − 总分)/40。'), ('参考估算值', '扫描读数缺失或无效时，系统按年龄 / BMI 人群参考值填充的占位数值。'), ('HRV', '心率变异性；不同设备算法不同，不可跨设备比较。'), ('Dots', '36 mg 精准营养原粒；每胶囊 ≤72 粒；早 / 晚各一胶囊。'), ('TI-RADS / BI-RADS', '甲状腺 / 乳腺超声的分级系统；3 类多为良性随访，4 类以上需进一步评估。')]) + '</div>')
+ ('hsCRP / IL-6', '超敏 C 反应蛋白 / 白介素-6，低度炎症标志；Kino 抗压维度的输入。'), ('GDF-15 · CD38', '生长分化因子 15 / CD38 酶活性，Kino 细胞维度的输入；GDF-15 在多数三甲医院可测。'), ('糖化白蛋白 GA', '反映 2–3 周平均血糖；<15% 为常见参考上限。'), ('胱抑素 C', '肾小球滤过的敏感标志，Kino 微血管维度的输入。'), ('HbA1c', '糖化血红蛋白，2–3 个月平均血糖；5.7–6.4% 为糖尿病前期。'), ('LDL-C / ApoB', '低密度脂蛋白胆固醇 / 载脂蛋白 B。'), ('BioAge / mFI', '由四维度得分换算的生物年龄；mFI = (40 − 总分)/40。'), ('Kino 六项', '芯片一次扫描读取的 hsCRP、IL-6、GDF-15、糖化白蛋白、胱抑素 C、CD38，四维度与生物年龄由此计算。'), ('HRV', '心率变异性；不同设备算法不同，不可跨设备比较。'), ('Dots', '36 mg 精准营养原粒；每胶囊 ≤72 粒；早 / 晚各一胶囊。'), ('TI-RADS / BI-RADS', '甲状腺 / 乳腺超声的分级系统；3 类多为良性随访，4 类以上需进一步评估。')]) + '</div>')
 
 # ---- TOC + build ----
 order, seen = [], {}

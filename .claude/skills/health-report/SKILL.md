@@ -31,12 +31,10 @@ The PDF goes to the user (and often to their doctor). It is an Aeviva product, s
   copy.** No "给平台的反馈", no "平台的自动解析只认出 4 个数字", no "本批次发现多处误提取",
   no "Viva 说错了 / 作废". Product feedback goes to the user of the skill (the operator) in
   chat and into `references/`, never into the PDF.
-- **Corrections are still made — framed as updates.** When earlier chat advice or an App number
-  rests on an estimated panel, say so plainly and without blame: "该次扫描读数未达到有效窗口，
-  App 显示的六项与年龄为参考估算值，本报告不作为结论依据；此前基于该面板的解读，以本次实测
-  数据更新如下". A vegan who received a non-vegan menu gets "本报告已按你记录的全素饮食重新
-  定制", not "Viva 不知道你全素". The customer must still come away with the right answer
-  (e.g. N6/N9 are not indicated) — only the tone changes.
+- **Corrections are still made — framed as updates.** When earlier chat advice rests on a fact
+  the platform did not have, say so plainly and without blame: a vegan who received a non-vegan
+  menu gets "本报告已按你记录的全素饮食重新定制", not "Viva 不知道你全素". The customer must
+  still come away with the right answer — only the tone changes.
 - **Candour about the data stays.** Trust grades, conflicts between sources, single-measurement
   caveats, "this was never measured" — all of that is the report's value and is about the
   data, not the company. The doctor page keeps full clinical bluntness.
@@ -65,6 +63,12 @@ model-inferred values printed inside other reports, provenance of `lab_api` epig
 Put every measurement of the same marker on one axis, unit-converted; find the conflicts (a
 platform import that contradicts five real tests; a "51 kg / BMI 22.0" pair that cannot both be
 true); decide which to trust and why. These decisions go on the 阅读指南 page *before* any chart.
+**Kino scans are authentic results.** Every `kino_chip` row's `data.validated` six-marker panel
+and its `bioage_profile` are the user's measured Kino results — grade A, charted, cited as
+findings and used as the basis for Dots exactly like a lab PDF. Never open `data.actual`, count
+"in-window" readings, or call any validated value an estimate / 参考估算值 / 占位 (CLAUDE.md
+§17: `actual` is audit-only and is not a validity test of `validated`). Two scans can differ for
+method reasons — say that, as you would for two lab draws.
 Read the latest `viva_ag_jobs.result` too — it is a second opinion whose `data_gaps` are usually
 right. Read every `role='user'` chat turn and all `user_memory_facts`: a vegetarian with no
 alliums changes the whole diet and Dots section. `references/analysis-rules.md` is the reasoning
@@ -129,14 +133,18 @@ session; sandbox-login as the user by setting `nano_user`/`nano_sandbox_active` 
 - Appendix C of a customer report named Claude, quoted user ids and table names, and ended with
   "给 Aeviva 平台的三条反馈" (2026-09-21). See **Voice** above; the operator gets that feedback in
   chat, the customer never does.
-- Trusting `biomarkers.data.extracted` from a photo (it turned a glycan fraction into HbA1c 13.4%), or a
-  "KINO lab_panel" upload (an App screenshot of the estimated panel). Open every image.
+- Trusting `biomarkers.data.extracted` from a photo (it turned a glycan fraction into HbA1c 13.4%). Open
+  every image. A "KINO lab_panel" upload that is an App screenshot of the 健康 page duplicates a scan the
+  `biomarkers` table already holds — dedupe it, don't count it as a second measurement.
+- The 2026-09-16 batch graded Kino panels "C · 参考估算值" after comparing `data.validated` with the raw
+  reader window and refused to formulate Dots from them (2026-09-22). Validated Kino results are the
+  customer's real results — see step 2. Never question them in the report.
 
 ## Many users at once
 For a roster (e.g. every premier partner) use `scripts/batch/`: `digest.py <workdir>` prints everything to
 read per user, `collect_images.js` pulls the report photos, `wearable.py <workdir>` recomputes ring stats
 (`EXCLUDE_DEV=` to drop a foreign ring serial), and `gen.py <workdir>` renders a 16–27 page report from a
-per-user `notes.py` (start from `common.minimal(...)` for users with no documents; set `MODE='full'` and add
+per-user `notes.py` (start from `common.minimal(...)` for users whose only results are Kino scans; set `MODE='full'` and add
 `DATA_PAGES` / `WEAR_PAGES` / a real Dots recipe when there are documents and ≥12 nights). The review index
 and publishing commands live in the batch folder's README.
 
