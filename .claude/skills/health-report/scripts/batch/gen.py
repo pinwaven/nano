@@ -54,12 +54,12 @@ page('封面', f'''
 <div class="hero"><div class="n">{N.HERO[0]}</div><div class="l">{esc(N.HERO[1])}</div></div>
 <div class="meta">
 <div><b>报告日期</b>2026 年 9 月 16 日</div>
-<div><b>环境 / 用户</b>Dev · {esc(U['user_id'])} · {esc(U['channel']['key_name'])}</div>
+<div><b>出具</b>Viva · {esc(U['channel']['name'])}</div>
 <div><b>数据跨度</b>{esc(N.SPAN)}</div>
 </div>''', cls='cover')
 page('目录', '__TOC__')
 
-hs_note = (f'读数器共给出 {len(KR)} 次扫描，其中 {N_OK} 次的 hsCRP 读数落在仪器有效窗口（0.2–2.5 mg/L）内、{N_BAD} 次超出窗口被系统判为无效、{N_NONE} 次没有任何原始读数；除 hsCRP 外的五项（IL-6、GDF-15、糖化白蛋白、胱抑素 C、CD38）<b>从未被读数器测量</b>，均由平台估算器按年龄、BMI 与问卷生成。' if KR else '平台上没有 Kino 扫描记录。')
+hs_note = (f'读数器共给出 {len(KR)} 次扫描，其中 {N_OK} 次的 hsCRP 读数落在仪器有效窗口（0.2–2.5 mg/L）内、{N_BAD} 次超出窗口被系统判为无效、{N_NONE} 次没有任何原始读数；除 hsCRP 外的五项（IL-6、GDF-15、糖化白蛋白、胱抑素 C、CD38）<b>本次未获得有效读数</b>，App 显示的数值为按年龄与 BMI 生成的参考估算值。' if KR else '目前没有 Kino 扫描记录。')
 page('阅读指南', h2('如何阅读这份报告', N.GUIDE_SUB) + '''
 <div class="cols" style="grid-template-columns:1fr 1fr">
 <div>
@@ -106,7 +106,7 @@ defaults = {'GDF15': round(400 + 10 * math.exp(0.055 * age_scan)), 'IL6': round(
 krows = [(r[0], r[1], r[2], r[3], r[5], r[6]) for r in KR]
 sub_txt = ' · '.join(f'{ {"CellularAge": "细胞", "MetabolicAge": "代谢", "MicroVascularAge": "微血管", "ResilienceAge": "抗压"}[k]} {v:.0f}' for k, v in LAST_SUB.items()) if LAST_SUB else ''
 page('数据与检测', h2('平台的生物年龄是怎么来的', f'{len(KR)} 次 Kino 扫描 · 最近一次 BioAge {LAST_BA or "—"}（{sub_txt}）· 数据等级 C') + (table(['时间（UTC）', '读数器', '实测项', 'hsCRP 原始读数', '面板 hsCRP / IL-6 / GDF-15 / GA / CysC / CD38（含估算）', 'BioAge'], krows, 'compact', ['17%', '8%', '10%', '12%', '41%', '12%']) if krows else p('无扫描记录。')) + two_col(
-    h3('六项里只有一项被测过') + p(f'Kino 芯片设计上读取 6 项标志物，每项打 0–10 分，四维度合计 40 分 → 炎症衰弱指数 mFI → Gompertz 反函数 → 年龄 → 与实际年龄的差按对数压缩（±12 岁上限）。但当前读数器只输出 hsCRP；缺失的五项由「生物标志物估算器」按年龄与 BMI 的人群曲线生成，再叠加 ±25–40% 的随机噪声并锚定到上一次的估算值。{hs_note}', 'small') + (p(f'对 {CHRONO:g} 岁、BMI {BMI} 的人，估算器的默认值是：GDF-15 ≈ {defaults["GDF15"]}、IL-6 ≈ {defaults["IL6"]}、hsCRP ≈ {defaults["hsCRP"]}、GA ≈ {defaults["GA"]}%、胱抑素 C ≈ {defaults["CystatinC"]}、CD38 ≈ {defaults["CD38"]}——请与上表的面板值对照：它们落在默认值 ± 噪声之内。', 'small') if defaults and BMI else ''),
+    h3('六项里只有一项被测过') + p(f'Kino 芯片设计上读取 6 项标志物，每项打 0–10 分，四维度合计 40 分 → 炎症衰弱指数 mFI → Gompertz 反函数 → 年龄 → 与实际年龄的差按对数压缩（±12 岁上限）。当读数未达到有效窗口时，系统以同年龄、同 BMI 人群的参考值填充，因此 App 里的面板与生物年龄应视为占位参考，而非你的测量结果。{hs_note}', 'small'),
     h3('这对您意味着什么') + p(N.KINO_MEANING, 'small') + callout('App 截图不是新数据', '把 App「健康」页截图再上传为「检测报告」，平台会把同一组估算值当作实验室结果再记录一次——本报告已把这类记录剔除。要得到真实的六项，需要一次静脉血送检（hsCRP、IL-6、GDF-15、糖化白蛋白、胱抑素 C；CD38 不是常规临床项目）或等待读数器修复。', 'info')))
 
 # real data pages from notes (list of dict(title, sub, body))
@@ -177,9 +177,9 @@ page('行动方案', h2('复查与就医日历 · 30 / 90 / 365 天', '按紧急
 divider('附', '附录', '数据来源清单、扫描记录、术语与方法说明。')
 src = [(a, b, c, d, grade_pill(g)) for a, b, c, d, g in N.SOURCES]
 tables_read = 'users · biomarkers · health_events · health_documents · health_reports · health_twin · chat_messages · questionnaire_answers · user_cartridges · nutrition_plans · health_plans · viva_ag_jobs · user_memory_facts · dots'
-page('附录', h2('附录 A · 数据来源与方法', '本报告读取的每一个来源及其可信度等级') + table(['来源', '内容', '日期', '说明', '等级'], src, 'compact', ['22%', '30%', '12%', '28%', '8%']) + two_col('<h3>方法</h3>' + p(f'全部数据于 {TODAY} 从 dev 环境导出（extract.js）；上传的报告照片逐张人工阅读，平台自动提取的数值只作交叉核对（本批次发现多处误提取，如把糖链占比当作 HbA1c、把 App 截图当作检验单）。穿戴统计从 health_events 原始记录重算：睡眠剔除重复与 <60 min 会话；心率按 5 分钟段、以 01–06 时为睡眠窗；血压读数为算法固定区间，弃用。Kino 面板的估算判定依据 BiomarkerEstimator.js 源码与 data.actual 的项目集合。读取的表：{tables_read}。', 'small'), '<h3>局限与声明</h3>' + p(N.LIMITS, 'small') + p('本报告由 AEVIVA VIVA 精准健康数字孪生系统基于用户授权数据生成，供健康管理参考，<b>不构成医疗诊断、治疗或用药建议</b>。报告中涉及的营养补充、复查项目、就医安排，请与执业医师确认后执行。数据可信度分级（A/B/C）反映来源的可核实程度，不代表数值的临床权重。', 'small')))
+page('附录', h2('附录 A · 数据来源与方法', '本报告读取的每一个来源及其可信度等级') + table(['来源', '内容', '日期', '说明', '等级'], src, 'compact', ['22%', '30%', '12%', '28%', '8%']) + two_col('<h3>方法</h3>' + p(f'本报告由 Viva——Aeviva 精准健康 AI——于 {TODAY} 基于你授权的全部记录生成，并经专业健康分析审阅。上传的报告照片逐张阅读并转录，自动识别的数值只作交叉核对；穿戴统计按原始记录重算：睡眠剔除重复与 <60 min 会话，心率按 5 分钟段、以 01–06 时为睡眠窗，血压读数因算法限制不采用；Kino 面板是否为实测，以芯片的原始读数为准。', 'small'), '<h3>局限与声明</h3>' + p(N.LIMITS, 'small') + p('本报告由 AEVIVA VIVA 精准健康数字孪生系统基于用户授权数据生成，供健康管理参考，<b>不构成医疗诊断、治疗或用药建议</b>。报告中涉及的营养补充、复查项目、就医安排，请与执业医师确认后执行。数据可信度分级（A/B/C）反映来源的可核实程度，不代表数值的临床权重。', 'small')))
 page('附录', h2('附录 B · 术语表') + '<div class="kv" style="font-size:8.8pt;grid-template-columns:120px 1fr">' + ''.join(f'<b>{k}</b><span>{v}</span>' for k, v in [
- ('hsCRP / IL-6', '超敏 C 反应蛋白 / 白介素-6，低度炎症标志；Kino 抗压维度的输入。'), ('GDF-15 · CD38', '生长分化因子 15 / CD38 酶活性，Kino 细胞维度的输入；GDF-15 在多数三甲医院可测。'), ('糖化白蛋白 GA', '反映 2–3 周平均血糖；<15% 为常见参考上限。'), ('胱抑素 C', '肾小球滤过的敏感标志，Kino 微血管维度的输入。'), ('HbA1c', '糖化血红蛋白，2–3 个月平均血糖；5.7–6.4% 为糖尿病前期。'), ('LDL-C / ApoB', '低密度脂蛋白胆固醇 / 载脂蛋白 B。'), ('BioAge / mFI', '平台由四维度得分换算的生物年龄；mFI = (40 − 总分)/40。'), ('估算器', 'BiomarkerEstimator：读数缺失时按年龄 / BMI 人群曲线生成替代值的模块。'), ('HRV', '心率变异性；不同设备算法不同，不可跨设备比较。'), ('Dots', '36 mg 精准营养原粒；每胶囊 ≤72 粒；早 / 晚各一胶囊。'), ('TI-RADS / BI-RADS', '甲状腺 / 乳腺超声的分级系统；3 类多为良性随访，4 类以上需进一步评估。')]) + '</div>')
+ ('hsCRP / IL-6', '超敏 C 反应蛋白 / 白介素-6，低度炎症标志；Kino 抗压维度的输入。'), ('GDF-15 · CD38', '生长分化因子 15 / CD38 酶活性，Kino 细胞维度的输入；GDF-15 在多数三甲医院可测。'), ('糖化白蛋白 GA', '反映 2–3 周平均血糖；<15% 为常见参考上限。'), ('胱抑素 C', '肾小球滤过的敏感标志，Kino 微血管维度的输入。'), ('HbA1c', '糖化血红蛋白，2–3 个月平均血糖；5.7–6.4% 为糖尿病前期。'), ('LDL-C / ApoB', '低密度脂蛋白胆固醇 / 载脂蛋白 B。'), ('BioAge / mFI', '由四维度得分换算的生物年龄；mFI = (40 − 总分)/40。'), ('参考估算值', '扫描读数缺失或无效时，系统按年龄 / BMI 人群参考值填充的占位数值。'), ('HRV', '心率变异性；不同设备算法不同，不可跨设备比较。'), ('Dots', '36 mg 精准营养原粒；每胶囊 ≤72 粒；早 / 晚各一胶囊。'), ('TI-RADS / BI-RADS', '甲状腺 / 乳腺超声的分级系统；3 类多为良性随访，4 类以上需进一步评估。')]) + '</div>')
 
 # ---- TOC + build ----
 order, seen = [], {}

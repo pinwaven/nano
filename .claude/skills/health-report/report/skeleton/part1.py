@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Front matter + 第一篇. Every part file is a plain script that calls page() in reading order;
+# Front matter + 第一篇. Customer-facing: attribution is Viva; no ids, env names, table names (SKILL.md → Voice). Every part file is a plain script that calls page() in reading order;
 # build.py loads part*.py sorted by name. Keep `divider` here so later parts can `from part1 import divider`.
 import json, os
 from lib import *
@@ -23,7 +23,7 @@ page('封面', f'''
 <div class="hero"><div class="n">39.2</div><div class="l">生物年龄（岁）· 实际 51 · 年轻 11.8 年</div></div>
 <div class="meta">
 <div><b>报告日期</b>YYYY 年 M 月 D 日</div>
-<div><b>环境 / 用户</b>Dev · {esc(USER['user_id'])} · {esc(USER['channel']['key_name'])}</div>
+<div><b>报告编号</b>VIVA-YYYYMMDD-NN · 出具 Viva · {esc(USER['channel']['name'])}</div>
 <div><b>数据跨度</b>YYYY-MM → YYYY-MM</div>
 </div>
 ''', cls='cover')

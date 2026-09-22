@@ -91,7 +91,7 @@ table of the raw numbers → prose in two halves, **它与衰老的关系 / 为�
 A · 上传文件清单 (id, file, lab, date, sample, core result, grade — flag duplicate uploads) ·
 B · a full-data appendix for the largest panel (e.g. all 120 IgG values) ·
 C · 关键数据总表 (every number cited: value · date · source · grade) ·
-D · 术语表, 方法说明, 数据局限, 声明.
+D · 术语表, 方法说明（「本报告由 Viva——Aeviva 精准健康 AI——生成，并经专业健康分析审阅」；来源按用户能理解的名称列出，不写表名/脚本/环境/用户 id），数据局限, 声明. 绝不放「给平台的反馈」——那是给操作者的，写进 chat 和 references/。
 
 ## Two pages that earn their place
 - The **doctor summary** — a physician will not read 54 pages; this is the page they photograph.

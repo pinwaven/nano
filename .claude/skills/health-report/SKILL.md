@@ -14,6 +14,35 @@ extractor had reduced to "0 observations". Read everything first; decide the sto
 Deliverable: a PDF (Chinese unless told otherwise), plus — if asked — the report published into
 the app so it appears on the 数字孪生 subtab's 综合报告 card and the Viva AG panel.
 
+## Voice — the reader is a paying customer
+
+The PDF goes to the user (and often to their doctor). It is an Aeviva product, so:
+
+- **Attribution is Viva.** Cover, appendix and `summary.txt` say the report was produced by
+  Viva — Aeviva's precision-health AI — with expert review. Never name Claude, Anthropic,
+  "claude-code", a model, a script, or a database. (`viva_ag_jobs.claimed_by` stays
+  `claude-code-analyst` — that column is internal and never rendered.)
+- **No internal identifiers or plumbing.** No user ids, channel keys, "Dev/Prod", table or
+  column names (`lab_orders`, `biomarkers #1053`, `users.bio_data`), script names, extractor
+  internals, estimator source-code details. Cover meta is 报告日期 · 报告编号 · 数据跨度;
+  appendix sources are described in the user's words ("Kino 扫描记录", "个人档案",
+  "检测机构报告（量康）").
+- **Never criticise the platform, the product or Viva's earlier answers in the customer's
+  copy.** No "给平台的反馈", no "平台的自动解析只认出 4 个数字", no "本批次发现多处误提取",
+  no "Viva 说错了 / 作废". Product feedback goes to the user of the skill (the operator) in
+  chat and into `references/`, never into the PDF.
+- **Corrections are still made — framed as updates.** When earlier chat advice or an App number
+  rests on an estimated panel, say so plainly and without blame: "该次扫描读数未达到有效窗口，
+  App 显示的六项与年龄为参考估算值，本报告不作为结论依据；此前基于该面板的解读，以本次实测
+  数据更新如下". A vegan who received a non-vegan menu gets "本报告已按你记录的全素饮食重新
+  定制", not "Viva 不知道你全素". The customer must still come away with the right answer
+  (e.g. N6/N9 are not indicated) — only the tone changes.
+- **Candour about the data stays.** Trust grades, conflicts between sources, single-measurement
+  caveats, "this was never measured" — all of that is the report's value and is about the
+  data, not the company. The doctor page keeps full clinical bluntness.
+- Third-party documents (another provider's 422-page plan) may be assessed frankly on evidence,
+  in a "供你与医生讨论" register, never as a rival being attacked.
+
 ## Workflow
 
 ### 1. Extract — everything the platform holds
@@ -76,10 +105,10 @@ pages rather than shrink; zoom on dense ones. Send the PDF with `SendUserFile`.
 node .claude/skills/health-report/scripts/publish.js $WORK <pdf> <summary.txt>   # dev; --prod only if told
 ```
 Uploads to OSS and inserts a completed `viva_ag_jobs` row (`command_key full_analysis`,
-`claimed_by claude-code-analyst`), which `GET /api/twin-reports` lists on the 数字孪生 subtab's
+`claimed_by claude-code-analyst` — internal, never shown), which `GET /api/twin-reports` lists on the 数字孪生 subtab's
 综合报告 card (`components/user-health`) and the AG panel also shows. Write `summary.txt` as the
 chat-bubble-sized abstract (what was read, the headline, the three problems, where the recipe
-and doctor page are). It does not post a chat message; use `deliverTerminalMessage` if the user
+and doctor page are) — in Viva's voice, same rules as the PDF. It does not post a chat message; use `deliverTerminalMessage` if the user
 should be pinged. Verify in DevTools with `tools/wechat-automator` (connect to the running
 session; sandbox-login as the user by setting `nano_user`/`nano_sandbox_active` storage and
 `app.globalData`, then inspect `#health-comp` → `.tr-card`).
@@ -97,6 +126,9 @@ session; sandbox-login as the user by setting `nano_user`/`nano_sandbox_active` 
   labels colliding at 14 points — all only visible by rendering. Look.
 - `<block>` inside `<text>` and `bindtap` on a bare `<text>` don't work in WXML; the card's
   meta line is composed in JS.
+- Appendix C of a customer report named Claude, quoted user ids and table names, and ended with
+  "给 Aeviva 平台的三条反馈" (2026-09-21). See **Voice** above; the operator gets that feedback in
+  chat, the customer never does.
 - Trusting `biomarkers.data.extracted` from a photo (it turned a glycan fraction into HbA1c 13.4%), or a
   "KINO lab_panel" upload (an App screenshot of the estimated panel). Open every image.
 

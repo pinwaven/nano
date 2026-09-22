@@ -8,7 +8,7 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
-- health-report skill: `references/data-sources.md` gains two traps found 2026-09-21 — `lab_orders.report_pdf_key` (QCS 量康 result PDFs that `download-docs.js` never fetches; 38 orders across 23 premier partners) and "dev is a snapshot, uploads land on prod". Batch README updated accordingly.
+- health-report skill: customer-facing voice — `SKILL.md` gains a **Voice** section (attribution is Viva, never Claude/model/script; no user ids, env names, table names; no platform criticism in the PDF, corrections framed as updates), skeleton cover meta and `outline.md` appendix D follow it, `publish.js` result `source` is `viva-analyst`, and `scripts/batch/{gen,common}.py` default wording is rewritten to match. `references/data-sources.md` gains two traps found 2026-09-21 — `lab_orders.report_pdf_key` (QCS 量康 result PDFs that `download-docs.js` never fetches; 38 orders across 23 premier partners) and "dev is a snapshot, uploads land on prod". Batch README updated accordingly.
 
 - **LLM endpoint is configurable — dev moved to the Model Studio workspace-dedicated domain** · 2026-09-21
   - Before: `https://dashscope.aliyuncs.com` was hardcoded at 13 sites (12 OpenAI-compatible `getLlmClient`s across the worker handlers, `agent/index.js`, both `reports/workflow.js` copies and `scripts/update-changelog.js`, plus the native `GEN_URL` in `lib/avatarGen.js`).
