@@ -5,7 +5,7 @@
 notes.py supplies the narrative (see notes_template.py); everything numeric is computed here."""
 import sys, os, json, math, statistics as st, importlib.util, subprocess, re, collections
 from datetime import date, datetime, timedelta, timezone
-SKILL = '/Users/pin/waven/nano/.claude/skills/health-report/report'
+SKILL = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'report')
 sys.path.insert(0, SKILL)
 import lib
 from lib import *

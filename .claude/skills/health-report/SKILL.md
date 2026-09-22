@@ -45,7 +45,7 @@ The PDF goes to the user (and often to their doctor). It is an Aeviva product, s
 
 ### 1. Extract — everything the platform holds
 ```bash
-cd /Users/pin/waven/nano && set -a && source .env && set +a
+cd <repo> && set -a && source .env && set +a
 WORK=<scratchpad>/report-<user>        # per-user working dir; never inside the repo
 node .claude/skills/health-report/scripts/extract.js "<user_id or nickname>" $WORK        # dev; --prod only if told
 node .claude/skills/health-report/scripts/download-docs.js $WORK                            # PDFs + pdftotext

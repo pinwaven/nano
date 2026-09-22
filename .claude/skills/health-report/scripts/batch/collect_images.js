@@ -3,7 +3,7 @@
 //   set -a && source .env && set +a && node collect_images.js <workdir> [--all]
 // Default: health_checkup_report, lab_import, bp_reading biomarker photos + health_reports images. --all adds health_photo/food_photo.
 const fs = require('fs'), path = require('path');
-const ROOT = '/Users/pin/waven/nano';
+const ROOT = require('path').join(__dirname, '..', '..', '..', '..', '..');
 const OSS = require(path.join(ROOT, 'src/functions/worker/node_modules/ali-oss'));
 const W = process.argv[2]; const ALL = process.argv.includes('--all');
 const load = n => { const p = path.join(W, 'data', n + '.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : []; };

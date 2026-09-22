@@ -27,7 +27,7 @@ if (!fs.existsSync(docsJson)) { console.error(`no ${docsJson} — run extract.js
 for (const k of ['OSS_ACCESS_KEY_ID', 'OSS_ACCESS_KEY_SECRET', 'OSS_BUCKET']) if (!process.env[k]) { console.error(`${k} not set — \`set -a && source .env && set +a\``); process.exit(1); }
 
 (async () => {
-  const client = new OSS({ region: process.env.OSS_REGION || 'oss-cn-shanghai', accessKeyId: process.env.OSS_ACCESS_KEY_ID, accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET, bucket: process.env.OSS_BUCKET, secure: true });
+  const client = new OSS({ region: process.env.OSS_REGION || 'oss-cn-shanghai', accessKeyId: process.env.OSS_ACCESS_KEY_ID, accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET, bucket: process.env.OSS_BUCKET, secure: true, timeout: 600000 });   // large scanned PDFs exceed the 60 s default
   const docs = JSON.parse(fs.readFileSync(docsJson, 'utf8')).filter(d => d.status === 'active');
   const docDir = path.join(outdir, 'docs'), txtDir = path.join(outdir, 'txt');
   fs.mkdirSync(docDir, { recursive: true }); fs.mkdirSync(txtDir, { recursive: true });
@@ -35,9 +35,17 @@ for (const k of ['OSS_ACCESS_KEY_ID', 'OSS_ACCESS_KEY_SECRET', 'OSS_BUCKET']) if
   for (const d of docs) {
     const safe = String(d.filename || `doc${d.id}`).replace(/[\/\s]/g, '_');
     const base = `doc${String(d.id).padStart(2, '0')}_${safe}`;
-    const pdf = path.join(docDir, base.endsWith('.pdf') ? base : base + '.pdf');
+    const ext = (path.extname(d.oss_key) || '.pdf').toLowerCase();
+    const isPdf = ext === '.pdf';
+    const pdf = path.join(docDir, base.toLowerCase().endsWith(ext) ? base : base + ext);
     try {
-      await client.get(d.oss_key, pdf);
+      await client.get(d.oss_key, pdf, { timeout: 600000 });
+      if (!isPdf) {   // photos: keep the real extension, no text layer — Read them as images
+        const dup = d.etag && seen.has(d.etag) ? ` DUPLICATE of doc${seen.get(d.etag)}` : '';
+        if (d.etag && !seen.has(d.etag)) seen.set(d.etag, d.id);
+        console.log(`doc${d.id}\t${d.doc_type || '-'}\t${d.doc_date ? String(d.doc_date).slice(0, 10) : '-'}\timage\t${fs.statSync(pdf).size} bytes\t${d.filename}${dup} (photo — open it)`);
+        continue;
+      }
       let pages = '?', chars = 0;
       try { pages = execSync(`pdfinfo "${pdf}" 2>/dev/null | awk '/^Pages:/{print $2}'`).toString().trim(); } catch (_) {}
       const txt = path.join(txtDir, path.basename(pdf, '.pdf') + '.txt');
