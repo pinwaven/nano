@@ -33,7 +33,7 @@ One retry only. The correction prompt (`_buildCorrectionPrompt`) is built dynami
 
 ### 2. JUDGE inside the agentic loop
 
-Supersedes #1 whenever `useAgenticLoop === true` — i.e. for both personas, on all 4 high-risk intents. See [03-agentic-chat-loop.md](03-agentic-chat-loop.md).
+Supersedes #1 whenever `useAgenticLoop === true` — i.e. for both personas, on all 5 high-risk intents. See [03-agentic-chat-loop.md](03-agentic-chat-loop.md).
 
 ### Separately: `verifyBiomarkerGrounding()`
 

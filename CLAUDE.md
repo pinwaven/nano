@@ -206,9 +206,12 @@ Users pick a profile avatar from a gallery of 40 pregenerated characters (`compo
 ## 21. Agentic Plan→Generate→Judge→Revise Loop — Rules
 
 `runAgenticTurn()` (`lib/agenticChat.js`) runs for every intent in `HIGH_RISK_INTENTS`
-(`biomarker_question`, `nutrition_question`, `longevity_science`, `record_action`) — gated on
-intent, **not** persona (§16); `casual_chat`/`emotional_support` take the classic path for both
-personas. Full record: [docs/ai-persona/03-agentic-chat-loop.md](docs/ai-persona/03-agentic-chat-loop.md).
+(`biomarker_question`, `nutrition_question`, `lifestyle_question`, `longevity_science`,
+`record_action`) — gated on intent, **not** persona (§16); `casual_chat`/`emotional_support` take
+the classic path for both personas. `lifestyle_question` (exercise / sleep-routine plans, added
+2026-09-22) is agentic because it cites the same biomarkers, sub-ages and wearable averages as
+`biomarker_question`; its template carries no grocery/store/formulation vocabulary. Which intent a
+turn gets is decided by §47's router. Full record: [docs/ai-persona/03-agentic-chat-loop.md](docs/ai-persona/03-agentic-chat-loop.md).
 
 - **Budget per turn:** PLAN 1 · GENERATE ≤3 (`GENERATE_MAX_ITERS`) · JUDGE 1 · REVISE ≤2
   (`REVISE_MAX_ROUNDS`) · re-JUDGE ≤2. Logged as `turn_budget_used`. Never loop past it.
