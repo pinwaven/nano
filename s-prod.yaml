@@ -81,6 +81,12 @@ resources:
         # Comment out to fall back to the shared dashscope.aliyuncs.com host.
         DASHSCOPE_HOST: "https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com"
         MODEL: "qwen-plus-latest"
+        # The UNDERSTAND step (CLAUDE.md 47). Shadow on prod: both routers run, the classifier
+        # still decides, and every disagreement is logged (msg: route_disagreement) — the measured
+        # win is entirely in the turns where the two differ, so that log is what the decision to
+        # set "on" is made from. "off" drops back to the classifier alone.
+        CHAT_UNDERSTANDING_MODE: "shadow"
+        UNDERSTANDING_MODEL: "qwen3.8-flash"
         WX_APPID: "wxecbcf00ce480fcf2"
         WX_SECRET: ${env(WX_SECRET)}
         WX_APPID_WAVEN: "wx84bd7d00a6fd626e"

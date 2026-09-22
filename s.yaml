@@ -84,6 +84,11 @@ resources:
         # dashscope.aliyuncs.com host when unset — see docs/deployment.md.
         DASHSCOPE_HOST: "https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com"
         MODEL: "qwen-plus-latest"
+        # The UNDERSTAND step (CLAUDE.md 47). "on" here so dev actually routes on it; prod runs
+        # "shadow" (both routers, classifier decides, disagreements logged) until the prod traffic
+        # comparison says otherwise. "off" restores the classifier-only behaviour with no deploy.
+        CHAT_UNDERSTANDING_MODE: "on"
+        UNDERSTANDING_MODEL: "qwen3.8-flash"
         WX_APPID: "wxecbcf00ce480fcf2"
         WX_SECRET: ${env(WX_SECRET)}
         WX_APPID_WAVEN: "wx84bd7d00a6fd626e"
