@@ -466,3 +466,30 @@ test('a finding is stored as a descriptor, with its category mapped and a from_f
     const bare = validateExtraction({ document: { doc_date: '2026-08-12' }, tags: [{ kind: 'fact', tag_key: 'allergy:shellfish', category: 'allergy', text: '海鲜过敏', confidence: 0.9 }] }, CATALOG);
     assert.equal(bare.tags[0].kind, 'descriptor');
 });
+
+// ── units Chinese labs actually print (2026-09-22) ──────────────────────────────────────────
+test('B12 in ng/mL, TSH in µIU/mL, FT4 in ng/dL and FT3 in pg/mL are converted, not refused', () => {
+    const cat = [
+        { key_name: 'VitaminB12', unit: 'pmol/L', display_name_zh: '维生素B12', aliases: [] },
+        { key_name: 'TSH', unit: 'mIU/L', display_name_zh: '促甲状腺激素', aliases: [] },
+        { key_name: 'FT4', unit: 'pmol/L', display_name_zh: '游离甲状腺素', aliases: [] },
+        { key_name: 'FT3', unit: 'pmol/L', display_name_zh: '游离三碘甲状腺原氨酸', aliases: [] },
+        { key_name: 'HbA1c', unit: '%', display_name_zh: '糖化血红蛋白', aliases: [] },
+    ];
+    const body = { document: { doc_type: 'lab_report', doc_date: '2026-08-15' }, summary: 'x', findings: [], observations: [
+        { key_name: 'VitaminB12', value: 0.07, unit: 'ng/mL', confidence: 0.9 },
+        { key_name: 'TSH', value: 6.06, unit: 'μIU/mL', confidence: 0.9 },
+        { key_name: 'FT4', value: 1.24, unit: 'ng/dL', confidence: 0.9 },
+        { key_name: 'FT3', value: 3.3, unit: 'pg/mL', confidence: 0.9 },
+        { key_name: 'HbA1c', value: 38, unit: 'mmol/mol', confidence: 0.9 },
+    ] };
+    const r = validateExtraction(body, cat, [], { fallbackDocDate: '2026-08-15', tagCatalogRows: [] });
+    assert.deepEqual(r.rejected, []);
+    const by = Object.fromEntries(r.observations.map(o => [o.key_name + ':' + o.converted_from, o]));
+    assert.equal(by['VitaminB12:ng/mL'].value, 51.66);          // 0.07 ng/mL × 738
+    assert.equal(by['VitaminB12:ng/mL'].unit, 'pmol/L');
+    assert.equal(by['TSH:μIU/mL'].value, 6.06);                  // identical scale
+    assert.equal(by['FT4:ng/dL'].value, 15.959);                 // × 12.87
+    assert.equal(by['FT3:pg/mL'].value, 5.069);                  // × 1.536
+    assert.equal(by['HbA1c:mmol/mol'].value, 5.628);             // IFCC 38 → NGSP 5.6 %
+});

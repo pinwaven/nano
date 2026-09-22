@@ -775,16 +775,23 @@ These pairs are converted for you. Anything else is `unit_mismatch`.
 |---|---|---|
 | `FPG`, `TotalCholesterol`, `LDL`, `HDL`, `Triglycerides`, `BUN` | mmol/L | `mg/dL` |
 | `Creatinine`, `UricAcid` | umol/L | `mg/dL` |
-| `VitaminD` | nmol/L | `ng/mL` |
+| `VitaminD` | nmol/L | `ng/mL`, `ug/L` |
 | `hsCRP`, `CRP` | mg/L | `mg/dL` |
 | `Hemoglobin` | g/L | `g/dL` |
-| `VitaminB12` | pmol/L | `pg/mL` |
-| `Folate` | nmol/L | `ng/mL` |
-| `Estradiol` | pmol/L | `pg/mL` |
-| `Testosterone` | nmol/L | `ng/mL` |
-| `Cortisol` | nmol/L | `ug/dL` |
+| `VitaminB12` | pmol/L | `pg/mL`, `ng/mL` |
+| `Folate` | nmol/L | `ng/mL`, `ug/L` |
+| `Estradiol` | pmol/L | `pg/mL`, `ng/L` |
+| `Testosterone` | nmol/L | `ng/mL`, `ng/dL` |
+| `Cortisol` | nmol/L | `ug/dL`, `ug/L` |
 | `TBIL`, `DBIL`, `IBIL` | umol/L | `mg/dL` |
 | `ALB`, `TP`, `GLB`, `MCHC` | g/L | `g/dL` |
+| `TSH` | mIU/L | `uIU/mL` (identical) |
+| `Insulin` | uIU/mL | `mIU/L` (identical), `pmol/L` |
+| `FT4` | pmol/L | `ng/dL` |
+| `FT3` | pmol/L | `pg/mL` |
+| `Ferritin` | ug/L | `ng/mL` (identical) |
+| `Hcy` | umol/L | `mg/L` |
+| `HbA1c` | % | `mmol/mol` (IFCC → NGSP) |
 
 `LpA` is deliberately absent: nmol/L ↔ mg/L for lipoprotein(a) is not a fixed factor. Send it in
 mg/L or leave it in `unmapped` with the printed unit.
