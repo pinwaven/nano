@@ -1,7 +1,9 @@
 # Intent Routing — the UNDERSTAND Step
 
 Record of why the message-only intent classifier was replaced, what replaced it, what was
-measured, and what was deliberately *not* built. Rules summary: CLAUDE.md §47.
+measured, and what was deliberately *not* built. Rules summary: CLAUDE.md §47. How it runs on a
+turn — inputs, output, what is consumed, logs, config, and how to extend it — is the
+[Runtime reference](#runtime-reference) at the end.
 
 ## The problem
 
@@ -152,3 +154,160 @@ inline too, but finish in seconds.
 To re-measure after any prompt edit: `temp/understanding-harness/07-run-shipped.js` scores the
 shipped modules against both gold sets. The harness itself stays local — its data files are real
 prod chat text.
+
+## Runtime reference
+
+### Where it runs
+
+Only in `handlePostChat` (`handlers/chat.js`, "Step 1"), the one handler that has to work out what
+a free-text message is. The other chat entry points already know their answer shape and never
+route: `handlePostHealthAdvice` and `handlePostFormulaDots` have fixed templates, the daily
+check-in (§29) has its own prompt, and `handleChatGenerateEvent` receives the intent and the
+finished `systemPrompt` in the `chat.generate` payload (§22), so the async half never re-routes.
+
+### One turn, step by step
+
+```
+handlePostChat
+ ├─ mode = understandingMode()                       CHAT_UNDERSTANDING_MODE, default 'shadow'
+ ├─ started concurrently:
+ │    understanding  = fetchUnderstandingInputs() → runUnderstanding()     skipped when 'off'
+ │    classifier     = intentClassifier (message only, max_tokens 60)      skipped when 'on'
+ ├─ understandingRoutes = mode === 'on' && understanding.ok
+ │    true  → intent = understanding.route, required_data = requiredDataFrom(needs)
+ │    false → intent/required_data from the classifier
+ │            ('on' + failed understanding starts the classifier only now: the one serial path)
+ ├─ log 'Chat intent classified'   (routed_by, classifier_intent, understanding summary)
+ ├─ five regex backstops           (the promotions only when !understandingRoutes)
+ ├─ log 'route_disagreement'       (if the understanding's route ≠ the final intent)
+ ├─ formulate_dots branch / optional fetches gated on required_data
+ └─ systemPrompt = template(llmContext) + resolvedRequestLine()   (only when it routed and
+                                                                  continuation_of is set)
+```
+
+In `shadow` the understanding is awaited even though it doesn't decide. It runs concurrently with
+the classifier, so it adds the difference between the two (~5 s), not the sum. That sits inside
+a sync turn's 30 s client wait (`CHAT_WAIT_SYNC_MS`, §22).
+
+### Inputs — `fetchUnderstandingInputs(pool, user_id, personaType)`
+
+Two queries in parallel, run **before** this turn's message is written to `chat_messages`, so the
+history never includes the message being routed:
+
+| input | source | shape |
+|---|---|---|
+| `history` | last 4 `chat_messages` rows, `role IN ('user','ai')`, same `persona_type` | oldest first, each capped at 600 chars (500 again inside the prompt) |
+| `state` | one `users` row plus `EXISTS`/subqueries | `language`, `has_kino` (any `kino_chip` biomarker), `has_wearable` (`wearable_brand` set), `has_nutrition_plan` (an `active` plan), `facts` (≤6 active `user_memory_facts.fact_zh`), `health_plans` (active `custom_name_zh`) |
+
+Either query failing degrades rather than throws: history becomes `[]`, and state becomes
+`null`, which the prompt renders as `(unknown)`. It must not become a row of `false`s, because the
+route depends on it (see *Measured*).
+
+### Output — the JSON the prompt asks for
+
+| field | meaning | consumed by |
+|---|---|---|
+| `reasoning` | 2–5 sentences of reading the message | nothing (it only makes the model think before routing) |
+| `request` | the message restated in Chinese, continuations resolved | `resolvedRequestLine()`, both log lines |
+| `family` | one of 17 open families (`explain_data`, `advice_plan`, `symptom_concern`, `meta_complaint`, `form_answer`, …) | logs only |
+| `topics` | 1–4 free tags | logs only |
+| `continuation_of` | `null` or the earlier turn this depends on | gates `resolvedRequestLine()` |
+| `needs` | `{required:[], helpful:[]}` of tool names + `store_products` | `requiredDataFrom()` |
+| `actions` | requested side effects | nothing — action tails are still parsed from the reply (§27) |
+| `must_not`, `success_criteria` | shape-of-answer checks | nothing, deliberately (see *What was deliberately not built*) |
+| `confidence`, `clarify` | how sure; one clarifying question if it isn't | logs only — no clarify flow exists |
+| `route` | one of `VALID_ROUTES` | the intent, when it routes |
+
+`family` is not `route`. Families describe what the user wants and routes pick one of the
+existing templates. Several families share a route: `symptom_concern` and `explain_data` →
+`biomarker_question`; `commerce` and `dots_question` → `nutrition_question`; `small_talk`,
+`app_usage` and `meta_complaint` usually → `casual_chat`. The prompt's `ROUTES` list is what
+teaches that mapping.
+
+A response is **unusable** when it doesn't parse (after stripping ```` ``` ```` fences) or when
+`route` is not in `VALID_ROUTES`. Either way the result is `{ok:false}` and the classifier routes
+instead. There is no partial use and no repair.
+
+### `needs` → `required_data`
+
+The handler still gates its optional fetches on the classifier's older `required_data`
+vocabulary. `requiredDataFrom()` translates the three needs that gate something:
+
+| need | `required_data` key | counts when `helpful`? |
+|---|---|---|
+| `get_health_plan`, `get_nutrition_schedule` | `plan` | yes |
+| `get_weight_history` | `weight_history` | yes |
+| `store_products` | `store_products` | **no — `required` only** (§37: the catalog appears only when the user asked what they could obtain) |
+
+Every other need is a no-op here. Biomarkers, BioAge, dots, twin and facts are fetched on every
+turn regardless (§21, 06-chat-pipeline step 5), and the agentic loop's tools are chosen by PLAN,
+not by this list.
+
+### The regex backstops, by mode
+
+| backstop (`reclassified_as_*`) | demotes `formulate_dots` → | promotes (classifier routed only) |
+|---|---|---|
+| `package_question` | `nutrition_question` | `casual_chat` → `nutrition_question` |
+| `food_sensitivity_question` | `nutrition_question` | `casual_chat` → `nutrition_question` |
+| `wearable_question` | — | `casual_chat` → `biomarker_question` |
+| `meal_plan_question` | `nutrition_question` | — |
+| `lifestyle_question` | `lifestyle_question` | `nutrition_question`/`casual_chat` → `lifestyle_question` |
+
+The demotions apply in every mode, because they can only prevent a real formulation from starting.
+The promotions apply only when `understandingRoutes` is false.
+
+### Logs
+
+All are single-line JSON (`console.log(JSON.stringify(...))`); grep on `msg`.
+
+| `msg` | level | when | notable fields |
+|---|---|---|---|
+| `Chat intent classified` | INFO | every turn | `intent`, `required_data`, `mode`, `routed_by` (`understanding`\|`classifier`), `classifier_intent`, `understanding{route,request,family,topics,continuation_of,confidence,clarify,needs,ms,tokens}` |
+| `route_disagreement` | INFO | the understanding's route ≠ the final intent (**after** the backstops) | `mode`, `routed`, `understanding_route`, `message` (≤200 chars), `request` |
+| `understanding_unusable` | WARN | unparseable JSON or unknown route | `ms`, `route`, `raw` (≤300 chars, only if unparseable) |
+| `understanding_failed` | WARN | the call threw (timeout, network, API error) | `ms`, `error` |
+| `reclassified_as_*` | INFO | a backstop fired | `from` |
+
+**Reading the shadow evidence.** On prod (`shadow`), `route_disagreement` shows each turn where the
+understanding would have routed differently from what was shipped. Before switching prod to `on`,
+sample those lines and hand-judge which route was right. The measured win lives entirely in these
+turns (*What was deliberately not built*). A high rate of `understanding_failed` or
+`understanding_unusable` means the model or timeout needs attention first; in `on` mode every one
+of those is a turn that paid for both calls in series.
+
+### Configuration
+
+| env var | default | effect |
+|---|---|---|
+| `CHAT_UNDERSTANDING_MODE` | `shadow` | `off` \| `shadow` \| `on`; any other value → `shadow`. `s.yaml` = `on`, `s-prod.yaml` = `shadow` |
+| `UNDERSTANDING_MODEL` | `qwen3.8-flash` | the model; set explicitly in both yamls |
+| `UNDERSTANDING_THINKING` | `off` | `on` re-enables the model's reasoning — measured 15–45 s per call, i.e. every call times out |
+| `UNDERSTANDING_TIMEOUT_MS` | `25000` | per-call timeout, passed to the SDK call |
+| `CLASSIFIER_MODEL` | `MODEL` | the fallback classifier's model (unchanged) |
+
+Temperature is fixed at 0.1 in code.
+
+### Changing it
+
+- **Prompt wording** (`prompts/chat/understanding.js`): the header comment is binding. Re-score
+  with `temp/understanding-harness/07-run-shipped.js` twice, because the run-to-run spread (~2 points)
+  is about as large as a reordering of guidance bullets can move the score.
+- **A new route** means changing four places together: `VALID_ROUTES` (`lib/understanding.js`),
+  both prompt maps in `handlers/chat.js`, the prompt's `ROUTES` list, and `HIGH_RISK_INTENTS` if
+  it should run the agentic loop. The classifier (`intentClassifier.js`) should learn it too,
+  since it is still the fallback and the prod router. `tests/chat-understanding.test.js` asserts
+  that `VALID_ROUTES` equals the prompt maps plus `formulate_dots`.
+- **A new optional fetch** that the understanding should trigger means an entry in
+  `NEED_TO_REQUIRED_DATA` plus the need's name in the prompt's `NEEDS` list. Decide whether
+  `helpful` is enough, the way `HELPFUL_EXCLUDED` decides for the store catalog.
+- **Putting more of the understanding in front of GENERATE** was measured and lost (rounds 1–3).
+  Re-run an end-to-end comparison before trying it again.
+
+### Tests
+
+`tests/chat-understanding.test.js` (offline, `node --test`) covers: prompt rendering with and
+without history/state, the route set, the needs mapping and the `store_products` rule, a well-formed
+response, fenced JSON, every failure shape → `ok:false`, the `shadow` default, the thinking switch,
+`resolvedRequestLine` only on continuations, history order and query-failure degradation. It also
+source-level asserts on `handlePostChat`: routing only in `on`, promotions gated / demotions not,
+disagreement logged after the backstops, and concurrent routers in shadow.

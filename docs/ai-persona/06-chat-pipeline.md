@@ -7,13 +7,17 @@
 1. `resolveOrUpsertUser(body)` → `user`, `user.channel_id`.
 2. Resolve `personaType` from `channels.config` (see [01-persona-selection.md](01-persona-selection.md)), plus `channelSubAgeNames` (per-channel display-name overrides for the 4 dimensions, passed to Viva's `subAgeLabels.js`).
 3. Compute `currentSolarTerm` and `essentialKnowledge = await getEssentialBlock(personaType)` — **both unconditional for both personas** as of the current refactor (previously Viva-only).
-4. **Intent classification** — one LLM call via `prompts/chat/intentClassifier.js`, `max_tokens: 60`, `temperature: 0.1`. Falls back to `casual_chat` on any parse failure. Returns `{ intent, required_data }`.
+4. **Routing** — picks `intent` (which template) and `required_data` (which optional fetches). Two routers, selected by `CHAT_UNDERSTANDING_MODE` (§47, [11-intent-understanding.md](11-intent-understanding.md)):
+   - the **UNDERSTAND step** (`lib/understanding.js`, `qwen3.8-flash`, thinking off): reads the message with the last 4 turns and a one-line user state, restates the request, then names a route. It decides in `on` (dev).
+   - the **classifier** (`prompts/chat/intentClassifier.js`, message only, `max_tokens: 60`, `temperature: 0.1`, `casual_chat` on parse failure): it decides in `off` and `shadow` (prod), and whenever the understanding fails in `on`.
+
+   Then five regex backstops adjust the intent. Their demotions away from `formulate_dots` always apply; their promotions apply only when the classifier routed. Every turn logs `Chat intent classified`; a turn where the two routers differ also logs `route_disagreement`.
 5. **Data fetch** — a mix of:
    - *Always-fetched, regardless of intent*: biomarkers, dots, user memory facts, health twin, questionnaire responses, active health plans. This is deliberate — doc-comments in the code reference prior bugs (stale data / wrong age) caused by intent-gating these fetches, so they now run on every turn.
    - *Conditionally fetched*, gated by `required_data`: nutrition plan, weight history.
 
    Assembled into `llmContext` — the canonical shape reused by `handlePostHealthAdvice` and `handlePostFormulaDots` too.
-6. **Prompt selection**: `activePrompts = personaType === 'viva' ? vivaPrompts : nanoPrompts`; `promptBuilder = activePrompts[intent] || activePrompts.casual_chat`; `systemPrompt = promptBuilder(llmContext)`. See [02-prompt-architecture.md](02-prompt-architecture.md) for the full table.
+6. **Prompt selection**: `activePrompts = personaType === 'viva' ? vivaPrompts : nanoPrompts`; `promptBuilder = activePrompts[intent] || activePrompts.casual_chat`; `systemPrompt = promptBuilder(llmContext)`, plus `resolvedRequestLine()` when the understanding routed a continuation (「那运动呢？」). See [02-prompt-architecture.md](02-prompt-architecture.md) for the full table.
 7. `useAgenticLoop = HIGH_RISK_INTENTS.has(intent)` — persona-agnostic (see [03-agentic-chat-loop.md](03-agentic-chat-loop.md)).
 8. Persist the user's message to `chat_messages` (tagged with `personaType`), unless this is a sandbox session.
 9. Fetch persona-scoped conversation history (`WHERE persona_type = $3`), normalize roles, collapse consecutive same-role turns.
