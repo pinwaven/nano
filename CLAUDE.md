@@ -260,7 +260,10 @@ turn that can outlive `wx.request`'s timeout must leave the request cycle. Full 
   with no ack, so one lost poll response consumes the only copy. (1) `handleGetChatHistory`'s
   `since_id` poll takes `roles=coach,ai` while a turn is pending (`_chatWaitStartedAt`), de-duped
   on normalized text (`_aiKey`) and scoped to `AI_ECHO_TYPES` — types that also write a
-  `chat_messages` row; `coach_reminder` is deliberately excluded. (2) A 250s watchdog
+  `chat_messages` row; `coach_reminder` is deliberately excluded. **The de-dup is turn-scoped**:
+  `/api/chat` returns `user_message_id`, and only a render from the current turn makes a later
+  copy a duplicate — text alone swallowed a new reply that repeated the previous one word for
+  word (2026-09-23). The web user-app's `useNotificationPoll.js` still de-dups on text alone. (2) A 250s watchdog
   (`DELIVER_DEADLINE_MS`, env `CHAT_DELIVER_DEADLINE_MS` for tests) races the work; exactly one
   terminal message via `_deliverTerminalMessage` + single-use `claimDelivery()`.
 - **Every client wait goes through `_beginChatWait`** (`CHAT_WAIT_SYNC_MS` 30s for sync turns,

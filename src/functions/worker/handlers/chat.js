@@ -1903,11 +1903,18 @@ async function handlePostChat(body) {
             // Save the incoming user message to the conversation log — skipped in sandbox
             // mode (superadmin "login as" sessions), which never persist against the
             // impersonated user's real account.
+            //
+            // Its id goes back to the client (`user_message_id`): every reply to THIS turn is a
+            // chat_messages row after it, which is what lets the miniapp tell "the same reply
+            // arriving on the other delivery channel" from "a new reply that happens to repeat an
+            // earlier one" — de-duplicating on text alone swallowed the second (2026-09-23).
+            let userMessageId = null;
             if (!sandbox) {
-                await pool.query(
-                    'INSERT INTO chat_messages (user_id, role, content, persona_type) VALUES ($1, $2, $3, $4)',
+                const { rows: savedUser } = await pool.query(
+                    'INSERT INTO chat_messages (user_id, role, content, persona_type) VALUES ($1, $2, $3, $4) RETURNING id',
                     [user_id, 'user', message, personaType]
                 );
+                userMessageId = savedUser[0]?.id ?? null;
             }
 
             // Fetch recent conversation history scoped to the current persona
@@ -1972,7 +1979,7 @@ async function handlePostChat(body) {
                         event_id: eventId, user_id, message, intent, llmContext, systemPrompt,
                         cleanHistory, language: user.language, personaType, birth_date: user.birth_date,
                     });
-                    return { success: true, user_id, processing: true };
+                    return { success: true, user_id, processing: true, user_message_id: userMessageId };
                 } catch (ebErr) {
                     console.log(JSON.stringify({ level: 'WARN', msg: 'chat_generate_publish_failed_fallback_sync', user_id, intent, error: ebErr.message }));
                     // Fail open (same principle as dispatcher/index.js's EventBridge fallback,
@@ -2068,10 +2075,11 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                 }
             }
 
-            return await finalizeChatReply({
+            const finalized = await finalizeChatReply({
                 rawReply, extraValidDates, extraValidValues, llmContext, systemPrompt, cleanHistory,
                 chatMessages, user, user_id, personaType, sandbox, useAgenticLoop, client, model, intent, message,
             });
+            return userMessageId ? { ...finalized, user_message_id: userMessageId } : finalized;
         } catch (err) {
             console.error('LLM Chat Error:', err);
             const fallbackText = "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.";

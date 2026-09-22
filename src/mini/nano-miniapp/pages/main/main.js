@@ -1512,6 +1512,13 @@ Page({
   _dotsLoadedAt: 0,
   _plansLoadedAt: 0,
   _lastMsgId: null,
+  // Turn scoping for the AI de-dup (see _aiKey). _turnSeq counts sends; _aiDedupeSeq is the first
+  // turn whose renders still count as duplicates, _aiRowFloor the server id of the user message
+  // that opened it. Both stay at their defaults until a /api/chat reply carries user_message_id,
+  // which leaves an older server behaving exactly as before.
+  _turnSeq: 0,
+  _aiDedupeSeq: 0,
+  _aiRowFloor: null,
   _chatWaitStartedAt: null,
   _chatWaitBudgetMs: null,
   _touchX: 0,
@@ -1519,7 +1526,7 @@ Page({
 
   onLoad(options) {
     this._seenIds = new Set()
-    this._renderedAiKeys = new Set()
+    this._renderedAiKeys = new Map()
     const user = app.globalData.user
     if (!user) {
       wx.reLaunch({ url: '/pages/login/login' })
@@ -3577,6 +3584,12 @@ Page({
   // catch-up poll (durable, see _poll) — and either can win the race, so whichever renders first
   // registers its text here and the other drops it. Keyed on normalised text because a
   // notification row carries no chat_messages id to match on.
+  //
+  // Text alone cannot tell "the same reply on the other channel" from "a new reply that repeats
+  // an earlier one": asked 「你是什么大模型？」 then 「你背后是什么模型？」, Viva answered both
+  // word for word, and the second was dropped as a duplicate — dots gone, no bubble (dev,
+  // 2026-09-23). So each key remembers the turn it was rendered in, and once a turn is scoped
+  // (_scopeAiDedupeToTurn) only a render from THIS turn makes a later copy a duplicate.
   _aiKey(content) {
     return String(content || '').replace(/\s+/g, ' ').trim().slice(0, 160)
   },
@@ -3584,17 +3597,32 @@ Page({
   _markRenderedAi(content) {
     const k = this._aiKey(content)
     if (!k || !this._renderedAiKeys) return
-    this._renderedAiKeys.add(k)
-    // Bounded — a long session must not grow this without limit. Sets iterate in insertion
+    // delete-then-set moves a re-rendered key to the end, so eviction stays oldest-first.
+    this._renderedAiKeys.delete(k)
+    this._renderedAiKeys.set(k, this._turnSeq)
+    // Bounded — a long session must not grow this without limit. Maps iterate in insertion
     // order, so this evicts the oldest key.
     if (this._renderedAiKeys.size > 200) {
-      this._renderedAiKeys.delete(this._renderedAiKeys.values().next().value)
+      this._renderedAiKeys.delete(this._renderedAiKeys.keys().next().value)
     }
   },
 
-  _isRenderedAi(content) {
+  // `anyTurn` is for a chat_messages row at or below _aiRowFloor — a reply to an EARLIER turn
+  // that the catch-up can still return (_lastMsgId only advances past rows it fetched), which the
+  // old any-turn rule must keep dropping or it would re-render an old reply.
+  _isRenderedAi(content, anyTurn = false) {
     const k = this._aiKey(content)
-    return !!k && !!this._renderedAiKeys && this._renderedAiKeys.has(k)
+    if (!k || !this._renderedAiKeys) return false
+    const seq = this._renderedAiKeys.get(k)
+    return seq !== undefined && (anyTurn || seq >= this._aiDedupeSeq)
+  },
+
+  // Called with /api/chat's user_message_id: every reply to this turn is a chat_messages row
+  // after that id, and only renders from this turn count as duplicates from here on.
+  _scopeAiDedupeToTurn(userMessageId) {
+    if (typeof userMessageId !== 'number') return
+    this._aiDedupeSeq = this._turnSeq
+    this._aiRowFloor = userMessageId
   },
 
   _addMsg(role, rawContent, persist = false) {
@@ -3957,6 +3985,9 @@ Page({
 
   async _sendMessage(text) {
     const { user, t } = this.data
+    // A new turn: a reply rendered from here on (by either channel, even while the request below
+    // is still in flight) is tagged with it — see _scopeAiDedupeToTurn.
+    this._turnSeq += 1
     this._addMsg('user', text)
     this.setData({ typing: true, chatStatusText: '', toolboxOpen: false })
     try {
@@ -3971,6 +4002,7 @@ Page({
       // that tool is what actually produces a formulation, so running it beats describing it.
       // The user's own message already stands in the chat and was persisted server-side, hence
       // skipUserMsg — the tool must not append its own canned trigger line on top of it.
+      this._scopeAiDedupeToTurn(res.data?.user_message_id)
       if (res.data?.launch_tool === 'formula_dots') {
         this._startFormulaDots({ skipUserMsg: true })
         return
@@ -4117,7 +4149,9 @@ Page({
           this._lastMsgId = Math.max(...rows.map(m => m.id))
           // An ai row normally arrives here just after the notification channel already showed
           // the same text — drop those instead of double-rendering.
-          const fresh = rows.filter(m => m.role === 'coach' || !this._isRenderedAi(m.content))
+          const floor = this._aiRowFloor
+          const fresh = rows.filter(m => m.role === 'coach'
+            || !this._isRenderedAi(m.content, floor !== null && typeof m.id === 'number' && m.id <= floor))
           const gotAi = fresh.some(m => m.role !== 'coach')
           fresh.forEach(m => { if (m.role !== 'coach') this._markRenderedAi(m.content) })
           if (fresh.length > 0) {
