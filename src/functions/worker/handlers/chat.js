@@ -19,6 +19,7 @@ const nanoPrompts = {
     casual_chat:        require('../prompts/nano/chat/casual'),
     biomarker_question: require('../prompts/nano/chat/biomarker'),
     nutrition_question: require('../prompts/nano/chat/nutrition'),
+    lifestyle_question: require('../prompts/nano/chat/lifestyle'),
     longevity_science:  require('../prompts/nano/chat/science'),
     record_action:      require('../prompts/nano/chat/record'),
     set_reminder:       require('../prompts/nano/chat/reminder'),
@@ -28,6 +29,7 @@ const vivaPrompts = {
     casual_chat:        require('../prompts/viva/chat/casual'),
     biomarker_question: require('../prompts/viva/chat/biomarker'),
     nutrition_question: require('../prompts/viva/chat/nutrition'),
+    lifestyle_question: require('../prompts/viva/chat/lifestyle'),
     longevity_science:  require('../prompts/viva/chat/science'),
     record_action:      require('../prompts/viva/chat/record'),
     set_reminder:       require('../prompts/viva/chat/reminder'),
@@ -59,6 +61,7 @@ const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock')
 const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
 const { messageAsksAboutFoodSensitivity } = require('../prompts/chat/foodSensitivityBlock');
 const { messageAsksForMealPlan } = require('../prompts/chat/mealPlanRequest');
+const { messageAsksForLifestylePlan } = require('../prompts/chat/lifestyleRequest');
 const { fetchWearableDaily, fetchHrvReadings, messageAsksAboutWearable } = require('../lib/wearableDaily');
 const { analyzeWearable } = require('../lib/wearableAnalysis');
 
@@ -100,7 +103,10 @@ function _filterProductsByUserFacts(products, userFacts) {
 // (lib/agenticChat.js) instead of the default single-pass generation + retry-on-failure path.
 // casual_chat/emotional_support stay on the fast path regardless of persona, to bound
 // latency/cost (see 2026-07-28 planning discussion).
-const HIGH_RISK_INTENTS = new Set(['biomarker_question', 'nutrition_question', 'longevity_science', 'record_action']);
+// lifestyle_question (exercise / sleep-routine plans, 2026-09-22) is agentic too: it cites the
+// same biomarkers, sub-ages and wearable averages as biomarker_question, so it needs the same
+// grounding, and its own template carries no grocery/store/formulation vocabulary.
+const HIGH_RISK_INTENTS = new Set(['biomarker_question', 'nutrition_question', 'lifestyle_question', 'longevity_science', 'record_action']);
 
 // timeout/maxRetries: without an explicit cap, a single stalled DashScope call can hang up to
 // the SDK's 10-minute default — well past the worker FC function's own 300s timeout (s.yaml).
@@ -1559,6 +1565,15 @@ async function handlePostChat(body) {
             if (messageAsksForMealPlan(message) && intent === 'formulate_dots') {
                 console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_meal_plan_question', user_id, from: intent }));
                 intent = 'nutrition_question';
+            }
+            // An exercise / sleep-routine plan is lifestyle_question (prompts/chat/lifestyleRequest.js).
+            // Only the intents that would answer it with the wrong template are demoted: nutrition's
+            // template teaches the grocery tool (the 2026-09-22 prod miss), casual_chat has no
+            // tools and no wearable block, and formulate_dots would start a formulation.
+            if (messageAsksForLifestylePlan(message)
+                && (intent === 'nutrition_question' || intent === 'casual_chat' || intent === 'formulate_dots')) {
+                console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_lifestyle_question', user_id, from: intent }));
+                intent = 'lifestyle_question';
             }
             if (intent === 'formulate_dots') {
                 if (body.client === 'miniapp' && !sandbox) {

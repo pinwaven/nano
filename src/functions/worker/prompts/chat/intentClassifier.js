@@ -31,6 +31,14 @@ INTENTS:
   And it is ONLY about dots. A request for FOOD — a meal plan, recipes, a diet menu, what to eat
   for breakfast/lunch/dinner ("给我订制一周的营养餐", "帮我安排饮食计划", "make me a meal plan",
   "what should I eat this week") — is nutrition_question, even when it says 定制/订制/营养.
+  NOT nutrition_question: an exercise, sleep or daily-routine plan — that is lifestyle_question,
+  no matter how it is phrased (定制/方案/计划 do not make it nutrition).
+- lifestyle_question — asking how to LIVE rather than what to take or eat: an exercise / training /
+  walking / running / strength plan, a sleep routine or sleep hygiene, a daily schedule, a breathing
+  or stress-management practice, recovery, posture ("根据我的情况定制运动方案", "给我一个跑步计划",
+  "怎么改善睡眠习惯", "what exercise should I do", "make me a workout plan"). It is
+  lifestyle_question even when it says 定制/方案/计划 — 方案 alone never makes it nutrition, and
+  a lifestyle plan never needs the store catalog.
 - longevity_science  — educational questions about aging, longevity science, mechanisms (not about their personal data)
 - record_action      — explicitly logging their own personal data (weight, sleep hours, meals, etc.)
 - set_reminder       — asking Nano to remind them about something at a specific future time or after a delay
