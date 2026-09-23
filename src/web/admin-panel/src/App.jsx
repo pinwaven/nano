@@ -41,7 +41,9 @@ import { UsersTab } from './tabs/UsersTab.jsx';
 import { ChangelogTab } from './tabs/ChangelogTab.jsx';
 
 axios.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('nano_admin_token') || import.meta.env.VITE_API_TOKEN
+  // Only a logged-in session. There used to be a fallback to VITE_API_TOKEN, which inlined the
+  // app bearer into this publicly served bundle.
+  const token = sessionStorage.getItem('nano_admin_token')
   if (token) config.headers['Authorization'] = `Bearer ${token}`
   return config
 })
