@@ -8,6 +8,28 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **International web signup defaults to English and supports email in every channel** · 2026-09-24: a fresh browser session opens in English, and the email signup API also defaults the new account and verification email to English when no preference is supplied; an explicit Chinese selection is preserved. After an unknown email is verified, account creation waits for the coach's six-digit invitation code and assigns that coach and channel; the resulting account can continue signing in by email even outside the Waven channel tree. Returning users retain their saved language. Web VERSION `0924-1`.
+
+- **Web login opens on phone** · 2026-09-24: the browser app now shows phone-number login first on a fresh start; email and WeChat QR remain available from the login tabs.
+
+- **Web signup now assigns the inviting coach** · 2026-09-23: after a new browser user's phone or email OTP is verified, the login asks for the six-digit coach invitation code. A short-lived signed signup proof avoids replaying or resending the OTP; account creation resolves and records the channel, coach, referral and invitation usage transactionally. Web VERSION `0923-5`.
+
+- **Coach client chat now matches the web user chat** · 2026-09-23: the Coach Panel client conversation now reuses the regular chat renderer, including rich response cards, older-history loading, async reply polling, status/typing state, voice input and the shared toolbox. Managed-customer questions still run as the coach in the customer's context, while regular-client messages remain coach instructions. Coach viewing never consumes a regular user's notification inbox. Web VERSION `0923-4`.
+
+- **Web admin SMS OTP login** · 2026-09-23: users with the existing `admin` or `superadmin` role can now sign in to `/admin/` with the same bound phone and Aliyun PNVS SMS-code flow they use in the Mini Program—no separate web-admin phone setup. Sends reuse the existing per-number and per-IP limits, codes expire after five minutes, and the administrator-only super OTP is never accepted on this path. A channel `admin` receives that channel's full admin access; `superadmin` receives platform-wide access.
+
+- **Web admin email OTP login** · 2026-09-23: `/admin/` now supports passwordless sign-in with a six-digit email code while retaining username/password login. Admin account management can assign a unique OTP email to each account; codes expire after five minutes, are rate-limited and attempt-limited, and are purpose-scoped so user-login codes cannot authenticate an admin.
+
+- **Academy channel opt-out** · 2026-09-23: channel admins with Academy write permission can disable inherited/shared courses with one Academy switch. Own courses and existing learner enrollments remain accessible; direct lesson/download requests use the same policy. Default shared-catalog behavior remains enabled.
+
+- **Browser login methods** · 2026-09-23: always show email alongside phone and WeChat, including SuperiorMed branded links and the returning-user card. Web VERSION `0923-3`.
+
+- **Branded web login links** · 2026-09-23: `/app?channel=superiormed` loads the channel name and inherited logo before login using the public branding endpoint. The URL only selects landing-page branding; account membership stays unchanged. Web VERSION `0923-2`.
+
+- **Web coach panel mirrors the miniapp** · 2026-09-23: the user webapp’s Coach Panel now opens its own five-tab panel (clients, invites, earnings, questionnaires and CRM), including managed-customer create/edit, coach chat, client health/plans/notes/goals/facts, reminders, redemption and box scanning. Markup, translations, controller and styles synchronize from the miniapp at build time; browser adapters preserve the coach session and use native pickers, uploads and QR scanning. Web VERSION `0923-1`.
+
+- **Managed-customer form layout** · 2026-09-23: inset and spaced fields, side-by-side surname/given name, 46px inputs and visibly selectable date/sex controls, with a scrollable body and safe-area footer. Miniapp VERSION `0923-9`.
+
 - **A dimension is only ever explained by its own biomarkers** · 2026-09-23
   - Health-advice reports kept explaining an elevated 微血管年龄 (whose only input, Cystatin C, was normal) with hsCRP and CD38 — markers of other dimensions: "可能与低度慢性炎症（如hsCRP偏高）……相关", "结合 hsCRP 升高与 CD38 高表达，提示……影响微循环稳态". Four of eight sampled reports did it. The code check that exists for exactly this (`detectDimensionMisattribution`) missed every one: the sentences sat under a `#### 微血管年龄` heading without naming the dimension, and used soft links (结合/提示/相关) it deliberately ignores.
   - **Prompt** (both personas): each dimension's exact inputs are stated from `DIMENSION_BIOMARKERS`; another dimension's marker may never be given as a cause or "possible" link, and the model is given the sentence to write when a dimension is elevated but its own input is normal.

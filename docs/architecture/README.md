@@ -82,6 +82,8 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 
 | System | Doc |
 |---|---|
+| Web Coach Panel | [web-coach-panel.md](web-coach-panel.md) |
+| Managed Customers (SuperiorMed) | [managed-customers.md](managed-customers.md) |
 | Kino Hardware | [kino-system.md](kino-system.md) |
 | Questionnaire System | [questionnaire-system.md](questionnaire-system.md) |
 | Channel System | [channel-system.md](channel-system.md) |
