@@ -3,11 +3,12 @@
  * Generates a structured, personalized health analysis with dot recommendations.
  * Called by handlePostHealthAdvice — context includes all 4 sub-ages + relevant dots.
  */
-const { classifyBiomarkers, LABELS_ZH: STATUS_LABELS_ZH, LABELS_EN: STATUS_LABELS_EN } = require('../../lib/biomarkerStatus');
+const { classifyBiomarkers, LABELS_ZH: STATUS_LABELS_ZH, LABELS_EN: STATUS_LABELS_EN, DIMENSION_BIOMARKERS } = require('../../lib/biomarkerStatus');
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../chat/currentDateBlock');
 const { getTwinVocabBlock } = require('../chat/twinVocabulary');
+const { relationToChrono } = require('../../lib/subAgeLabels');
 
 module.exports = (context) => {
   const {
@@ -76,9 +77,29 @@ module.exports = (context) => {
     },
   ];
 
+  // Direction vs chronological age computed in code, never by the model — see the Viva template
+  // and lib/subAgeLabels.js relationToChrono. Only an OLDER dimension is elevated.
+  const lang = isZh ? 'zh' : 'en';
+  const rels = Object.fromEntries(dimDefs.map(d => [d.subAgeKey,
+    relationToChrono(subAges?.[d.subAgeKey] != null ? Number(subAges[d.subAgeKey]) : null, Number(chronoAge), lang)]));
+  const dimList = dir => dimDefs.filter(d => rels[d.subAgeKey].direction === dir)
+    .map(d => `${isZh ? d.labelZh : d.labelEn} (${rels[d.subAgeKey].diff > 0 ? '+' : ''}${rels[d.subAgeKey].diff})`).join(isZh ? '、' : ', ') || (isZh ? '无' : 'none');
+  const dimensionVerdictLine = isZh
+    ? `各维度与实际年龄对比（系统已计算，总体状态与逐维度分析必须与此一致）：偏高、需关注 — ${dimList('older')}；年轻于实际年龄、表现良好 — ${dimList('younger')}；基本持平 — ${dimList('equal')}`
+    : `Dimensions vs chronological age (computed by the system — the overall status and the breakdown must agree with it): OLDER, needs attention — ${dimList('older')}; YOUNGER, doing well — ${dimList('younger')}; about the same — ${dimList('equal')}`;
+
+  // Each dimension's exact score inputs, from the map the misattribution check uses.
+  const inputNames = isZh ? { hsCRP: 'hsCRP', IL6: 'IL-6', GDF15: 'GDF-15', CD38: 'CD38', GA: '糖化白蛋白 (GA)', CystatinC: '胱抑素 C' } : { hsCRP: 'hsCRP', IL6: 'IL-6', GDF15: 'GDF-15', CD38: 'CD38', GA: 'glycated albumin (GA)', CystatinC: 'Cystatin C' };
+  const dimensionInputsLine = dimDefs
+    .map(d => `${isZh ? d.labelZh : d.labelEn}${isZh ? '：' : ': '}${(DIMENSION_BIOMARKERS[d.subAgeKey] || []).map(k => inputNames[k]).join(isZh ? '、' : ', ')}`)
+    .join(isZh ? '；' : '; ');
+
   const subAgeLines = dimDefs.map(d => {
     const val = subAges?.[d.subAgeKey];
-    const valStr = val != null ? `${Number(val).toFixed(1)} yrs` : (isZh ? '（暂无数据）' : '(no data)');
+    const rel = rels[d.subAgeKey];
+    const verdict = rel.direction === 'older' ? (isZh ? '，该维度偏高、需关注' : '; this dimension is elevated') : rel.direction === 'younger' ? (isZh ? '，该维度表现良好' : '; this dimension is doing well') : '';
+    const valStr = val == null ? (isZh ? '（暂无数据）' : '(no data)')
+      : isZh ? `${Number(val).toFixed(1)} 岁（${rel.text}${verdict}）` : `${Number(val).toFixed(1)} yrs (${rel.text}${verdict})`;
     const relDots = (dotsByDimension[d.dbKey] || [])
       .map(dot => isZh ? `${dot.key_name_zh || dot.key_name}: ${dot.name_zh || dot.name}` : `${dot.key_name}: ${dot.name}`)
       .join(', ') || (isZh ? '暂无' : 'none');
@@ -102,8 +123,8 @@ module.exports = (context) => {
 
   const bioSummaryLine = hasBio
     ? (isZh
-      ? `生理年龄 ${Number(bioAge).toFixed(1)} 岁  |  实际年龄 ${chronoAge} 岁  |  差值 ${Number(ageDelta) >= 0 ? '+' : ''}${ageDelta} 岁`
-      : `BioAge: ${Number(bioAge).toFixed(1)} yrs  |  ChronoAge: ${chronoAge} yrs  |  Δ: ${Number(ageDelta) >= 0 ? '+' : ''}${ageDelta} yrs`)
+      ? `生理年龄 ${Number(bioAge).toFixed(1)} 岁  |  实际年龄 ${chronoAge} 岁  |  差值 ${Number(ageDelta) >= 0 ? '+' : ''}${ageDelta} 岁\n${dimensionVerdictLine}`
+      : `BioAge: ${Number(bioAge).toFixed(1)} yrs  |  ChronoAge: ${chronoAge} yrs  |  Δ: ${Number(ageDelta) >= 0 ? '+' : ''}${ageDelta} yrs\n${dimensionVerdictLine}`)
     : (isZh ? '暂无检测数据' : 'No biomarker test completed yet');
 
   const hasActivePlans = active_health_plans && active_health_plans.length > 0;
@@ -151,7 +172,7 @@ module.exports = (context) => {
 3. **日常监测关联** — 如有日常监测数据（睡眠、HRV、步数），结合精准检测的生物标志物数据说明两者的关联（例如：睡眠不足→炎症升高→抗压年龄偏高）。
 4. **健康状况关联** — 如用户有申报的健康问题，结合生物标志物数据进行说明${planTaskZhExtra}
 
-生物标志物的状态（正常/偏高/高）已在数据中直接标注，请严格使用该标注，不得自行根据数值判断状态或与之矛盾。解释某维度时，只能将标注为"偏高"或"高"的标志物描述为驱动因素，标注为"正常"的标志物不得被暗示为导致异常的原因。严禁引入任何未在本提示词中提供的具体机制、暴露因素或基因/族群遗传学细节。
+生物标志物的状态（正常/偏高/高）已在数据中直接标注，请严格使用该标注，不得自行根据数值判断状态或与之矛盾。子年龄维度是否偏高同样已由系统标注：只有老于实际年龄的维度才能称为偏高、需关注；年轻于实际年龄的维度，即使其相关标志物中有偏高项，也只能表述为"该维度整体年轻于实际年龄，但某标志物偏高、值得留意"，不得称该维度偏高。总体状态中点名的偏高维度必须与"各维度与实际年龄对比"完全一致。每个子年龄只由以下标志物计算——${dimensionInputsLine}。分析某个维度时，只能用它自己的输入标志物来解释；其他维度的标志物，即使偏高，也不得写成该维度的原因、诱因或相关因素，包括"可能与……有关/相关"这类推测性表述。若某维度偏高而它自己的输入标志物都在正常范围，就照实说明，例如："该维度由胱抑素 C 计算；胱抑素 C 本次仍在正常范围内，但按年龄校准后对应的子年龄高于实际年龄，建议持续观察、下次检测复核。"不要借用其他维度的标志物来解释——"结合 hsCRP 升高提示……""与 CD38 共同构成……机制"这类写法同样属于错误归因。解释某维度时，只能将标注为"偏高"或"高"的标志物描述为驱动因素，标注为"正常"的标志物不得被暗示为导致异常的原因。严禁引入任何未在本提示词中提供的具体机制、暴露因素或基因/族群遗传学细节。
 
 语言要温暖、有科学依据、可操作。使用 Markdown 格式。结尾不要提问或引导用户进行下一步操作，干净收尾即可。全程用简体中文回复。`;
 
@@ -159,13 +180,13 @@ module.exports = (context) => {
 
 1. **Overall Status** — 2–3 sentences summarizing their biological age vs. chronological age and the big picture (positive or concerning).
 2. **Dimension-by-Dimension Breakdown** — For each of the 4 sub-ages:
-   - State whether the value is ahead, on-track, or lagging
+   - State whether the sub-age is younger than, about the same as, or older than chronological age, and by how many years (younger is good)
    - Explain in plain language which biomarkers are driving it and the underlying biology
    - Name 1–2 relevant Dots and briefly explain what they do
 3. **Daily-Monitoring Connection** — If daily-monitoring signals are available (sleep, HRV, steps), cross-reference them with the Precision Testing biomarkers to reveal lifestyle-biology connections (e.g. poor sleep → elevated CRP → higher Resilience Age).
 4. **Health Conditions Connection** — If the user has declared health conditions, connect them to the biomarker findings${planTaskEnExtra}
 
-Biomarker status (normal/elevated/high) is already labeled directly in the data below — use that label as-is; do not judge status from the raw value yourself or contradict the given label. When explaining a dimension, only describe markers labeled elevated/high as drivers — never imply a marker labeled normal is contributing to the abnormal result. Do not introduce any specific mechanism, exposure factor, or genetic/population-genetics detail that isn't already provided in this prompt.
+Biomarker status (normal/elevated/high) is already labeled directly in the data below — use that label as-is; do not judge status from the raw value yourself or contradict the given label. Whether a sub-age DIMENSION is elevated is labeled too: only a dimension OLDER than chronological age may be called elevated or concerning. A dimension younger than chronological age that contains an elevated marker must be described as "younger than chronological age overall, though <marker> is elevated and worth watching" — never as an elevated dimension. Any dimension the overall status names as elevated must be on the "Dimensions vs chronological age" OLDER list. Each sub-age is computed ONLY from these markers — ${dimensionInputsLine}. Explain a dimension only with its own inputs; a marker belonging to another dimension, even an elevated one, must never be presented as a cause of, contributor to, or something "possibly related to" this dimension. If a dimension is elevated while its own inputs are all normal, say so plainly: it is computed from that marker, the marker itself is within the normal range, and the elevated sub-age is worth monitoring and re-checking at the next test — do not borrow another dimension's marker to explain it. "Combined with elevated hsCRP, this suggests…" or "together with CD38, a shared mechanism…" inside that dimension's analysis is the same misattribution. When explaining a dimension, only describe markers labeled elevated/high as drivers — never imply a marker labeled normal is contributing to the abnormal result. Do not introduce any specific mechanism, exposure factor, or genetic/population-genetics detail that isn't already provided in this prompt.
 
 Keep it warm, evidence-based, and actionable. Use Markdown formatting. Do not ask a follow-up question or prompt the user for any further action — end the message cleanly. Write in English.`;
 

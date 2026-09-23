@@ -18,7 +18,7 @@
 'use strict';
 
 const { AGENTIC_TOOL_DEFS, createAgenticToolHandlers } = require('./agenticTools');
-const { detectAllRisks, detectDimensionMisattribution, detectDotNameMismatch } = require('./factCheck');
+const { detectAllRisks, detectDimensionMisattribution, stripDimensionMisattributions, detectDotNameMismatch } = require('./factCheck');
 const { formatToShanghai } = require('./time-utils');
 const { classifyBiomarkers, THRESHOLDS: BIOMARKER_THRESHOLDS, DIMENSION_BIOMARKERS } = require('./biomarkerStatus');
 const planTemplate = require('../prompts/chat/planTemplate');
@@ -659,6 +659,13 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     }
 
     console.log(JSON.stringify({ level: 'INFO', msg: 'turn_budget_used', context: logContext, budget }));
+    // A misattribution that survived every REVISE round is removed here, sentence by sentence, with
+    // the same check that flagged it — REVISE sometimes rephrases the link instead of deleting it.
+    const stripped = stripDimensionMisattributions(rawReply, DIMENSION_BIOMARKERS, llmContext && llmContext.sub_age_display_names);
+    if (stripped.removed.length > 0) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'dimension_misattribution_stripped', context: logContext, removed: stripped.removed }));
+        rawReply = stripped.text;
+    }
     const { dates: toolDates, values: extraValidValues } = extractToolGroundTruth(toolCallLog);
     // Dates the system prompt itself handed the model (the per-day wearable block) are as valid
     // to cite as a tool result's; without this a correct 「2026-09-14 睡了5.4小时」 is rewritten

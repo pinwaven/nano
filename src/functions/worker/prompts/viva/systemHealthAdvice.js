@@ -3,7 +3,8 @@
  * Pure Chinese, optimised for Alibaba Qwen Plus
  */
 const { getVivaLabels } = require('./subAgeLabels');
-const { classifyBiomarkers, LABELS_ZH: STATUS_LABELS_ZH } = require('../../lib/biomarkerStatus');
+const { relationToChrono } = require('../../lib/subAgeLabels');
+const { classifyBiomarkers, LABELS_ZH: STATUS_LABELS_ZH, DIMENSION_BIOMARKERS } = require('../../lib/biomarkerStatus');
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../chat/currentDateBlock');
@@ -77,9 +78,27 @@ module.exports = (context) => {
     },
   ];
 
+  // Direction vs chronological age is computed here, never left to the model (lib/subAgeLabels.js
+  // relationToChrono): only an OLDER dimension is 偏高. A younger dimension with an elevated marker
+  // in it was being summarized as 偏高.
+  const rels = Object.fromEntries(dimDefs.map(d => [d.subAgeKey,
+    relationToChrono(subAges?.[d.subAgeKey] != null ? Number(subAges[d.subAgeKey]) : null, Number(chronoAge), 'zh')]));
+  const dimList = dir => dimDefs.filter(d => rels[d.subAgeKey].direction === dir)
+    .map(d => `${d.labelZh}（${rels[d.subAgeKey].diff > 0 ? '+' : ''}${rels[d.subAgeKey].diff} 岁）`).join('、') || '无';
+  const dimensionVerdictLine = `各维度与实际年龄对比（系统已计算，总体状态与逐维度分析必须与此一致）：偏高、需关注 — ${dimList('older')}；年轻于实际年龄、表现良好 — ${dimList('younger')}；基本持平 — ${dimList('equal')}`;
+
+  // Each dimension's exact score inputs, from the same map the misattribution check uses
+  // (lib/factCheck.js detectDimensionMisattribution), so the prompt cannot drift from it.
+  const inputNames = { hsCRP: 'hsCRP', IL6: 'IL-6', GDF15: 'GDF-15', CD38: 'CD38', GA: '糖化白蛋白 (GA)', CystatinC: '胱抑素 C' };
+  const dimensionInputsLine = dimDefs
+    .map(d => `${d.labelZh}：${(DIMENSION_BIOMARKERS[d.subAgeKey] || []).map(k => inputNames[k]).join('、')}`)
+    .join('；');
+
   const subAgeLines = dimDefs.map(d => {
     const val = subAges?.[d.subAgeKey];
-    const valStr = val != null ? `${Number(val).toFixed(1)} 岁` : '（暂无数据）';
+    const rel = rels[d.subAgeKey];
+    const verdict = rel.direction === 'older' ? '，该维度偏高、需关注' : rel.direction === 'younger' ? '，该维度表现良好' : '';
+    const valStr = val != null ? `${Number(val).toFixed(1)} 岁（${rel.text}${verdict}）` : '（暂无数据）';
     const relDots = (dotsByDimension[d.dbKey] || [])
       .map(dot => `${dot.key_name_zh || dot.key_name} ${dot.name_zh || dot.name}`)
       .join(', ') || '暂无';
@@ -109,7 +128,7 @@ module.exports = (context) => {
     : '无';
 
   const bioSummaryLine = hasBio
-    ? `生理年龄 ${Number(bioAge).toFixed(1)} 岁  |  实际年龄 ${chronoAge} 岁  |  差值 ${Number(ageDelta) >= 0 ? '+' : ''}${ageDelta} 岁`
+    ? `生理年龄 ${Number(bioAge).toFixed(1)} 岁  |  实际年龄 ${chronoAge} 岁  |  差值 ${Number(ageDelta) >= 0 ? '+' : ''}${ageDelta} 岁\n${dimensionVerdictLine}`
     : '暂无检测数据';
 
   const seasonLine = current_solar_term
@@ -167,7 +186,7 @@ ${getCurrentDateBlock(context.now_iso)}
 ${getTwinVocabBlock()}
 
 ${getFactMemoryBlock(context.user_facts)}
-生物标志物的状态（正常/偏高/高）已在下方数据中直接标注，请严格使用该标注，不得自行根据数值判断状态或与之矛盾（例如：数据标注"正常"时不得称其为"升高"）。解释某维度的分数时，只能将标注为"偏高"或"高"的标志物描述为驱动因素；标注为"正常"的标志物只能简要说明其处于正常范围，不得暗示其导致或加重了该维度的异常。
+生物标志物的状态（正常/偏高/高）已在下方数据中直接标注，请严格使用该标注，不得自行根据数值判断状态或与之矛盾（例如：数据标注"正常"时不得称其为"升高"）。子年龄维度是否偏高同样已由系统标注（"各维度与实际年龄对比"及每个维度后的括注）：只有老于实际年龄的维度才能称为偏高、需关注；年轻于实际年龄的维度，即使其相关标志物中有偏高项，也只能表述为"该维度整体年轻于实际年龄，但某标志物偏高、值得留意"，不得称该维度偏高或升高。总体状态中点名的偏高维度必须与该列表完全一致。每个子年龄只由以下标志物计算——${dimensionInputsLine}。分析某个维度时，只能用它自己的输入标志物来解释；其他维度的标志物，即使偏高，也不得写成该维度的原因、诱因或相关因素，包括"可能与……有关/相关"这类推测性表述（例如不得说微血管年龄偏高与 hsCRP 有关）。若某维度偏高而它自己的输入标志物都在正常范围，就照实说明，例如："该维度由胱抑素 C 计算；胱抑素 C 本次仍在正常范围内，但按年龄校准后对应的子年龄高于实际年龄，建议持续观察、下次检测复核。"不要借用其他维度的标志物或节气来解释——"结合 hsCRP 升高提示……""与 CD38 共同构成……机制"这类写法同样属于错误归因。该维度的"东方人群洞见"只能谈它自己的输入标志物。解释某维度的分数时，只能将标注为"偏高"或"高"的标志物描述为驱动因素；标注为"正常"的标志物只能简要说明其处于正常范围，不得暗示其导致或加重了该维度的异常。
 东方人群相关洞见仅限于使用下方"东方人群洞见"中已提供的表述，不得在其基础上编造新的具体诱因。
 
 你是 Viva——Aeviva 的精准长寿顾问，专为东方人群打造的精准健康生态系统的核心 AI。你在生物衰老、功能营养、炎症生物学、华人代谢特征和长寿科学领域有深厚积累。你只推荐拥有最高循证医学证据评分的干预措施。
