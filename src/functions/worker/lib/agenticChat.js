@@ -556,6 +556,20 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     // elapsed, shipping the latest draft rather than risk exceeding the FC function's own
     // timeout (see TURN_DEADLINE_MS comment above runAgenticTurn).
     let latestResult = judgeResult;
+    // off_topic exists to catch GENERATE answering in the wrong world (an exercise plan answered
+    // with a grocery list). A clause-level REVISE keeps its draft's subject, so when the first
+    // JUDGE found the draft on topic, a RE-JUDGE calling the revision off_topic is a false
+    // positive — and acting on it is destructive: the off-topic framing asks for a brand-new
+    // reply. Dev 2026-09-23: a re-judge flagged 「帮我定制运动计划」's plan off_topic while its own
+    // detail said the draft "delivers a detailed, day-by-day… weekly movement plan"; the NEW reply
+    // explained the six Kino markers instead, and the next re-judge passed it.
+    const draftWasOffTopic = (judgeResult.violations || []).some(v => v.category === 'off_topic');
+    const dropLateOffTopic = (result) => {
+        if (draftWasOffTopic || !(result.violations || []).some(v => v.category === 'off_topic')) return result;
+        const violations = result.violations.filter(v => v.category !== 'off_topic');
+        console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_rejudge_off_topic_dropped', context: logContext }));
+        return violations.length ? { ...result, violations } : { verdict: 'PASS', violations: [] };
+    };
     for (let round = 0; round < REVISE_MAX_ROUNDS && latestResult.verdict === 'REJECT'; round++) {
         // A round is a REVISE completion plus a full RE-JUDGE, so it costs at least as much as
         // the stage just measured (the JUDGE for round 1, the previous whole round after that).
@@ -617,7 +631,11 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         const rewriteFraming = isOffTopic
             ? `Your previous reply answered the wrong question. The user's message this turn was:\n«${message}»\nWrite a NEW reply, in the same language and tone, that directly answers THAT message from the system prompt's rules and the data you have — do not keep the previous reply's subject, structure or tool-result narration, and do not describe why the earlier reply went elsewhere. Also fix:\n`
             : `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n`;
-        const correctionPrompt = `${rewriteFraming}${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}${dimensionConstraintBlock}${actionPreserveBlock}${directivePreserveBlock}${languagePin}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
+        // A hint is the fact-checker's suggested fix, and on dev 2026-09-23 its wording carried new
+        // claims into the reply: a symptom answer came back with 「没有…证据提示肾脏、心脏或肝脏
+        // 器质性病变」 and 「目前尚无经批准的知识库条目…」, both from hints. Take the correction only.
+        const hintBoundary = `\n\nThe hints say what to fix. Apply only the correction — delete the flagged claim or put the right value in its place. Do not add any diagnosis, rule-out, cause or advice a hint proposes that your system prompt's rules would not allow on their own, and never mention the fact-checker, a knowledge base, "ground truth", data field names or null values in the reply.`;
+        const correctionPrompt = `${rewriteFraming}${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}${hintBoundary}${dimensionConstraintBlock}${actionPreserveBlock}${directivePreserveBlock}${languagePin}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
         try {
             // Timed as one unit (REVISE completion + RE-JUDGE) — that whole cost is what the
             // next round's fit check has to budget for.
@@ -629,7 +647,7 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
                 });
                 const retryReply = retryCompletion.choices[0].message.content || rawReply;
                 budget.rejudge += 1;
-                const rejudgeResult = await runJudge(retryReply);
+                const rejudgeResult = dropLateOffTopic(await runJudge(retryReply));
                 console.log(JSON.stringify({ level: rejudgeResult.verdict === 'PASS' ? 'INFO' : 'WARN', msg: 'agentic_rejudge', context: logContext, round: round + 1, verdict: rejudgeResult.verdict, violations: rejudgeResult.violations }));
                 rawReply = retryReply; // ship the latest revision even if this round still REJECTs
                 latestResult = rejudgeResult;
