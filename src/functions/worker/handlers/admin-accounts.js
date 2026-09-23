@@ -7,6 +7,13 @@ const {
     requirePermission,
     verifySubchannelOwnership,
 } = require('../lib/auth');
+const { normalizeEmail, isValidEmail, issueEmailOtp, verifyEmailOtp, TTL_MINUTES } = require('../lib/email-otp');
+const { handlePhoneOtpSend } = require('./phone-otp');
+const { verifyOTP: verifySmsOtp } = require('../lib/sms');
+const { normalizeCnPhone } = require('../lib/phone');
+
+const ADMIN_OTP_PURPOSE = 'admin_login';
+const PHONE_RE = /^1\d{10}$/;
 
 async function handleGetAdminAccounts(adminCtx) {
     const isChannel = adminCtx?.role === 'channel';
@@ -15,7 +22,7 @@ async function handleGetAdminAccounts(adminCtx) {
     if (isChannel && !canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const cols = `a.id, a.username, a.created_at, a.channel_id, a.is_channel_admin, a.role_id, a.permissions_override, a.permissions, r.name AS role_name, r.label AS role_label, c.name AS channel_name`;
+        const cols = `a.id, a.username, a.email, a.created_at, a.channel_id, a.is_channel_admin, a.role_id, a.permissions_override, a.permissions, r.name AS role_name, r.label AS role_label, c.name AS channel_name`;
         let result;
         if (isChannel) {
             if (canManageOwn && canManageSubs) {
@@ -51,7 +58,9 @@ async function handlePostAdminAccount(body, adminCtx) {
     const canManageSubs = isChannel && adminCtx.canManageSubchannels;
     if (isChannel && !canManageOwn && !canManageSubs) return { statusCode: 403, success: false, error: 'Forbidden' };
     const { username, password, channel_id, role_id, permissions_override, is_channel_admin } = body || {};
+    const email = normalizeEmail(body?.email);
     if (!username || !password) return { statusCode: 400, success: false, error: 'Username and password required' };
+    if (email && !isValidEmail(email)) return { statusCode: 400, success: false, error: 'Invalid email' };
     // Only superadmin can create channel admin accounts
     const makeChannelAdmin = !isChannel && !!is_channel_admin && !!channel_id;
     try {
@@ -86,14 +95,14 @@ async function handlePostAdminAccount(body, adminCtx) {
         const salt = randomBytes(16).toString('hex');
         const hash = scryptSync(password, salt, 64).toString('hex');
         const result = await pool.query(
-            `INSERT INTO admin_accounts (username, password_hash, channel_id, is_channel_admin, role_id, permissions_override)
-             VALUES ($1, $2, $3, $4, $5, $6)
-             RETURNING id, username, created_at, channel_id, is_channel_admin, role_id, permissions_override`,
-            [username, `${salt}:${hash}`, channel_id || null, makeChannelAdmin, sanitizedRoleId, sanitizedOverrides]
+            `INSERT INTO admin_accounts (username, email, password_hash, channel_id, is_channel_admin, role_id, permissions_override)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING id, username, email, created_at, channel_id, is_channel_admin, role_id, permissions_override`,
+            [username, email || null, `${salt}:${hash}`, channel_id || null, makeChannelAdmin, sanitizedRoleId, sanitizedOverrides]
         );
         return { success: true, account: result.rows[0] };
     } catch (err) {
-        if (err.code === '23505') return { statusCode: 409, success: false, error: 'Username already exists' };
+        if (err.code === '23505') return { statusCode: 409, success: false, error: 'Username or email already exists' };
         return { success: false, error: err.message };
     }
 }
@@ -116,7 +125,10 @@ async function handlePutAdminAccount(id, body, adminCtx) {
         }
     }
     const { password, role_id, permissions_override } = body || {};
-    if (!password && role_id === undefined && permissions_override === undefined) return { statusCode: 400, success: false, error: 'Nothing to update' };
+    const hasEmail = Object.prototype.hasOwnProperty.call(body || {}, 'email');
+    const email = hasEmail ? normalizeEmail(body.email) : null;
+    if (hasEmail && email && !isValidEmail(email)) return { statusCode: 400, success: false, error: 'Invalid email' };
+    if (!password && role_id === undefined && permissions_override === undefined && !hasEmail) return { statusCode: 400, success: false, error: 'Nothing to update' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         if (password) {
@@ -124,6 +136,9 @@ async function handlePutAdminAccount(id, body, adminCtx) {
             const salt = randomBytes(16).toString('hex');
             const hash = scryptSync(password, salt, 64).toString('hex');
             await pool.query('UPDATE admin_accounts SET password_hash = $1 WHERE id = $2', [`${salt}:${hash}`, id]);
+        }
+        if (hasEmail) {
+            await pool.query('UPDATE admin_accounts SET email = $1 WHERE id = $2', [email || null, id]);
         }
         if (role_id !== undefined) {
             const isChannel = adminCtx?.role === 'channel';
@@ -145,6 +160,7 @@ async function handlePutAdminAccount(id, body, adminCtx) {
         }
         return { success: true };
     } catch (err) {
+        if (err.code === '23505') return { statusCode: 409, success: false, error: 'Email already exists' };
         return { success: false, error: err.message };
     }
 }
@@ -278,33 +294,40 @@ async function handleDeleteAdminChannelRole(id, adminCtx) {
     }
 }
 
-async function handleAdminLogin(body) {
-    const { username, password } = body || {};
-    if (!username || !password) return { statusCode: 400, success: false, error: 'Missing credentials' };
-    try {
-        if (!pool) return { success: false, error: 'Database pool not initialized' };
-        const result = await pool.query(`
-            SELECT a.id, a.password_hash, a.channel_id,
+async function loadAdminAccount(field, value) {
+    const predicate = field === 'email' ? 'LOWER(a.email) = $1' : 'a.username = $1';
+    const result = await pool.query(`
+            SELECT a.id, a.username, a.email, a.password_hash, a.channel_id,
                    a.is_channel_admin, a.permissions_override,
                    a.permissions AS legacy_perms,
                    r.permissions AS role_permissions
             FROM admin_accounts a
             LEFT JOIN admin_channel_roles r ON r.id = a.role_id
-            WHERE a.username = $1
-        `, [username]);
-        if (result.rows.length === 0) {
-            await new Promise(r => setTimeout(r, 200));
-            return { statusCode: 401, success: false, error: 'Invalid credentials' };
-        }
-        const row = result.rows[0];
-        const { scryptSync, timingSafeEqual } = require('crypto');
-        const [salt, storedHash] = row.password_hash.split(':');
-        const derivedKey = scryptSync(password, salt, 64);
-        const match = timingSafeEqual(derivedKey, Buffer.from(storedHash, 'hex'));
-        if (!match) return { statusCode: 401, success: false, error: 'Invalid credentials' };
+            WHERE ${predicate}
+        `, [value]);
+    return result.rows[0] || null;
+}
 
+async function loadAdminUserByPhone(phone) {
+    const { rows } = await pool.query(
+        `SELECT u.user_id, u.nickname, u.roles, u.channel_id
+         FROM users u
+         JOIN user_phones up ON up.user_id = u.user_id
+         WHERE up.phone = $1
+         LIMIT 1`,
+        [normalizeCnPhone(phone)]
+    );
+    return rows[0] || null;
+}
+
+function hasWebAdminRole(user) {
+    return Array.isArray(user?.roles) && (user.roles.includes('admin') || user.roles.includes('superadmin'));
+}
+
+async function createAdminSession(row) {
+        const username = row.username;
         if (row.channel_id == null) {
-            return { success: true, token: signSuperadminToken({ sub: row.id, username }), role: 'superadmin', channel_id: null, allowed_tabs: null };
+            return { success: true, token: signSuperadminToken({ sub: row.id, username }), username, role: 'superadmin', channel_id: null, allowed_tabs: null };
         }
 
         const chRes = await pool.query(`SELECT name, effective_channel_logo(id) AS logo_url, effective_channel_config(id, 'admin_tabs') AS admin_tabs, can_manage_subchannels, can_customize_store, can_manage_warehouses, autonomous FROM channels WHERE id = $1`, [row.channel_id]);
@@ -342,12 +365,95 @@ async function handleAdminLogin(body) {
         const canCustomizeStore = isAutonomous || (channelRow.can_customize_store ?? false);
         const canManageWarehouses = isAutonomous || (channelRow.can_manage_warehouses ?? false);
         const token = signChannelAdminToken({ sub: row.id, username, cid: row.channel_id, tabs, perms: resolvedPerms, cms, cmw: canManageWarehouses, auto: isAutonomous });
-        return { success: true, token, role: 'channel', channel_id: row.channel_id,
+        return { success: true, token, username, role: 'channel', channel_id: row.channel_id,
                  channel_name: channelRow.name || '', channel_logo: channelRow.logo_url || '',
                  allowed_tabs: tabs, allowed_perms: resolvedPerms, can_manage_subchannels: cms,
                  can_customize_store: canCustomizeStore, can_manage_warehouses: canManageWarehouses,
                  autonomous: isAutonomous };
+}
+
+async function handleAdminLogin(body, clientIp = null) {
+    const { username, password, code, action } = body || {};
+    const mode = body?.mode === 'otp' || body?.mode === 'sms_otp' ? body.mode : 'password';
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+
+        if (mode === 'otp') {
+            const email = normalizeEmail(body?.email);
+            if (!isValidEmail(email)) return { statusCode: 400, success: false, error: 'Invalid email' };
+            const row = await loadAdminAccount('email', email);
+
+            if (action === 'send') {
+                // Always return the same shape so this public endpoint does not disclose admin emails.
+                if (row) {
+                    const issued = await issueEmailOtp(email, ADMIN_OTP_PURPOSE, body?.language === 'en' ? 'en' : 'zh');
+                    if (!issued.ok) return { success: false, error: issued.error, retry_after: issued.retry_after };
+                } else {
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+                return { success: true, expires_in: TTL_MINUTES * 60 };
+            }
+
+            if (!code) return { statusCode: 400, success: false, error: 'Code is required' };
+            if (!row) return { statusCode: 401, success: false, error: 'Invalid code' };
+            const verified = await verifyEmailOtp(email, String(code), ADMIN_OTP_PURPOSE);
+            if (!verified.ok) return { statusCode: 401, success: false, error: verified.error };
+            return await createAdminSession(row);
+        }
+
+        if (mode === 'sms_otp') {
+            const phone = String(body?.phone || '').trim();
+            if (!PHONE_RE.test(phone)) return { statusCode: 400, success: false, error: 'Invalid phone' };
+            const user = await loadAdminUserByPhone(phone);
+
+            if (action === 'send') {
+                if (hasWebAdminRole(user)) {
+                    const issued = await handlePhoneOtpSend({ phone }, clientIp);
+                    if (!issued.success) return issued;
+                } else {
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+                return { success: true, expires_in: 300 };
+            }
+
+            if (!code) return { statusCode: 400, success: false, error: 'Code is required' };
+            if (!await verifySmsOtp(phone, String(code))) {
+                return { statusCode: 401, success: false, error: 'invalid_code' };
+            }
+            if (!hasWebAdminRole(user)) return { statusCode: 403, success: false, error: 'admin_role_required' };
+
+            const username = user.nickname || user.user_id;
+            if (user.roles.includes('superadmin')) {
+                return await createAdminSession({ id: user.user_id, username, channel_id: null });
+            }
+            if (user.channel_id == null) return { statusCode: 403, success: false, error: 'admin_channel_required' };
+            return await createAdminSession({
+                id: user.user_id,
+                username,
+                channel_id: user.channel_id,
+                is_channel_admin: true,
+                permissions_override: [],
+                legacy_perms: [],
+                role_permissions: [],
+            });
+        }
+
+        if (!username || !password) return { statusCode: 400, success: false, error: 'Missing credentials' };
+        const row = await loadAdminAccount('username', username);
+        if (!row) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            return { statusCode: 401, success: false, error: 'Invalid credentials' };
+        }
+        const { scryptSync, timingSafeEqual } = require('crypto');
+        const [salt, storedHash] = String(row.password_hash || '').split(':');
+        if (!salt || !storedHash) return { statusCode: 401, success: false, error: 'Invalid credentials' };
+        const derivedKey = scryptSync(password, salt, 64);
+        const storedKey = Buffer.from(storedHash, 'hex');
+        const match = storedKey.length === derivedKey.length && timingSafeEqual(derivedKey, storedKey);
+        if (!match) return { statusCode: 401, success: false, error: 'Invalid credentials' };
+        return await createAdminSession(row);
     } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'admin-login-error', data: { mode, error: err.message } }));
         return { success: false, error: err.message };
     }
 }

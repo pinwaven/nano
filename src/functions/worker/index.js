@@ -898,7 +898,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path === '/avatar-generation') {
                 result = await handlePostAvatarGeneration(parsedBody);
             } else if (path === '/admin/login') {
-                result = await handleAdminLogin(parsedBody);
+                result = await handleAdminLogin(parsedBody, (event.requestContext && event.requestContext.http && event.requestContext.http.sourceIp) || null);
             } else if (path === '/admin-accounts') {
                 result = await handlePostAdminAccount(parsedBody, adminCtx);
             } else if (path === '/admin-channel-roles') {

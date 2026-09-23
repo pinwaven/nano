@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Plus, Pencil, Trash2, X, Check, Shield } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Check, Shield, Mail } from 'lucide-react';
 import { useLang, fmtDate, hasPermission, PERMS } from '../shared.jsx';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -60,7 +60,7 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
   const ta = t.adminAccounts;
   const [channelRoles, setChannelRoles] = useState([]);
   const [modal, setModal] = useState(null);
-  const [form, setForm]   = useState({ username: '', password: '', channel_id: '', role_id: '', permissions_override: [] });
+  const [form, setForm]   = useState({ username: '', email: '', password: '', channel_id: '', role_id: '', permissions_override: [] });
   const [roleForm, setRoleForm] = useState({ name: '', label: '', permissions: [] });
   const [err, setErr]     = useState('');
   const [saving, setSaving] = useState(false);
@@ -88,10 +88,11 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
 
   const openAdd = () => {
     const defaultCid = isChannelAdmin ? myChannelId : '';
-    setForm({ username: '', password: '', channel_id: defaultCid, role_id: '', permissions_override: [], is_channel_admin: false });
+    setForm({ username: '', email: '', password: '', channel_id: defaultCid, role_id: '', permissions_override: [], is_channel_admin: false });
     setErr(''); setModal({ type: 'add' });
   };
   const openPassword = (account) => { setForm({ password: '' }); setErr(''); setModal({ type: 'password', account }); };
+  const openEmail = (account) => { setForm({ email: account.email || '' }); setErr(''); setModal({ type: 'email', account }); };
   const openRole = (account) => {
     setForm({ role_id: account.role_id ? String(account.role_id) : '', permissions_override: Array.isArray(account.permissions_override) ? [...account.permissions_override] : [] });
     setErr(''); setModal({ type: 'role', account });
@@ -112,6 +113,7 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
       if (modal.type === 'add') {
         await axios.post('/api/admin-accounts', {
           username: form.username,
+          email: form.email,
           password: form.password,
           channel_id: form.channel_id || null,
           is_channel_admin: form.is_channel_admin || false,
@@ -120,6 +122,8 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
         });
       } else if (modal.type === 'password') {
         await axios.put(`/api/admin-accounts/${modal.account.id}`, { password: form.password });
+      } else if (modal.type === 'email') {
+        await axios.put(`/api/admin-accounts/${modal.account.id}`, { email: form.email });
       } else if (modal.type === 'role') {
         await axios.put(`/api/admin-accounts/${modal.account.id}`, {
           role_id: form.role_id ? parseInt(form.role_id) : null,
@@ -186,6 +190,7 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
             <thead>
               <tr>
                 <th>{ta.usernameLabel}</th>
+                <th>Email OTP</th>
                 <th>Channel</th>
                 <th>Role</th>
                 <th>{t.table.joined}</th>
@@ -193,13 +198,14 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
               </tr>
             </thead>
             <tbody>
-              {accounts.length === 0 && <tr><td colSpan={5} className="empty-row">No admin accounts</td></tr>}
+              {accounts.length === 0 && <tr><td colSpan={6} className="empty-row">No admin accounts</td></tr>}
               {accounts.map(a => {
                 const roleLabel = a.role_label || a.role_name || null;
                 const isChAdmin = a.is_channel_admin;
                 return (
                   <tr key={a.id}>
                     <td><strong>{a.username}</strong>{isChAdmin && <span style={{ marginLeft: 6, fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#312e81', color: '#a5b4fc' }}>Channel Admin</span>}</td>
+                    <td className="muted">{a.email || '—'}</td>
                     <td className="muted">{a.channel_name || <span style={{ color: '#475569' }}>Superadmin</span>}</td>
                     <td>
                       {a.channel_id ? (
@@ -215,6 +221,11 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
                       {a.channel_id && !isChAdmin && hasPermission(session, PERMS.ADMIN_ACCTS_WRITE) && (
                         <button className="icon-btn" title="Edit role & permissions" onClick={() => openRole(a)}>
                           <Shield size={14} />
+                        </button>
+                      )}
+                      {hasPermission(session, PERMS.ADMIN_ACCTS_WRITE) && (
+                        <button className="icon-btn" title="Set OTP email" onClick={() => openEmail(a)}>
+                          <Mail size={14} />
                         </button>
                       )}
                       {hasPermission(session, PERMS.ADMIN_ACCTS_WRITE) && (
@@ -285,6 +296,7 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
                 modal.type === 'add' ? ta.add :
                 modal.type === 'role' ? `Role — ${modal.account.username}` :
                 modal.type === 'password' ? ta.changePassword :
+                modal.type === 'email' ? `OTP Email — ${modal.account.username}` :
                 modal.type === 'add-role' ? 'New Role' :
                 `Edit Role — ${modal.role?.label}`
               }</span>
@@ -297,6 +309,10 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
                   <label className="form-field">
                     <span>{ta.usernameLabel}</span>
                     <input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} autoFocus />
+                  </label>
+                  <label className="form-field">
+                    <span>Email for OTP login</span>
+                    <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
                   </label>
                   {isChannelAdmin ? (
                     <label className="form-field">
@@ -361,6 +377,12 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
                 <label className="form-field">
                   <span>{ta.usernameLabel}</span>
                   <input value={modal.account.username} disabled />
+                </label>
+              )}
+              {modal.type === 'email' && (
+                <label className="form-field">
+                  <span>Email for OTP login</span>
+                  <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} autoFocus placeholder="admin@example.com" />
                 </label>
               )}
               {/* Add / edit channel role */}
