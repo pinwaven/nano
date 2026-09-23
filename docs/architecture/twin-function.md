@@ -138,12 +138,6 @@ neither (it says Viva, and nothing about review). A physician's agent reads as a
 2. **`observations`** — superseded: extracted values arrive through the doc-extract queue, which is
    now in this function. A contribution kind for them would be a second door.
 3. **A narrower database account.** Today `nano_admin`; a console act.
-4. **Prod — step 1 of 3 done (2026-09-23).** `migration_twin_sync.sql` applied (2.5 s; 28k
-   events, 27k chat rows); `twin` deployed as FC `twin` (`https://twin-ewqsowbyxp.cn-shanghai.fcapp.run`),
-   all three scopes answering `prod`, and the prod worker still serving its queue routes alongside.
-   Curia's health-report skill reads prod through it. Remaining, in order: switch Curia prod's
-   vivad / docextractd / twinsyncd to `/api/twin` (a Curia release); **only then** deploy a worker
-   without the queue routes and drop the two tokens from its prod env; then
-   `twin-all-users.js --env prod --apply`. The prod domain has no `/api/twin/*` route yet.
+4. **Prod cutover deployed (2026-09-23).** User confirmed Curia's production services switched. Full production deployment completed: worker queue routes retired and its two external queue credentials removed; `/api/twin/*` now routes to `twin`. Authenticated ping checks pass for twin, viva-ag and doc-extract scopes. Runtime dependencies installed with `npm ci --omit=dev --prefix src/functions/twin` before the final twin deploy (an initial package lacked them and returned 502). `twin-all-users.js --env prod --apply` remains a separate data operation, not run as part of deployment.
 5. **The miniapp** carries the attribution line (VERSION 0923-2) and has not been uploaded.
 6. **Custom domain** on dev: the route is in s.yaml, not deployed; clients use the function URL.

@@ -97,20 +97,7 @@ resources:
         # Signs nano's own sessions (ch./sa.) — never API_BEARER_TOKEN, which is public. Separate from dev on purpose: a dev token must not open prod.
         TOKEN_SIGNING_SECRET: ${env(TOKEN_SIGNING_SECRET_PROD)}
         GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
-        # Scoped external credential for the viva-ag advanced-generation agent (CLAUDE.md 35).
-        # Distinct token per environment ON PURPOSE: dev and prod share the OSS bucket and the
-        # Aliyun account, so one shared token would let a dev-configured external agent claim
-        # and answer real prod users' jobs. Must NOT start with "ch." — that prefix is claimed
-        # by the channel-admin JWT branch in worker/index.js and would 401. Issue as
-        # "vag_" + 32 hex.
-        VIVA_AG_API_TOKEN: ${env(VIVA_AG_API_TOKEN_PROD)}
-        # Scoped external credential for the document-extraction agent. A SEPARATE service from
-        # viva-ag even though the same platform runs both, so it gets its own token: extraction is
-        # available to every user while AG is a paid add-on, and one credential covering both would
-        # mean a compromise of the cheap, widely-used service also opened the queue of paid deep
-        # analyses. Same per-environment split and same "ch." prohibition as above. Issue as
-        # "dex_" + 32 hex.
-        DOC_EXTRACT_API_TOKEN: ${env(DOC_EXTRACT_API_TOKEN_PROD)}
+        # External queue credentials now belong only to the twin function.
         # Per-user daily cap on external deep analyses. Each run is expensive, so this is a
         # cost guard, not a product limit — raise it deliberately rather than by accident. The
         # code default (handlers/viva_ag.js) is 3; dev sets 50 so testing isn't blocked.
@@ -388,9 +375,7 @@ resources:
             methods: ["GET", "OPTIONS"]
 
   # The twin function — every route between Curia and nano (docs/architecture/twin-function.md).
-  # Deployed to prod 2026-09-23 BEFORE the worker gives up its queue routes: until Curia prod points
-  # at /api/twin, the worker still answers VIVA_AG_API_TOKEN and DOC_EXTRACT_API_TOKEN too. Only
-  # after Curia is switched may a worker without those routes ship (§Open 4 has the order).
+  # Curia production cutover confirmed 2026-09-23; worker queue routes retired.
   # EVENT_SOURCE_SUFFIX is unset here, as on the prod worker.
   twin:
     component: fc3
@@ -471,6 +456,8 @@ resources:
         routes:
           - path: /QJaeMN3iR8.txt
             functionName: nano-worker
+          - path: /api/twin/*
+            functionName: twin
           - path: /api/*
             functionName: nano-worker
           - path: /api
