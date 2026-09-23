@@ -38,7 +38,13 @@ async function updateHealthTwin(userId, pool) {
               AVG(CASE WHEN category = 'vitals' THEN (data->>'spo2')::FLOAT END)           AS avg_spo2,
               AVG(CASE WHEN category = 'sleep'  THEN (data->>'duration_minutes')::FLOAT / 60 END) AS avg_sleep_hours,
               AVG(CASE WHEN category = 'sleep'  THEN (data->>'sleep_score')::FLOAT END)    AS avg_sleep_score,
+              -- Nights with no stage split (V8; all-zero rows synced before 2026-09-23) are left
+              -- out rather than averaged in as 0% deep+REM.
               AVG(CASE WHEN category = 'sleep' AND (data->>'duration_minutes')::FLOAT > 0
+                        AND COALESCE((data->>'deep_minutes')::FLOAT, (data->'stages'->>'deep_minutes')::FLOAT, 0)
+                          + COALESCE((data->>'rem_minutes')::FLOAT, (data->'stages'->>'rem_minutes')::FLOAT, 0)
+                          + COALESCE((data->>'light_minutes')::FLOAT, (data->'stages'->>'light_minutes')::FLOAT, 0)
+                          + COALESCE((data->>'awake_minutes')::FLOAT, (data->'stages'->>'awake_minutes')::FLOAT, 0) > 0
                   THEN (COALESCE((data->>'deep_minutes')::FLOAT, (data->'stages'->>'deep_minutes')::FLOAT, 0)
                       + COALESCE((data->>'rem_minutes')::FLOAT, (data->'stages'->>'rem_minutes')::FLOAT, 0))
                       / (data->>'duration_minutes')::FLOAT * 100

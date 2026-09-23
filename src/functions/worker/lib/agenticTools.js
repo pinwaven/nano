@@ -735,7 +735,15 @@ function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_na
                         : 'No wearable data (sleep, steps, heart rate…) has been synced recently. Say so plainly; do not substitute averages or guesses.',
                 }] };
             }
-            return { ok: true, data: rows };
+            // A night with no stage split (V8 never reports one — CLAUDE.md §18) is said in words.
+            // Bare `deep_minutes: null` read to the model as "none recorded", and it told a user
+            // their night had no restorative sleep (dev, 2026-09-23).
+            const notMeasured = language === 'zh' ? '设备未测量睡眠分期（不是没有深睡）' : 'not measured by this device (not the same as none)';
+            return { ok: true, data: rows.map(r => {
+                if (r.sleep_hours == null || r.deep_minutes != null || r.rem_minutes != null || r.light_minutes != null || r.awake_minutes != null) return r;
+                const { deep_minutes, rem_minutes, light_minutes, awake_minutes, ...rest } = r;
+                return { ...rest, sleep_stages: notMeasured };
+            }) };
         },
 
         async get_health_twin() {

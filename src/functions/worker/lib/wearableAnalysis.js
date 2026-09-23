@@ -194,7 +194,7 @@ function analyzeSleep(sleepDays, ref) {
     const last = sleepDays[sleepDays.length - 1];
     const within7 = sleepDays.filter(r => { const d = daysBetween(r.date, ref); return d >= 0 && d < 7; });
     const others7 = within7.filter(r => r.date !== last.date);
-    const restorative = (r) => r.sleep_hours ? r0(((r.deep_minutes || 0) + (r.rem_minutes || 0)) / (r.sleep_hours * 60) * 100) : null;
+    const restorative = (r) => r.sleep_hours && (r.deep_minutes != null || r.rem_minutes != null) ? r0(((r.deep_minutes || 0) + (r.rem_minutes || 0)) / (r.sleep_hours * 60) * 100) : null;
     const onsets = nums(sleepDays.filter(r => { const d = daysBetween(r.date, ref); return d >= 0 && d < ONSET_WINDOW_DAYS; }).map(r => onsetMinutes(r.sleep_onset)));
     const onsetSd = sd(onsets);
     const stageAvailable = sleepDays.some(r => r.deep_minutes != null);

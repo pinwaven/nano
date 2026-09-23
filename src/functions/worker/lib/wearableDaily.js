@@ -35,6 +35,18 @@ const hhmm = (mins) => {
     return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 };
 
+// The session that is the night itself: the longest one with a start time. A day's sleep event
+// can hold a nap, a wake-interrupted segment or a pre-dawn top-up alongside the main sleep.
+function mainSleepSession(sessions) {
+    if (!Array.isArray(sessions)) return null;
+    let best = null;
+    for (const s of sessions) {
+        if (!s || s.sleepStart == null || !(Number(s.totalMinutes) > 0)) continue;
+        if (!best || Number(s.totalMinutes) > Number(best.totalMinutes)) best = s;
+    }
+    return best ? { sleepStart: Number(best.sleepStart), sleepEnd: best.sleepEnd == null ? null : Number(best.sleepEnd), totalMinutes: Number(best.totalMinutes) } : null;
+}
+
 async function fetchWearableDaily(pool, userId, days = 7) {
     const n = clampDays(days);
     const { rows } = await pool.query(
@@ -45,6 +57,7 @@ async function fetchWearableDaily(pool, userId, days = 7) {
                 MAX(CASE WHEN e.category = 'sleep' THEN COALESCE((e.data->>'light_minutes')::float, (e.data->'stages'->>'light_minutes')::float) END) AS light_minutes,
                 MAX(CASE WHEN e.category = 'sleep' THEN COALESCE((e.data->>'awake_minutes')::float, (e.data->'stages'->>'awake_minutes')::float) END) AS awake_minutes,
                 MAX(CASE WHEN e.category = 'sleep' THEN (e.data->>'sleep_start_min')::float END) AS sleep_start_min,
+                (ARRAY_AGG(e.data->'sessions') FILTER (WHERE e.category = 'sleep' AND jsonb_typeof(e.data->'sessions') = 'array'))[1] AS sleep_sessions,
                 MAX(CASE WHEN e.category = 'sleep' THEN (e.data->>'sleep_score')::float END) AS sleep_score,
                 MAX(CASE WHEN e.category = 'activity' THEN (e.data->>'steps')::float
                          WHEN e.category = 'vitals'   THEN (e.data->>'steps')::float END) AS steps,
@@ -70,28 +83,43 @@ async function fetchWearableDaily(pool, userId, days = 7) {
           ORDER BY e.data_date DESC`,
         [userId, n]
     );
-    return rows.map(x => ({
-        date: x.date,
-        sleep_hours: x.sleep_minutes == null ? null : r1(x.sleep_minutes / 60),
-        deep_minutes: r0(x.deep_minutes),
-        rem_minutes: r0(x.rem_minutes),
-        light_minutes: r0(x.light_minutes),
-        awake_minutes: r0(x.awake_minutes),
-        sleep_onset: hhmm(x.sleep_start_min),
-        wake_time: x.sleep_start_min == null || x.sleep_minutes == null ? null : hhmm(x.sleep_start_min + x.sleep_minutes),
-        sleep_score: r0(x.sleep_score),
-        steps: r0(x.steps),
-        active_minutes: r0(x.active_minutes),
-        hrv_ms: r1(x.hrv_ms),
-        resting_hr: r0(x.resting_hr),
-        spo2: r1(x.spo2),
-        stress: r0(x.stress),
-        breath_rate: r1(x.breath_rate),
-        skin_temp_c: r1(x.skin_temp_c),
-        hr_min: x.hr_min ?? null,
-        hr_max: x.hr_max ?? null,
-        hr_readings: x.hr_readings,
-    }));
+    return rows.map(x => {
+        // A night with a duration but an all-zero stage split has no stage data: V8 reports none
+        // (§18), and until 2026-09-23 the miniapp's sync summed those nulls into 0s. Read as
+        // numbers they told the model "deep+REM 0%" — a false finding, not a gap.
+        const stagesKnown = [x.deep_minutes, x.rem_minutes, x.light_minutes, x.awake_minutes].some(v => v != null && v > 0);
+        const stage = (v) => (stagesKnown ? r0(v) : null);
+        // Onset and wake come from the night's LONGEST session. The stored sleep_start_min is a
+        // min() over minute-of-day values, so a 06:28 top-up after a 21:25 night won — 「入睡
+        // 06:28」, and wake = onset + total minutes landed mid-afternoon (dev, 2026-09-23). Rows
+        // without sessions (older or non-Halo/V8 shapes) keep the stored fields.
+        const main = mainSleepSession(x.sleep_sessions);
+        const onsetMin = main ? main.sleepStart : x.sleep_start_min;
+        const wakeMin = main ? (main.sleepEnd != null ? main.sleepEnd : main.sleepStart + main.totalMinutes)
+            : (x.sleep_start_min == null || x.sleep_minutes == null ? null : x.sleep_start_min + x.sleep_minutes);
+        return {
+            date: x.date,
+            sleep_hours: x.sleep_minutes == null ? null : r1(x.sleep_minutes / 60),
+            deep_minutes: stage(x.deep_minutes),
+            rem_minutes: stage(x.rem_minutes),
+            light_minutes: stage(x.light_minutes),
+            awake_minutes: stage(x.awake_minutes),
+            sleep_onset: hhmm(onsetMin),
+            wake_time: hhmm(wakeMin),
+            sleep_score: r0(x.sleep_score),
+            steps: r0(x.steps),
+            active_minutes: r0(x.active_minutes),
+            hrv_ms: r1(x.hrv_ms),
+            resting_hr: r0(x.resting_hr),
+            spo2: r1(x.spo2),
+            stress: r0(x.stress),
+            breath_rate: r1(x.breath_rate),
+            skin_temp_c: r1(x.skin_temp_c),
+            hr_min: x.hr_min ?? null,
+            hr_max: x.hr_max ?? null,
+            hr_readings: x.hr_readings,
+        };
+    });
 }
 
 // Per-reading HRV rows for lib/wearableAnalysis.js's circadian and stress-load metrics —
@@ -155,7 +183,7 @@ function summarizeWearableDaily(rows, today) {
             date: lastNight.date, sleep_hours: lastNight.sleep_hours, deep_minutes: lastNight.deep_minutes, rem_minutes: lastNight.rem_minutes,
             sleep_onset: lastNight.sleep_onset, wake_time: lastNight.wake_time,
             vs_other_nights_hours: avgSleep == null ? null : r1(lastNight.sleep_hours - avgSleep),
-            restorative_pct: lastNight.sleep_hours ? r0(((lastNight.deep_minutes || 0) + (lastNight.rem_minutes || 0)) / (lastNight.sleep_hours * 60) * 100) : null,
+            restorative_pct: lastNight.sleep_hours && (lastNight.deep_minutes != null || lastNight.rem_minutes != null) ? r0(((lastNight.deep_minutes || 0) + (lastNight.rem_minutes || 0)) / (lastNight.sleep_hours * 60) * 100) : null,
         };
     }
     const hrvRow = latest('hrv_ms');
@@ -177,10 +205,12 @@ function describeWearableDaily(rows, isZh = true, today = null) {
     const s = summarizeWearableDaily(rows, today);
     const dash = '—';
     const line = (r) => {
+        // No stage split at all (V8 never reports one — §18): say so once rather than four dashes.
+        const noStages = r.deep_minutes == null && r.rem_minutes == null && r.light_minutes == null && r.awake_minutes == null;
         const sleep = r.sleep_hours != null
             ? (isZh
-                ? `睡眠 ${r.sleep_hours}h（深睡 ${r.deep_minutes ?? dash}min · REM ${r.rem_minutes ?? dash}min · 浅睡 ${r.light_minutes ?? dash}min · 清醒 ${r.awake_minutes ?? dash}min${r.sleep_onset ? `，入睡 ${r.sleep_onset}` : ''}${r.wake_time ? ` 醒来 ${r.wake_time}` : ''}）`
-                : `sleep ${r.sleep_hours}h (deep ${r.deep_minutes ?? dash}min · REM ${r.rem_minutes ?? dash}min · light ${r.light_minutes ?? dash}min · awake ${r.awake_minutes ?? dash}min${r.sleep_onset ? `, onset ${r.sleep_onset}` : ''}${r.wake_time ? ` wake ${r.wake_time}` : ''})`)
+                ? `睡眠 ${r.sleep_hours}h（${noStages ? '设备未测量睡眠分期' : `深睡 ${r.deep_minutes ?? dash}min · REM ${r.rem_minutes ?? dash}min · 浅睡 ${r.light_minutes ?? dash}min · 清醒 ${r.awake_minutes ?? dash}min`}${r.sleep_onset ? `，入睡 ${r.sleep_onset}` : ''}${r.wake_time ? ` 醒来 ${r.wake_time}` : ''}）`
+                : `sleep ${r.sleep_hours}h (${noStages ? 'stages not measured by this device' : `deep ${r.deep_minutes ?? dash}min · REM ${r.rem_minutes ?? dash}min · light ${r.light_minutes ?? dash}min · awake ${r.awake_minutes ?? dash}min`}${r.sleep_onset ? `, onset ${r.sleep_onset}` : ''}${r.wake_time ? ` wake ${r.wake_time}` : ''})`)
             : (isZh ? `睡眠 ${dash}` : `sleep ${dash}`);
         const parts = [
             sleep,
@@ -207,7 +237,7 @@ ${lines}
 ${lastNight}
 ${todayLine}
 ${hrv}
-使用规则：回答"昨晚/今天/这周/最近几天"时，只引用上面带日期的逐日数据，并写明日期；7天均值不能当作某一天的数值来说；某天缺项就如实说当天没有记录，不要用其他天的数据代替；今天的步数是截至同步时的部分数据，不要当作全天步数评价。不要把某一晚的睡眠或某一天的心率/HRV归因于 Kino 指标（hsCRP、CD38 等）——穿戴数据与生物标志物之间没有可判定的因果关系，只能并列陈述，各自说明；也不要因此顺带推荐原粒，除非用户问的就是原粒。`;
+使用规则：回答"昨晚/今天/这周/最近几天"时，只引用上面带日期的逐日数据，并写明日期；7天均值不能当作某一天的数值来说；某天缺项就如实说当天没有记录，不要用其他天的数据代替；今天的步数是截至同步时的部分数据，不要当作全天步数评价。"设备未测量睡眠分期"表示这台设备不记录深睡/REM——不是没有深睡，不要说深睡或修复性睡眠为零或缺失，也不要据此推断睡眠质量。不要把某一晚的睡眠或某一天的心率/HRV归因于 Kino 指标（hsCRP、CD38 等）——穿戴数据与生物标志物之间没有可判定的因果关系，只能并列陈述，各自说明；也不要因此顺带推荐原粒，除非用户问的就是原粒。`;
     }
     const ln = s.last_night;
     const lastNight = ln
@@ -220,7 +250,7 @@ ${lines}
 ${lastNight}
 ${todayLine}
 ${hrv}
-Rules: for "last night / today / this week / lately", cite only these dated rows and name the date; never present a 7-day average as a single day's value; if a day lacks a reading say so rather than substituting another day; today's steps are partial (up to the last sync), not a full-day count. Never attribute one night's sleep or one day's HR/HRV to a Kino marker (hsCRP, CD38…) — wearable readings and biomarkers have no determinable causal link here; state them side by side. Don't pivot to recommending dots unless dots were asked about.`;
+Rules: for "last night / today / this week / lately", cite only these dated rows and name the date; never present a 7-day average as a single day's value; if a day lacks a reading say so rather than substituting another day; today's steps are partial (up to the last sync), not a full-day count. "Stages not measured by this device" means the device does not record deep/REM sleep — not that there was none; never say deep or restorative sleep was zero or missing, and draw no sleep-quality conclusion from it. Never attribute one night's sleep or one day's HR/HRV to a Kino marker (hsCRP, CD38…) — wearable readings and biomarkers have no determinable causal link here; state them side by side. Don't pivot to recommending dots unless dots were asked about.`;
 }
 
 // 「昨晚睡得怎么样」「今天走了多少步」「我的HRV最近怎么样」 — anchored on wearable vocabulary.
@@ -231,4 +261,4 @@ function messageAsksAboutWearable(message) {
     return WEARABLE_TRIGGER_RE.test(message || '');
 }
 
-module.exports = { fetchWearableDaily, fetchHrvReadings, summarizeWearableDaily, describeWearableDaily, messageAsksAboutWearable, clampDays, MAX_DAYS };
+module.exports = { mainSleepSession, fetchWearableDaily, fetchHrvReadings, summarizeWearableDaily, describeWearableDaily, messageAsksAboutWearable, clampDays, MAX_DAYS };

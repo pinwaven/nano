@@ -90,3 +90,19 @@ or `ppg`, `source` = the brand; the waveform is 24-bit packed in OSS under `ecg/
   `rr_median_ms`, `rr_sd_ms`, `rejected_intervals`, `sample_rate_hz`, `duration_seconds`) so one
   card and one overlay render both; PPG adds `regular_fraction`, `amplitude_cv`,
   `discontinuities`. The ECG rules above (contact, `duration`, backlog) are ECG-only.
+
+## Sleep rows — two normalisations every reader relies on (2026-09-23)
+
+`fetchWearableDaily` is the one place a day's sleep row is shaped for the model, `wearableAnalysis`
+and the insights; keep both rules there rather than re-deriving them per reader.
+
+- **An all-zero stage split is unknown, not zero.** V8 reports no stages (§18); until `0923-2` the
+  miniapp summed those nulls into `0`s, and the prompt told a user their night had 0% deep+REM.
+  `stagesKnown` nulls the four stage fields; `restorative_pct` and `avg_deep_sleep_pct` skip such
+  nights. `avg_deep_sleep_pct` is deep+**REM** — label it that way.
+- **Onset/wake come from the longest session** (`mainSleepSession`), never from the stored
+  `sleep_start_min`, which is a min() over minute-of-day and let a 06:28 top-up beat a 21:25 night.
+- **Say "not measured" in words, never as `null`.** The per-day line renders 「设备未测量睡眠分期」
+  and `get_wearable_daily` swaps the four null stage fields for `sleep_stages`; a bare null read
+  to the model as "no deep sleep recorded". Chat reads the *stored* twin, so a change to these
+  rules needs `temp/recompute-health-twin-sleep.js` (or a ring sync) before it shows in replies.
