@@ -1,6 +1,7 @@
 const { pool } = require('../lib/db');
 const {
     signChannelAdminToken,
+    signSuperadminToken,
     CHANNEL_ADMIN_FULL_PERMS,
     expandPermissions,
     requirePermission,
@@ -303,7 +304,7 @@ async function handleAdminLogin(body) {
         if (!match) return { statusCode: 401, success: false, error: 'Invalid credentials' };
 
         if (row.channel_id == null) {
-            return { success: true, token: process.env.API_BEARER_TOKEN, role: 'superadmin', channel_id: null, allowed_tabs: null };
+            return { success: true, token: signSuperadminToken({ sub: row.id, username }), role: 'superadmin', channel_id: null, allowed_tabs: null };
         }
 
         const chRes = await pool.query(`SELECT name, effective_channel_logo(id) AS logo_url, effective_channel_config(id, 'admin_tabs') AS admin_tabs, can_manage_subchannels, can_customize_store, can_manage_warehouses, autonomous FROM channels WHERE id = $1`, [row.channel_id]);

@@ -14,13 +14,14 @@ const PHONE_RE = /^1\d{10}$/;
 
 // Admin-impersonation "super OTP" — accepting this code for ANY phone in handlePhoneOtpVerify
 // logs the caller in as that phone's account, for reproducing a specific user's issue without
-// their phone. Hardcoded, not env-configurable — SUPER_OTP_ENABLED is a pure kill switch,
-// independent of the code value. Scoped ONLY to handlePhoneOtpVerify's login path — verifyOTP()
-// itself must never accept this, since it's also called from handlePhoneOtpBind, which is
-// reachable with no auth at all and takes user_id straight from the request body: a universal
-// bypass there would let anyone attach any phone number to any account.
-const SUPER_OTP_ENABLED = process.env.SUPER_OTP_ENABLED === 'true';
-const SUPER_OTP_CODE = '761111';
+// their phone. The code is the SUPER_OTP_CODE env secret (it used to be a source literal, which
+// made it public); SUPER_OTP_ENABLED stays the kill switch, and an unset or short code disables
+// the feature rather than accepting something guessable. Scoped ONLY to the login paths
+// (handlePhoneOtpVerify, handleEmailOtpVerify) — verifyOTP() itself must never accept it, since
+// it is also called from the bind handlers, and a universal bypass there would let anyone attach
+// any phone number to any account.
+const SUPER_OTP_CODE = String(process.env.SUPER_OTP_CODE || '');
+const SUPER_OTP_ENABLED = process.env.SUPER_OTP_ENABLED === 'true' && SUPER_OTP_CODE.length >= 6;
 
 // Records a completed super-OTP login. Fires from all three success paths in
 // handlePhoneOtpVerify (existing user, brand-new user, race-recovery re-fetch).
@@ -77,10 +78,42 @@ async function findUserByPhone(phone) {
     return rows[0] || null;
 }
 
-async function handlePhoneOtpSend(body) {
+// Same per-address limits as lib/email-otp.js, plus a per-IP cap because the cost vector here
+// is spraying many different numbers from one client. IP is FC's requestContext.http.sourceIp
+// (index.js) — never X-Forwarded-For, which the client controls; when absent, only the
+// per-phone limits apply.
+const SEND_MIN_INTERVAL_SECONDS = 60;
+const SEND_HOURLY_MAX_PER_PHONE = 5;
+const SEND_HOURLY_MAX_PER_IP = 30;  // generous: a clinic or carrier NAT shares one IP
+
+async function checkPhoneOtpSendLimit(phone, clientIp) {
+    const { rows } = await pool.query(
+        `SELECT COUNT(*) FILTER (WHERE phone = $1 AND created_at > NOW() - INTERVAL '${SEND_MIN_INTERVAL_SECONDS} seconds')::int AS recent,
+                COUNT(*) FILTER (WHERE phone = $1)::int AS phone_hourly,
+                COUNT(*) FILTER (WHERE $2::text IS NOT NULL AND client_ip = $2)::int AS ip_hourly
+         FROM phone_otp_send_log
+         WHERE (phone = $1 OR ($2::text IS NOT NULL AND client_ip = $2))
+           AND created_at > NOW() - INTERVAL '1 hour'`,
+        [phone, clientIp || null]
+    );
+    const { recent, phone_hourly, ip_hourly } = rows[0];
+    if (recent > 0) return { ok: false, retry_after: SEND_MIN_INTERVAL_SECONDS };
+    if (phone_hourly >= SEND_HOURLY_MAX_PER_PHONE || ip_hourly >= SEND_HOURLY_MAX_PER_IP) return { ok: false, retry_after: 3600 };
+    return { ok: true };
+}
+
+async function handlePhoneOtpSend(body, clientIp = null) {
     try {
         const { phone } = body || {};
         if (!phone || !PHONE_RE.test(phone)) return { success: false, error: 'Invalid phone number' };
+
+        const limit = await checkPhoneOtpSendLimit(phone, clientIp);
+        if (!limit.ok) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'phone-otp-rate-limited', data: { phone, client_ip: clientIp } }));
+            return { success: false, error: 'rate_limited', retry_after: limit.retry_after };
+        }
+        // Logged before the send, so a failing SMS still counts against the limit.
+        await pool.query('INSERT INTO phone_otp_send_log (phone, client_ip) VALUES ($1, $2)', [phone, clientIp || null]);
 
         await sendOTP(phone);
         console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-sent', data: { phone } }));

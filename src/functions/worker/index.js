@@ -5,12 +5,14 @@ const { recordReferralCommission, generatePartnerPayouts, getPartnerProductDisco
 const ossLib = require('./lib/oss');
 const {
     generateUserId, generateReferralCode,
-    signChannelAdminToken, verifyChannelAdminToken,
+    signChannelAdminToken, verifyChannelAdminToken, verifySuperadminToken,
+    signUserToken, verifyUserToken,
     CHANNEL_ADMIN_FULL_PERMS, LEGACY_TAB_EXPANSION,
     expandPermissions, requirePermission, requireAdminTab,
     getWxAccessToken,
 } = require('./lib/auth');
 const { getNowShanghai, calculateAge } = require('./lib/time-utils');
+const { loadCaller, authorizeUserRequest } = require('./lib/userAccess');
 const { updateHealthTwin } = require('./lib/healthTwinUpdater');
 const {
     handleGetDocExtractPing, handleGetDocExtractCatalog, handlePostDocExtractValidate,
@@ -150,6 +152,60 @@ const { handleGetVivaSubscriptionStatus, handleGetVivaSubscriptionPlans, handleP
 // yields a DIFFERENT openid (stored in users.wx_app_openid). Cross-client
 // account matching: wx_app_openid → wx_unionid → phone.
 
+
+// The only routes the bearer gate lets through with no credential, matched exactly. The gate
+// used to exempt whole prefixes (/qr-login/, /phone-otp/, /email-otp/), which also exempted
+// bind / remove / set-primary / accept-unverified / list — each of which takes a user_id from
+// the body, so anyone could attach their own phone to someone else's account and log in as them.
+//
+// These are the steps before a client has a session: every login, the branding shown on the
+// login screen, and the web user-app's one-time wvt exchange (GCN also calls that one,
+// server-side, with its own token).
+//
+// /qr-login/confirm is the exception: the released miniapp's pages/qrlogin sends it with no
+// Authorization header at all, so it stays public until the legacy app bearer is cut off
+// (LEGACY_APP_BEARER=reject), after which it needs the confirming user's own session.
+const PUBLIC_PATHS = new Set([
+    'POST /admin/login',
+    'POST /wx-login', 'POST /wx-app-login',
+    'POST /phone-otp/send', 'POST /phone-otp/verify',
+    'POST /email-otp/send', 'POST /email-otp/verify',
+    'POST /qr-login/init', 'GET /qr-login/status', 'POST /qr-login/confirm',
+    'GET /channel-branding', 'POST /exchange-webview-token',
+    // Guest browsing in the miniapp (a WeChat user with no account yet): the store list —
+    // openid there only picks which channel's catalog — and checking an invite code.
+    'GET /store-items', 'POST /validate-invite',
+]);
+
+// Method-aware on purpose: `GET /store-items` is public, `POST /store-items` creates one.
+function isPublicPathFor(method, path) {
+    if (path === '/qr-login/confirm' && process.env.LEGACY_APP_BEARER === 'reject') return false;
+    return PUBLIC_PATHS.has(`${method} ${path}`);
+}
+
+// Responses on these paths carry `session_token` when they carry a user (see the tail of the
+// handler). /qr-login/status is the web user-app's QR login; the binds can merge the caller into
+// the account that already owns the phone/email, which moves the device to that user.
+const SESSION_ISSUING_PATHS = new Set([
+    '/wx-login', '/wx-app-login',
+    '/phone-otp/verify', '/email-otp/verify',
+    '/qr-login/status', '/exchange-webview-token',
+    '/phone-otp/bind', '/email-otp/bind',
+]);
+
+async function handleSessionUpgrade(adminCtx, body) {
+    if (!adminCtx.legacyAppBearer) return { statusCode: 403, success: false, error: 'Forbidden' };
+    const userId = body && body.user_id;
+    if (!userId) return { statusCode: 400, success: false, error: 'user_id is required' };
+    try {
+        const caller = await loadCaller(String(userId));
+        if (!caller) return { statusCode: 404, success: false, error: 'user_not_found' };
+        console.log(JSON.stringify({ level: 'INFO', msg: 'session_upgrade', data: { user_id: caller.user_id } }));
+        return { success: true, session_token: signUserToken(caller.user_id), user_id: caller.user_id };
+    } catch (err) {
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
 
 exports.handler = async (req, resp, context) => {
     const isStandardHttp = resp && typeof resp.send === 'function';
@@ -321,25 +377,48 @@ exports.handler = async (req, resp, context) => {
         return (key && h[key]) || '';
     })();
 
-    const adminCtx = { role: 'superadmin', username: 'superadmin', channelId: null, accountId: null, canManageSubchannels: false };
+    // Starts unprivileged: only a recognised credential below raises it. It used to start as
+    // superadmin and the whole gate was skipped when API_BEARER_TOKEN was unset, so a deploy with
+    // a missing env var served every route to anyone.
+    const adminCtx = { role: 'anonymous', username: null, channelId: null, accountId: null, canManageSubchannels: false };
     const expectedBearer = process.env.API_BEARER_TOKEN;
-    if (expectedBearer && rawPath && path !== '/admin/login' && !path.startsWith('/qr-login/') && !path.startsWith('/phone-otp/') && !path.startsWith('/email-otp/')) {
-        const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
-        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-        if (token === expectedBearer) {
+    // A public path is still identified when it carries a credential (a /wx-login from a
+    // signed-in client, GCN's /exchange-webview-token), but a missing or bad one never rejects
+    // it — a client holding an expired session must still be able to log in again.
+    const isPublicPath = isPublicPathFor(method, path);
+    const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    let gateFailure = null;   // { statusCode, error } — rejects only a non-public path
+    if (rawPath && (!isPublicPath || token)) {
+        const superadminSession = token.startsWith('sa.') ? verifySuperadminToken(token) : null;
+        if (expectedBearer && token === expectedBearer) {
+            // The shared app bearer, compiled into every released miniapp and the web user-app.
+            // Still superadmin during the grace window while clients move to per-user sessions;
+            // every use is logged so the cut-off (LEGACY_APP_BEARER=reject) can wait for zero.
+            if (process.env.LEGACY_APP_BEARER === 'reject') {
+                gateFailure = { statusCode: 401, error: 'Unauthorized' };
+            } else {
+                adminCtx.role = 'superadmin';
+                adminCtx.username = 'superadmin';
+                adminCtx.legacyAppBearer = true;
+                console.log(JSON.stringify({ level: 'INFO', msg: 'legacy_app_bearer', data: { method, path } }));
+            }
+        } else if (superadminSession) {
             adminCtx.role = 'superadmin';
+            adminCtx.username = superadminSession.username || 'superadmin';
+            adminCtx.accountId = superadminSession.sub;
         } else if (process.env.GCN_API_TOKEN && token === process.env.GCN_API_TOKEN) {
             // Scoped nano<-GCN service credential — distinct from API_BEARER_TOKEN (nano's
             // full superadmin bearer). Authenticated but restricted to the exact paths GCN's
             // nanoClient.js actually calls; anything else 403s even with a valid token.
             const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn', '/partner-types-gcn-sync', '/partner-tier-assignment-gcn-sync', '/formulation-checkout-snapshot', '/formulation-review-snapshot', '/ag-formulation-review-snapshot', '/ag-formulation-approved', '/formulation-purchase-confirmed', '/viva-subscription-plans', '/viva-subscription-checkout-confirmed']);
             if (!GCN_ALLOWED_PATHS.has(path)) {
-                const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
-                if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
-                return forbiddenPayload;
+                gateFailure = { statusCode: 403, error: 'Forbidden' };
             }
-            adminCtx.role = 'superadmin';
-            adminCtx.username = 'gcn-service';
+            if (!gateFailure) {
+                adminCtx.role = 'superadmin';
+                adminCtx.username = 'gcn-service';
+            }
         } else if (process.env.VIVA_AG_API_TOKEN && token === process.env.VIVA_AG_API_TOKEN) {
             // Scoped external credential for the viva-ag advanced-generation agent — distinct
             // from API_BEARER_TOKEN (nano's superadmin bearer, also carried by the miniapp) and
@@ -367,12 +446,12 @@ exports.handler = async (req, resp, context) => {
                 '/viva-ag/biomarker-history', '/viva-ag/chat-history',
             ]);
             if (!VIVA_AG_ALLOWED_PATHS.has(path)) {
-                const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
-                if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
-                return forbiddenPayload;
+                gateFailure = { statusCode: 403, error: 'Forbidden' };
             }
-            adminCtx.role = 'superadmin';
-            adminCtx.username = 'viva-ag-service';
+            if (!gateFailure) {
+                adminCtx.role = 'superadmin';
+                adminCtx.username = 'viva-ag-service';
+            }
         } else if (process.env.DOC_EXTRACT_API_TOKEN && token === process.env.DOC_EXTRACT_API_TOKEN) {
             // Scoped external credential for the document-extraction agent — a SEPARATE service
             // from viva-ag even though the same platform runs both, so it gets a separate token.
@@ -393,35 +472,61 @@ exports.handler = async (req, resp, context) => {
                 '/doc-extract/jobs/result', '/doc-extract/jobs/fail',
             ]);
             if (!DOC_EXTRACT_ALLOWED_PATHS.has(path)) {
-                const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
-                if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
-                return forbiddenPayload;
+                gateFailure = { statusCode: 403, error: 'Forbidden' };
             }
-            adminCtx.role = 'superadmin';
-            adminCtx.username = 'doc-extract-service';
+            if (!gateFailure) {
+                adminCtx.role = 'superadmin';
+                adminCtx.username = 'doc-extract-service';
+            }
         } else if (token.startsWith('ch.')) {
             const payload = verifyChannelAdminToken(token);
             if (!payload) {
-                const unauthorizedPayload = { isBase64Encoded: false, statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized' }) };
-                if (isStandardHttp) { resp.setStatusCode(401); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Unauthorized' })); return; }
-                return unauthorizedPayload;
+                gateFailure = { statusCode: 401, error: 'Unauthorized' };
+            } else {
+                adminCtx.role = 'channel';
+                adminCtx.username = payload.username || payload.sub;
+                adminCtx.channelId = payload.cid;
+                adminCtx.accountId = payload.sub;
+                adminCtx.autonomous = payload.auto ?? false;
+                adminCtx.canManageSubchannels = adminCtx.autonomous || (payload.cms ?? false);
+                adminCtx.canManageWarehouses = adminCtx.autonomous || (payload.cmw ?? false);
+                adminCtx.tabs = payload.tabs ?? [];
+                adminCtx.perms = adminCtx.autonomous
+                    ? [...CHANNEL_ADMIN_FULL_PERMS]
+                    : (Array.isArray(payload.perms) ? payload.perms : expandPermissions(payload.tabs ?? []));
             }
-            adminCtx.role = 'channel';
-            adminCtx.username = payload.username || payload.sub;
-            adminCtx.channelId = payload.cid;
-            adminCtx.accountId = payload.sub;
-            adminCtx.autonomous = payload.auto ?? false;
-            adminCtx.canManageSubchannels = adminCtx.autonomous || (payload.cms ?? false);
-            adminCtx.canManageWarehouses = adminCtx.autonomous || (payload.cmw ?? false);
-            adminCtx.tabs = payload.tabs ?? [];
-            adminCtx.perms = adminCtx.autonomous
-                ? [...CHANNEL_ADMIN_FULL_PERMS]
-                : (Array.isArray(payload.perms) ? payload.perms : expandPermissions(payload.tabs ?? []));
+        } else if (token.startsWith('u.')) {
+            // Per-user session (miniapp / web user-app). Roles and coach rows are read fresh;
+            // what the session may call is decided per request by lib/userAccess.js.
+            const session = verifyUserToken(token);
+            let caller = null;
+            let lookupFailed = false;
+            if (session) {
+                try { caller = await loadCaller(session.sub); }
+                catch (err) { lookupFailed = true; console.error(JSON.stringify({ level: 'ERROR', msg: 'loadCaller failed', error: err.message })); }
+            }
+            if (lookupFailed) {
+                // 503, not 401: a DB blip must not make the client throw its session away.
+                gateFailure = { statusCode: 503, error: 'Service unavailable' };
+            } else if (!caller) {
+                gateFailure = { statusCode: 401, error: 'Unauthorized' };
+            } else {
+                adminCtx.role = 'user';
+                adminCtx.username = caller.user_id;
+                adminCtx.user = caller;
+            }
         } else {
-            const unauthorizedPayload = { isBase64Encoded: false, statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized' }) };
-            if (isStandardHttp) { resp.setStatusCode(401); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Unauthorized' })); return; }
-            return unauthorizedPayload;
+            gateFailure = { statusCode: 401, error: 'Unauthorized' };
         }
+    }
+    if (gateFailure && isPublicPath) {
+        gateFailure = null;
+        Object.assign(adminCtx, { role: 'anonymous', username: null, user: undefined, legacyAppBearer: undefined });
+    }
+    if (gateFailure) {
+        const failBody = JSON.stringify({ error: gateFailure.error });
+        if (isStandardHttp) { resp.setStatusCode(gateFailure.statusCode); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(failBody); return; }
+        return { isBase64Encoded: false, statusCode: gateFailure.statusCode, headers: corsHeaders, body: failBody };
     }
 
     try {
@@ -447,7 +552,27 @@ exports.handler = async (req, resp, context) => {
         // never provides.
         const sandbox = (parsedBody && parsedBody.sandbox === true) || query.sandbox === 'true';
 
-        if (sandbox && method !== 'GET' && path !== '/chat' && path !== '/health-advice') {
+        // A per-user session may only call the routes the clients use, about users it may act
+        // for (lib/userAccess.js). Checked before sandbox, so a sandbox flag cannot skip it.
+        let userDenied = adminCtx.role === 'user' && !isPublicPath
+            ? await authorizeUserRequest({ caller: adminCtx.user, method, path, query, body: parsedBody })
+            : null;
+
+        if (adminCtx.role === 'user' && !userDenied) adminCtx.userRouteAuthorized = true;
+
+        if (userDenied) {
+            result = userDenied;
+        } else if (method === 'POST' && path === '/session/refresh') {
+            result = adminCtx.role === 'user'
+                ? { success: true, session_token: signUserToken(adminCtx.user.user_id), user_id: adminCtx.user.user_id }
+                : { statusCode: 401, success: false, error: 'A user session is required' };
+        } else if (method === 'POST' && path === '/session/upgrade') {
+            // One-time move of an already-signed-in client from the shared app bearer to its own
+            // session, so updating the miniapp does not log everyone out. Only the legacy bearer
+            // may call it — which during the grace window already grants superadmin, so minting
+            // a session here widens nothing — and it dies with that bearer.
+            result = await handleSessionUpgrade(adminCtx, parsedBody);
+        } else if (sandbox && method !== 'GET' && path !== '/chat' && path !== '/health-advice') {
             result = { success: true, sandbox: true };
         } else if (method === 'GET') {
             // --- Document extraction: external agent (scoped DOC_EXTRACT_API_TOKEN) ---
@@ -936,7 +1061,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path === '/qr-login/confirm') {
                 result = await handlePostQrLoginConfirm(parsedBody);
             } else if (path === '/phone-otp/send') {
-                result = await handlePhoneOtpSend(parsedBody);
+                result = await handlePhoneOtpSend(parsedBody, (event.requestContext && event.requestContext.http && event.requestContext.http.sourceIp) || null);
             } else if (path === '/phone-otp/verify') {
                 result = await handlePhoneOtpVerify(parsedBody);
             } else if (path === '/phone-otp/bind') {
@@ -1611,6 +1736,15 @@ exports.handler = async (req, resp, context) => {
             }
         } else {
             result = { success: false, error: `Unknown route: ${method} ${path}` };
+        }
+
+        // Every path that logs someone in, or re-points the device at another account (a bind
+        // that merged into the phone's existing owner), hands back a session for that user.
+        // Not to the GCN service calling /exchange-webview-token server-side — only the browser
+        // that brought the one-time wvt gets a session.
+        if (result && result.success && SESSION_ISSUING_PATHS.has(path) && !result.sandbox
+            && result.user && result.user.user_id && adminCtx.username !== 'gcn-service') {
+            result.session_token = signUserToken(result.user.user_id);
         }
 
         const statusCode = result.statusCode || 200;

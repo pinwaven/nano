@@ -94,6 +94,8 @@ resources:
         NODE_ENV: "production"
         WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        # Signs nano's own sessions (ch./sa.) — never API_BEARER_TOKEN, which is public. Separate from dev on purpose: a dev token must not open prod.
+        TOKEN_SIGNING_SECRET: ${env(TOKEN_SIGNING_SECRET_PROD)}
         GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
         # Scoped external credential for the viva-ag advanced-generation agent (CLAUDE.md 35).
         # Distinct token per environment ON PURPOSE: dev and prod share the OSS bucket and the
@@ -138,7 +140,10 @@ resources:
         # never be what prod runs with.
         DM_ACCOUNT_NAME: ${env(DM_ACCOUNT_NAME)}
         DM_FROM_ALIAS: "Waven Nano"
-        # Admin-impersonation "super OTP" kill switch — see phone-otp.js's SUPER_OTP_CODE.
+        # Admin-impersonation "super OTP" — see phone-otp.js. The code is a secret from .env;
+        # left unset, the feature is off even with the switch below on.
+        SUPER_OTP_CODE: ${env(SUPER_OTP_CODE)}
+        # Kill switch.
         # Deliberately set "true" here too (unlike DEMO_MODE-style dev-only flags) since the
         # whole point is debugging real accounts, which mostly live in prod.
         SUPER_OTP_ENABLED: "true"
@@ -277,6 +282,8 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        # Signs nano's own sessions (ch./sa.) — never API_BEARER_TOKEN, which is public. Separate from dev on purpose: a dev token must not open prod.
+        TOKEN_SIGNING_SECRET: ${env(TOKEN_SIGNING_SECRET_PROD)}
         KINO_ACTIVATION_TOKEN: "JND7MAED2wd4QUG7rMlG3_YpU0B_lqOjVM_LFsFzcdA"
         KINO_ROOT_TOKEN_ENCRYPTION_KEY: "935eb5474873526ee812addf266aa69266c704e5d16e6d67cae83e0b79a6f155"
         KINO_COMM_TOKEN_TTL_DAYS: "7"

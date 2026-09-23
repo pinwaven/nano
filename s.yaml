@@ -95,6 +95,8 @@ resources:
         WX_SECRET_WAVEN: ${env(WX_SECRET_WAVEN)}
         WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        # Signs nano's own sessions (ch./sa.) — never API_BEARER_TOKEN, which is public.
+        TOKEN_SIGNING_SECRET: ${env(TOKEN_SIGNING_SECRET)}
         GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
         # Scoped external credential for the viva-ag advanced-generation agent (CLAUDE.md 35).
         # Distinct token per environment ON PURPOSE: dev and prod share the OSS bucket and the
@@ -133,7 +135,10 @@ resources:
         # permission (see gcn's docs/pnvs.md). No separate SMS credential provisioned.
         SMS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
         SMS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
-        # Admin-impersonation "super OTP" kill switch — see phone-otp.js's SUPER_OTP_CODE.
+        # Admin-impersonation "super OTP" — see phone-otp.js. The code is a secret from .env;
+        # left unset, the feature is off even with the switch below on.
+        SUPER_OTP_CODE: ${env(SUPER_OTP_CODE)}
+        # Kill switch.
         # Deliberately set "true" in BOTH dev and prod (unlike most dev-only flags in this
         # file) since the whole point is debugging real accounts, which mostly live in prod.
         SUPER_OTP_ENABLED: "true"
@@ -293,6 +298,8 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        # Signs nano's own sessions (ch./sa.) — never API_BEARER_TOKEN, which is public.
+        TOKEN_SIGNING_SECRET: ${env(TOKEN_SIGNING_SECRET)}
         KINO_ACTIVATION_TOKEN: "JND7MAED2wd4QUG7rMlG3_YpU0B_lqOjVM_LFsFzcdA"
         KINO_ROOT_TOKEN_ENCRYPTION_KEY: "935eb5474873526ee812addf266aa69266c704e5d16e6d67cae83e0b79a6f155"
         KINO_COMM_TOKEN_TTL_DAYS: "7"

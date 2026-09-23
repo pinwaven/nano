@@ -27,27 +27,67 @@ async function generatePartnerInviteCode() {
     throw new Error('Failed to generate unique partner invite code');
 }
 
-function signChannelAdminToken({ sub, username, cid, tabs, perms, cms, cmw, auto }) {
+// Every token nano mints itself — `ch.` (channel admin), `sa.` (superadmin) — is
+// `<prefix>.<base64url payload>.<hex HMAC>`, keyed by TOKEN_SIGNING_SECRET. Never by
+// API_BEARER_TOKEN: that value ships inside the miniapp and is public, so signing with it let
+// anyone forge an admin session (TODO.md "Security"). With the secret unset, signing throws and
+// verifying returns null — a missing env var fails closed rather than falling back.
+const SESSION_TTL_SECONDS = 86400;
+
+function signToken(prefix, data, ttlSeconds = SESSION_TTL_SECONDS) {
+    const secret = process.env.TOKEN_SIGNING_SECRET;
+    if (!secret) throw new Error('TOKEN_SIGNING_SECRET not configured');
     const iat = Math.floor(Date.now() / 1000);
-    const exp = iat + 86400;
-    const payload = Buffer.from(JSON.stringify({ sub, username, cid, tabs, perms: perms ?? tabs, cms: cms ?? false, cmw: cmw ?? false, auto: auto ?? false, iat, exp })).toString('base64url');
-    const sig = crypto.createHmac('sha256', process.env.API_BEARER_TOKEN)
-                      .update(`ch.${payload}`).digest('hex');
-    return `ch.${payload}.${sig}`;
+    const payload = Buffer.from(JSON.stringify({ ...data, iat, exp: iat + ttlSeconds })).toString('base64url');
+    const sig = crypto.createHmac('sha256', secret).update(`${prefix}.${payload}`).digest('hex');
+    return `${prefix}.${payload}.${sig}`;
+}
+
+function verifyToken(token, prefix) {
+    const secret = process.env.TOKEN_SIGNING_SECRET;
+    if (!secret || typeof token !== 'string') return null;
+    const parts = token.split('.');
+    if (parts.length !== 3 || parts[0] !== prefix) return null;
+    const [, payload, sig] = parts;
+    const expected = crypto.createHmac('sha256', secret).update(`${prefix}.${payload}`).digest('hex');
+    try {
+        if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) return null;
+        const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+        if (!(data.exp > Math.floor(Date.now() / 1000))) return null;
+        return data;
+    } catch { return null; }
+}
+
+function signChannelAdminToken({ sub, username, cid, tabs, perms, cms, cmw, auto }) {
+    return signToken('ch', { sub, username, cid, tabs, perms: perms ?? tabs, cms: cms ?? false, cmw: cmw ?? false, auto: auto ?? false });
 }
 
 function verifyChannelAdminToken(token) {
-    const parts = token.split('.');
-    if (parts.length !== 3 || parts[0] !== 'ch') return null;
-    const [prefix, payload, sig] = parts;
-    const expected = crypto.createHmac('sha256', process.env.API_BEARER_TOKEN)
-                           .update(`${prefix}.${payload}`).digest('hex');
-    try {
-        if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) return null;
-    } catch { return null; }
-    const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
-    if (data.exp < Math.floor(Date.now() / 1000)) return null;
-    return data;
+    return verifyToken(token, 'ch');
+}
+
+// Superadmin web-panel session. /admin/login used to hand back API_BEARER_TOKEN itself.
+function signSuperadminToken({ sub, username }) {
+    return signToken('sa', { sub, username });
+}
+
+function verifySuperadminToken(token) {
+    return verifyToken(token, 'sa');
+}
+
+// Per-user session for the miniapp and the web user-app, issued by every login path. Carries
+// only the user id — roles and coach identity are read from the DB on each request
+// (lib/userAccess.js), so a revoked coach or admin role takes effect immediately. 30 days,
+// refreshed by the clients via POST /session/refresh.
+const USER_SESSION_TTL_SECONDS = 30 * 86400;
+
+function signUserToken(userId) {
+    return signToken('u', { sub: userId }, USER_SESSION_TTL_SECONDS);
+}
+
+function verifyUserToken(token) {
+    const data = verifyToken(token, 'u');
+    return data && typeof data.sub === 'string' ? data : null;
 }
 
 // All permissions a root channel admin holds (hardcoded — no manual config needed).
@@ -110,6 +150,11 @@ function expandPermissions(perms) {
 
 function requirePermission(adminCtx, permission) {
     if (adminCtx.role === 'superadmin') return null;
+    // A user session only ever reaches a handler through lib/userAccess.js, which admitted this
+    // exact route for this caller and the users it names. The permission gates on those routes
+    // (a coach editing an invitation, a user cancelling their order) predate user sessions and
+    // were always passed by the shared app bearer, which counted as superadmin.
+    if (adminCtx.role === 'user' && adminCtx.userRouteAuthorized) return null;
     if (!adminCtx.perms || !adminCtx.perms.includes(permission))
         return { statusCode: 403, success: false, error: `Permission denied: requires '${permission}'` };
     return null;
@@ -158,6 +203,10 @@ module.exports = {
     generatePartnerInviteCode,
     signChannelAdminToken,
     verifyChannelAdminToken,
+    signSuperadminToken,
+    verifySuperadminToken,
+    signUserToken,
+    verifyUserToken,
     CHANNEL_ADMIN_FULL_PERMS,
     LEGACY_TAB_EXPANSION,
     expandPermissions,

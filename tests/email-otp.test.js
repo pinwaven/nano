@@ -275,6 +275,7 @@ test('the allow-rule is about the channel ROOT', () => {
 test('super OTP: honoured on login with an email-typed audit row, never on bind', async () => {
     reset();
     process.env.SUPER_OTP_ENABLED = 'true';
+    process.env.SUPER_OTP_CODE = '761111';
     // handlers read the flag at module load; re-require to pick it up.
     delete require.cache[require.resolve(path.join(WORKER, 'handlers', 'email-otp.js'))];
     delete require.cache[require.resolve(path.join(WORKER, 'handlers', 'phone-otp.js'))];
@@ -290,6 +291,7 @@ test('super OTP: honoured on login with an email-typed audit row, never on bind'
     const b = await h.handleEmailOtpBind({ user_id: 'other', email: 'brand-new@x.io', code: '761111' });
     assert.strictEqual(b.error, 'invalid_code', 'bind must never accept the backdoor code');
     delete process.env.SUPER_OTP_ENABLED;
+    delete process.env.SUPER_OTP_CODE;
 });
 
 // ── bind ────────────────────────────────────────────────────────────────────

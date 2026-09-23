@@ -156,8 +156,12 @@ async function handleBindPhone(user_id, code, app_id = null, rawPhone = null) {
 }
 
 async function handleWxLogin(body) {
-    console.log(JSON.stringify({ level: 'INFO', msg: 'wx-login-body', body_keys: Object.keys(body || {}), phone: body?.phone, phone_code: body?.phone_code }));
-    const { code, coach_id, invite_code, ref, app_id, phone_code, phone, channel_slug } = body;
+    console.log(JSON.stringify({ level: 'INFO', msg: 'wx-login-body', body_keys: Object.keys(body || {}) }));
+    // No raw `phone` from the body: it was trusted as "already verified by /resolve-phone" but
+    // nothing proved that, and the new-user branch below re-links an existing account matching
+    // that phone to this openid — any new WeChat account could take over anyone's account by
+    // sending their number. Only phone_code (verified by WeChat server-side) sets a phone here.
+    const { code, coach_id, invite_code, ref, app_id, phone_code, channel_slug } = body;
     if (!code) return { success: false, error: 'code is required' };
 
     const credMap = {};
@@ -184,8 +188,8 @@ async function handleWxLogin(body) {
     const unionid = wxData.unionid || null;
 
     // Use pre-resolved phone (already verified by /resolve-phone), or resolve from code if provided
-    console.log(JSON.stringify({ level: 'INFO', msg: 'wx-login-phone', phone_present: !!phone, phone_code_present: !!phone_code, phone_val: phone }));
-    let resolvedPhone = phone || null;
+    console.log(JSON.stringify({ level: 'INFO', msg: 'wx-login-phone', phone_code_present: !!phone_code, raw_phone_ignored: !!body.phone }));
+    let resolvedPhone = null;
     if (!resolvedPhone && phone_code) {
         const token = await getWxAccessToken(appid, credMap[appid]);
         const phoneRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
@@ -370,9 +374,12 @@ async function handleWxLogin(body) {
                  SELECT DISTINCT ON (user_id) user_id, bio_age
                  FROM biomarkers ORDER BY user_id, tested_at DESC
              ) b ON u.user_id = b.user_id
-             WHERE u.phone = $1 LIMIT 1`,
+             WHERE u.phone = $1 AND u.phone_verified_at IS NOT NULL LIMIT 1`,
             [resolvedPhone]
         );
+        // Verified phones only: /bind-phone's raw mode writes users.phone with no proof, so an
+        // unverified match could be a number someone attached to their own account to capture
+        // the real owner's next WeChat login.
         if (phoneMatch.rows.length > 0) {
             const row = phoneMatch.rows[0];
             await pool.query('UPDATE users SET external_id = $1, wx_unionid = COALESCE(wx_unionid, $2) WHERE user_id = $3', [openid, unionid, row.user_id]);
@@ -516,10 +523,12 @@ async function handleWxLogin(body) {
 // WeChat Open Platform (mobile app / fluwx) login. Unlike the miniapp's
 // jscode2session, the OAuth code is exchanged via sns/oauth2/access_token and
 // yields a DIFFERENT openid (stored in users.wx_app_openid). Cross-client
-// account matching: wx_app_openid → wx_unionid → phone.
+// account matching: wx_app_openid → wx_unionid (never a client-supplied phone).
 async function handleWxAppLogin(body) {
     const { code, coach_id, invite_code, ref, channel_slug } = body;
-    const phone = normalizeCnPhone(body.phone);
+    // body.phone is not used: nothing proves the caller owns it, and matching an existing
+    // account on it handed that account to whoever sent the number (same hole as /wx-login's
+    // raw phone). Accounts are matched on the OAuth-proven app openid / unionid only.
     if (!code) return { success: false, error: 'code is required' };
 
     const appid  = process.env.WX_APP_APPID;
@@ -561,14 +570,10 @@ async function handleWxAppLogin(body) {
         return { success: true, user, channel, coach };
     };
 
-    // Match precedence: app openid → unionid → phone (mirrors the miniapp's
-    // phone-relink pattern in handleWxLogin)
+    // Match precedence: app openid → unionid.
     let existing = await pool.query(`${bundleSelect} WHERE u.wx_app_openid = $1 LIMIT 1`, [appOpenid]);
     if (existing.rows.length === 0 && unionid) {
         existing = await pool.query(`${bundleSelect} WHERE u.wx_unionid = $1 LIMIT 1`, [unionid]);
-    }
-    if (existing.rows.length === 0 && phone) {
-        existing = await pool.query(`${bundleSelect} WHERE u.phone = $1 LIMIT 1`, [phone]);
     }
     if (existing.rows.length > 0) {
         const row = existing.rows[0];
@@ -660,7 +665,7 @@ async function handleWxAppLogin(body) {
         `INSERT INTO users (user_id, external_id, external_app, language, coach_id, channel_id, invited_by_invitation_id, referred_by_user_id, referral_code, phone, wx_app_openid, wx_unionid)
          VALUES ($1, NULL, 'wechat_app', 'zh', $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, avatar_moods, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
-        [newUserId, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, phone || null, appOpenid, unionid]
+        [newUserId, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, null, appOpenid, unionid]
     );
 
     try { await grantSignupTrial(pool, newUserId, channelId); } catch (err) {
@@ -1006,19 +1011,22 @@ async function handleGetQrLoginStatus(sessionId) {
             return { success: true, status: 'expired' };
         }
         if (sess.status === 'confirmed' && sess.openid) {
-            const uRes = await pool.query(
-                `SELECT u.*,
-                        ch.name AS channel_name, ch.logo_url AS channel_logo_url,
-                        co_u.nickname AS coach_name
-                 FROM users u
-                 LEFT JOIN channels ch ON ch.id = u.channel_id
-                 LEFT JOIN coaches co ON co.user_id = u.user_id
-                 LEFT JOIN users co_u ON co_u.user_id = co.user_id
-                 WHERE u.user_id = $1`,
-                [sess.openid]
+            // Single use: the confirmed session is claimed by the first poll that reads it, so
+            // a second poller holding the same session_id gets nothing. The user is returned in
+            // the phone/email-OTP login shape ({user, channel, coach}, named columns) — it was
+            // `SELECT u.*`, which handed the browser every column of the row.
+            const claimed = await pool.query(
+                `UPDATE qr_login_sessions SET status = 'consumed'
+                 WHERE session_id = $1 AND status = 'confirmed' RETURNING openid`,
+                [sessionId]
             );
+            if (!claimed.rows.length) return { success: true, status: 'consumed' };
+            // Lazy: phone-otp.js requires this module at load time.
+            const { USER_SELECT, shapeUserRow } = require('./phone-otp');
+            const uRes = await pool.query(`${USER_SELECT} WHERE u.user_id = $1`, [claimed.rows[0].openid]);
             if (uRes.rows.length) {
-                return { success: true, status: 'confirmed', user: uRes.rows[0] };
+                const { user, channel, coach } = await shapeUserRow(uRes.rows[0]);
+                return { success: true, status: 'confirmed', user, channel, coach };
             }
         }
         return { success: true, status: sess.status };
