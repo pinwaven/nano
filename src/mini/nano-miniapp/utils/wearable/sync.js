@@ -84,7 +84,7 @@ function syncWearableData(openid, snapshot, apiToken) {
     for (const s of snapshot.sleepHistory) {
       if (!s.totalMinutes) continue
       const agg = byDate[s.date] || (byDate[s.date] = {
-        totalMinutes: 0, deep: 0, light: 0, rem: 0, awake: 0,
+        totalMinutes: 0, deep: 0, light: 0, rem: 0, awake: 0, hasStages: false, mainMinutes: 0,
         sleepStart: null, sleepEnd: null, slots: [], sessions: [],
       })
       agg.totalMinutes += s.totalMinutes
@@ -92,8 +92,14 @@ function syncWearableData(openid, snapshot, apiToken) {
       agg.light += s.light ?? 0
       agg.rem   += s.rem   ?? 0
       agg.awake += s.awake ?? 0
-      if (s.sleepStart != null) agg.sleepStart = agg.sleepStart == null ? s.sleepStart : Math.min(agg.sleepStart, s.sleepStart)
-      if (s.sleepEnd   != null) agg.sleepEnd   = agg.sleepEnd   == null ? s.sleepEnd   : Math.max(agg.sleepEnd, s.sleepEnd)
+      if (s.deep != null || s.light != null || s.rem != null || s.awake != null) agg.hasStages = true
+      // Onset/end follow the day's longest session (the night itself). A min()/max() over
+      // minute-of-day values let a 06:28 top-up after a 21:25 night win as the onset.
+      if (s.sleepStart != null && s.totalMinutes > agg.mainMinutes) {
+        agg.mainMinutes = s.totalMinutes
+        agg.sleepStart = s.sleepStart
+        agg.sleepEnd = s.sleepEnd ?? null
+      }
       if (s.slots?.length) agg.slots.push(...s.slots)
       // Preserve each discrete session (nap, night sleep, or a wake-interrupted
       // segment of one) so the UI can render distinct sleep blocks per day
@@ -117,10 +123,12 @@ function syncWearableData(openid, snapshot, apiToken) {
         external_id: `${src}_sleep_${date}`,
         data: {
           duration_minutes: agg.totalMinutes,
-          deep_minutes:     agg.deep,
-          light_minutes:    agg.light,
-          rem_minutes:      agg.rem,
-          awake_minutes:    agg.awake,
+          // null, not 0, when no session reported a stage split — V8 leaves stages null by
+          // design (CLAUDE.md §18), and a summed 0 read downstream as "no deep sleep at all".
+          deep_minutes:     agg.hasStages ? agg.deep  : null,
+          light_minutes:    agg.hasStages ? agg.light : null,
+          rem_minutes:      agg.hasStages ? agg.rem   : null,
+          awake_minutes:    agg.hasStages ? agg.awake : null,
           sleep_start_min:  agg.sleepStart,
           sleep_end_min:    agg.sleepEnd,
           ...(agg.slots.length ? { slots: agg.slots } : {}),
