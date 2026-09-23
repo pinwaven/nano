@@ -13,7 +13,10 @@ export function aiKey(content) {
   return String(content || '').replace(/\s+/g, ' ').trim().slice(0, 160);
 }
 
-export function useNotificationPoll({ userId, enabled, onStatus, onAiRows, onHistoryRows, onQuestionnaireReady, onProgramDay, onTimeout, onTyping }) {
+export function useNotificationPoll({
+  userId, enabled, notificationsEnabled = true, historyPath,
+  onStatus, onAiRows, onHistoryRows, onQuestionnaireReady, onProgramDay, onTimeout, onTyping,
+}) {
   const seenIds = useRef(new Set());
   const rendered = useRef(new Set());
   const renderedOrder = useRef([]);
@@ -40,7 +43,7 @@ export function useNotificationPoll({ userId, enabled, onStatus, onAiRows, onHis
     if (!userId || inFlight.current) return;
     inFlight.current = true;
     try {
-      try {
+      if (notificationsEnabled) try {
         const res = await api.get(`/notifications?openid=${q(userId)}`);
         const unseen = (res?.notifications || []).filter(n => !seenIds.current.has(n.id));
         if (unseen.length) {
@@ -68,7 +71,10 @@ export function useNotificationPoll({ userId, enabled, onStatus, onAiRows, onHis
       if (lastMsgId.current !== null) {
         try {
           const roles = waitStartedAt.current ? 'coach,ai' : 'coach';
-          const res = await api.get(`/chat-history?openid=${q(userId)}&since_id=${lastMsgId.current}&roles=${roles}`);
+          const path = historyPath
+            ? historyPath({ sinceId: lastMsgId.current, roles })
+            : `/chat-history?openid=${q(userId)}&since_id=${lastMsgId.current}&roles=${roles}`;
+          const res = await api.get(path);
           const rows = res?.messages || [];
           if (rows.length) {
             lastMsgId.current = Math.max(...rows.map(m => m.id));
@@ -89,7 +95,7 @@ export function useNotificationPoll({ userId, enabled, onStatus, onAiRows, onHis
     } finally {
       inFlight.current = false;
     }
-  }, [userId, isRenderedAi, markRenderedAi]);
+  }, [userId, notificationsEnabled, historyPath, isRenderedAi, markRenderedAi]);
 
   useEffect(() => {
     if (!enabled || !userId) return undefined;

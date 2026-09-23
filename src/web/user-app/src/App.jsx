@@ -1,6 +1,6 @@
 // The app shell — pages/main/main.wxml's root: header (tap → logo menu), banners, the five
 // always-mounted tabs, the bottom tab bar, and the full-screen routes (phones / emails).
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { api } from './api.js';
 import { VERSION, IS_DEV_BACKEND, STORAGE_KEYS as K } from './config.js';
 import { asset } from './assets.js';
@@ -11,6 +11,7 @@ import LogoMenu from './shell/LogoMenu.jsx';
 import UiHost from './components/ui/UiHost.jsx';
 import ChatTab from './chat/ChatTab.jsx';
 import HealthTab from './health/HealthTab.jsx';
+const CoachPanel = lazy(() => import('./coach/CoachPanel.jsx'));
 import PlansTab from './plans/PlansTab.jsx';
 import CodeRedeemSheet from './plans/CodeRedeemSheet.jsx';
 import StoreTab from './store/StoreTab.jsx';
@@ -114,6 +115,7 @@ function App() {
             {!isGuest && <div className={`tab-pane${tab === 'store' ? '' : ' tab-hidden'}`}><StoreTab onGuestTap={() => setGuestSheet(true)} /></div>}
           </div>
 
+          {route === 'coach' && (app.isCoach || app.isAdmin || app.isSuperadmin) && <div className="route-layer"><Suspense fallback={<div className="loading-row">{t.loading}</div>}><CoachPanel /></Suspense></div>}
           {route === 'phones' && <div className="route-layer"><IdentityPage kind="phone" /></div>}
           {route === 'emails' && <div className="route-layer"><IdentityPage kind="email" /></div>}
           {route === 'referral' && <div className="route-layer"><ReferralPage /></div>}

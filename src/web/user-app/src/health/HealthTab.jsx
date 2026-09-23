@@ -36,16 +36,19 @@ function ChartSheet({ title, onClose, children }) {
   );
 }
 
-export default function HealthTab({ visible, onGuestTap }) {
+export default function HealthTab({ visible, onGuestTap, client = null, coachId = null, mode = 'self' }) {
   const app = useApp();
-  const { user, lang, t: T, theme, isGuest, vivaAgActive, saveUser, updateUser, on, emit } = app;
+  const { lang, t: T, theme, vivaAgActive, saveUser, updateUser, on, emit } = app;
+  const isSelf = mode === 'self';
+  const user = isSelf ? app.user : client;
+  const isGuest = isSelf && app.isGuest;
   const t = T.health;
   const isZh = lang !== 'en';
   const tc = hex => themeColor(hex, theme);
   const userId = user?.user_id;
   const [subTab, setSubTab] = useState('twin');
-  const showAgTab = !!vivaAgActive && !isGuest;
-  const h = useHealthData({ userId: isGuest ? null : userId, user, lang, t });
+  const showAgTab = isSelf && !!vivaAgActive && !isGuest;
+  const h = useHealthData({ userId: isGuest ? null : userId, user, lang, t, coachId, mode });
   const { d } = h;
   const rootRef = useRef(null);
   const [frameW, setFrameW] = useState(390);
@@ -63,6 +66,7 @@ export default function HealthTab({ visible, onGuestTap }) {
   const [avatarUpdating, setAvatarUpdating] = useState(false);
   const onAvatarTap = () => { clearTimeout(pillTimer.current); setPillsVisible(true); pillTimer.current = setTimeout(() => setPillsVisible(false), 5000); };
   const chooseAvatar = async avatarId => {
+    if (!isSelf) return;
     setPickerOpen(false);
     const url = avatarId ? resolveAvatarUrl(avatarId, DEFAULT_MOOD) : null;
     if (!url) return;
@@ -86,6 +90,7 @@ export default function HealthTab({ visible, onGuestTap }) {
     setEditing(true);
   };
   const saveEdit = async () => {
+    if (!isSelf) return;
     if (editSaving || !form) return;
     setEditSaving(true);
     try {
@@ -122,7 +127,7 @@ export default function HealthTab({ visible, onGuestTap }) {
   const openReport = async id => {
     setActiveReport({ id, loading: true });
     try {
-      const res = await api.get(`/health-reports/${id}?openid=${q(userId)}`);
+      const res = await api.get(`/health-reports/${id}?openid=${q(userId)}${coachId ? `&coach_id=${q(coachId)}` : ''}`);
       const report = res?.report || {}; const events = res?.events || []; const items = res?.items || [];
       const raw = report.raw_data || {};
       const statusRow = status => ({ status, statusLabel: status === 'high' ? t.rptHigh : status === 'low' ? t.rptLow : t.rptNormal, statusColor: status === 'high' ? '#ef4444' : status === 'low' ? '#0ea5e9' : '#10b981' });
@@ -156,7 +161,7 @@ export default function HealthTab({ visible, onGuestTap }) {
     setReportOpening(true);
     const win = window.open('', '_blank');
     try {
-      const res = await api.get(`/twin-reports/file?openid=${q(userId)}&job_uid=${q(jobUid)}&index=${Number(index) || 0}`);
+      const res = await api.get(`/twin-reports/file?openid=${q(userId)}&job_uid=${q(jobUid)}&index=${Number(index) || 0}${coachId ? `&coach_id=${q(coachId)}` : ''}`);
       if (!res?.success) throw new Error(res?.reason || 'no url');
       if (win) win.location.href = res.url; else window.open(res.url, '_blank');
     } catch { win?.close(); ui.toast(t.reportsErrOpen); }
@@ -216,12 +221,12 @@ export default function HealthTab({ visible, onGuestTap }) {
               <div className="health-hero">
                 <div className="health-hero-bg" />
                 <div className="avatar-area">
-                  {!editing && <div className={`avatar-side-pill${pillsVisible ? ' avatar-pill-show' : ''}`} onClick={e => { e.stopPropagation(); setPillsVisible(false); setPickerOpen(true); }}><span className="avatar-pill-text">{t.changeAvatar}</span></div>}
-                  <div className="health-avatar-container" onClick={onAvatarTap}>
+                  {isSelf && !editing && <div className={`avatar-side-pill${pillsVisible ? ' avatar-pill-show' : ''}`} onClick={e => { e.stopPropagation(); setPillsVisible(false); setPickerOpen(true); }}><span className="avatar-pill-text">{t.changeAvatar}</span></div>}
+                  <div className="health-avatar-container" onClick={isSelf ? onAvatarTap : undefined}>
                     <div className="health-avatar-wrap">{avatarUrl ? <img className="health-avatar-img" src={avatarUrl} alt="" /> : <div className="health-avatar-placeholder"><span className="health-avatar-letter">{avatarLetter}</span></div>}</div>
                     {avatarUpdating && <div className="health-avatar-ring" />}
                   </div>
-                  {!editing && <div className={`avatar-side-pill${pillsVisible ? ' avatar-pill-show' : ''}`} onClick={e => { e.stopPropagation(); startEdit(); }}><span className="avatar-pill-text">✎  {t.editProfile}</span></div>}
+                  {isSelf && !editing && <div className={`avatar-side-pill${pillsVisible ? ' avatar-pill-show' : ''}`} onClick={e => { e.stopPropagation(); startEdit(); }}><span className="avatar-pill-text">✎  {t.editProfile}</span></div>}
                 </div>
               </div>
 
@@ -476,7 +481,7 @@ export default function HealthTab({ visible, onGuestTap }) {
                           </div>
                         ) : <span className="ecg-card-empty">{t.ecgEmptySelf}</span>}
                       </div>
-                      {brand === 'v8' && <div className="wd-sync-btn" onClick={wearableNotice}><span className="wd-sync-btn-text">{t.ecgRecord}</span></div>}
+                      {isSelf && brand === 'v8' && <div className="wd-sync-btn" onClick={wearableNotice}><span className="wd-sync-btn-text">{t.ecgRecord}</span></div>}
                     </div>
                     {d.ecgList.length > 1 && (
                       <div className="ecg-card-list">{d.ecgList.slice(1, 5).map(it => <div key={it.id} className="ecg-card-list-row"><span className="ecg-card-list-when">{ecgWhen(it.recorded_at)}</span><span className="ecg-card-list-val">{it.bpm} bpm · RR±{it.rr_sd_ms}ms</span></div>)}</div>
@@ -497,7 +502,7 @@ export default function HealthTab({ visible, onGuestTap }) {
                           </div>
                         ) : <span className="ecg-card-empty">{t.ppgEmptySelf}</span>}
                       </div>
-                      {(brand === 'v8' || brand === 'halo') && <div className="wd-sync-btn" onClick={wearableNotice}><span className="wd-sync-btn-text">{t.ppgRecord}</span></div>}
+                      {isSelf && (brand === 'v8' || brand === 'halo') && <div className="wd-sync-btn" onClick={wearableNotice}><span className="wd-sync-btn-text">{t.ppgRecord}</span></div>}
                     </div>
                     {d.ppgList.length > 1 && (
                       <div className="ecg-card-list">{d.ppgList.slice(1, 5).map(it => <div key={it.id} className="ecg-card-list-row"><span className="ecg-card-list-when">{ecgWhen(it.recorded_at)}</span><span className="ecg-card-list-val">{it.bpm} bpm · PP±{it.rr_sd_ms}ms</span></div>)}</div>
@@ -587,7 +592,7 @@ export default function HealthTab({ visible, onGuestTap }) {
               </div>
 
               {/* ── Personal Profile ── */}
-              {d.userFactsLoaded && (
+              {isSelf && d.userFactsLoaded && (
                 <div className="health-section">
                   <span className="section-title">{t.layerProfile}</span>
                   {d.userFacts.length > 0 ? (
@@ -599,7 +604,7 @@ export default function HealthTab({ visible, onGuestTap }) {
                 </div>
               )}
 
-              <HealthDocuments userId={userId} canUpload onLoaded={h.onDocsLoaded} />
+              <HealthDocuments userId={userId} coachId={coachId} canUpload={isSelf} onLoaded={h.onDocsLoaded} />
               <div style={{ height: 32 }} />
             </>
           )}

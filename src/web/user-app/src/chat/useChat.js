@@ -13,12 +13,16 @@ import { useDotsData, loadDots, getDotsState, invalidateDots, pkgTitle } from '.
 import { ui } from '../components/ui/ui.js';
 import { openGcnStoreGated } from '../gcn.js';
 import { submitFormulation as submitFormulationShared, isFormulaSubmitting } from '../plans/formulation.js';
+import { chatSendSpec, filterPendingCoachEchoes } from './chat-context.js';
 
 const CANCELLED = Symbol('picker-cancelled');
 
-export function useChat(app) {
-  const { user, lang, t, isGuest, isAeviva, sandboxMode, updateUser, saveUser, emit, on } = app;
-  const userId = user?.user_id;
+export function useChat(app, options = {}) {
+  const { targetUser = null, coachMode = false } = options;
+  const { user, lang, t, isAeviva, sandboxMode, updateUser, saveUser, emit, on } = app;
+  const chatUser = targetUser || user;
+  const userId = chatUser?.user_id;
+  const isGuest = coachMode ? false : app.isGuest;
 
   const msgsRef = useRef([]);
   const [messages, setMessagesState] = useState([]);
@@ -45,6 +49,7 @@ export function useChat(app) {
   const bioSeries = useRef(null);
   const programState = useRef({ lessons: {}, days: {} });
   const pendingHealthReport = useRef(null);
+  const pendingCoachEchoes = useRef([]);
   const dots = useDotsData();
   const dotsRef = useRef(dots); dotsRef.current = dots;
 
@@ -63,18 +68,27 @@ export function useChat(app) {
   const decorate = useCallback(msg => {
     if (msg.segments) {
       attachSparks(msg.segments, bioSeries.current);
-      attachFormulaCta(msg.segments, ctaCtx());
+      if (!coachMode) attachFormulaCta(msg.segments, ctaCtx());
       attachProgramState(msg.segments, programState.current);
     }
     return msg;
-  }, [ctaCtx]);
+  }, [coachMode, ctaCtx]);
 
+  const coachHistoryPath = useCallback(({ sinceId, roles }) =>
+    `/chat-history?openid=${q(userId)}&since_id=${q(sinceId)}&roles=${q(roles)}`, [userId]);
   const poll = useNotificationPoll({
     userId, enabled: obStep === 'done' && !isGuest,
+    // Managed customers never log in, so their notification stream can provide full status
+    // parity. A coach must never consume a regular user's destructive notification inbox.
+    notificationsEnabled: !coachMode || chatUser?.account_type === 'managed',
+    historyPath: coachMode ? coachHistoryPath : null,
     onTyping: setTyping,
     onStatus: setStatusText,
     onAiRows: rows => { if (rows.length) appendMsgs(rows.map(r => decorate(makeMsg(r)))); },
-    onHistoryRows: rows => appendMsgs(rows.map(m => decorate(fromHistoryRow(m, `c-${m.id}`)))),
+    onHistoryRows: rows => {
+      const fresh = filterPendingCoachEchoes(rows, pendingCoachEchoes.current, coachMode);
+      if (fresh.length) appendMsgs(fresh.map(m => decorate(fromHistoryRow(m, `c-${m.id}`))));
+    },
     onQuestionnaireReady: () => checkForPendingQuestionnaireRef.current(),
     onProgramDay: () => refreshProgramStateRef.current(),
     onTimeout: () => addMsgRef.current('ai', t.chatTimedOut),
@@ -82,12 +96,16 @@ export function useChat(app) {
 
   // ── message helpers ──────────────────────────────────────────────────────
   const addMsg = useCallback((role, rawContent, persist = false) => {
-    const msg = decorate(makeMsg({ id: uid(role), role, content: rawContent }));
+    const effectiveRole = coachMode && role === 'user' ? 'coach' : role;
+    const msg = decorate(makeMsg({ id: uid(effectiveRole), role: effectiveRole, content: rawContent }));
     if (msg.role === 'ai') poll.markRenderedAi(rawContent);
+    if (persist && effectiveRole === 'coach') {
+      pendingCoachEchoes.current.push(String(rawContent || '').replace(/\s+/g, ' ').trim());
+    }
     appendMsgs([msg]);
-    if (persist && userId) api.post('/chat-messages', { openid: userId, role, content: rawContent }).catch(() => {});
+    if (persist && userId) api.post('/chat-messages', { openid: userId, role: effectiveRole, content: rawContent }).catch(() => {});
     return msg.id;
-  }, [decorate, appendMsgs, poll, userId]);
+  }, [coachMode, decorate, appendMsgs, poll, userId]);
   const addMsgRef = useRef(addMsg); addMsgRef.current = addMsg;
 
   const addActionMsg = useCallback((action, label, persist = false) => {
@@ -182,7 +200,7 @@ export function useChat(app) {
   }, [addMsg, showQuestion, t]);
 
   const findAndStart = useCallback(async () => {
-    const u = app.user;
+    const u = chatUser;
     const [qRes, bRes] = await Promise.all([
       api.get(`/pending-questionnaires?openid=${q(u.user_id)}`),
       api.get(`/biomarkers?openid=${q(u.user_id)}`),
@@ -196,7 +214,7 @@ export function useChat(app) {
       if (firstIdx >= 0) { startQuestionnaire(assignment, questions, firstIdx); return true; }
     }
     return false;
-  }, [app.user, startQuestionnaire]);
+  }, [chatUser, startQuestionnaire]);
 
   const onAllDone = useCallback((silent = false) => {
     if (!silent) addMsg('ai', t.questionnaireThanks, true);
@@ -270,7 +288,7 @@ export function useChat(app) {
   }, [commit]);
 
   const initChat = useCallback(async () => {
-    const u = app.user;
+    const u = chatUser;
     if (!u) return;
     if (u.guest) { setMessages([makeMsg({ id: 'init', role: 'ai', content: t.initMsg })]); setObStep(null); return; }
     let historyLoaded = false;
@@ -293,9 +311,17 @@ export function useChat(app) {
       }
     } catch { /* ignore */ }
     if (!historyLoaded) setMessages([makeMsg({ id: 'init', role: 'ai', content: t.initMsg })]);
-    if (!u.phone_verified && !u.email_verified) {
+    if (!coachMode && !u.phone_verified && !u.email_verified) {
       addMsg('ai', t.verifyPhonePrompt);
       addActionMsg('verify_phone', t.verifyPhoneCta);
+    }
+    if (coachMode) {
+      try {
+        const bRes = await api.get(`/biomarkers?openid=${q(u.user_id)}`);
+        setBioSeries(bRes?.records || []);
+      } catch { /* rich metric cards still render without sparklines */ }
+      onAllDone(true);
+      return;
     }
     let started = false;
     try {
@@ -311,12 +337,12 @@ export function useChat(app) {
       }
     } catch { /* ignore */ }
     if (!started) onAllDone(true);
-  }, [app.user, t, lang, decorate, poll, setMessages, scrollBottom, refreshProgramState, addMsg, addActionMsg, setBioSeries, startQuestionnaire, onAllDone]);
+  }, [chatUser, coachMode, t, lang, decorate, poll, setMessages, scrollBottom, refreshProgramState, addMsg, addActionMsg, setBioSeries, startQuestionnaire, onAllDone]);
 
   useEffect(() => {
     msgsRef.current = []; setMessagesState([]); setObStep(null); setTyping(false); setStatusText('');
     initChat();
-    if (userId && !isGuest) loadDots(app.user, lang, t);
+    if (userId && !isGuest && !coachMode) loadDots(chatUser, lang, t);
   }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-resolve every formula CTA when the codes/packages land (main.js:_refreshFormulaCtas).
@@ -330,7 +356,10 @@ export function useChat(app) {
   }, [dots.codes, dots.packages, ctaCtx, commit]);
 
   // Other tabs ask the chat to start a tool / re-check questionnaires (AG panel, Dots card).
-  useEffect(() => on('chat:checkQuestionnaire', () => { if (obStepRef.current === 'done') checkForPendingQuestionnaireRef.current(); }), [on]);
+  useEffect(() => {
+    if (coachMode) return undefined;
+    return on('chat:checkQuestionnaire', () => { if (obStepRef.current === 'done') checkForPendingQuestionnaireRef.current(); });
+  }, [on, coachMode]);
 
   // ── load earlier ─────────────────────────────────────────────────────────
   const loadMoreHistory = useCallback(async () => {
@@ -358,10 +387,18 @@ export function useChat(app) {
 
   const sendMessage = useCallback(async text => {
     if (!userId) return;
-    addMsg('user', text);
+    if (coachMode) pendingCoachEchoes.current.push(text.replace(/\s+/g, ' ').trim());
+    addMsg(coachMode ? 'coach' : 'user', text);
     setTyping(true); setStatusText(''); setToolboxOpen(false);
     try {
-      const res = await api.post('/chat', { openid: userId, message: text, client: 'miniapp' }, { timeoutMs: 30000 });
+      const send = chatSendSpec({ coachMode, user: chatUser, text });
+      if (send.path === '/coach-instruction') {
+        await api.post(send.path, send.body);
+        setTyping(false);
+        poll.pollNow();
+        return;
+      }
+      const res = await api.post(send.path, send.body, { timeoutMs: 30000 });
       if (res?.recorded_weight != null) emit('health:refresh');
       if (res?.launch_tool === 'formula_dots') { startFormulaDotsRef.current({ skipUserMsg: true }); return; }
       if (res?.processing) { onAsyncStart(); return; }
@@ -371,9 +408,10 @@ export function useChat(app) {
       poll.beginChatWait(CHAT_WAIT_SYNC_MS);
       poll.pollNow();
     } catch {
+      if (coachMode) pendingCoachEchoes.current.pop();
       addMsg('ai', t.errServer); setTyping(false); setStatusText('');
     }
-  }, [userId, addMsg, emit, onAsyncStart, sandboxMode, t, poll]);
+  }, [userId, coachMode, chatUser?.account_type, addMsg, emit, onAsyncStart, sandboxMode, t, poll]);
 
   const handleSend = useCallback(async text => {
     const trimmed = String(text || '').trim();
@@ -418,10 +456,16 @@ export function useChat(app) {
 
   const focusGo = useCallback(() => { const o = focusSheet?.opts || {}; setFocusSheet(null); runFormulaDots(o); }, [focusSheet, runFormulaDots]);
   const focusSkip = useCallback(() => { const o = focusSheet?.opts || {}; setFocusSheet(null); runFormulaDots({ ...o, ignoreFocus: true }); }, [focusSheet, runFormulaDots]);
-  const focusChoose = useCallback(() => { setFocusSheet(null); app.setTab('plans'); emit('plans:subtab', 'plans'); }, [app, emit]);
+  const focusChoose = useCallback(() => {
+    setFocusSheet(null);
+    if (!coachMode) { app.setTab('plans'); emit('plans:subtab', 'plans'); }
+  }, [app, emit, coachMode]);
   const focusClose = useCallback(() => setFocusSheet(null), []);
 
-  useEffect(() => on('chat:startFormulaDots', opts => { app.setTab('chat'); startFormulaDotsRef.current(opts || {}); }), [on, app]);
+  useEffect(() => {
+    if (coachMode) return undefined;
+    return on('chat:startFormulaDots', opts => { app.setTab('chat'); startFormulaDotsRef.current(opts || {}); });
+  }, [on, app, coachMode]);
 
   const runHealthAdvice = useCallback(async () => {
     addMsg('user', t.toolHealthAdviceMsg);
@@ -520,13 +564,13 @@ export function useChat(app) {
 
   // ── action chips ─────────────────────────────────────────────────────────
   const handleMsgAction = useCallback(action => {
-    if (action === 'view_dots') { app.setTab('plans'); emit('plans:subtab', 'dots'); invalidateDots(); loadDots(app.user, lang, t, { force: true }); }
+    if (action === 'view_dots' && !coachMode) { app.setTab('plans'); emit('plans:subtab', 'dots'); invalidateDots(); loadDots(chatUser, lang, t, { force: true }); }
     else if (action === 'verify_phone') app.setRoute('phones');
     else if (action === 'hr_own_yes') { removeHrActions(); addMsg('ai', t.hrAskSave); addActionMsg('hr_save_yes', t.hrSave); addActionMsg('hr_save_no', t.hrLater); }
     else if (action === 'hr_own_no') { removeHrActions(); pendingHealthReport.current = null; addMsg('ai', t.hrNotOwn); }
     else if (action === 'hr_save_yes') { removeHrActions(); saveHealthReport(); }
     else if (action === 'hr_save_no') { removeHrActions(); pendingHealthReport.current = null; addMsg('ai', t.hrNotSaved); }
-  }, [app, emit, lang, t, removeHrActions, addMsg, addActionMsg, saveHealthReport]);
+  }, [app, emit, lang, t, coachMode, chatUser, removeHrActions, addMsg, addActionMsg, saveHealthReport]);
 
   // ── :::formula card ──────────────────────────────────────────────────────
   const toggleFormulaTier = useCallback((mi, si, ti) => {
@@ -551,25 +595,25 @@ export function useChat(app) {
   }, [userId, t]);
 
   const handleFormulaSubmit = useCallback(async planId => {
-    if (!isAeviva || !planId || !userId || isFormulaSubmitting()) return;
+    if (coachMode || !isAeviva || !planId || !userId || isFormulaSubmitting()) return;
     const { confirm } = await ui.confirm({ title: t.formulaSubmitConfirmTitle, content: t.formulaSubmitConfirmBody });
     if (!confirm) return;
     const orderId = await pickAwaitingOrder();
     if (orderId === CANCELLED) return;
     await submitFormulationShared(app, planId, orderId, msg => addMsg('ai', msg, true));
-  }, [isAeviva, userId, t, pickAwaitingOrder, app, addMsg]);
+  }, [coachMode, isAeviva, userId, t, pickAwaitingOrder, app, addMsg]);
 
   const handleFormulaOrder = useCallback(async (seg) => {
-    if (!isAeviva || !userId) return;
+    if (coachMode || !isAeviva || !userId) return;
     const planId = seg.planId || null;
-    if (getDotsState().proposedDistinctDots === null) { try { await loadDots(app.user, lang, t); } catch { /* unwarned */ } }
+    if (getDotsState().proposedDistinctDots === null) { try { await loadDots(chatUser, lang, t); } catch { /* unwarned */ } }
     const cta = seg.cta || {};
     if (cta.mode === 'redeem' && cta.code) { app.openCodeSheet({ code: cta.code, manual: false, max: Number(cta.max) || null, name: cta.label || '', planId }); return; }
     if (cta.mode === 'pay' && cta.orderId) { openGcnStoreGated(app, { intent: 'pay_order', order_id: cta.orderId }); return; }
     if (cta.mode === 'buy' && Number(cta.width) > 0) { openGcnStoreGated(app, { intent: 'buy_formulation_package', max_distinct_dots: Number(cta.width), nutrition_plan_id: planId }); return; }
     if ((getDotsState().codes || []).length > 0) { app.setTab('plans'); emit('plans:subtab', 'dots'); return; }
     app.openCodeSheet({ code: '', manual: true, max: null, name: '', planId });
-  }, [isAeviva, userId, app, lang, t, emit]);
+  }, [coachMode, isAeviva, userId, app, chatUser, lang, t, emit]);
 
   const handleProductTap = useCallback(sku => { if (isAeviva && sku) openGcnStoreGated(app, { intent: 'view_product', sku_id: sku }); }, [isAeviva, app]);
 

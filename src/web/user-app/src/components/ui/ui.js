@@ -9,8 +9,8 @@ export const ui = {
     host?.toast({ title: String(title ?? ''), icon, duration });
   },
   // Resolves { confirm: boolean } like wx.showModal's success payload.
-  confirm({ title = '', content = '', confirmText, cancelText, showCancel = true } = {}) {
-    return new Promise(resolve => host?.confirm({ title, content, confirmText, cancelText, showCancel, resolve }));
+  confirm({ title = '', content = '', confirmText, cancelText, showCancel = true, editable = false, placeholderText = '' } = {}) {
+    return new Promise(resolve => host?.confirm({ title, content, confirmText, cancelText, showCancel, editable, placeholderText, resolve }));
   },
   // Resolves { tapIndex } or rejects on cancel, like wx.showActionSheet.
   actionSheet({ itemList = [], title = '' } = {}) {

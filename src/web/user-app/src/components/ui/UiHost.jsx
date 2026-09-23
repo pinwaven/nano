@@ -6,6 +6,7 @@ export default function UiHost() {
   const { t } = useLang();
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
+  const [modalInput, setModalInput] = useState('');
   const [sheet, setSheet] = useState(null);
   const [scan, setScan] = useState(null);
   const [loading, setLoading] = useState(null);
@@ -18,7 +19,7 @@ export default function UiHost() {
         setToast(title);
         toastTimer.current = setTimeout(() => setToast(null), duration);
       },
-      confirm: m => setModal(m),
+      confirm: m => { setModalInput(m.editable ? m.content || '' : ''); setModal(m); },
       actionSheet: s => setSheet(s),
       scan: s => setScan(s),
       loading: title => setLoading(title),
@@ -26,7 +27,7 @@ export default function UiHost() {
     return () => _bindHost(null);
   }, []);
 
-  const closeModal = confirm => { modal?.resolve({ confirm }); setModal(null); };
+  const closeModal = confirm => { modal?.resolve({ confirm, content: modalInput }); setModal(null); };
   const closeSheet = idx => { if (idx == null) sheet?.reject(new Error('cancel')); else sheet?.resolve({ tapIndex: idx }); setSheet(null); };
 
   return (
@@ -37,7 +38,8 @@ export default function UiHost() {
         <div className="ui-mask" onClick={() => modal.showCancel && closeModal(false)}>
           <div className="ui-modal" onClick={e => e.stopPropagation()}>
             {modal.title && <div className="ui-modal-title">{modal.title}</div>}
-            {modal.content && <div className="ui-modal-body">{modal.content}</div>}
+            {!modal.editable && modal.content && <div className="ui-modal-body">{modal.content}</div>}
+            {modal.editable && <input className="ui-input" autoFocus value={modalInput} placeholder={modal.placeholderText} onChange={e => setModalInput(e.target.value)} />}
             <div className="ui-modal-actions">
               {modal.showCancel && <button className="ui-btn ui-btn-ghost" onClick={() => closeModal(false)}>{modal.cancelText || t.cancel || '取消'}</button>}
               <button className="ui-btn ui-btn-primary" onClick={() => closeModal(true)}>{modal.confirmText || t.confirm || '确定'}</button>

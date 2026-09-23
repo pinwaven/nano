@@ -12,7 +12,7 @@ export function getToolList(t) {
   ];
 }
 
-export default function Toolbox({ disabled, onAction }) {
+export default function Toolbox({ disabled, onAction, tools }) {
   const { t } = useLang();
   const fileRef = useRef(null);
   const tap = action => {
@@ -23,7 +23,7 @@ export default function Toolbox({ disabled, onAction }) {
   return (
     <div className="toolbox-panel">
       <div className="toolbox-grid">
-        {getToolList(t).map(tool => (
+        {(tools || getToolList(t)).map(tool => (
           <div key={tool.action} className={`tool-item${disabled ? ' tool-item-disabled' : ''}`} onClick={() => tap(tool.action)}>
             <span className="tool-item-icon">{tool.icon}</span>
             <span className="tool-item-label">{tool.label}</span>
