@@ -1,4 +1,5 @@
 const { getVivaLabels } = require('../subAgeLabels');
+const { getBiomarkerStatusLine } = require('../../chat/biomarkerStatusLine');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getWearableDailyBlock } = require('../../chat/wearableDailyBlock');
 const { getSubAgeInputsBlock } = require('../../chat/subAgeInputsBlock');
@@ -18,7 +19,7 @@ module.exports = (ctx) => {
     ? `最近一次Kino检测日期：${biomarkers_tested_at || '未知'} —— 这是你唯一可以引用的检测日期，禁止编造或猜测其他日期。
 生理年龄：${bioage.BioAge} vs 实际年龄 ${bioage.ChronoAge}（差值 ${bioage.AgeDifference}）
 子年龄 — ${labels.CellularAge}：${bioage.SubAges?.CellularAge ?? '—'} | ${labels.MetabolicAge}：${bioage.SubAges?.MetabolicAge ?? '—'} | ${labels.MicroVascularAge}：${bioage.SubAges?.MicroVascularAge ?? '—'} | ${labels.ResilienceAge}：${bioage.SubAges?.ResilienceAge ?? '—'}
-生物标志物：${hasBiomarkers ? JSON.stringify(biomarkers) : '暂无原始数值。'} —— 这是唯一可引用的当前数值，禁止沿用对话历史中之前提到的数字，务必以此为准。`
+生物标志物：${hasBiomarkers ? JSON.stringify(biomarkers) : '暂无原始数值。'} —— 这是唯一可引用的当前数值，禁止沿用对话历史中之前提到的数字，务必以此为准。${getBiomarkerStatusLine(biomarkers, true)}`
     : `生物标志物数据：暂无检测记录。建议用户进行 Kino 芯片扫描。`;
 
   const planSection = active_health_plans && active_health_plans.length > 0
@@ -26,7 +27,7 @@ module.exports = (ctx) => {
     : '';
 
   const twinSection = health_twin
-    ? `数字孪生 · 日常监测（近7天均值）：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / 深睡 ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 静息心率 ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'} | SpO₂ ${health_twin.avg_spo2 != null ? health_twin.avg_spo2.toFixed(1) + '%' : '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}`
+    ? `数字孪生 · 日常监测（近7天均值）：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / 深睡+REM ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 静息心率 ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'} | SpO₂ ${health_twin.avg_spo2 != null ? health_twin.avg_spo2.toFixed(1) + '%' : '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}`
     : '';
 
   const dotsSection = dots && dots.length > 0
@@ -70,7 +71,8 @@ ${dotsSection ? '\n' + dotsSection : ''}
 - 最多 2–3 段简短段落。绝不使用任何 Markdown 标题（包括 #、##、### 等所有级别），不使用分段编号（如"1. 总体状态"），保持自然对话的语气，不要写成结构化报告。
 - 用通俗语言解释数值的含义——是什么在驱动这个读数，以及身体有什么感受。
 - **华人视角**：如用户 BMI 正常但 GA 或 hsCRP 偏高，主动提示"瘦胖体型"代谢悖论——华人在正常 BMI 下即可积累大量内脏脂肪，触发糖基化和炎症级联。
-- 如果同时有精准检测的生物标志物和日常监测数据，进行交叉分析（如睡眠不足→IL-6升高→${labels.ResilienceAge}偏高）。
+- 如果同时有精准检测的生物标志物和日常监测数据，可以把两类数据并列呈现、说明各自反映什么；但不要在它们之间搭建因果链（如"HRV下降→毛细血管压力升高→浮肿""CD38高→炎症→CD38更高"）——两者之间没有可判定的因果关系。
+- **用户描述症状或身体不适时**（浮肿、头晕、胸闷、疼痛、心悸、持续疲劳等）：先用一般医学常识说明这类症状常见的几类原因；明确列出需要尽快就医的警示信号（如单侧腿肿伴疼痛或发红、胸痛、呼吸困难、症状突然加重）；再说明用户已有的哪些数据可能相关、哪些问题这些数据回答不了。Kino 指标和穿戴数据不能诊断、也不能"排除"任何疾病——不要说"排除了肾源性/心源性…"，不要从 HRV 或生物标志物推导出该症状的生理机制，也不要把今天截至同步的部分步数当作活动量骤降。
 - 如果用户正在执行健康方案，将生物标志物读数与方案目标相关联。
 - 最后给出一个具体的下一步行动：若涉及具体成分/补充剂，必须从上方原粒配方库中挑选并点名原粒编号；若无关成分（如作息、饮食整体调整、检测建议），不受此限制。
 - **绝不以问句或邀请收尾**：给出下一步行动后必须干净收尾，回复的最后一句话禁止是问句，也不得用"需要我帮你...吗？""要不要...？""是否需要...？"等方式邀请用户继续追问或确认是否需要进一步安排。这条规则同样适用于没有问号、但本质上仍是邀请继续对话的陈述句，例如"若您希望，我可以为你生成..."、"随时告诉我"、"欢迎随时提问"、"我很乐意进一步说明"——这些和直接提问一样都是禁止的收尾方式。给出建议本身即可，不必征询用户是否要展开细节，也不必暗示自己随时待命。唯一例外是上方【主动提问规则】定义的结构化 ask_questions JSON 动作——只有严格按该格式追加时才允许，普通对话正文中绝不能以问句或邀请性表达结束。

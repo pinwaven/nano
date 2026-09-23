@@ -1,4 +1,6 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getAppGuideBlock } = require('../../chat/appGuideBlock');
+const { getBiomarkerStatusLine } = require('../../chat/biomarkerStatusLine');
 const { getWearableDailyBlock } = require('../../chat/wearableDailyBlock');
 const { getSubAgeInputsBlock } = require('../../chat/subAgeInputsBlock');
 const { getOutputFormatBlock } = require('../../chat/outputFormat');
@@ -8,7 +10,7 @@ const { getTwinVocabBlock } = require('../../chat/twinVocabulary');
 
 // lifestyle_question — exercise / sleep-routine / daily-schedule plans from the user's own data.
 // No grocery, store or formulation block by design; see prompts/viva/chat/lifestyle.js.
-module.exports = ({ user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, rich_format, sub_age_display_names, wearable_daily, wearable_insights }) => {
+module.exports = ({ user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin, essential_knowledge, user_facts, now_iso, rich_format, sub_age_display_names, wearable_daily, wearable_insights, client }) => {
   const isZh = user_profile.language === 'zh';
   const hasBiomarkers = biomarkers && Object.keys(biomarkers).length > 0;
   const hasBioAge = bioage && bioage.BioAge;
@@ -17,7 +19,7 @@ module.exports = ({ user_profile, biomarkers, biomarkers_tested_at, bioage, ques
     ? `LATEST KINO TEST DATE: ${biomarkers_tested_at || 'unknown'} — this is the ONLY test date you may cite. Never invent or guess a different date.
 BIO AGE: ${bioage.BioAge} vs chronological ${bioage.ChronoAge} (Δ ${bioage.AgeDifference})
 Sub-ages — Cellular: ${bioage.SubAges?.CellularAge ?? '—'} | Metabolic: ${bioage.SubAges?.MetabolicAge ?? '—'} | Micro-Vascular: ${bioage.SubAges?.MicroVascularAge ?? '—'} | Resilience: ${bioage.SubAges?.ResilienceAge ?? '—'}
-BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values available.'} — these are the ONLY current values you may cite. Do not reuse figures from earlier turns in the conversation.`
+BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values available.'} — these are the ONLY current values you may cite. Do not reuse figures from earlier turns in the conversation.${getBiomarkerStatusLine(biomarkers, isZh)}`
     : `BIOMARKER DATA: No test on record. Build the plan from daily monitoring and the profile anyway — never defer it until a scan is done.`;
 
   const planSection = active_health_plans && active_health_plans.length > 0
@@ -28,8 +30,8 @@ BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values availa
 
   const twinSection = health_twin
     ? (isZh
-        ? `数字孪生 · 日常监测（近7天均值）：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / 深睡 ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'} | 活动 ${health_twin.avg_active_minutes != null ? health_twin.avg_active_minutes.toFixed(0) + ' 分钟' : '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 静息心率 ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}`
-        : `TWIN · DAILY MONITORING (7-day avg): Sleep ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / Deep ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | Steps ${health_twin.avg_daily_steps ?? '—'} | Active ${health_twin.avg_active_minutes != null ? health_twin.avg_active_minutes.toFixed(0) + ' min' : '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | Resting HR ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'}${health_twin.latest_weight_kg ? ' | Weight ' + health_twin.latest_weight_kg + ' kg' : ''}`)
+        ? `数字孪生 · 日常监测（近7天均值）：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / 深睡+REM ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'} | 活动 ${health_twin.avg_active_minutes != null ? health_twin.avg_active_minutes.toFixed(0) + ' 分钟' : '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 静息心率 ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}`
+        : `TWIN · DAILY MONITORING (7-day avg): Sleep ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / Deep+REM ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | Steps ${health_twin.avg_daily_steps ?? '—'} | Active ${health_twin.avg_active_minutes != null ? health_twin.avg_active_minutes.toFixed(0) + ' min' : '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | Resting HR ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'}${health_twin.latest_weight_kg ? ' | Weight ' + health_twin.latest_weight_kg + ' kg' : ''}`)
     : '';
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
@@ -62,5 +64,8 @@ RESPONSE RULES:
 - Fill missing preferences (equipment, venue, available time) with sensible defaults and say they can be swapped — do not open with a list of questions and wait.
 - No dots, no products, no supermarket or shopping references; no diet content unless this same message also asks what to eat.
 - Use a list only for 3+ items. No markdown headers.
-- End cleanly. The final sentence must never be a question or an invitation to keep chatting.`;
+- End cleanly. The final sentence must never be a question or an invitation to keep chatting.
+- When you mention an app feature (e.g. checking in), use only what the app guide below lists; never promise the app will generate a chart, score or report it doesn't list.
+
+${getAppGuideBlock({ client, isZh })}`;
 };

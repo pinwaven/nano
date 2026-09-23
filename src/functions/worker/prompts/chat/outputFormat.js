@@ -34,7 +34,7 @@ const CARD_ZH = {
 :::takeaway
 <一句可执行的具体建议>
 :::
-必须是明确的陈述式建议，不得写成问句，也不得写成"需要我帮你……吗"这类征询语气。`,
+必须是明确的陈述式建议，不得写成问句，也不得写成"需要我帮你……吗"这类征询语气。必须针对本轮这个问题，不要照抄对话历史里已经给过的要点。`,
   dots: `- 原粒推荐卡（最多一个区块）：
 :::dots
 <编号>号原粒 <名称> | <服用说明>
@@ -52,7 +52,7 @@ One biomarker per line. Status must be one of: normal / high / low / good / watc
 :::takeaway
 <one concrete, actionable next step>
 :::
-It must be a directive statement — never a question, and never an offer along the lines of "would you like me to...".`,
+It must be a directive statement — never a question, and never an offer along the lines of "would you like me to...". It must fit THIS turn's question — never repeat a takeaway already given earlier in the conversation.`,
   dots: `- Dot recommendation card (at most one block):
 :::dots
 DOT-N<number> <name> | <dosage note>

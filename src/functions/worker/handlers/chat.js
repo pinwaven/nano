@@ -1888,6 +1888,9 @@ async function handlePostChat(body) {
                 // react-markdown with no directive plugin, so a marker would show as literal
                 // ":::" lines there. CHAT_MARKERS=off is a no-deploy kill switch.
                 rich_format: body.client === 'miniapp' && process.env.CHAT_MARKERS !== 'off',
+                // Which surface asked — the app-guide block (prompts/chat/appGuideBlock.js) only
+                // describes the miniapp's screens to a miniapp user; elsewhere it keeps the rule.
+                client: body.client || null,
             };
 
             const activePrompts = personaType === 'viva' ? vivaPrompts : nanoPrompts;

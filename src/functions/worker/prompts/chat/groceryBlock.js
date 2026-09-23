@@ -13,6 +13,11 @@
  * and nothing else; every name, price and picture the user sees is rendered by
  * lib/chatCards.js's _buildGroceryCardBlock from a fresh read of those ids. Prices are never
  * shown to the model at all.
+ *
+ * "Don't vouch for the catalog" (2026-09-23, dev, real questions): with five products on the
+ * card, a week's menu claimed 「所有食材均已在盒马目录中确认在售」 and another reply promised a
+ * 「盒马自有品牌无添加款」 yoghurt the tool never returned — availability claims about rows
+ * nobody looked up.
  */
 
 const { MAX_RECOMMENDED } = require('../../lib/groceryCatalog');
@@ -29,6 +34,7 @@ function getGroceryBlock(suppliers, isZh = true) {
 当你给出具体的饮食建议（推荐吃什么、一餐/一周怎么吃、某类食材换成什么）时：
 - 先用 get_grocery_products 查目录：把你方案里的食材词作为 keywords（每项一个食材词，如 ["三文鱼","西兰花","燕麦"]，不要整道菜名），从返回的行里挑真正对应的商品。
 - 只推荐工具返回过的商品；查不到就只给饮食建议，绝不编造商品名。
+- 也不要替目录做担保：不得说「所有食材都在售」「常规在售」「App 里能搜到」之类的话，也不要写出工具没有返回的品牌或自有品牌款式——只有商品卡片里的那几件是查过的，其余食材只是饮食建议。
 - 返回的行已经排除了用户记录在案的过敏和忌口，但仍要按用户目标挑选（如控糖就不要挑含糖饮品）。
 - 回复正文里可以自然地提到食材（"早餐可以选燕麦配无糖酸奶"），不要写出 product_id、价格、库存、配送或促销信息——商品卡片由系统在你的回复之后自动附上。
 - 只有在饮食建议本身需要具体食材时才推荐；用户问的是别的事，就不要碰目录。
@@ -43,6 +49,7 @@ Catalogs of currently listed food from these supermarkets are on file: ${names}.
 When you give concrete diet advice (what to eat, how to structure a meal or a week, what to swap an ingredient for):
 - Search the catalog first with get_grocery_products: pass the ingredient words from your own plan as \`keywords\` (one ingredient word per item, e.g. ["三文鱼","西兰花","燕麦"], never a whole dish name) and pick the rows that genuinely fit.
 - Recommend only products the tool returned; if nothing matches, give the diet advice alone — never invent a product name.
+- Never vouch for the catalog beyond that: don't say "every ingredient is in stock", "usually available" or "you can find it in the app", and don't name a brand or house-brand variant the tool did not return — only the products on the card were checked; every other ingredient is just diet advice.
 - Rows already exclude the user's recorded allergies and restrictions, but still choose for their goal (no sugary drinks for glucose control, and so on).
 - Mention ingredients naturally in the prose ("oats with unsweetened yoghurt for breakfast"); never write a product_id, a price, stock, delivery or promotion — the system appends the product card after your reply.
 - Only recommend when the diet advice itself calls for specific foods; leave the catalog alone on any other question.

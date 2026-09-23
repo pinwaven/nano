@@ -1,4 +1,6 @@
 const { getVivaLabels } = require('../subAgeLabels');
+const { getAppGuideBlock } = require('../../chat/appGuideBlock');
+const { getBiomarkerStatusLine } = require('../../chat/biomarkerStatusLine');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getWearableDailyBlock } = require('../../chat/wearableDailyBlock');
 const { getSubAgeInputsBlock } = require('../../chat/subAgeInputsBlock');
@@ -24,7 +26,7 @@ module.exports = (ctx) => {
     ? `最近一次Kino检测日期：${biomarkers_tested_at || '未知'} —— 这是你唯一可以引用的检测日期，禁止编造或猜测其他日期。
 生理年龄：${bioage.BioAge} vs 实际年龄 ${bioage.ChronoAge}（差值 ${bioage.AgeDifference}）
 子年龄 — ${labels.CellularAge}：${bioage.SubAges?.CellularAge ?? '—'} | ${labels.MetabolicAge}：${bioage.SubAges?.MetabolicAge ?? '—'} | ${labels.MicroVascularAge}：${bioage.SubAges?.MicroVascularAge ?? '—'} | ${labels.ResilienceAge}：${bioage.SubAges?.ResilienceAge ?? '—'}
-生物标志物：${hasBiomarkers ? JSON.stringify(biomarkers) : '暂无原始数值。'} —— 这是唯一可引用的当前数值，禁止沿用对话历史中之前提到的数字。`
+生物标志物：${hasBiomarkers ? JSON.stringify(biomarkers) : '暂无原始数值。'} —— 这是唯一可引用的当前数值，禁止沿用对话历史中之前提到的数字。${getBiomarkerStatusLine(biomarkers, true)}`
     : `生理年龄：暂无检测记录。方案仍可基于日常监测数据与个人档案给出，不要以"先做检测"为由推后。`;
 
   const planSection = active_health_plans && active_health_plans.length > 0
@@ -32,7 +34,7 @@ module.exports = (ctx) => {
     : '';
 
   const twinSection = health_twin
-    ? `数字孪生 · 日常监测（近7天均值）：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / 深睡 ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'} | 活动 ${health_twin.avg_active_minutes != null ? health_twin.avg_active_minutes.toFixed(0) + ' 分钟' : '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 静息心率 ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}${health_twin.latest_body_fat_pct != null ? ' | 体脂 ' + health_twin.latest_body_fat_pct + '%' : ''}`
+    ? `数字孪生 · 日常监测（近7天均值）：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / 深睡+REM ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'} | 活动 ${health_twin.avg_active_minutes != null ? health_twin.avg_active_minutes.toFixed(0) + ' 分钟' : '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 静息心率 ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}${health_twin.latest_body_fat_pct != null ? ' | 体脂 ' + health_twin.latest_body_fat_pct + '%' : ''}`
     : '';
 
   const seasonSection = current_solar_term
@@ -72,5 +74,8 @@ ${seasonSection ? '\n' + seasonSection : ''}
 - 不推荐原粒、不推荐商品、不提任何超市或购物；本轮不涉及饮食，除非用户在这条消息里明确同时问了吃什么。
 - 仅在列举 3 项以上时使用列表。不使用 Markdown 标题，保持对话感和自信。
 - 回答完毕后干净收尾，不要在结尾提问或引导用户追问。
-- 全程用简体中文回复。`;
+- 提到 App 里的功能（如打卡）时，只用下面「App 使用指引」里真实存在的；不要许诺 App 会生成任何未列出的图表、评分或报告。
+- 全程用简体中文回复。
+
+${getAppGuideBlock({ client: ctx.client, isZh: true })}`;
 };
