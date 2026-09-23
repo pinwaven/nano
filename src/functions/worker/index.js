@@ -1,3 +1,4 @@
+const academyVisibility = require('./lib/academyVisibility');
 const { pool } = require('./lib/db');
 const { recordOrderCommissions, recordUserReferralCommission } = require('./lib/commissions');
 const { getUserBalance, getLedgerHistory, creditUser, debitUser, getChannelExchangeRate, getChannelCurrency } = require('./lib/credits');
@@ -473,6 +474,8 @@ exports.handler = async (req, resp, context) => {
             userDenied = await authorizeChatSpeaker(adminCtx.user, parsedBody);
         }
 
+        if (!userDenied) userDenied = await academyVisibility.authorize(adminCtx, method, path, query, parsedBody || {});
+
         if (adminCtx.role === 'user' && !userDenied) adminCtx.userRouteAuthorized = true;
 
         if (userDenied) {
@@ -717,8 +720,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetChannels(adminCtx);
             } else if (path.includes('/academy/course-progress')) {
                 result = await handleGetAcademyCourseProgressAll();
+            } else if (path === '/academy/channel-settings') {
+                result = await academyVisibility.settings(adminCtx);
             } else if (path.includes('/academy/courses')) {
-                result = await handleGetAcademyCourses();
+                result = await handleGetAcademyCourses(adminCtx);
             } else if (path.match(/\/academy\/library\/(\d+)\/content/)) {
                 const libId = path.match(/\/academy\/library\/(\d+)\/content/)[1];
                 result = await handleGetAcademyLibraryContent(libId);
@@ -749,7 +754,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/academy/certifications')) {
                 result = await handleGetAcademyCertifications();
             } else if (path.includes('/academy/learning-paths')) {
-                result = await handleGetAcademyLearningPaths();
+                result = await handleGetAcademyLearningPaths(adminCtx);
             } else if (path.includes('/oss/presign')) {
                 result = await handleGetOssPresign(query);
             } else if (path.match(/\/users\/([^/]+)/)) {
@@ -1126,7 +1131,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/partners')) {
                 result = await handlePostPartner(parsedBody, adminCtx);
             } else if (path === '/academy/courses') {
-                result = await handlePostAcademyCourse(parsedBody);
+                result = await handlePostAcademyCourse(parsedBody, adminCtx);
             } else if (path === '/academy/library') {
                 result = await handlePostAcademyLibraryItem(parsedBody);
             } else if (path === '/academy/lessons') {
@@ -1342,6 +1347,8 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/partners/')) {
                 const partnerId = path.split('/partners/')[1];
                 result = await handlePutPartner(partnerId, parsedBody);
+            } else if (path === '/academy/channel-settings') {
+                result = await academyVisibility.settings(adminCtx, parsedBody);
             } else if (path.includes('/academy/lessons/')) {
                 const lessonId = path.split('/academy/lessons/')[1];
                 result = await handlePutAcademyLesson(lessonId, parsedBody);

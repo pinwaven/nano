@@ -1693,6 +1693,29 @@ function TierBadge({ credits }) {
 function AcademyTab() {
   const { t } = useLang();
   const ta = t.academy;
+  const [channelSettings, setChannelSettings] = useState(null);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [settingsError, setSettingsError] = useState('');
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try { const r = await axios.get('/api/academy/channel-settings'); if (active && r.data.success) setChannelSettings(r.data.settings); }
+      catch { /* Users without Academy settings permission do not get a switch. */ }
+    };
+    load();
+    return () => { active = false; };
+  }, []);
+  const saveInheritance = async (inherit_courses) => {
+    setSettingsBusy(true); setSettingsError('');
+    try {
+      const r = await axios.put('/api/academy/channel-settings', { inherit_courses });
+      if (!r.data.success) throw new Error(r.data.error || 'Save failed');
+      setChannelSettings(r.data.settings);
+      setExpandedCourse(null); setLessonMap({});
+      await fetchData();
+    } catch (err) { setSettingsError(err.response?.data?.error || err.message); }
+    finally { setSettingsBusy(false); }
+  };
   const [subTab, setSubTab] = useState('courses');
   const [courses, setCourses] = useState([]);
   const [library, setLibrary] = useState([]);
@@ -1763,6 +1786,15 @@ function AcademyTab() {
 
   return (
     <>
+      {channelSettings && <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input type="checkbox" role="switch" checked={channelSettings.inherit_courses} disabled={settingsBusy}
+            onChange={e => saveInheritance(e.target.checked)} />
+          Include parent-channel courses / 包含上级渠道课程
+        </label>
+        <p className="muted" style={{ marginTop: 8 }}>Turn off to show only your channel’s courses. Existing learners keep access to enrolled courses. / 关闭后仅显示本渠道课程，已报名学员可继续学习。</p>
+        {settingsError && <p role="alert" className="form-error">{settingsError}</p>}
+      </div>}
       <div className="stat-row">
         <StatCard icon={GraduationCap} label={ta.totalCourses}    value={courses.length}        color="#6366f1" />
         <StatCard icon={Video}          label={ta.published}       value={publishedCount}        color="#10b981" />
