@@ -40,7 +40,8 @@ const { processAgFormulationResult } = require('./ag_formulation');
 const { validateAgQuestions, sanitizeDisplayText } = require('../lib/agQuestionnaire');
 const { createDynamicQuestionnaire } = require('./questionnaires');
 const { formatToShanghai } = require('../lib/time-utils');
-const { ensureSubjectRef, listTwinVersions, twinChangedAtFor, twinVersionOf } = require('../lib/twinMirror');
+const { reportAttribution } = require('../lib/reportAttribution');
+const { ensureSubjectRef, twinChangedAtFor, twinVersionOf } = require('../lib/twinMirror');
 
 // ---------------------------------------------------------------------------------------
 // Constants
@@ -287,6 +288,8 @@ function _publicJob(row) {
         result_summary: row.result_summary || null,
         has_result_file: resultFiles.length > 0,
         result_files: resultFiles,
+        // Who produced the result, for the panel's line under a finished job (lib/reportAttribution.js).
+        attribution: row.status === 'completed' ? reportAttribution(row.result, row.language) : null,
         error_reason: row.error_reason || null,
         document_count: Array.isArray(row.document_ids) ? row.document_ids.length : 0,
         // Drives the AG panel's "needs your input" card. The assignment ids themselves stay
@@ -622,7 +625,7 @@ async function handlePostVivaAgClaim(body) {
                 lease_expires_at: formatToShanghai(job.claim_expires_at),
                 result_token: resultToken,
                 document_count: Array.isArray(job.document_ids) ? job.document_ids.length : 0,
-                twin_bundle_url: `/api/viva-ag/twin-bundle?job_uid=${encodeURIComponent(job.job_uid)}`,
+                twin_bundle_url: `/api/twin/viva-ag/twin-bundle?job_uid=${encodeURIComponent(job.job_uid)}`,
                 subject_ref: subjectRef,
                 twin_changed_at: twinChangedAt,
             },
@@ -684,69 +687,6 @@ async function handleGetVivaAgTwinBundle(query, jobToken) {
 
 // Re-mints a document URL. Exists so a job that runs for hours — or has to resume a large,
 // partially-downloaded PDF — never dies on an expired signature.
-// Every AG subject and when its twin last changed — the agent's change feed for its
-// mirror. Bearer only, no job token: it names subjects by subject_ref and nothing else,
-// and a subject_ref reaches the agent only through a claim it was handed.
-async function handleGetVivaAgTwinVersions(query) {
-    try {
-        let since = null;
-        if (query?.since != null && query.since !== '') {
-            const t = new Date(String(query.since));
-            if (Number.isNaN(t.getTime())) return _fail(REASONS.MISSING_PARAMS, 'since must be an ISO-8601 timestamp');
-            since = t.toISOString();
-        }
-        const limit = clampInt(query?.limit, 500, 1, 2000);
-        const subjects = await listTwinVersions(pool, { since, limit });
-        return {
-            success: true,
-            as_of: new Date().toISOString(),
-            since,
-            subjects,
-            truncated: subjects.length === limit,
-        };
-    } catch (err) {
-        _logError('handleGetVivaAgTwinVersions failed', err);
-        return _fail(REASONS.INTERNAL_ERROR, err.message);
-    }
-}
-
-// The same bundle a job receives, for one subject, outside any job. Bearer only. Flips no
-// job status, scopes to every active document rather than a job's list, and carries no
-// job_questionnaires (there is no job). Presigned URLs still expire; the mirror fetches
-// bytes at sync time and never relies on a stored URL.
-async function handleGetVivaAgSubjectBundle(query) {
-    try {
-        const subjectRef = String(query?.subject_ref || '').trim();
-        if (!subjectRef) return _fail(REASONS.MISSING_PARAMS, 'subject_ref is required');
-
-        const { rows: [user] } = await pool.query(
-            `SELECT u.user_id, u.nickname, u.gender, u.birth_date, u.language, u.bio_data
-               FROM viva_ag_subjects s JOIN users u ON u.user_id = s.user_id
-              WHERE s.subject_ref = $1`,
-            [subjectRef]
-        );
-        if (!user) return _fail(REASONS.SUBJECT_NOT_FOUND, 'No such subject, or the subject no longer exists');
-
-        const bundle = await buildTwinBundle(pool, {
-            user,
-            ref: subjectRef,
-            documentIds: null,
-            urlTtlSeconds: DEFAULT_DOC_URL_TTL_SECONDS,
-            questionnaireAssignmentIds: null,
-        });
-        return {
-            success: true,
-            ...bundle,
-            subject_ref: subjectRef,
-            twin_version: twinVersionOf(bundle),
-            twin_changed_at: await twinChangedAtFor(pool, user.user_id),
-        };
-    } catch (err) {
-        _logError('handleGetVivaAgSubjectBundle failed', err, { subject_ref: query?.subject_ref });
-        return _fail(REASONS.INTERNAL_ERROR, err.message);
-    }
-}
-
 async function handleGetVivaAgDocumentUrl(query, jobToken) {
     try {
         const { error, job } = await _loadClaimedJob(query?.job_uid, jobToken);
@@ -1430,8 +1370,6 @@ module.exports = {
     handleGetVivaAgPing,
     handlePostVivaAgClaim,
     handleGetVivaAgTwinBundle,
-    handleGetVivaAgTwinVersions,
-    handleGetVivaAgSubjectBundle,
     handleGetVivaAgDocumentUrl,
     handleGetVivaAgHealthEvents,
     handleGetVivaAgLabResults,

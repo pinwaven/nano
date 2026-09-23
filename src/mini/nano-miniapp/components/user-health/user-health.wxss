@@ -3454,6 +3454,13 @@
   font-size: var(--fs-22, 22rpx);
   color: rgba(var(--wave-rgb), 0.55);
 }
+/* Who produced the report and whether a person reviewed it — composed server-side from the row
+   (lib/reportAttribution.js). Same size as the meta line, a step stronger, so it reads as a
+   statement about the report rather than as a date. */
+.tr-origin {
+  font-size: var(--fs-22, 22rpx);
+  color: rgba(var(--wave-rgb), 0.7);
+}
 .tr-summary {
   font-size: var(--fs-22, 22rpx);
   line-height: 1.45;

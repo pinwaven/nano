@@ -387,6 +387,76 @@ resources:
             authType: anonymous
             methods: ["GET", "OPTIONS"]
 
+  # The twin function — every route between Curia and nano (docs/architecture/twin-function.md).
+  # Deployed to prod 2026-09-23 BEFORE the worker gives up its queue routes: until Curia prod points
+  # at /api/twin, the worker still answers VIVA_AG_API_TOKEN and DOC_EXTRACT_API_TOKEN too. Only
+  # after Curia is switched may a worker without those routes ship (§Open 4 has the order).
+  # EVENT_SOURCE_SUFFIX is unset here, as on the prod worker.
+  twin:
+    component: fc3
+    actions:
+      pre-deploy:
+        - run: node scripts/sync-twin-shared.js
+          path: ./
+    props:
+      region: ${vars.region}
+      functionName: twin
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 512
+      timeout: 300
+      code: ./src/functions/twin
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        TWIN_ENV: "prod"
+        NODE_ENV: "production"
+        TWIN_API_TOKEN: ${env(TWIN_API_TOKEN_PROD)}
+        TWIN_SETTLE_SECONDS: "60"
+        DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
+        DB_NAME: "nano_db"
+        DB_USER: "nano_admin"
+        DB_PASS: ${env(DB_PASS)}
+        DB_SSL: "false"
+        TZ: "Asia/Shanghai"
+        VIVA_AG_API_TOKEN: ${env(VIVA_AG_API_TOKEN_PROD)}
+        DOC_EXTRACT_API_TOKEN: ${env(DOC_EXTRACT_API_TOKEN_PROD)}
+        AEVIVA_SITE_BASE_URL: "https://aeviva.gcn.net"
+        API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        AVATAR_GEN_MAX_PER_DAY: "3"
+        AVATAR_GEN_MODEL: "qwen-image-3.0"
+        CHAT_UNDERSTANDING_MODE: "shadow"
+        DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
+        DASHSCOPE_HOST: "https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com"
+        GCN_API_BASE_URL: "https://edge.gcn.net"
+        GCN_SERVICE_TOKEN: ${env(GCN_SERVICE_TOKEN)}
+        MODEL: "qwen-plus-latest"
+        UNDERSTANDING_MODEL: "qwen3.8-flash"
+        VIVA_AG_MAX_JOBS_PER_DAY: "10"
+        WX_APPID: "wxecbcf00ce480fcf2"
+        WX_SECRET: ${env(WX_SECRET)}
+        WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
+        GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
+        OSS_REGION: "oss-cn-shanghai"
+        OSS_BUCKET: "waven-nano"
+        OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
+        OSS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
+        OSS_CNAME_DOMAIN: ${env(OSS_CNAME_DOMAIN)}
+      triggers:
+        - triggerName: http-twin
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["GET", "POST"]
+
   nano-domain:
     component: fc3-domain
     props:

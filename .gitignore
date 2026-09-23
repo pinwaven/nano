@@ -11,3 +11,4 @@ backup/
 backups/
 .antigravitycli/*.json
 scripts/keys/
+src/functions/twin/shared/

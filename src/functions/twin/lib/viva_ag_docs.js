@@ -3,7 +3,7 @@
 /**
  * Self-documenting endpoints for the external Viva AG API.
  *
- * Both files live under src/functions/worker/docs/ and ship with the function — s.yaml's
+ * Both files live under src/functions/twin/docs/ and ship with the function — s.yaml's
  * worker entry is `code: ./src/functions/worker`, so the whole directory is deployed. That is
  * the point: the contract cannot drift away from the code the way a wiki page or a README in
  * another repo would, and whoever is building the external agent can read it from the live

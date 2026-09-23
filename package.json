@@ -51,7 +51,9 @@
     "sync:i18n": "node src/web/user-app/scripts/sync-i18n-from-miniapp.mjs --write",
     "sync:theme": "node src/web/user-app/scripts/sync-theme-from-miniapp.mjs",
     "sync:css": "node src/web/user-app/scripts/sync-css-from-miniapp.mjs",
-    "sync:health": "node src/web/user-app/scripts/sync-health-helpers-from-miniapp.mjs"
+    "sync:health": "node src/web/user-app/scripts/sync-health-helpers-from-miniapp.mjs",
+    "pretest": "node scripts/sync-twin-shared.js",
+    "deploy:twin": "./scripts/s.sh twin deploy -y"
   },
   "dependencies": {
     "@alicloud/eventbridge": "^1.3.2",

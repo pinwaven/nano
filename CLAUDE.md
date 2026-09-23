@@ -715,27 +715,29 @@ are real prod chat text.
   indexed queries for history and state. Relevance on same-route turns is within run-to-run noise;
   do not expect a general quality lift from it.
 
-## 48. API Auth — Per-User Sessions — Rules
+## 48. The twin function — every route between Curia and nano — Rules
 
-Every miniapp / web user-app request carries the user's own signed session (`u.` token), not
-the shared app bearer the builds used to ship (which the server treated as superadmin). Full
-model, route options and the cut-off runbook: [docs/architecture/api-auth.md](docs/architecture/api-auth.md).
-
-- **A new client call needs its route in `lib/userAccess.js` `USER_ROUTES`** — deny-by-default;
-  a missing one 403s with `reason:'route_not_allowed'` (`user_session_denied` log). A route that
-  names a record only by id declares an `owner` query; a handler that also serves the admin panel
-  and writes privileged fields declares `body` (as `PUT /users` does).
-- **Identity is checked, never rewritten**: every `openid`/`user_id`/`coach_id`/… a request
-  names must be the caller, the caller's coaching client, or (admin role) same-channel. The coach
-  panel names its clients legitimately.
-- **Public routes are method + path** (`PUBLIC_PATHS`, `index.js`) — `GET /store-items` is public,
-  `POST /store-items` is not.
-- `TOKEN_SIGNING_SECRET` (`_PROD` on prod) signs `u.`/`sa.`/`ch.`; **never sign with
-  `API_BEARER_TOKEN`** — it is public. Every login response carries `session_token`
-  (`SESSION_ISSUING_PATHS`); clients store it (`utils/session.js`, user-app `src/session.js`).
-- The legacy bearer stays accepted (logged `legacy_app_bearer`) until `LEGACY_APP_BEARER=reject`;
-  `/qr-login/confirm` and `/session/upgrade` change behaviour at that switch too.
-- The miniapp's native admin/superadmin pages are gone — admins use the web panel.
+`src/functions/twin` (FC `twin-dev`), `docs/architecture/twin-function.md`, contracts at `/api/twin/docs`,
+`/api/twin/viva-ag/docs`, `/api/twin/doc-extract/docs`.
+- **The worker answers no Curia route.** The Viva AG queue (§35) and the doc-extract queue (§39) are served
+  by twin under `/api/twin/viva-ag/*` and `/api/twin/doc-extract/*`; the worker keeps only the miniapp's own
+  `/viva-ag/*` routes and rejects both tokens. Do not add an external-agent route to the worker.
+- **Three tokens, one scope each** (`TWIN_API_TOKEN`, `VIVA_AG_API_TOKEN`, `DOC_EXTRACT_API_TOKEN`); a token
+  outside its scope is 403.
+- **`shared/` is generated and git-ignored**: the `require` closure of the two queue handlers, copied from the
+  worker at deploy (`scripts/sync-twin-shared.js`, also `npm pretest`). Edit the worker, deploy both from one
+  commit — two builds of `buildTwinBundle` give one twin two `twin_version`s.
+- **Migrate before deploying the worker**: `lib/twinMirror.js` reads `twin_touch` (`migration_twin_sync.sql`).
+- **Prod order matters**: twin deployed and Curia switched *before* a worker without the queue routes ships.
+  As of 2026-09-23 prod twin is deployed (FC `twin`) and the migration applied; Curia prod is **not** switched,
+  so the prod worker must keep its queue routes — do not deploy the jp1 worker to prod yet.
+- **Every write from Curia is a contribution** with a sender-minted uid and a required `origin` (`report` today).
+- **Every user has a subject_ref on dev** (decided 2026-09-23, `scripts/twin-all-users.js`); new users are
+  minted at signup by trigger.
+- **Reports say who produced them** (`lib/reportAttribution.js`) on the 综合报告 card and the AG panel.
+- **Curia's copy of the health-report skill reads through `/record/*` and `/file`** (`twin/lib/record.js`):
+  health-record tables only, identifiers and contact columns stripped. Adding a table there is adding it
+  to what Curia can read about a person — use `ALLOW`, never widen `DENY`'s complement.
 
 ## 49. Managed Customers (SuperiorMed) — Rules
 
@@ -760,3 +762,25 @@ scans, formulates and asks Viva about them; the channel pays. Full record:
 - **The channel pays with prepaid Dots codes**: the coach redeems one for the customer
   (`/formulation-redeem`, `_redeemer_user_id` set from the session) and GCN makes the coach the
   order's buyer while the formulation stays the customer's. No nano code table, no price in nano.
+
+## 50. API Auth — Per-User Sessions — Rules
+
+Every miniapp / web user-app request carries the user's own signed session (`u.` token), not
+the shared app bearer the builds used to ship (which the server treated as superadmin). Full
+model, route options and the cut-off runbook: [docs/architecture/api-auth.md](docs/architecture/api-auth.md).
+
+- **A new client call needs its route in `lib/userAccess.js` `USER_ROUTES`** — deny-by-default;
+  a missing one 403s with `reason:'route_not_allowed'` (`user_session_denied` log). A route that
+  names a record only by id declares an `owner` query; a handler that also serves the admin panel
+  and writes privileged fields declares `body` (as `PUT /users` does).
+- **Identity is checked, never rewritten**: every `openid`/`user_id`/`coach_id`/… a request
+  names must be the caller, the caller's coaching client, or (admin role) same-channel. The coach
+  panel names its clients legitimately.
+- **Public routes are method + path** (`PUBLIC_PATHS`, `index.js`) — `GET /store-items` is public,
+  `POST /store-items` is not.
+- `TOKEN_SIGNING_SECRET` (`_PROD` on prod) signs `u.`/`sa.`/`ch.`; **never sign with
+  `API_BEARER_TOKEN`** — it is public. Every login response carries `session_token`
+  (`SESSION_ISSUING_PATHS`); clients store it (`utils/session.js`, user-app `src/session.js`).
+- The legacy bearer stays accepted (logged `legacy_app_bearer`) until `LEGACY_APP_BEARER=reject`;
+  `/qr-login/confirm` and `/session/upgrade` change behaviour at that switch too.
+- The miniapp's native admin/superadmin pages are gone — admins use the web panel.

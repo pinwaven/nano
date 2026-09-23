@@ -20,7 +20,7 @@ Authorization: Bearer <VIVA_AG_API_TOKEN>
 ```
 
 - **Dev and prod have different tokens.** They point at different databases and different real
-  users. Confirm which one you are holding with `GET /api/viva-ag/ping` before doing anything.
+  users. Confirm which one you are holding with `GET /api/twin/viva-ag/ping` before doing anything.
 - The token is restricted to the paths in this document. Any other path returns **403
   Forbidden**, even with a valid token.
 - The token must not begin with `ch.` — that prefix is reserved for a different credential type
@@ -30,8 +30,8 @@ Base URLs:
 
 | Environment | Base |
 |---|---|
-| dev  | `https://nano-dev.gcn.net/api` |
-| prod | `https://nano.gcn.net/api` |
+| dev  | `https://twin-dev-zasfwcrktp.cn-shanghai.fcapp.run/api/twin` |
+| prod | `https://nano.gcn.net/api/twin/twin` (not yet deployed) |
 
 ### The per-job token
 
@@ -121,7 +121,7 @@ Confirm token and environment. Do this first.
 
 ```bash
 curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
-  https://nano-dev.gcn.net/api/viva-ag/ping
+  https://twin-dev-zasfwcrktp.cn-shanghai.fcapp.run/api/twin/viva-ag/ping
 ```
 
 ```json
@@ -140,7 +140,7 @@ jobs, never the same one.
 curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"worker_id":"ag-worker-1","lease_seconds":3600}' \
-  https://nano-dev.gcn.net/api/viva-ag/jobs/claim
+  https://twin-dev-zasfwcrktp.cn-shanghai.fcapp.run/api/twin/viva-ag/jobs/claim
 ```
 
 | field | notes |
@@ -169,7 +169,7 @@ Claimed:
     "lease_expires_at": "2026-08-23 18:04:11",
     "result_token": "9c2f…",
     "document_count": 4,
-    "twin_bundle_url": "/api/viva-ag/twin-bundle?job_uid=0d1f…"
+    "twin_bundle_url": "/api/twin/viva-ag/twin-bundle?job_uid=0d1f…"
   } }
 ```
 
@@ -209,7 +209,7 @@ The subject's complete digital twin. The first call moves the job to `processing
 ```bash
 curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
      -H "X-Viva-Ag-Job-Token: $RESULT_TOKEN" \
-  "https://nano-dev.gcn.net/api/viva-ag/twin-bundle?job_uid=$JOB_UID"
+  "https://twin-dev-zasfwcrktp.cn-shanghai.fcapp.run/api/twin/viva-ag/twin-bundle?job_uid=$JOB_UID"
 ```
 
 Shape:
@@ -320,46 +320,13 @@ inferring around a gap.
 
 ---
 
-### `GET /viva-ag/twin-versions?since=…` and `GET /viva-ag/subject-bundle?subject_ref=…`
+### The subject mirror moved to the twin contract
 
-For a worker that keeps a **mirror** of each subject's twin so it does not re-download an
-unchanged twin on every claim. Both are bearer-only (no job token) and read-only.
-
-Every claimed job now carries `subject_ref` — an opaque handle, stable for the subject's
-lifetime, minted at their first claim and never derived from anything you could learn a user
-from — and `twin_changed_at`, nano's cheapest answer to "did this twin change", computed as
-the latest change instant across every table the bundle reads. Compare it to what your mirror
-holds; if it moved, pull before you work.
-
-```bash
-# who changed since my cursor (omit `since` for everyone; `removed: true` = account gone)
-curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
-  "https://nano-dev.gcn.net/api/viva-ag/twin-versions?since=2026-09-20T00:00:00Z"
-# → { "success": true, "as_of": "…", "since": "…", "truncated": false,
-#     "subjects": [ { "subject_ref": "vs_…", "changed_at": "…", "removed": false } ] }
-
-# the bundle for one subject, outside any job
-curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
-  "https://nano-dev.gcn.net/api/viva-ag/subject-bundle?subject_ref=vs_…"
-```
-
-`subject-bundle` is the `twin-bundle` shape (§4 above) with three differences: it scopes to
-every active document rather than a job's list, it has no `job` and an empty
-`job_questionnaires`, and it carries `twin_version` — a sha256 over the bundle with
-`generated_at`, presigned URLs and job fields removed, so two mints of an unchanged twin
-hash the same — plus `twin_changed_at`. The job-scoped `twin-bundle` carries `subject_ref`
-and `twin_version` too.
-
-Rules for a mirror, since this is the one place a subject's data may persist outside nano:
-
-- **Nano is the record.** Never write anything back; never serve the mirror to anyone.
-- **Removal propagates.** A subject listed with `removed: true` must be deleted from the
-  mirror in the same pass that learns of it. `removed` is reported regardless of `since`.
-- **`twin_changed_at` is a signal, not a proof.** Several of nano's tables carry `created_at`
-  only and are updated in place. Run a periodic full pass (omit `since`) and trust
-  `twin_version` for whether a bundle actually changed.
-- **Presigned URLs expire.** Fetch bytes at sync time; never store a URL.
-- Failure vocabulary adds `subject_not_found` (404-class) for an unknown or deleted subject.
+`twin-versions` and `subject-bundle` are no longer viva-ag paths. A worker that mirrors each
+subject's twin reads `GET /versions` and `GET /bundle` from the twin contract instead
+(`GET /api/twin/docs`, its own token, `TWIN_API_TOKEN`), which also serves incremental feeds.
+Every claimed job still carries `subject_ref` and `twin_changed_at`, so a claim can be checked
+against the mirror before any bundle is pulled.
 
 ## 5. Documents (large file download)
 
@@ -439,7 +406,7 @@ Practical notes:
   ```bash
   curl -s -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
        -H "X-Viva-Ag-Job-Token: $RESULT_TOKEN" \
-    "https://nano-dev.gcn.net/api/viva-ag/document-url?job_uid=$JOB_UID&document_id=12"
+    "https://twin-dev-zasfwcrktp.cn-shanghai.fcapp.run/api/twin/viva-ag/document-url?job_uid=$JOB_UID&document_id=12"
   ```
   `GET /viva-ag/document-url` returns the same entry shape with a fresh signature. It is
   re-callable as often as you like.
@@ -459,13 +426,13 @@ which endpoint serves it.
 
 ```jsonc
 "inventory": {
-  "kino_tests":    { "count": 66,   "first": "...", "last": "...", "endpoint": "/api/viva-ag/biomarker-history" },
-  "health_events": { "count": 3523, "first": "...", "last": "...", "endpoint": "/api/viva-ag/health-events",
+  "kino_tests":    { "count": 66,   "first": "...", "last": "...", "endpoint": "/api/twin/viva-ag/biomarker-history" },
+  "health_events": { "count": 3523, "first": "...", "last": "...", "endpoint": "/api/twin/viva-ag/health-events",
                      "by_category": { "vitals": {"count":3423,...}, "sleep": {...}, "activity": {...} } },
   "lab_results":   { "count": 207,  ... },
   "health_reports":{ "count": 2,    ... },
   "documents":     { "count": 4,    "endpoint": "(included in layers.medical_records.documents)" },
-  "chat_messages": { "count": 1065, "endpoint": "/api/viva-ag/chat-history",
+  "chat_messages": { "count": 1065, "endpoint": "/api/twin/viva-ag/chat-history",
                      "note": "Not included in this bundle. Opt-in per job; defaults to a recent window." }
 }
 ```
@@ -536,7 +503,7 @@ curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"job_uid":"'$JOB_UID'","result_token":"'$RESULT_TOKEN'",
        "progress_note":"读取第 3/4 份报告","extend_seconds":3600}' \
-  https://nano-dev.gcn.net/api/viva-ag/jobs/heartbeat
+  https://twin-dev-zasfwcrktp.cn-shanghai.fcapp.run/api/twin/viva-ag/jobs/heartbeat
 ```
 
 → `{ "success": true, "lease_expires_at": "2026-08-23 19:12:00" }`
@@ -580,7 +547,7 @@ Get one presigned upload URL per file:
 curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"job_uid":"'$JOB_UID'","result_token":"'$RESULT_TOKEN'","filename":"report.pdf"}' \
-  https://nano-dev.gcn.net/api/viva-ag/result-upload-url
+  https://twin-dev-zasfwcrktp.cn-shanghai.fcapp.run/api/twin/viva-ag/result-upload-url
 ```
 
 → `{ "success": true, "oss_key": "viva-ag-results/<job_uid>/…pdf", "put_url": "…",
@@ -611,7 +578,7 @@ curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
        "result":{"findings":[…],"confidence":"high"},
        "result_files":[{"oss_key":"viva-ag-results/…/ab12.pdf","filename":"2026年8月 深度分析.pdf"},
                        {"oss_key":"viva-ag-results/…/cd34.md","filename":"分析全文.md"}]}' \
-  https://nano-dev.gcn.net/api/viva-ag/jobs/result
+  https://twin-dev-zasfwcrktp.cn-shanghai.fcapp.run/api/twin/viva-ag/jobs/result
 ```
 
 | field | required | notes |
@@ -649,7 +616,7 @@ in the user's chat. Send plain text and normal paragraphs.
 curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"job_uid":"…","result_token":"…","reason":"pdf_unreadable","retryable":false}' \
-  https://nano-dev.gcn.net/api/viva-ag/jobs/fail
+  https://twin-dev-zasfwcrktp.cn-shanghai.fcapp.run/api/twin/viva-ag/jobs/fail
 ```
 
 `retryable: true` puts the job back on the queue if it has attempts left
@@ -666,7 +633,7 @@ matters most for `dots_formulation`, where the output is compounded into physica
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $VIVA_AG_API_TOKEN" -H 'Content-Type: application/json' \
-  "https://nano-dev.gcn.net/api/viva-ag/jobs/questionnaire" -d '{
+  "https://twin-dev-zasfwcrktp.cn-shanghai.fcapp.run/api/twin/viva-ag/jobs/questionnaire" -d '{
     "job_uid": "'"$JOB_UID"'",
     "result_token": "'"$RESULT_TOKEN"'",
     "intro": "为了判断你的炎症来源，我还需要确认两件事。",

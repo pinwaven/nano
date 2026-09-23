@@ -81,6 +81,7 @@
             <text class="ag-job-date">{{item.created_at}}</text>
           </view>
           <text class="ag-job-cmd">{{item.command}}</text>
+          <text wx:if="{{item.attribution}}" class="ag-job-origin">{{item.attribution.text}}</text>
           <text wx:if="{{item.progress_note}}" class="ag-job-note">{{item.progress_note}}</text>
           <text wx:elif="{{item.result_summary}}" class="ag-job-note">{{item.summaryPreview}}</text>
 
@@ -110,6 +111,7 @@
       <text class="ag-sheet-date">{{detailJob.created_at}}</text>
       <text class="ag-sheet-cmd">{{detailJob.command}}</text>
 
+      <text wx:if="{{detailJob.attribution}}" class="ag-job-origin">{{detailJob.attribution.text}}</text>
       <text wx:if="{{detailJob.result_summary}}" class="ag-sheet-body">{{detailJob.result_summary}}</text>
       <text wx:elif="{{detailJob.error_reason}}" class="ag-sheet-body ag-sheet-err">{{t.failed}}</text>
       <text wx:elif="{{detailJob.progress_note}}" class="ag-sheet-body">{{detailJob.progress_note}}</text>

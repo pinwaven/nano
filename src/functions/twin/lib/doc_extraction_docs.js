@@ -4,7 +4,7 @@
  * Self-documenting endpoints for the external document-extraction API.
  *
  * Same shape and same reasoning as handlers/viva_ag_docs.js: both files live under
- * src/functions/worker/docs/ and ship with the function — s.yaml's worker entry is
+ * src/functions/twin/docs/ and ship with the function — s.yaml's twin entry is
  * `code: ./src/functions/worker`, so the whole directory is deployed. The contract therefore
  * cannot drift away from the code the way a wiki page or a README in another repo would, and
  * whoever is building the agent reads it from the live endpoint they are already authenticating
