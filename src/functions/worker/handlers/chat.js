@@ -1,3 +1,4 @@
+const { scanResultMessage, managedVoiceBlock } = require('../lib/managedVoice');
 const { pool } = require('../lib/db');
 const { humanizeDotCodes } = require('../lib/dotNames');
 const { humanizeSubAgeKeys } = require('../lib/subAgeLabels');
@@ -221,7 +222,7 @@ async function resolveOrUpsertUser(body) {
     // If openid matches an existing user_id (admin-created or simulator users), use it directly.
     // Otherwise fall back to the external_id upsert (production WeChat flow).
     const byUserId = await pool.query(
-        'SELECT user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at FROM users WHERE user_id = $1',
+        'SELECT user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at, account_type FROM users WHERE user_id = $1',
         [openid]
     );
     if (byUserId.rows.length > 0) return byUserId.rows[0];
@@ -255,7 +256,7 @@ async function resolveOrUpsertUser(body) {
             language = COALESCE(EXCLUDED.language, users.language),
             bio_data = users.bio_data || EXCLUDED.bio_data,
             updated_at = CURRENT_TIMESTAMP
-        RETURNING user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at, (xmax = 0) AS inserted;
+        RETURNING user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at, account_type, (xmax = 0) AS inserted;
     `;
     const userResult = await pool.query(userQuery, [
         generateUserId(), openid, nickname, phone || null, email || null,
@@ -401,10 +402,7 @@ async function handlePostBiomarkers(body) {
         );
         const biomarkerId = biomarkerResult.rows[0].id;
 
-        const lang = user.language || 'zh';
-        const content = lang === 'zh'
-            ? `已完成生物标志物检测分析。您的生理年龄为 **${bioAgeReport.BioAge.toFixed(1)} 岁**。请用健康管理小工具查看详细分析！`
-            : `I've analyzed your biomarker test. Your biological age is **${bioAgeReport.BioAge.toFixed(1)} years**. Check your health advice tool for details!`;
+        const content = scanResultMessage(bioAgeReport.BioAge, user);
         await pool.query(
             'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
             [user_id, biomarkerId, 'biological_report', content, 'pending']
@@ -1335,7 +1333,7 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
 // FK-threading/placeholder-row need here, so the two-phase split isn't warranted.
 async function _fireQuestionnaireAnsweredFollowup(userId, assignmentId) {
     const userRes = await pool.query(
-        `SELECT user_id, nickname, gender, birth_date, language, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at FROM users WHERE user_id = $1`,
+        `SELECT user_id, nickname, gender, birth_date, language, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at, account_type FROM users WHERE user_id = $1`,
         [userId]
     );
     if (!userRes.rows.length) return;
@@ -1451,6 +1449,13 @@ async function handlePostChat(body) {
 
     const user = await resolveOrUpsertUser(body);
     const user_id = user.user_id;
+    const coachSpeaker = body.speaker === 'coach';
+    if (coachSpeaker && user.account_type !== 'managed') {
+        return { statusCode: 403, success: false, error: 'coach_chat_managed_only' };
+    }
+    // A managed customer never writes in their own thread: the conversation partner is their
+    // coach, whose rows are 'coach'. Those rows are the user side of the history for this account.
+    const historyUserRoles = user.account_type === 'managed' ? new Set(['user', 'coach']) : new Set(['user']);
 
     // Resolve persona from an active per-user override, else channel config (defaults to 'nano')
     let channelPersonaType = 'nano';
@@ -1900,7 +1905,8 @@ async function handlePostChat(body) {
             // than passed separately so it crosses the EventBridge boundary (§22) with no new
             // field — handleChatGenerateEvent rebuilds its message list from systemPrompt.
             const systemPrompt = promptBuilder(llmContext)
-                + (understandingRoutes ? (resolvedRequestLine(understanding) || '') : '');
+                + (understandingRoutes ? (resolvedRequestLine(understanding) || '') : '')
+                + (coachSpeaker ? managedVoiceBlock(user, { asked: true }) : '');
             const useAgenticLoop = HIGH_RISK_INTENTS.has(intent);
 
             // Save the incoming user message to the conversation log — skipped in sandbox
@@ -1915,7 +1921,7 @@ async function handlePostChat(body) {
             if (!sandbox) {
                 const { rows: savedUser } = await pool.query(
                     'INSERT INTO chat_messages (user_id, role, content, persona_type) VALUES ($1, $2, $3, $4) RETURNING id',
-                    [user_id, 'user', message, personaType]
+                    [user_id, coachSpeaker ? 'coach' : 'user', message, personaType]
                 );
                 userMessageId = savedUser[0]?.id ?? null;
             }
@@ -1933,11 +1939,12 @@ async function handlePostChat(body) {
             );
 
             // Normalize roles ('ai' → 'assistant') and collapse consecutive same-role turns
-            // Only 'user' and 'ai' rows are forwarded; 'coach', 'action', and anything else is UI-only
+            // Only 'user' and 'ai' rows are forwarded ('coach' too for a managed customer — see
+            // historyUserRoles); 'action' and anything else is UI-only
             const cleanHistory = [];
             for (const row of historyResult.rows) {
-                if (row.role !== 'user' && row.role !== 'ai') continue;
-                const role = row.role === 'ai' ? 'assistant' : row.role;
+                if (!historyUserRoles.has(row.role) && row.role !== 'ai') continue;
+                const role = row.role === 'ai' ? 'assistant' : 'user';
                 const last = cleanHistory[cleanHistory.length - 1];
                 if (last && last.role === role) {
                     last.content = row.content;
@@ -2378,9 +2385,11 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         }
 
         const strippedReply = rawReply.slice(0, extracted.start).trim();
-        finalContent = strippedReply || (lang === 'zh'
-            ? '这是根据您当前数据评估出的原粒配比，仅供参考。'
-            : 'Here is the dot allocation evaluated from your current data, for reference.');
+        finalContent = strippedReply || (llmContext.managed_voice
+            ? (lang === 'zh' ? '这是根据该客户当前数据评估出的原粒配比，仅供参考。' : "Here is the dot allocation evaluated from the customer's current data, for reference.")
+            : (lang === 'zh'
+                ? '这是根据您当前数据评估出的原粒配比，仅供参考。'
+                : 'Here is the dot allocation evaluated from your current data, for reference.'));
     } else {
         // No usable action JSON — fall back to the deterministic single-shot formulator so the
         // user is never left with nothing (same resilience principle as the 2026-07-29
@@ -2393,6 +2402,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
             personaType,
             lang,
             currentSolarTerm: llmContext.current_solar_term,
+            voiceBlock: llmContext.managed_voice || '',
             essentialKnowledge: llmContext.essential_knowledge,
             userFacts: llmContext.user_facts,
             activeHealthPlans: llmContext.active_health_plans,
@@ -2658,6 +2668,7 @@ async function handleChatGenerateEvent(payload) {
                         dotsFormulary: llmContext.dots,
                         personaType, lang: language,
                         currentSolarTerm: llmContext.current_solar_term,
+                        voiceBlock: llmContext.managed_voice || '',
                         essentialKnowledge: llmContext.essential_knowledge,
                         userFacts: llmContext.user_facts,
                         activeHealthPlans: llmContext.active_health_plans,
@@ -2803,7 +2814,7 @@ async function handlePostHealthAdvice(body) {
 
     try {
         const userResult = await pool.query(
-            `SELECT user_id, nickname, gender, birth_date, language, bio_data, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at
+            `SELECT user_id, nickname, gender, birth_date, language, bio_data, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at, account_type
              FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
             [openid]
         );
@@ -2960,11 +2971,17 @@ async function handlePostHealthAdvice(body) {
             essential_knowledge: essentialKnowledge,
             user_facts: factsResult.rows,
             now_iso: getNowShanghai().toISO(),
-        });
+        }) + managedVoiceBlock(user);
 
-        const userMsg = isZh
-            ? '请分析我目前的健康状态，并给我专业的健康建议。'
-            : 'Please analyze my current health status and give me personalized health advice.';
+        // A managed customer's advice is requested by, and written for, their coach (§49): the
+        // trigger is the coach's and is stored as a 'coach' row, which that account's chat history
+        // counts as the user side.
+        const managed = user.account_type === 'managed';
+        const userMsg = managed
+            ? (isZh ? '请分析该客户目前的健康状态，并给出专业的健康建议。' : "Please analyze this customer's current health status and give personalized health advice.")
+            : (isZh
+                ? '请分析我目前的健康状态，并给我专业的健康建议。'
+                : 'Please analyze my current health status and give me personalized health advice.');
 
         // Reshaped to the SAME llmContext contract handlePostChat produces (chat.js §22), so
         // runAgenticTurn, its dedicated tools, and JUDGE — all built against that contract —
@@ -2999,7 +3016,7 @@ async function handlePostHealthAdvice(body) {
         // (handleChatGenerateEvent) doesn't save the user's own message itself, it's assumed
         // already persisted by the time the event fires.
         if (!sandbox) {
-            await saveChatMessage(user_id, 'user', userMsg, null, personaType);
+            await saveChatMessage(user_id, managed ? 'coach' : 'user', userMsg, null, personaType);
         }
 
         // Same rationale as handlePostChat's fork (CLAUDE.md §22): the agentic loop can take
@@ -3130,7 +3147,7 @@ async function handlePostAnalyzeImage(body) {
 
     try {
         const userResult = await pool.query(
-            `SELECT user_id, nickname, gender, birth_date, language, bio_data FROM users
+            `SELECT user_id, nickname, gender, birth_date, language, bio_data, account_type FROM users
              WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
             [openid]
         );
@@ -3145,7 +3162,7 @@ async function handlePostAnalyzeImage(body) {
             nickname: user.nickname,
             age,
             gender: user.gender,
-        });
+        }) + managedVoiceBlock(user);
 
         const ext = oss_key.split('.').pop().toLowerCase();
         const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
@@ -3214,7 +3231,7 @@ async function handlePostAnalyzeImage(body) {
         // health tab. The actual persistence happens later via POST /health-reports.
         if (contentType === 'health_report') {
             const userTrigger = isZh ? '（图片）' : '(image)';
-            await saveChatMessage(user_id, 'user', userTrigger, get_url || null);
+            await saveChatMessage(user_id, user.account_type === 'managed' ? 'coach' : 'user', userTrigger, get_url || null);
             await saveChatMessage(user_id, 'ai', narrative);
             console.log(JSON.stringify({ level: 'INFO', msg: 'Lab report analyzed (pending consent)', user_id, observation_count: observations.length }));
             return {
@@ -3309,7 +3326,7 @@ async function handlePostAnalyzeImage(body) {
         }
 
         const userTrigger = isZh ? '（图片）' : '(image)';
-        await saveChatMessage(user_id, 'user', userTrigger, get_url || null);
+        await saveChatMessage(user_id, user.account_type === 'managed' ? 'coach' : 'user', userTrigger, get_url || null);
         await saveChatMessage(user_id, 'ai', narrative);
 
         console.log(JSON.stringify({ level: 'INFO', msg: 'Image analyzed', user_id, biomarker_id, content_type: contentType }));

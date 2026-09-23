@@ -42,6 +42,7 @@ const {
     _capRecipeTotal, _tierWeeks, _padCandidatesFor, _applyTierLadder,
     _planExpansionContext, _expandPlanDay,
 } = require('../lib/formulation');
+const { isManaged, managedVoiceBlock } = require('../lib/managedVoice');
 const { _buildFormulaChartBlock } = require('../lib/chatCards');
 const { _fetchFormulationPackages, _fetchFormulationCodes, _resolveOrderContext } = require('./formulation_orders');
 
@@ -615,7 +616,7 @@ async function _fetchFoodSensitivityContext(userId, dotsFormulary) {
 // (handleChatGenerateEvent's 'formula_dots_generate' kind) can't run — EventBridge publish
 // failure, or the agentic turn itself throwing — so a formulation request never ends with the
 // user getting nothing. Does NOT touch the DB; callers own the transaction.
-async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFormulary, personaType, lang, currentSolarTerm, essentialKnowledge, userFacts, activeHealthPlans }) {
+async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFormulary, personaType, lang, currentSolarTerm, essentialKnowledge, userFacts, activeHealthPlans, voiceBlock = '' }) {
     const recommendedKeySet = _resolveCandidateDotKeys(activeHealthPlans, dotsFormulary);
     const nutritionContext = {
         language: lang,
@@ -632,7 +633,8 @@ async function _runDeterministicFormulation({ biomarkers, bioageProfile, dotsFor
     const llmClient = getLlmClient();
     const model = process.env.MODEL || 'qwen-plus-latest';
     const nutritionTemplate = personaType === 'viva' ? vivaSystemNutritionTemplate : systemNutritionTemplate;
-    const prompt = nutritionTemplate(nutritionContext);
+    // voiceBlock: third person for a managed customer (lib/managedVoice.js), '' for everyone else.
+    const prompt = nutritionTemplate(nutritionContext) + voiceBlock;
     console.log(JSON.stringify({ level: 'INFO', msg: 'Formula DOTS Context', data: nutritionContext }));
 
     const completion = await llmClient.chat.completions.create({
@@ -986,7 +988,11 @@ async function handlePostFormulaDots(body) {
         // canned "配方已生成" for any non-`processing` success and has no branch for a refusal —
         // and because this IS the answer to what the user asked, not a failure.
         if (bioageProfile?.BioAge == null) {
-            const message = lang === 'en'
+            const message = isManaged(user)
+                ? (lang === 'en'
+                    ? `To formulate Dots for ${user.nickname || 'this customer'} I need their BioAge first — it comes from a Kino chip scan and decides how much of each dot they take. They have no Kino scan yet, so I am stopping here. Run a Kino scan for them from the toolbox, then Formulate Dots again.`
+                    : `要为${user.nickname || '该客户'}配置原粒方案，需要先有其生理年龄（BioAge）——它由 Kino 芯片检测算出，也是决定每个原粒用量的依据。该客户还没有完成过 Kino 检测，这一步先停在这里。请先在工具箱里为其完成一次 Kino 检测，再点「原粒定制」。`)
+                : lang === 'en'
                 ? 'To build your dots formulation I need your BioAge first. It comes from a Kino chip scan, and it is what decides how much of each dot you take — without it I would be guessing rather than formulating, so I am stopping here. Complete a Kino scan, then tap Formulate Dots again and I will build the plan around your four sub-ages.'
                 : '要为你配这份原粒方案，我需要先拿到你的生理年龄（BioAge）——它由 Kino 芯片检测算出，也是决定每个原粒用量的依据。你目前还没有完成过 Kino 检测，缺了它我只能靠猜，所以这一步先停在这里。完成一次 Kino 芯片检测后，再回到这里点「原粒定制」，我就能按你的四项子年龄来配了。';
             await pool.query(
@@ -1161,12 +1167,21 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         // ladder the model was told to aim at. A catalog that changed mid-turn would otherwise
         // produce rungs the prose beside them never describes.
         formulation_tiers: tierLadder.length > 0 ? tierLadder : null,
+        // Third-person instruction for a managed customer ('' otherwise). Carried here so the
+        // async event's deterministic fallbacks (handlers/chat.js) write in the same voice.
+        managed_voice: managedVoiceBlock(user),
     };
     const formulaGenerateTemplate = personaType === 'viva' ? vivaSystemFormulaGenerateTemplate : systemFormulaGenerateTemplate;
-    const systemPrompt = formulaGenerateTemplate(llmContext);
-    const triggerMsg = lang === 'zh'
-        ? `请根据我的完整健康数据，为我配置一个 ${PLAN_DAYS} 天周期的 Dots 方案。`
-        : `Please formulate a ${PLAN_DAYS}-day Dots plan based on my complete health data.`;
+    // A managed customer's proposal is read by their coach (CLAUDE.md §49): third person, and the
+    // trigger is the coach's request about them rather than the customer's about themselves.
+    const systemPrompt = formulaGenerateTemplate(llmContext) + managedVoiceBlock(user);
+    const triggerMsg = isManaged(user)
+        ? (lang === 'zh'
+            ? `请根据该客户的完整健康数据，为其配置一个 ${PLAN_DAYS} 天周期的 Dots 方案。`
+            : `Please formulate a ${PLAN_DAYS}-day Dots plan for this customer based on their complete health data.`)
+        : (lang === 'zh'
+            ? `请根据我的完整健康数据，为我配置一个 ${PLAN_DAYS} 天周期的 Dots 方案。`
+            : `Please formulate a ${PLAN_DAYS}-day Dots plan based on my complete health data.`);
 
     try {
         await publishChatGenerateEvent({
@@ -1181,7 +1196,7 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
         // deliver the same proposal the async path would have.
         const deterministic = await _runDeterministicFormulation({
             biomarkers, bioageProfile, dotsFormulary, personaType, lang, currentSolarTerm, essentialKnowledge, userFacts,
-            activeHealthPlans: llmContext.active_health_plans,
+            activeHealthPlans: llmContext.active_health_plans, voiceBlock: managedVoiceBlock(user),
         });
         const { analysis, finalContent } = deterministic;
         // Narrowed before it is stored, so the card, the box scan and the fast-track submission

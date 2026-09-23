@@ -12,7 +12,7 @@ const {
     getWxAccessToken,
 } = require('./lib/auth');
 const { getNowShanghai, calculateAge } = require('./lib/time-utils');
-const { loadCaller, authorizeUserRequest } = require('./lib/userAccess');
+const { loadCaller, authorizeUserRequest, authorizeChatSpeaker } = require('./lib/userAccess');
 const { updateHealthTwin } = require('./lib/healthTwinUpdater');
 const {
     handleGetDocExtractPing, handleGetDocExtractCatalog, handlePostDocExtractValidate,
@@ -77,6 +77,7 @@ const { handleGetKinoDevices, handlePostKinoDevice, handlePutKinoDevice, handleD
 const { handleGetKnowledgeEntries, handlePostKnowledgeEntry, handlePutKnowledgeEntry, handleDeleteKnowledgeEntry } = require('./handlers/knowledge');
 const { handleGetPersonaSettings, handlePutPersonaSettings } = require('./handlers/personaSettings');
 const { handleGetUserFacts, handlePostUserFact, handlePutUserFact, handleDeleteUserFact } = require('./handlers/userFacts');
+const { handlePostManagedCustomer, handlePutManagedCustomer, handleReleaseManagedCustomer } = require('./handlers/managedCustomers');
 const { handleGetFoodSensitivity } = require('./handlers/food_sensitivity');
 const { handleGetCreditBalance, handleGetCreditHistory, handlePostCreditWithdraw, handleGetUserWithdrawals, handleGetAdminWithdrawals, handlePutAdminWithdrawal, handleGetAdminUserCreditHistory, handlePostAdminUserCreditAdjustment } = require('./handlers/credits');
 const {
@@ -557,6 +558,9 @@ exports.handler = async (req, resp, context) => {
         let userDenied = adminCtx.role === 'user' && !isPublicPath
             ? await authorizeUserRequest({ caller: adminCtx.user, method, path, query, body: parsedBody })
             : null;
+        if (!userDenied && adminCtx.role === 'user' && method === 'POST' && path === '/chat') {
+            userDenied = await authorizeChatSpeaker(adminCtx.user, parsedBody);
+        }
 
         if (adminCtx.role === 'user' && !userDenied) adminCtx.userRouteAuthorized = true;
 
@@ -986,8 +990,14 @@ exports.handler = async (req, resp, context) => {
                 result = { success: false, error: `Unknown GET route: ${path}` };
             }
         } else if (method === 'POST') {
+            // --- Managed customers (coach creates; channel admin releases) ---
+            if (path === '/managed-customers') {
+                result = await handlePostManagedCustomer(parsedBody);
+            } else if (path.match(/^\/managed-customers\/([A-Za-z0-9_-]+)\/release$/)) {
+                result = await handleReleaseManagedCustomer(path.match(/^\/managed-customers\/([A-Za-z0-9_-]+)\/release$/)[1], adminCtx);
+            }
             // --- Document extraction: external agent (scoped DOC_EXTRACT_API_TOKEN) ---
-            if (path === '/doc-extract/jobs/claim') {
+            else if (path === '/doc-extract/jobs/claim') {
                 result = await handlePostDocExtractClaim(parsedBody);
             } else if (path === '/doc-extract/jobs/heartbeat') {
                 result = await handlePostDocExtractHeartbeat({ ...parsedBody, result_token: parsedBody?.result_token || docExtractJobToken });
@@ -1171,7 +1181,17 @@ exports.handler = async (req, resp, context) => {
                 // Spending a prepaid 28-day code from inside the app. App bearer + the handler's
                 // own openid resolution; deliberately NOT GCN-allowlisted, since GCN is the
                 // callee here, exactly as for /formulation-submit below.
-                result = await handlePostFormulationRedeem(parsedBody);
+                //
+                // A coach redeeming a channel-bought code for their managed customer (§49): the
+                // redeemer is whoever the session says, never a body field.
+                const redeemFor = { ...(parsedBody || {}) };
+                delete redeemFor._redeemer_user_id;
+                if (adminCtx.role === 'user' && adminCtx.user
+                    && String(redeemFor.openid || '') !== adminCtx.user.user_id
+                    && String(redeemFor.openid || '') !== String(adminCtx.user.external_id || '')) {
+                    redeemFor._redeemer_user_id = adminCtx.user.user_id;
+                }
+                result = await handlePostFormulationRedeem(redeemFor);
             } else if (path.includes('/formulation-submit')) {
                 // The user confirming that a chat-tool proposal is the formula to compound for a
                 // 28-day package they already paid for. App bearer + the plan's own owner check
@@ -1343,7 +1363,9 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostChat(parsedBody);
             }
         } else if (method === 'PUT') {
-            if (path.match(/\/digital-assets\/(\d+)/)) {
+            if (path.match(/^\/managed-customers\/([A-Za-z0-9_-]+)$/)) {
+                result = await handlePutManagedCustomer(path.match(/^\/managed-customers\/([A-Za-z0-9_-]+)$/)[1], parsedBody);
+            } else if (path.match(/\/digital-assets\/(\d+)/)) {
                 const assetId = path.match(/\/digital-assets\/(\d+)/)[1];
                 result = requirePermission(adminCtx, 'digital-assets:write') || await handlePutDigitalAsset(assetId, parsedBody, adminCtx);
             } else if (path.match(/\/kone-apk-releases\/(\d+)/)) {

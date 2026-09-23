@@ -271,6 +271,7 @@ async function handleGetCoachUsers(coachId, query = {}, channelId = null) {
         const result = await pool.query(
             `SELECT u.user_id, u.external_id, u.nickname, u.avatar_url, u.birth_date, u.language, u.gender,
                     u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
+                    u.account_type, u.first_name, u.last_name, u.contact_phone, u.external_ref,
                     b.bio_age, b.data AS bio_data, b.tested_at AS last_scan_at,
                     m.last_msg_at,
                     lm.last_user_msg, lm.last_user_msg_at,
@@ -304,7 +305,14 @@ async function handleGetCoachUsers(coachId, query = {}, channelId = null) {
              ORDER BY COALESCE(m.last_msg_at, b.tested_at, u.created_at) DESC`,
             params
         );
-        return { success: true, users: result.rows };
+        // Whether this coach's channel lets them create managed customers (handlers/managedCustomers.js)
+        // — the coach panel shows its "add customer" action on this.
+        const mc = await pool.query(
+            `SELECT COALESCE(effective_channel_config(u.channel_id, 'managed_customers') = 'true'::jsonb, false) AS enabled
+               FROM coaches co JOIN users u ON u.user_id = co.user_id WHERE co.id = $1`,
+            [coachId]
+        );
+        return { success: true, users: result.rows, managed_customers_enabled: !!mc.rows[0]?.enabled };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -394,8 +402,8 @@ async function handleGetCoachUserChat(userId, coachId) {
             if (check.rows.length === 0) return { success: false, error: 'Access denied', statusCode: 403 };
         }
         const result = await pool.query(
-            `SELECT role, content, created_at FROM (
-                SELECT role, content, created_at FROM chat_messages
+            `SELECT id, role, content, created_at FROM (
+                SELECT id, role, content, created_at FROM chat_messages
                 WHERE user_id = $1
                 ORDER BY created_at DESC
                 LIMIT 50

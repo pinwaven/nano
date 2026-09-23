@@ -11,7 +11,13 @@ function resolveEffectivePersona({ channelPersonaType, personaOverrideType, pers
 
 // Viva paywall gate — only Viva has ever been a paid persona, so this is the one place
 // "does this user have an active grant" is checked, independent of channel default.
-function hasActiveVivaAccess({ persona_override_type, persona_override_expires_at }) {
+// A managed customer (users.account_type, migration_managed_customers.sql) is covered by their
+// channel's B2B arrangement for as long as they stay managed — there is no per-user grant to
+// buy, and the customer never sees a paywall. Released, they are a regular user again and need
+// their own. Callers must SELECT account_type for this to apply; without it the row reads as
+// regular, which fails closed.
+function hasActiveVivaAccess({ persona_override_type, persona_override_expires_at, account_type }) {
+    if (account_type === 'managed') return true;
     return persona_override_type === 'viva'
         && !!persona_override_expires_at
         && new Date(persona_override_expires_at) > new Date();

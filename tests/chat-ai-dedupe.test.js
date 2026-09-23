@@ -129,7 +129,7 @@ test('without user_message_id (an older server) the de-dup keeps its old any-tur
 test('handlePostChat returns the persisted user message id on both waiting paths', () => {
     const src = fs.readFileSync(path.join(ROOT, 'src/functions/worker/handlers/chat.js'), 'utf8');
     const body = src.slice(src.indexOf('async function handlePostChat(body)'), src.indexOf('\nasync function handlePostChatMessages'));
-    assert.match(body, /INSERT INTO chat_messages \(user_id, role, content, persona_type\) VALUES \(\$1, \$2, \$3, \$4\) RETURNING id',\s*\[user_id, 'user', message, personaType\]/);
+    assert.match(body, /INSERT INTO chat_messages \(user_id, role, content, persona_type\) VALUES \(\$1, \$2, \$3, \$4\) RETURNING id',\s*\[user_id, coachSpeaker \? 'coach' : 'user', message, personaType\]/);
     assert.match(body, /processing: true, user_message_id: userMessageId/);
     assert.match(body, /\{ \.\.\.finalized, user_message_id: userMessageId \}/);
 });

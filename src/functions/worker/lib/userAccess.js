@@ -130,6 +130,10 @@ const USER_ROUTES = [
     ['GET', '/client-goals'], ['POST', '/client-goals'], ['POST', '/client-pipeline'],
     ['GET', '/coach-activity-feed'], ['GET', '/appointments/upcoming'], ['POST', '/appointments'], ['GET', '/coach-kpis'],
     ['GET', '/questionnaires'], ['GET', '/questionnaire-responses'], ['POST', '/questionnaire-assignments'],
+
+    // ── managed customers (coach creates and edits; release is the web admin panel's) ──
+    ['POST', '/managed-customers', { roles: ['coach'] }],
+    ['PUT', '/managed-customers/:user', { roles: ['coach'], body: ['nickname', 'first_name', 'last_name', 'birth_date', 'gender', 'contact_phone', 'external_ref', 'language'] }],
 ];
 
 // Request keys that name a user / a coaches.id / a channel. created_by, assigned_by and
@@ -292,7 +296,36 @@ async function authorizeUserRequest({ caller, method, path, query, body }) {
     return null;
 }
 
+// POST /chat names the conversation's user in `openid`. The identity check above already allows
+// a coach to name their client; this narrows what that means for chat. A coach never speaks AS a
+// client — that would put words in a real user's mouth, in their own thread. A coach may talk to
+// Viva ABOUT a managed customer (speaker:'coach'), whose thread only the coach reads. A superadmin
+// keeps the sandbox "log in as" path. Returns null or a 403 result like authorizeUserRequest.
+async function authorizeChatSpeaker(caller, body) {
+    const b = body && typeof body === 'object' ? body : {};
+    const target = b.openid == null ? '' : String(b.openid);
+    if (isSelf(caller, target)) {
+        delete b.speaker;
+        return null;
+    }
+    if (caller.roles.includes('superadmin') && b.speaker !== 'coach') return null;
+    const deny = (reason) => {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'user_session_denied', data: { reason, path: '/chat', user_id: caller.user_id, target } }));
+        return { statusCode: 403, success: false, error: 'Forbidden', reason };
+    };
+    if (b.speaker !== 'coach') return deny('chat_as_other_user');
+    const { rows } = await pool.query(
+        `SELECT coach_id::text AS coach_id, account_type FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
+        [target]
+    );
+    const t = rows[0];
+    if (!t || t.account_type !== 'managed') return deny('coach_chat_managed_only');
+    if (!t.coach_id || !caller.coach_ids.includes(t.coach_id)) return deny('not_your_user');
+    return null;
+}
+
 module.exports = {
+    authorizeChatSpeaker,
     USER_ROUTES,
     compileRoutes,
     matchUserRoute,

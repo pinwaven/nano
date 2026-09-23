@@ -24,7 +24,7 @@ function quoteIdent(ident) {
 // `userId` itself doesn't have enough identity data on file yet to match on.
 async function findMatchCandidate(client, userId) {
     const { rows } = await client.query(
-        `SELECT government_id, first_name, last_name, birth_date FROM users WHERE user_id = $1`,
+        `SELECT government_id, first_name, last_name, birth_date FROM users WHERE user_id = $1 AND account_type <> 'managed'`,
         [userId]
     );
     const me = rows[0];
@@ -33,7 +33,7 @@ async function findMatchCandidate(client, userId) {
     if (me.government_id) {
         const { rows: gidRows } = await client.query(
             `SELECT user_id FROM users
-             WHERE user_id != $1 AND merged_into_user_id IS NULL AND government_id = $2
+             WHERE user_id != $1 AND merged_into_user_id IS NULL AND account_type <> 'managed' AND government_id = $2
              ORDER BY created_at LIMIT 1`,
             [userId, me.government_id]
         );
@@ -44,7 +44,7 @@ async function findMatchCandidate(client, userId) {
         const myName = normalizeIdentity(`${me.first_name || ''}${me.last_name || ''}`);
         const { rows: dobRows } = await client.query(
             `SELECT user_id, first_name, last_name FROM users
-             WHERE user_id != $1 AND merged_into_user_id IS NULL AND birth_date = $2
+             WHERE user_id != $1 AND merged_into_user_id IS NULL AND account_type <> 'managed' AND birth_date = $2
                AND (first_name IS NOT NULL OR last_name IS NOT NULL)`,
             [userId, me.birth_date]
         );
@@ -141,6 +141,14 @@ async function mergeUsers(winnerId, loserId, matchedOn) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
+        // A managed customer (created by a coach for a B2B channel, never signed in) is never
+        // merged: matching on name + birthday or a coach-typed phone would fold a clinic's patient
+        // into some consumer's account, or the reverse. Release them first; then they are regular.
+        const managed = await client.query(
+            `SELECT user_id FROM users WHERE user_id = ANY($1::text[]) AND account_type = 'managed'`,
+            [[winnerId, loserId]]
+        );
+        if (managed.rows.length) throw new Error('managed_account_not_mergeable');
         const conflictNotes = [];
 
         await supersedeIfConflicting(client, 'coaches', 'created_at', winnerId, loserId, conflictNotes);

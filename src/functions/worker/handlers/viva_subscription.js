@@ -22,7 +22,7 @@ async function handleGetVivaSubscriptionStatus(openid) {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const result = await pool.query(
             `SELECT u.viva_subscription_expires_at, u.persona_override_type, u.persona_override_expires_at,
-                    u.viva_ag_expires_at,
+                    u.viva_ag_expires_at, u.account_type,
                     effective_persona_type(c.id) AS channel_persona_type
              FROM users u LEFT JOIN channels c ON c.id = u.channel_id
              WHERE u.user_id = $1 OR u.external_id = $1 LIMIT 1`,

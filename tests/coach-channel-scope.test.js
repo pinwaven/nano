@@ -41,7 +41,8 @@ stub('lib/db', { pool });
 const { handleGetCoachUsers, handleGetCoachList, handleGetChannelCoaches } =
     require(path.join(WORKER, 'handlers', 'coaches.js'));
 
-const last = () => queries[queries.length - 1];
+// The roster query — handleGetCoachUsers also looks up the channel's managed-customers flag after it.
+const last = () => queries.filter(q => !q.sql.includes('managed_customers')).pop();
 const run = async (name, fn) => { queries.length = 0; await fn(); console.log(`  ok  ${name}`); };
 
 (async () => {

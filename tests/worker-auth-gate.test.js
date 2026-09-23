@@ -461,3 +461,33 @@ describe('per-user session body and query limits', () => {
   });
 });
 
+describe('chat speaker (coach about a managed customer)', () => {
+  beforeEach(() => { clearWorkerModules(); process.env.API_BEARER_TOKEN = BEARER; process.env.TOKEN_SIGNING_SECRET = SECRET; });
+  afterEach(() => { delete process.env.API_BEARER_TOKEN; delete process.env.TOKEN_SIGNING_SECRET; });
+
+  const withAccount = accountType => async (sql, params) => {
+    if (sql.includes('coach_id::text AS coach_id, account_type')) return { rows: [{ coach_id: '7', account_type: accountType }] };
+    return userDb()(sql, params);
+  };
+  const chat = async (db, body) => {
+    installDbMock(db);
+    const token = require(path.join(WORKER, 'lib/auth.js')).signUserToken('me');
+    const { authorizeChatSpeaker, loadCaller } = require(path.join(WORKER, 'lib/userAccess.js'));
+    return authorizeChatSpeaker(await loadCaller('me'), body);
+  };
+
+  test('a coach may not speak as a regular client', async () => {
+    assert.equal((await chat(withAccount('regular'), { openid: 'c1', message: 'hi' })).reason, 'chat_as_other_user');
+    assert.equal((await chat(withAccount('regular'), { openid: 'c1', message: 'hi', speaker: 'coach' })).reason, 'coach_chat_managed_only');
+  });
+
+  test('a coach may ask Viva about their managed customer', async () => {
+    assert.equal(await chat(withAccount('managed'), { openid: 'c1', message: 'hi', speaker: 'coach' }), null);
+  });
+
+  test('speaker is dropped when a user chats as themselves', async () => {
+    const body = { openid: 'me', message: 'hi', speaker: 'coach' };
+    assert.equal(await chat(withAccount('regular'), body), null);
+    assert.equal(body.speaker, undefined);
+  });
+});

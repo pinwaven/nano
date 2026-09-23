@@ -21,6 +21,23 @@ function generateUserId() {
   return `u_${crypto.randomBytes(8).toString('hex')}`;
 }
 
+// The chat line a finished scan leaves in the user's thread. A managed customer (nano CLAUDE.md
+// §49) never reads their own thread — their coach does — so it speaks about them, not to them.
+// Same wording as worker/prompts/strings.js scanResultMessage(); each FC function ships its own code.
+function scanResultMessage(bioAge, user) {
+  const age = Number(bioAge).toFixed(1);
+  const zh = (user.language || 'zh') === 'zh';
+  if (user.account_type === 'managed') {
+    const name = user.nickname || (zh ? '该客户' : 'the customer');
+    return zh
+      ? `已完成 ${name} 的生物标志物检测分析，其生理年龄为 **${age} 岁**。可在客户的健康数据中查看详细分析。`
+      : `Biomarker test analyzed for ${name}: their biological age is **${age} years**. See the customer's health data for details.`;
+  }
+  return zh
+    ? `已完成生物标志物检测分析。您的生理年龄为 **${age} 岁**。请用健康管理小工具查看详细分析！`
+    : `I've analyzed your biomarker test. Your biological age is **${age} years**. Check your health advice tool for details!`;
+}
+
 async function resolveOrUpsertUser(pool, body) {
   const {
     openid,
@@ -41,7 +58,7 @@ async function resolveOrUpsertUser(pool, body) {
   if (!openid) throw new Error('openid is required');
 
   const byUserId = await pool.query(
-    'SELECT user_id, birth_date, bio_data, nickname, language, phone, email, channel_id FROM users WHERE user_id = $1',
+    'SELECT user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, account_type FROM users WHERE user_id = $1',
     [openid]
   );
   if (byUserId.rows.length > 0) return byUserId.rows[0];
@@ -59,7 +76,7 @@ async function resolveOrUpsertUser(pool, body) {
        language = COALESCE(EXCLUDED.language, users.language),
        bio_data = users.bio_data || EXCLUDED.bio_data,
        updated_at = CURRENT_TIMESTAMP
-     RETURNING user_id, birth_date, bio_data, nickname, language, phone, email, channel_id`,
+     RETURNING user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, account_type`,
     [
       generateUserId(),
       openid,
@@ -472,10 +489,7 @@ async function handlePostBiomarkers({ pool, body = {}, machine }) {
       [userId, testType, JSON.stringify(finalData), bioAgeReport.BioAge, scanTimestamp, deviceId]
     );
 
-    const lang = user.language || 'zh';
-    const content = lang === 'zh'
-      ? `已完成生物标志物检测分析。您的生理年龄为 **${bioAgeReport.BioAge.toFixed(1)} 岁**。请用健康管理小工具查看详细分析！`
-      : `I've analyzed your biomarker test. Your biological age is **${bioAgeReport.BioAge.toFixed(1)} years**. Check your health advice tool for details!`;
+    const content = scanResultMessage(bioAgeReport.BioAge, user);
     await pool.query(
       'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
       [userId, biomarkerResult.rows[0].id, 'biological_report', content, 'pending']

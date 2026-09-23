@@ -97,6 +97,7 @@ async function handleGetUsers(channelId, query = {}) {
             SELECT u.user_id, u.external_id, u.external_app, u.nickname, u.birth_date, u.language, u.gender,
                     u.avatar_url, u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
                     (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
+                    u.account_type, u.contact_phone, u.external_ref, u.managed_released_at,
                     u.referred_by_user_id, u.invited_by_invitation_id,
                     u.bio_data as user_bio_data,
                     ru.nickname as referrer_nickname,
