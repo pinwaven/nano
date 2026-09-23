@@ -30,17 +30,25 @@ async function resolveSubject(subjectRef) {
     return { ref, user };
 }
 
-// GET /versions?since=&limit=
+// GET /versions?since=&after_ref=&limit=&include_removed=
+// Keyset-paged: when `truncated`, pass `next.since` and `next.after_ref` back for the next page.
 async function versions(query) {
-    let since = null;
-    if (query?.since != null && query.since !== '') {
-        const t = new Date(String(query.since));
-        if (Number.isNaN(t.getTime())) return fail(REASONS.MISSING_PARAMS, 'since must be an ISO-8601 timestamp');
-        since = t.toISOString();
+    const since = query?.since ? String(query.since) : null;
+    if (since && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/.test(since)) {
+        return fail(REASONS.MISSING_PARAMS, 'since must be an ISO-8601 UTC timestamp, e.g. 2026-09-23T05:21:51.688123Z');
     }
+    const afterRef = query?.after_ref ? String(query.after_ref) : null;
+    if (afterRef && !since) return fail(REASONS.MISSING_PARAMS, 'after_ref needs since');
     const limit = clampInt(query?.limit, 500, 1, 2000);
-    const subjects = await listTwinVersions(pool, { since, limit });
-    return { success: true, as_of: new Date().toISOString(), since, subjects, truncated: subjects.length === limit };
+    // Removed subjects on every page unless the client says this is a continuation page.
+    const includeRemoved = !(query?.include_removed === '0' || query?.include_removed === 'false');
+    const subjects = await listTwinVersions(pool, { since, afterRef, limit, includeRemoved });
+    const truncated = subjects.length === limit;
+    const last = subjects[subjects.length - 1];
+    return {
+        success: true, as_of: new Date().toISOString(), since, subjects, truncated,
+        next: truncated && last?.changed_at ? { since: last.changed_at, after_ref: last.subject_ref } : null,
+    };
 }
 
 // GET /bundle?subject_ref=

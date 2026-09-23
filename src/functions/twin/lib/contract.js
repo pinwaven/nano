@@ -15,11 +15,15 @@ openid or phone, and only \`/subjects\` and \`/record/*\` carry the person's nam
 
 ## Read
 
-### GET /versions?since=<ISO>&limit=<1..2000>
-Subjects whose twin changed after \`since\` (all when absent), oldest change first:
-\`{subject_ref, removed, changed_at}\`. \`removed: true\` = the user is gone — delete the replica;
-it is reported regardless of \`since\`. \`truncated: true\` = page again from the last
-\`changed_at\`. \`changed_at\` is a signal; \`twin_version\` is the truth — run a periodic full pass.
+### GET /versions?since=<ISO>&after_ref=<vs_…>&limit=<1..2000>
+Subjects whose twin changed after the cursor (all when absent), oldest change first, as
+\`{subject_ref, removed, changed_at}\` — \`changed_at\` at microsecond precision. Keyset-paged on
+(\`changed_at\`, \`subject_ref\`): when \`truncated\`, pass \`next.since\` and \`next.after_ref\` back, and
+store the last page's pair as your cursor. Keep \`changed_at\` as the text you received — a
+millisecond Date rounds it down and re-lists the same subjects. \`removed: true\` = the user is
+gone — delete the replica; it is reported on every page regardless of the cursor unless you pass
+\`include_removed=0\` (do, on continuation pages of one pass). \`changed_at\` is a
+signal; \`twin_version\` is the truth — run a periodic full pass.
 
 ### GET /bundle?subject_ref=
 The twin bundle a Viva AG job receives (bundle_version in the body), outside any job, over every
