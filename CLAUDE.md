@@ -712,14 +712,21 @@ are real prod chat text.
   indexed queries for history and state. Relevance on same-route turns is within run-to-run noise;
   do not expect a general quality lift from it.
 
-## 48. The twin function — Curia's exchange with the twin, both directions — Rules
+## 48. The twin function — every route between Curia and nano — Rules
 
-`src/functions/twin` (FC `twin-dev`), `docs/architecture/twin-function.md`, contract at `GET /api/twin/docs`.
-- **`shared/` is a byte-identical copy of the worker's bundle modules** (`scripts/sync-twin-shared.js`,
-  run pre-deploy; `tests/twin-function.test.js` fails on drift). Edit `worker/lib/`, never `shared/`:
-  two builds of `buildTwinBundle` give one twin two `twin_version`s.
-- **Migrate before deploying the worker**: `lib/twinMirror.js` reads `twin_touch`
-  (`migration_twin_sync.sql`) on the claim path.
-- **Every write from Curia is a contribution** with a sender-minted uid and a required `origin`; only
-  kinds with a landing place are accepted (`report` today). Don't add a door beside it.
-- **Every-user subjects are a decision, not a migration**: `scripts/twin-all-users.js --apply`.
+`src/functions/twin` (FC `twin-dev`), `docs/architecture/twin-function.md`, contracts at `/api/twin/docs`,
+`/api/twin/viva-ag/docs`, `/api/twin/doc-extract/docs`.
+- **The worker answers no Curia route.** The Viva AG queue (§35) and the doc-extract queue (§39) are served
+  by twin under `/api/twin/viva-ag/*` and `/api/twin/doc-extract/*`; the worker keeps only the miniapp's own
+  `/viva-ag/*` routes and rejects both tokens. Do not add an external-agent route to the worker.
+- **Three tokens, one scope each** (`TWIN_API_TOKEN`, `VIVA_AG_API_TOKEN`, `DOC_EXTRACT_API_TOKEN`); a token
+  outside its scope is 403.
+- **`shared/` is generated and git-ignored**: the `require` closure of the two queue handlers, copied from the
+  worker at deploy (`scripts/sync-twin-shared.js`, also `npm pretest`). Edit the worker, deploy both from one
+  commit — two builds of `buildTwinBundle` give one twin two `twin_version`s.
+- **Migrate before deploying the worker**: `lib/twinMirror.js` reads `twin_touch` (`migration_twin_sync.sql`).
+- **Prod order matters**: twin deployed and Curia switched *before* a worker without the queue routes ships.
+- **Every write from Curia is a contribution** with a sender-minted uid and a required `origin` (`report` today).
+- **Every user has a subject_ref on dev** (decided 2026-09-23, `scripts/twin-all-users.js`); new users are
+  minted at signup by trigger.
+- **Reports say who produced them** (`lib/reportAttribution.js`) on the 综合报告 card and the AG panel.

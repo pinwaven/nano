@@ -49,7 +49,8 @@ const pool = new Pool({ connectionString: url, ssl: process.env.DB_SSL === 'true
         await client.query(
             `UPDATE twin_sync_policy SET mint_all_users = TRUE, decided_by = $1, decided_at = NOW(), note = $2 WHERE id`, [by, note]);
         await client.query('COMMIT');
-        const { rows: counts } = await pool.query(`SELECT minted_by, COUNT(*)::int AS n FROM viva_ag_subjects GROUP BY 1 ORDER BY 1`);
+        // Counted on the same client: the pool has one connection and this one is still held.
+        const { rows: counts } = await client.query(`SELECT minted_by, COUNT(*)::int AS n FROM viva_ag_subjects GROUP BY 1 ORDER BY 1`);
         console.log(`[twin-all-users] minted ${minted}; policy on; subjects now: ${counts.map(x => `${x.minted_by}=${x.n}`).join(', ')}`);
-    } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+    } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); }
 })().catch(e => { console.error(e.message); process.exit(1); }).finally(() => pool.end());

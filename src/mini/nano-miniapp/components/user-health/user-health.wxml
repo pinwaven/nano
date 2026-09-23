@@ -356,6 +356,7 @@ module.exports.c = function (hex, theme) {
           <view class="tr-icon"><text>📄</text></view>
           <view class="tr-body">
             <text class="tr-title">{{twinReportLatest.title}}</text>
+            <text wx:if="{{twinReportLatest.attribution}}" class="tr-origin">{{twinReportLatest.attribution.text}}</text>
             <text class="tr-meta">{{twinReportLatest.metaLine}}</text>
             <text wx:if="{{twinReportLatest.summary}}" class="tr-summary">{{twinReportLatest.summary}}</text>
           </view>

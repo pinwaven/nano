@@ -10,16 +10,24 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 process.env.TWIN_API_TOKEN = 'twn_' + 'a'.repeat(32);
+process.env.VIVA_AG_API_TOKEN = 'vag_' + 'b'.repeat(32);
+process.env.DOC_EXTRACT_API_TOKEN = 'dex_' + 'c'.repeat(32);
 const TWIN = path.join(__dirname, '../src/functions/twin');
+// shared/ is generated (git-ignored), exactly as the pre-deploy action generates it.
+execFileSync(process.execPath, [path.join(__dirname, '../scripts/sync-twin-shared.js')], { stdio: 'pipe' });
 const { handler, _internals } = require(path.join(TWIN, 'index.js'));
 const read = require(path.join(TWIN, 'lib/read.js'));
 const contributions = require(path.join(TWIN, 'lib/contributions.js'));
 
 const strip = src => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
-test('shared/ is byte-identical to the worker modules it copies', () => {
-    // Two builds of buildTwinBundle hash one unchanged twin two ways; a replica reads that as a change.
-    execFileSync(process.execPath, [path.join(__dirname, '../scripts/sync-twin-shared.js'), '--check'], { stdio: 'pipe' });
+test('shared/ is the worker code the queue handlers reach, and nothing is committed there', () => {
+    const shared = path.join(TWIN, 'shared/worker');
+    for (const f of ['handlers/viva_ag.js', 'handlers/doc_extraction.js', 'lib/twinBundle.js', 'lib/twinMirror.js']) {
+        assert.ok(fs.readFileSync(path.join(shared, f)).equals(fs.readFileSync(path.join(__dirname, '../src/functions/worker', f))), f);
+    }
+    // A committed copy is a second source; the worker is the only one.
+    assert.match(fs.readFileSync(path.join(__dirname, '../.gitignore'), 'utf8'), /^src\/functions\/twin\/shared\/$/m);
 });
 
 test('the twin function requires nothing outside its own directory', () => {
@@ -43,10 +51,35 @@ const ev = (p, { method = 'GET', auth = `Bearer ${process.env.TWIN_API_TOKEN}`, 
     ...(body !== undefined ? { body: b64 ? Buffer.from(JSON.stringify(body)).toString('base64') : JSON.stringify(body), isBase64Encoded: b64 } : {}),
 }));
 
-test('no token, a wrong token, and another service\'s token are all 401', async () => {
-    for (const auth of [null, 'Bearer nope', `Bearer vag_${'a'.repeat(32)}`, `Bearer ${process.env.TWIN_API_TOKEN}x`]) {
+test('no token or a wrong one is 401', async () => {
+    for (const auth of [null, 'Bearer nope', `Bearer ${process.env.API_BEARER_TOKEN || 'superadmin'}`, `Bearer ${process.env.TWIN_API_TOKEN}x`]) {
         const r = await handler(ev('/api/twin/ping', { auth }));
         assert.equal(r.statusCode, 401, String(auth));
+    }
+});
+
+test('each token opens its own scope and is 403 everywhere else', async () => {
+    const T = process.env.TWIN_API_TOKEN, V = process.env.VIVA_AG_API_TOKEN, D = process.env.DOC_EXTRACT_API_TOKEN;
+    const cases = [
+        [V, '/api/twin/bundle'], [V, '/api/twin/doc-extract/jobs/claim'], [V, '/api/twin/contributions'],
+        [D, '/api/twin/viva-ag/jobs/claim'], [D, '/api/twin/versions'],
+        [T, '/api/twin/viva-ag/jobs/claim'], [T, '/api/twin/doc-extract/jobs/claim'],
+        [V, '/api/twin/viva-ag/twin-versions'], [V, '/api/twin/viva-ag/subject-bundle'],
+    ];
+    for (const [tok, p] of cases) {
+        const r = await handler(ev(p, { method: 'POST', auth: `Bearer ${tok}`, body: {} }));
+        assert.equal(r.statusCode, 403, `${tok.slice(0, 4)} → ${p}`);
+    }
+});
+
+test('the served contracts load in their own scopes', async () => {
+    for (const [tok, p, min] of [[process.env.VIVA_AG_API_TOKEN, '/api/twin/viva-ag/docs', 5000],
+                                  [process.env.DOC_EXTRACT_API_TOKEN, '/api/twin/doc-extract/docs', 3000],
+                                  [process.env.TWIN_API_TOKEN, '/api/twin/docs', 1500]]) {
+        const r = await handler(ev(p, { auth: `Bearer ${tok}` }));
+        assert.equal(r.statusCode, 200, p);
+        assert.ok(r.body.length > min, `${p} is suspiciously short`);
+        assert.ok(!/nano-dev\.gcn\.net\/api\/(viva-ag|doc-extract)/.test(r.body), `${p} still points at the worker`);
     }
 });
 

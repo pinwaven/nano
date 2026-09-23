@@ -15,6 +15,7 @@ const { pool } = require('../lib/db');
 const ossLib = require('../lib/oss');
 const { formatToShanghai } = require('../lib/time-utils');
 const { publicResultFiles } = require('./viva_ag');
+const { reportAttribution } = require('../lib/reportAttribution');
 
 const URL_TTL_SECONDS = 300;
 const MAX_REPORTS = 20;
@@ -68,7 +69,7 @@ async function handleGetTwinReports(query) {
         const owner = await _resolveOwner(query?.openid, query?.coach_id);
         if (!owner.ok) return owner.error;
         const { rows } = await pool.query(
-            `SELECT job_uid, command, command_key, result_summary, result_files, result_oss_key, completed_at, created_at
+            `SELECT job_uid, command, command_key, result_summary, result_files, result_oss_key, result, completed_at, created_at
                FROM viva_ag_jobs
               WHERE user_id = $1 AND status = 'completed'
                 AND (result_oss_key IS NOT NULL OR jsonb_array_length(COALESCE(result_files, '[]'::jsonb)) > 0)
@@ -91,6 +92,8 @@ async function handleGetTwinReports(query) {
                 files,
                 // The card's primary tap opens the PDF when there is one; otherwise the first file.
                 primary_index: pdf ? pdf.index : (files[0]?.index ?? 0),
+                // Who produced it and whether a person reviewed it, from what the row records.
+                attribution: reportAttribution(r.result, owner.language),
             };
         });
         return { success: true, reports, latest: reports[0] || null };

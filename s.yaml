@@ -96,20 +96,6 @@ resources:
         WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
         GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
-        # Scoped external credential for the viva-ag advanced-generation agent (CLAUDE.md 35).
-        # Distinct token per environment ON PURPOSE: dev and prod share the OSS bucket and the
-        # Aliyun account, so one shared token would let a dev-configured external agent claim
-        # and answer real prod users' jobs. Must NOT start with "ch." — that prefix is claimed
-        # by the channel-admin JWT branch in worker/index.js and would 401. Issue as
-        # "vag_" + 32 hex.
-        VIVA_AG_API_TOKEN: ${env(VIVA_AG_API_TOKEN)}
-        # Scoped external credential for the document-extraction agent. A SEPARATE service from
-        # viva-ag even though the same platform runs both, so it gets its own token: extraction is
-        # available to every user while AG is a paid add-on, and one credential covering both would
-        # mean a compromise of the cheap, widely-used service also opened the queue of paid deep
-        # analyses. Same per-environment split and same "ch." prohibition as above. Issue as
-        # "dex_" + 32 hex.
-        DOC_EXTRACT_API_TOKEN: ${env(DOC_EXTRACT_API_TOKEN)}
         # Generous on dev: the code default (3/day, handlers/viva_ag.js) makes the feature
         # untestable after three runs — hit live during dev testing. Prod sets its own value
         # (10) in s-prod.yaml.
@@ -455,7 +441,7 @@ resources:
       runtime: nodejs20
       handler: index.handler
       memorySize: 512
-      timeout: 120
+      timeout: 300
       code: ./src/functions/twin
       role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
       logConfig:
@@ -482,6 +468,31 @@ resources:
         # reads every subject's twin and writes to it. Issue as "twn_" + 32 hex.
         TWIN_API_TOKEN: ${env(TWIN_API_TOKEN)}
         TWIN_SETTLE_SECONDS: "60"
+        # The two external job queues are answered here, not by the worker (CLAUDE.md §48). Each
+        # token opens its own scope only; see src/functions/twin/index.js. Issue as "vag_" / "dex_"
+        # + 32 hex, distinct per environment — dev and prod share the OSS bucket and the account.
+        VIVA_AG_API_TOKEN: ${env(VIVA_AG_API_TOKEN)}
+        DOC_EXTRACT_API_TOKEN: ${env(DOC_EXTRACT_API_TOKEN)}
+        # What the queue handlers (shared/worker, copied from the worker at deploy) read: delivering
+        # a result as a chat message, questionnaire phrasing, formulation checks against GCN. Same
+        # values as the worker's, because it is the worker's code.
+        AEVIVA_SITE_BASE_URL: "https://aeviva-dev.gcn.net"
+        API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        AVATAR_GEN_MAX_PER_DAY: "3"
+        AVATAR_GEN_MODEL: "qwen-image-3.0"
+        CHAT_UNDERSTANDING_MODE: "on"
+        DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
+        DASHSCOPE_HOST: "https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com"
+        EVENT_SOURCE_SUFFIX: ".dev"
+        GCN_API_BASE_URL: "https://edge-dev.gcn.net"
+        GCN_SERVICE_TOKEN: ${env(GCN_SERVICE_TOKEN)}
+        MODEL: "qwen-plus-latest"
+        UNDERSTANDING_MODEL: "qwen3.8-flash"
+        VIVA_AG_MAX_JOBS_PER_DAY: "50"
+        WX_APPID: "wxecbcf00ce480fcf2"
+        WX_SECRET: ${env(WX_SECRET)}
+        WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
+        GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
         OSS_REGION: "oss-cn-shanghai"
         OSS_BUCKET: "waven-nano"
         OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}

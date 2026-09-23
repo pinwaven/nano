@@ -1,38 +1,71 @@
 #!/usr/bin/env node
 /**
- * The twin function (src/functions/twin) ships byte-identical copies of the worker modules that
- * build the twin bundle and compute its version. The worker is the source; this copies it.
+ * Build src/functions/twin/shared/: the worker code the twin function runs, copied at deploy.
  *
- *   node scripts/sync-twin-shared.js           # copy worker/lib → twin/shared
- *   node scripts/sync-twin-shared.js --check   # exit 1 if any copy has drifted (tests run this)
+ *   node scripts/sync-twin-shared.js           # rebuild shared/ (s.yaml runs this pre-deploy)
+ *   node scripts/sync-twin-shared.js --check   # list what would be copied and its npm deps; copy nothing
  *
- * Why copies and not one module: an FC function deploys one directory, and a require outside it
- * does not exist once uploaded. Why it matters that they are identical: a bundle's twin_version is
- * a hash of what buildTwinBundle produced, so two deploy units running two versions of it hash one
- * unchanged twin two ways, and a replica reads that as a change. s.yaml runs this before every
- * twin deploy; tests/twin-function.test.js fails on drift so a worker edit cannot ship alone.
+ * The twin function answers every route between Curia and nano: its own twin reads and
+ * contributions, and the two external job queues (Viva AG, document extraction). Those queues are
+ * nano's own behaviour — a result becomes a chat message, a formulation is validated and stored,
+ * extracted values are written into the record — and the twin function must behave exactly as the
+ * worker's code says. So the worker stays the only source, and this copies the transitive closure
+ * of what the queue handlers `require`, layout preserved, into shared/worker/.
+ *
+ * shared/ is git-ignored: a committed copy is a second source that drifts. What keeps the two
+ * functions in step is that each deploy copies the worker as it is at that commit, and that
+ * `twin_version` — a hash of what buildTwinBundle produced — is only comparable between functions
+ * deployed from the same code. /ping reports `shared_code`, a hash of this directory, for that.
+ *
+ * It also checks the npm packages the closure needs are declared in twin/package.json, because a
+ * missing one is not an error until the function first takes that path in production.
  */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const SRC = path.join(ROOT, 'src/functions/worker/lib');
-const DST = path.join(ROOT, 'src/functions/twin/shared');
-const FILES = ['twinBundle.js', 'twinMirror.js', 'oss.js', 'time-utils.js', 'labHistory.js', 'questionnaireContext.js'];
+const WORKER = path.join(ROOT, 'src/functions/worker');
+const TWIN = path.join(ROOT, 'src/functions/twin');
+const DST = path.join(TWIN, 'shared/worker');
+const ENTRIES = ['handlers/viva_ag.js', 'handlers/doc_extraction.js'];
 
-const check = process.argv.includes('--check');
-const drift = [];
-fs.mkdirSync(DST, { recursive: true });
-for (const f of FILES) {
-    const src = fs.readFileSync(path.join(SRC, f));
-    const dstPath = path.join(DST, f);
-    const dst = fs.existsSync(dstPath) ? fs.readFileSync(dstPath) : null;
-    if (dst && src.equals(dst)) continue;
-    if (check) drift.push(f);
-    else { fs.writeFileSync(dstPath, src); console.log(`[sync-twin-shared] ${f}`); }
+function closure() {
+    const files = new Set();
+    const npm = new Set();
+    const walk = (file) => {
+        const abs = require.resolve(path.resolve(file));
+        if (files.has(abs)) return;
+        if (!abs.startsWith(WORKER + path.sep)) throw new Error(`${file} is outside the worker`);
+        files.add(abs);
+        const src = fs.readFileSync(abs, 'utf8');
+        for (const m of src.matchAll(/require\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+            const r = m[1];
+            if (r.startsWith('.')) walk(path.join(path.dirname(abs), r));
+            else if (!require('module').builtinModules.includes(r.replace(/^node:/, ''))) {
+                npm.add(r.startsWith('@') ? r.split('/').slice(0, 2).join('/') : r.split('/')[0]);
+            }
+        }
+    };
+    for (const e of ENTRIES) walk(path.join(WORKER, e));
+    return { files: [...files].sort(), npm: [...npm].sort() };
 }
-if (check && drift.length) {
-    console.error(`[sync-twin-shared] drifted from worker/lib: ${drift.join(', ')} — run node scripts/sync-twin-shared.js`);
+
+const { files, npm } = closure();
+const declared = Object.keys(JSON.parse(fs.readFileSync(path.join(TWIN, 'package.json'), 'utf8')).dependencies || {});
+const missing = npm.filter(d => !declared.includes(d));
+if (missing.length) {
+    console.error(`[sync-twin-shared] twin/package.json lacks: ${missing.join(', ')} (the worker's versions are in worker/package.json)`);
     process.exit(1);
 }
+if (process.argv.includes('--check')) {
+    console.log(`${files.length} files, npm: ${npm.join(' ')}`);
+    process.exit(0);
+}
+fs.rmSync(path.join(TWIN, 'shared'), { recursive: true, force: true });
+for (const f of files) {
+    const to = path.join(DST, path.relative(WORKER, f));
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(f, to);
+}
+console.log(`[sync-twin-shared] ${files.length} files → src/functions/twin/shared/worker`);

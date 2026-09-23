@@ -579,3 +579,11 @@
 .theme-light .ag-fm-committed{ border-left-color: var(--success); }
 .theme-light .ag-fm-invalid  { border-left-color: var(--danger); }
 .theme-light .ag-fm-rejected { border-left-color: var(--danger); }
+
+/* Who produced a finished job's result (lib/reportAttribution.js). */
+.ag-job-origin {
+  display: block;
+  font-size: 22rpx;
+  color: rgba(var(--wave-rgb), 0.7);
+  margin-top: 4rpx;
+}

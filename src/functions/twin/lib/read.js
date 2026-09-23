@@ -6,10 +6,10 @@
  * The bundle and its version come from shared/ — byte-identical copies of the worker's modules
  * (scripts/sync-twin-shared.js) — so a bundle minted here and one minted for a job hash the same.
  */
-const { pool } = require('./db');
-const { buildTwinBundle, presignDocuments, BUNDLE_VERSION, DEFAULT_DOC_URL_TTL_SECONDS, clampInt } = require('../shared/twinBundle');
-const { listTwinVersions, twinChangedAtFor, twinVersionOf } = require('../shared/twinMirror');
-const { formatToShanghai } = require('../shared/time-utils');
+const { pool } = require('../shared/worker/lib/db');
+const { buildTwinBundle, presignDocuments, BUNDLE_VERSION, DEFAULT_DOC_URL_TTL_SECONDS, clampInt } = require('../shared/worker/lib/twinBundle');
+const { listTwinVersions, twinChangedAtFor, twinVersionOf } = require('../shared/worker/lib/twinMirror');
+const { formatToShanghai } = require('../shared/worker/lib/time-utils');
 const { fail, REASONS } = require('./reasons');
 
 // A twin_seq is drawn before its transaction commits, so a lower number can become visible after

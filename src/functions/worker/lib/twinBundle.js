@@ -547,13 +547,13 @@ async function fetchInventory(pool, userId) {
     return {
         // Each entry names the endpoint that serves it, so the contract is discoverable from a
         // live bundle rather than only from the docs.
-        kino_tests:        { ...kino,      endpoint: '/api/viva-ag/biomarker-history' },
-        body_composition:  { ...bodyComp,  endpoint: '/api/viva-ag/biomarker-history?test_type=body_composition' },
-        health_events:     { ...events,    endpoint: '/api/viva-ag/health-events', by_category: byCategory },
-        lab_results:       { ...labEvents, endpoint: '/api/viva-ag/lab-results' },
-        health_reports:    { ...reports,   endpoint: '/api/viva-ag/lab-results' },
+        kino_tests:        { ...kino,      endpoint: '/api/twin/viva-ag/biomarker-history' },
+        body_composition:  { ...bodyComp,  endpoint: '/api/twin/viva-ag/biomarker-history?test_type=body_composition' },
+        health_events:     { ...events,    endpoint: '/api/twin/viva-ag/health-events', by_category: byCategory },
+        lab_results:       { ...labEvents, endpoint: '/api/twin/viva-ag/lab-results' },
+        health_reports:    { ...reports,   endpoint: '/api/twin/viva-ag/lab-results' },
         documents:         { ...documents, endpoint: '(included in layers.medical_records.documents)' },
-        chat_messages:     { ...chat,      endpoint: '/api/viva-ag/chat-history',
+        chat_messages:     { ...chat,      endpoint: '/api/twin/viva-ag/chat-history',
                              note: 'Not included in this bundle. Opt-in per job; defaults to a recent window.' },
     };
 }

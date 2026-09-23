@@ -13,9 +13,12 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const WORKER = path.join(ROOT, 'src', 'functions', 'worker');
-const DOCS = path.join(WORKER, 'docs');
+// The queue is answered by the twin function since 2026-09-23 (CLAUDE.md §48): its allowlist,
+// its routing and its served contract all live there now.
+const TWIN = path.join(ROOT, 'src', 'functions', 'twin');
+const DOCS = path.join(TWIN, 'docs');
 
-const indexJs = fs.readFileSync(path.join(WORKER, 'index.js'), 'utf8');
+const indexJs = fs.readFileSync(path.join(TWIN, 'index.js'), 'utf8');
 const md = fs.readFileSync(path.join(DOCS, 'doc-extract-api.md'), 'utf8');
 // Prose is hard-wrapped, so a phrase check has to run against whitespace-normalised text or it
 // fails on where the line happened to break.
@@ -23,7 +26,7 @@ const mdFlat = md.replace(/\s+/g, ' ');
 const spec = JSON.parse(fs.readFileSync(path.join(DOCS, 'doc-extract-openapi.json'), 'utf8'));
 const { validateExtraction } = require(path.join(WORKER, 'lib', 'docExtraction.js'));
 
-// The allowlist as index.js actually declares it.
+// The allowlist as twin/index.js actually declares it.
 function allowedPaths() {
     const block = indexJs.slice(indexJs.indexOf('const DOC_EXTRACT_ALLOWED_PATHS'));
     const set = block.slice(0, block.indexOf(']'));
@@ -90,27 +93,30 @@ test('the spec and the token allowlist agree in both directions', () => {
 
 test('every allowlisted path is actually routed', () => {
     for (const p of allowedPaths()) {
-        assert.ok(indexJs.includes(`path === '${p}'`), `${p} is allowlisted but never routed`);
+        assert.ok(indexJs.includes(`case '${p}':`), `${p} is allowlisted but never routed`);
     }
 });
 
-test('the scoped token branch sits above the channel-admin prefix branch', () => {
-    // The 'ch.' branch matches on PREFIX, so a token starting "ch." would be swallowed there and
-    // 401 as a malformed channel-admin JWT.
-    const docExtractAt = indexJs.indexOf('process.env.DOC_EXTRACT_API_TOKEN');
-    const chAt = indexJs.indexOf("token.startsWith('ch.')");
-    assert.ok(docExtractAt > -1 && chAt > -1);
-    assert.ok(docExtractAt < chAt, 'the doc-extract token branch fell below the ch. prefix branch');
+test('the worker no longer answers the queue at all', () => {
+    // "No other endpoints between Curia and nano": the worker neither routes these paths nor
+    // accepts the token, so a stale worker deploy cannot become a second door.
+    const worker = fs.readFileSync(path.join(WORKER, 'index.js'), 'utf8');
+    assert.ok(!worker.includes('DOC_EXTRACT_API_TOKEN'), 'the worker still reads the doc-extract token');
+    for (const p of allowedPaths()) assert.ok(!worker.includes(`'${p}'`), `the worker still names ${p}`);
 });
 
-test('the doc-extract token is separate from every other credential', () => {
+test('the doc-extract token opens its own scope and nothing else', () => {
     // Extraction is available to every user while Viva AG is a paid add-on, so one credential
     // covering both would mean a compromise of the cheap service opened the paid queue too.
-    const branch = indexJs.slice(indexJs.indexOf('process.env.DOC_EXTRACT_API_TOKEN'),
-        indexJs.indexOf("token.startsWith('ch.')"));
-    assert.ok(!branch.includes('VIVA_AG_API_TOKEN'));
-    assert.ok(!branch.includes('API_BEARER_TOKEN'));
-    assert.match(branch, /adminCtx\.username = 'doc-extract-service'/);
+    process.env.DOC_EXTRACT_API_TOKEN = 'dex_' + 'd'.repeat(32);
+    process.env.VIVA_AG_API_TOKEN = 'vag_' + 'v'.repeat(32);
+    process.env.TWIN_API_TOKEN = 'twn_' + 't'.repeat(32);
+    const { _internals } = require(path.join(TWIN, 'index.js'));
+    assert.equal(_internals.scopeOf(`Bearer ${process.env.DOC_EXTRACT_API_TOKEN}`), 'doc-extract');
+    assert.equal(_internals.scopeOfPath('/doc-extract/jobs/claim'), 'doc-extract');
+    assert.equal(_internals.scopeOfPath('/viva-ag/jobs/claim'), 'viva-ag');
+    assert.equal(_internals.scopeOfPath('/bundle'), 'twin');
+    assert.equal(_internals.scopeOfPath('/doc-extract/not-a-route'), 'none');
     for (const yaml of ['s.yaml', 's-prod.yaml']) {
         assert.match(fs.readFileSync(path.join(ROOT, yaml), 'utf8'), /DOC_EXTRACT_API_TOKEN:/,
             `${yaml} never declares the token`);
@@ -122,7 +128,7 @@ test('the doc-extract token is separate from every other credential', () => {
 
 test('both documents load through the served handlers', async () => {
     const { handleGetDocExtractDocs, handleGetDocExtractOpenApi } =
-        require(path.join(WORKER, 'handlers', 'doc_extraction_docs.js'));
+        require(path.join(TWIN, 'lib', 'doc_extraction_docs.js'));
     const docs = await handleGetDocExtractDocs();
     assert.equal(docs._rawText, true);
     assert.ok(docs.content.length > 3000, 'the contract is suspiciously short');

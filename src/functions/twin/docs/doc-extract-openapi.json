@@ -7,12 +7,12 @@
   },
   "servers": [
     {
-      "url": "https://nano-dev.gcn.net/api",
+      "url": "https://twin-dev-zasfwcrktp.cn-shanghai.fcapp.run/api/twin",
       "description": "dev"
     },
     {
-      "url": "https://nano.gcn.net/api",
-      "description": "prod"
+      "url": "https://nano.gcn.net/api/twin",
+      "description": "prod (not yet deployed)"
     }
   ],
   "security": [

@@ -39,8 +39,8 @@ be able to claim a real user's document. Minted as `dex_` + 32 hex characters.
 
 | Environment | Base URL |
 |---|---|
-| dev | `https://nano-dev.gcn.net/api` |
-| prod | `https://nano.gcn.net/api` |
+| dev | `https://twin-dev-zasfwcrktp.cn-shanghai.fcapp.run/api/twin` |
+| prod | `https://nano.gcn.net/api/twin/twin` (not yet deployed) |
 
 **The job token** (`result_token`) is returned by a successful claim and proves you still hold the
 lease on that specific job:

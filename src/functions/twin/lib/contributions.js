@@ -24,8 +24,8 @@
  *   finding       → not yet: see the same section.
  */
 const crypto = require('crypto');
-const { pool } = require('./db');
-const ossLib = require('../shared/oss');
+const { pool } = require('../shared/worker/lib/db');
+const ossLib = require('../shared/worker/lib/oss');
 const { resolveSubject } = require('./read');
 const { fail, REASONS } = require('./reasons');
 
