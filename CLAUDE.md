@@ -714,3 +714,49 @@ are real prod chat text.
 - Cost: ~6 s / ~3.3k tokens against 0.7 s / 1.3k for the classifier, plus two small
   indexed queries for history and state. Relevance on same-route turns is within run-to-run noise;
   do not expect a general quality lift from it.
+
+## 48. API Auth — Per-User Sessions — Rules
+
+Every miniapp / web user-app request carries the user's own signed session (`u.` token), not
+the shared app bearer the builds used to ship (which the server treated as superadmin). Full
+model, route options and the cut-off runbook: [docs/architecture/api-auth.md](docs/architecture/api-auth.md).
+
+- **A new client call needs its route in `lib/userAccess.js` `USER_ROUTES`** — deny-by-default;
+  a missing one 403s with `reason:'route_not_allowed'` (`user_session_denied` log). A route that
+  names a record only by id declares an `owner` query; a handler that also serves the admin panel
+  and writes privileged fields declares `body` (as `PUT /users` does).
+- **Identity is checked, never rewritten**: every `openid`/`user_id`/`coach_id`/… a request
+  names must be the caller, the caller's coaching client, or (admin role) same-channel. The coach
+  panel names its clients legitimately.
+- **Public routes are method + path** (`PUBLIC_PATHS`, `index.js`) — `GET /store-items` is public,
+  `POST /store-items` is not.
+- `TOKEN_SIGNING_SECRET` (`_PROD` on prod) signs `u.`/`sa.`/`ch.`; **never sign with
+  `API_BEARER_TOKEN`** — it is public. Every login response carries `session_token`
+  (`SESSION_ISSUING_PATHS`); clients store it (`utils/session.js`, user-app `src/session.js`).
+- The legacy bearer stays accepted (logged `legacy_app_bearer`) until `LEGACY_APP_BEARER=reject`;
+  `/qr-login/confirm` and `/session/upgrade` change behaviour at that switch too.
+- The miniapp's native admin/superadmin pages are gone — admins use the web panel.
+
+## 49. Managed Customers (SuperiorMed) — Rules
+
+Login-less accounts a coach creates and operates for a B2B channel's own customers — the coach
+scans, formulates and asks Viva about them; the channel pays. Full record:
+[docs/architecture/managed-customers.md](docs/architecture/managed-customers.md).
+
+- `users.account_type = 'managed'`; **no `external_id`, no `user_phones`** — the coach-typed number
+  lives in `contact_phone`, never in a login identity. `birth_date` and `gender` are required.
+- Enabled per channel by `effective_channel_config(…, 'managed_customers') = true` (SuperiorMed).
+- **New consumer-facing features must exclude managed accounts** the way the dispatcher scans,
+  `mergeUsers`/`findMatchCandidate` and `hasActiveVivaAccess` do. Anything that needs the
+  customer to see or do something does not apply to them.
+- A coach talks to Viva **about** a managed customer via `POST /chat {speaker:'coach'}`
+  (`authorizeChatSpeaker`); a coach never speaks **as** any client. Stored as `'coach'` rows,
+  which count as the user side of that account's history.
+- Release (`POST /managed-customers/:user/release`, web admin panel) makes them regular; the
+  contact phone becomes an unverified login phone only if nobody else holds it.
+- **Nothing in a managed customer's thread says 您 to them** — their coach reads it. New automatic
+  messages or LLM outputs written into a user's thread must go through `lib/managedVoice.js`
+  (`scanResultMessage`, `managedVoiceBlock`); the kino function holds a copy of the scan line.
+- **The channel pays with prepaid Dots codes**: the coach redeems one for the customer
+  (`/formulation-redeem`, `_redeemer_user_id` set from the session) and GCN makes the coach the
+  order's buyer while the formulation stays the customer's. No nano code table, no price in nano.
