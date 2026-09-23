@@ -22,7 +22,8 @@ export default function LoginScreen({ onLogin, lang, onLangChange, onContinue })
   const lastSession = storage.get(K.lastSession);
   const lastChannel = storage.get(K.channel) || lastSession?.channel || null;
   const emailAllowed = emailLoginAllowedFor(lastChannel);
-  const [showLoggedOut, setShowLoggedOut] = useState(!!(lastSession && lastSession.user && lastSession.maskedPhone));
+  // Only a snapshot that carries its own session can be resumed without signing in.
+  const [showLoggedOut, setShowLoggedOut] = useState(!!(lastSession && lastSession.user && lastSession.maskedPhone && lastSession.session_token));
   const [tab, setTab] = useState('qr'); // 'phone' | 'email' | 'qr'
 
   // ── Phone / email + OTP login ─────────────────────────────────

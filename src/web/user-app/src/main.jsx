@@ -2,7 +2,6 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import { AppProvider } from './store/AppContext.jsx';
-import axios from 'axios';
 import './style.css';
 import './mini-css/main.css';
 import './mini-css/toolbox.css';
@@ -15,9 +14,8 @@ import './mini-css/emails.css';
 import './mini-css/referral.css';
 import './web-overrides.css';
 
-// The shared app bearer (same token the miniapp's app.js hardcodes) is attached per request
-// in api.js; the axios default below only serves tabs not yet ported off raw axios.
-if (import.meta.env.VITE_API_TOKEN) axios.defaults.headers.common['Authorization'] = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
+// The user's own session is attached per request in api.js. The only raw axios calls left
+// (LoginScreen: OTP send/verify, QR login) hit public routes and need no credential.
 // StrictMode's double-mount is safe for the notification poll — see the header of
 // hooks/useNotificationPoll.js.
 ReactDOM.createRoot(document.getElementById('root')).render(

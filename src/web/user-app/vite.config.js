@@ -26,7 +26,6 @@ export default defineConfig(({ command, mode }) => {
     base: command === 'build' ? '/app/' : '/',
     define: {
       __API_IS_DEV__: JSON.stringify(command !== 'build' && /-dev\./.test(target)),
-      'import.meta.env.VITE_API_TOKEN': JSON.stringify(env.VITE_API_TOKEN || ''),
     },
     resolve: {
       alias: { '@mini': MINI_UTILS },

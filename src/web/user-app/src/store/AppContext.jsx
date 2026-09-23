@@ -4,6 +4,7 @@
 // theme, text scale, sandbox origin, and the "continue as previous" logout snapshot.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api, q, setSandboxMode } from '../api.js';
+import { getSessionToken, saveSessionToken, clearSessionToken, sessionAgeMs, SESSION_EXPIRED_EVENT } from '../session.js';
 import { STORAGE_KEYS as K, isAevivaChannel, gcnStoreSlug, emailLoginAllowedFor } from '../config.js';
 import { LangContext, tableFor } from '../i18n/index.js';
 import phoneUtils from '@mini/phone.js';
@@ -40,7 +41,9 @@ const AppContext = createContext(null);
 export const useApp = () => useContext(AppContext);
 
 export function AppProvider({ children }) {
-  const [user, setUserState] = useState(() => storage.get(K.user));
+  // A stored user without a session (signed in before sessions existed, or expired) is signed
+  // out: every private route would 401 anyway.
+  const [user, setUserState] = useState(() => (getSessionToken() ? storage.get(K.user) : null));
   const [channel, setChannel] = useState(() => storage.get(K.channel));
   const [coach, setCoach] = useState(() => storage.get(K.coach));
   const [sandboxMode, setSandbox] = useState(() => !!storage.get(K.sandboxActive));
@@ -97,6 +100,7 @@ export function AppProvider({ children }) {
   }, [user]);
 
   const login = useCallback((data) => {
+    saveSessionToken(data.session_token);
     const u = data.user;
     const trimmed = trimUser(u);
     persistUser(trimmed);
@@ -111,7 +115,9 @@ export function AppProvider({ children }) {
   // login.js:continueAsPrevious — restore the logout snapshot with no network.
   const continueAsPrevious = useCallback(() => {
     const last = storage.get(K.lastSession);
-    if (!last?.user) return false;
+    // The snapshot must carry that account's own session; one from before sessions has none.
+    if (!last?.user || !last.session_token) return false;
+    saveSessionToken(last.session_token);
     persistUser(last.user);
     setChannel(last.channel || null); storage.set(K.channel, last.channel || null);
     setCoach(last.coach || null); storage.set(K.coach, last.coach || null);
@@ -140,8 +146,9 @@ export function AppProvider({ children }) {
     if (sandboxMode) { exitSandbox(); return; }
     if (user && !user.guest) {
       const { phone, email, ...userToStore } = user;
-      storage.set(K.lastSession, { user: userToStore, channel, coach, maskedPhone: user.maskedPhone || maskPhone(phone) || '' });
+      storage.set(K.lastSession, { user: userToStore, channel, coach, maskedPhone: user.maskedPhone || maskPhone(phone) || '', session_token: getSessionToken() });
     }
+    clearSessionToken();
     persistUser(null);
     setRoute(null);
     setTab('chat');
@@ -216,6 +223,19 @@ export function AppProvider({ children }) {
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
   }, [user?.user_id, isGuest]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // api.js reports a 401 — the session expired or was revoked — by clearing it and firing this.
+  useEffect(() => {
+    const onExpired = () => { persistUser(null); setRoute(null); setTab('chat'); };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, [persistUser]);
+
+  // Sessions last 30 days; renew one a day old so an active user never meets the expiry.
+  useEffect(() => {
+    if (!user?.user_id || isGuest || sessionAgeMs() < 24 * 3600 * 1000) return;
+    api.post('/session/refresh').then(r => { if (r?.session_token) saveSessionToken(r.session_token); }).catch(() => {});
+  }, [user?.user_id, isGuest]);
 
   // Tiny event bus for cross-tab signals: 'dots:changed', 'health:refresh', 'chat:goto', …
   const emit = useCallback((evt, payload) => { (bus.current.get(evt) || []).forEach(fn => { try { fn(payload); } catch { /* ignore */ } }); }, []);
