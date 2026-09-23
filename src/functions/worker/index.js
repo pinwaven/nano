@@ -530,7 +530,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/oss/kone-apk/presign')) {
                 result = await handleGetKoneApkPresign();
             } else if (path === '/digital-assets/presign') {
-                result = await handleGetDigitalAssetsPresign(query);
+                result = requirePermission(adminCtx, 'digital-assets:write') || await handleGetDigitalAssetsPresign(query);
             } else if (path === '/digital-assets') {
                 result = await handleGetDigitalAssets(query, adminCtx);
             } else if (path.includes('/kino-devices')) {
@@ -1002,7 +1002,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/kone-apk-releases')) {
                 result = await handlePostKoneApkRelease(parsedBody);
             } else if (path === '/digital-assets') {
-                result = await handlePostDigitalAsset(parsedBody, adminCtx);
+                result = requirePermission(adminCtx, 'digital-assets:write') || await handlePostDigitalAsset(parsedBody, adminCtx);
             } else if (path.includes('/kino-chip-batches')) {
                 result = await handlePostKinoChipBatch(parsedBody);
             } else if (path.includes('/kino-chip-models')) {
@@ -1220,7 +1220,7 @@ exports.handler = async (req, resp, context) => {
         } else if (method === 'PUT') {
             if (path.match(/\/digital-assets\/(\d+)/)) {
                 const assetId = path.match(/\/digital-assets\/(\d+)/)[1];
-                result = await handlePutDigitalAsset(assetId, parsedBody, adminCtx);
+                result = requirePermission(adminCtx, 'digital-assets:write') || await handlePutDigitalAsset(assetId, parsedBody, adminCtx);
             } else if (path.match(/\/kone-apk-releases\/(\d+)/)) {
                 const releaseId = path.match(/\/kone-apk-releases\/(\d+)/)[1];
                 result = await handlePutKoneApkRelease(releaseId, parsedBody);
@@ -1435,7 +1435,7 @@ exports.handler = async (req, resp, context) => {
                 result = await handleDeleteHealthDocument(path.match(/^\/health-documents\/(\d+)$/)[1], query);
             } else if (path.match(/\/digital-assets\/(\d+)/)) {
                 const assetId = path.match(/\/digital-assets\/(\d+)/)[1];
-                result = await handleDeleteDigitalAsset(assetId, adminCtx);
+                result = requirePermission(adminCtx, 'digital-assets:delete') || await handleDeleteDigitalAsset(assetId, adminCtx);
             } else if (path.match(/\/kone-apk-releases\/(\d+)/)) {
                 const releaseId = path.match(/\/kone-apk-releases\/(\d+)/)[1];
                 result = await handleDeleteKoneApkRelease(releaseId);
