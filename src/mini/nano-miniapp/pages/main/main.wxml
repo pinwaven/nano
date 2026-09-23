@@ -44,16 +44,7 @@
         <text class="menu-item-label">{{t.coachMenu}}</text>
       </view>
       <view wx:if="{{isAdmin}}" class="menu-divider"></view>
-      <view wx:if="{{isAdmin}}" class="menu-item" bindtap="openAdmin">
-        <text class="menu-item-icon">⚙</text>
-        <text class="menu-item-label">{{t.adminMenu}}</text>
-      </view>
-      <view wx:if="{{isSuperadmin}}" class="menu-divider"></view>
-      <view wx:if="{{isSuperadmin}}" class="menu-item" bindtap="openSuperadmin">
-        <text class="menu-item-icon">🌐</text>
-        <text class="menu-item-label">{{t.superadminMenu}}</text>
-      </view>
-      <view wx:if="{{isSuperadmin}}" class="menu-item" bindtap="openWebAdmin">
+      <view wx:if="{{isAdmin}}" class="menu-item" bindtap="openWebAdmin">
         <text class="menu-item-icon">🖥</text>
         <text class="menu-item-label">{{t.webAdminMenu}}</text>
       </view>

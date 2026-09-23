@@ -1,5 +1,6 @@
 const app = getApp()
 const { BASE, VERSION, WX_VERSION, IS_DEV } = require('../../utils/config.js')
+const session = require('../../utils/session.js')
 const toolActions = require('../../utils/tool-actions')
 const { resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
 const { maskPhone } = require('../../utils/phone.js')
@@ -375,9 +376,7 @@ const T = {
     mdTakeaway: '关键要点',
     mdLinkCopy: '复制链接',
     mdLinkCopied: '链接已复制',
-    adminMenu: '渠道管理',
     coachMenu: '教练面板',
-    superadminMenu: '超管面板',
     webAdminMenu: '网页后台',
     kinoSimMenu: 'Kino 模拟器',
     referralMenu: '邀请好友',
@@ -734,9 +733,7 @@ const T = {
     mdTakeaway: 'Key takeaway',
     mdLinkCopy: 'Copy link',
     mdLinkCopied: 'Link copied',
-    adminMenu: 'Channel Admin',
     coachMenu: 'Coach Panel',
-    superadminMenu: 'Super Admin',
     webAdminMenu: 'Web Admin',
     kinoSimMenu: 'Kino Simulator',
     referralMenu: 'Invite Friends',
@@ -2848,17 +2845,9 @@ Page({
     this._openAevivaStoreGated({ intent: 'buy_viva_subscription' })
   },
 
-  openAdmin() {
-    this.setData({ menuOpen: false })
-    wx.navigateTo({ url: '/pages/admin/admin' })
-  },
-
-
-  openSuperadmin() {
-    this.setData({ menuOpen: false })
-    wx.navigateTo({ url: '/pages/superadmin/superadmin' })
-  },
-
+  // The native admin / superadmin pages were removed (2026-09-23): both panels run on the web
+  // admin panel, which has its own login. They were the only reason the miniapp shipped an
+  // admin-capable token.
   openWebAdmin() {
     this.setData({ menuOpen: false })
     wx.navigateTo({ url: '/pages/webadmin/webadmin' })
@@ -3136,9 +3125,11 @@ Page({
         channel: app.globalData.channel,
         coach: app.globalData.coach,
         maskedPhone: user.maskedPhone || maskPhone(phone) || '',
+        session_token: app.globalData.apiToken || '',
       })
     }
     wx.removeStorageSync('nano_user')
+    session.clearSession(app)
     app.globalData.user = null
     wx.reLaunch({ url: '/pages/login/login?loggedOut=1' })
   },
@@ -5640,7 +5631,7 @@ Page({
       const opts = {
         url, method,
         header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
-        success: resolve,
+        success: (res) => { session.checkAuthStatus(app, res.statusCode); resolve(res) },
         fail: reject,
       }
       if (app.globalData.sandboxMode && method !== 'GET') data = { ...(data || {}), sandbox: true }

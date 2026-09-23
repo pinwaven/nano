@@ -1,4 +1,5 @@
 const { BASE, ENV_VERSION } = require('./utils/config.js')
+const session = require('./utils/session.js')
 
 App({
   globalData: {
@@ -8,7 +9,9 @@ App({
     lang: 'zh',
     theme: 'dark',
     textScale: 0,   // accessibility text size, 0-3; see .fs-1/.fs-2/.fs-3 in app.wxss
-    apiToken: 'tokenData-gh9bc7917115bid72c68c8c4693g',
+    // This user's own API session (utils/session.js) — set on launch and by every login.
+    // Empty for a guest or a signed-out install.
+    apiToken: '',
     sandboxMode: false,
   },
 
@@ -32,7 +35,7 @@ App({
       const storedBase = wx.getStorageSync('nano_base')
       if (storedBase !== BASE) {
         if (storedBase || ENV_VERSION === 'develop') {
-          for (const k of ['nano_user', 'nano_channel', 'nano_coach', 'nano_last_session']) wx.removeStorageSync(k)
+          for (const k of ['nano_user', 'nano_channel', 'nano_coach', 'nano_last_session', 'nano_session', 'nano_session_at']) wx.removeStorageSync(k)
         }
         wx.setStorageSync('nano_base', BASE)
       }
@@ -61,7 +64,10 @@ App({
         this.globalData.theme = savedTheme || user.theme || 'dark'
         this.globalData.sandboxMode = !!wx.getStorageSync('nano_sandbox_active')
       }
+      session.restoreSession(this)
     } catch (e) {}
+
+    this._applyUpdates()
 
     // WeChat fires this whenever a privacy API (e.g. openBluetoothAdapter) is
     // called and the user hasn't consented yet. Without this listener WeChat
@@ -72,5 +78,21 @@ App({
         if (this._onPrivacyRequest) this._onPrivacyRequest()
       })
     }
+  },
+
+  // Apply a new version as soon as WeChat has it, instead of on some later cold start: the
+  // server stops accepting the old build's shared token once every install has moved to
+  // per-user sessions, so a lingering old version would eventually just stop working.
+  _applyUpdates() {
+    if (!wx.getUpdateManager) return
+    const mgr = wx.getUpdateManager()
+    mgr.onUpdateReady(() => {
+      wx.showModal({
+        title: this.globalData.lang === 'en' ? 'Update ready' : '新版本已就绪',
+        content: this.globalData.lang === 'en' ? 'Restart to use the new version.' : '重启小程序以使用新版本。',
+        showCancel: false,
+        success: () => mgr.applyUpdate(),
+      })
+    })
   },
 })

@@ -1,5 +1,6 @@
 const app = getApp()
 const { BASE } = require('../../utils/config.js')
+const session = require('../../utils/session.js')
 const { maskPhone } = require('../../utils/phone.js')
 
 const PHONE_RE = /^1\d{10}$/
@@ -208,6 +209,9 @@ Page({
       // if the number was already verified on a different account, the merge winner
       // — either way it's the current, authoritative record for whoever the user
       // now is, so it fully replaces the cached session user.
+      // A bind can merge this account into the one that already owned the number; the
+      // response then carries that account's session.
+      session.saveSession(app, res.data.session_token)
       this._applyUpdatedUser(res.data.user, res.data.channel)
       this.setData({ addLoading: false, addMode: false })
       wx.showToast({ title: t.toastAdded, icon: 'success' })

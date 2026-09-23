@@ -1668,3 +1668,27 @@
    drops --text-muted to 4.28:1. Step up to --text-sub for the light theme only. */
 .theme-light .goal-cancel-btn,
 .theme-light .overlay-cancel-btn { color: var(--text-sub); }
+
+/* ── Managed customers ─────────────────────────────────────────────────── */
+/* Above the client-detail sheet: the edit form opens from that sheet's header. */
+.mc-mask { z-index: 200; }
+.client-name-row { display: flex; align-items: center; gap: 6px; }
+.mc-badge {
+  padding: 1px 7px;
+  border-radius: 8px;
+  border: 1rpx solid #0ea5e9;
+  background: rgba(14, 165, 233, 0.13);
+}
+.mc-badge-text { font-size: 11px; color: #0ea5e9; }
+.mc-edit-btn {
+  padding: 4px 10px;
+  margin-right: 6px;
+  border-radius: 12px;
+  border: 1rpx solid #0ea5e9;
+}
+.mc-edit-text { font-size: 12px; color: #0ea5e9; }
+.mc-note { padding: 12px 20px 4px; }
+.mc-note-text { font-size: 12px; color: var(--steel); line-height: 1.5; }
+.mc-thinking { padding: 6px 16px 0; }
+.mc-thinking-text { font-size: 12px; color: #0ea5e9; }
+.mc-trigger-row { display: flex; gap: 8px; }

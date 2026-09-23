@@ -30,6 +30,9 @@
   </view>
 
   <view wx:elif="{{tab === 'clients'}}" class="client-list">
+    <view wx:if="{{mcEnabled}}" class="invite-generate-btn" bindtap="openManagedForm">
+      <text class="invite-generate-text">{{t.mc.add}}</text>
+    </view>
     <!-- Search bar -->
     <view class="clients-search-wrap">
       <view class="clients-search-bar">
@@ -82,7 +85,10 @@
           <text wx:else class="avatar-letter">{{item._avatar}}</text>
         </view>
         <view class="client-info">
-          <text class="client-name">{{item.nickname || '—'}}</text>
+          <view class="client-name-row">
+            <text class="client-name">{{item.nickname || '—'}}</text>
+            <view wx:if="{{item.account_type === 'managed'}}" class="mc-badge"><text class="mc-badge-text">{{t.mc.badge}}</text></view>
+          </view>
           <view class="client-ages">
             <view wx:if="{{item._cAge}}" class="age-chip">
               <text class="age-chip-text">{{t.chronoAge}} {{item._cAge}}</text>
@@ -414,12 +420,101 @@
     </view>
   </view>
 
+  <!-- ── Managed customer form (create / edit) ─────────────────────────── -->
+  <view wx:if="{{mcFormOpen}}" class="overlay-mask mc-mask" catchtouchmove="noop">
+    <view class="overlay-panel" catchtap="noop">
+      <view class="overlay-header">
+        <text class="overlay-title">{{mcEditId ? t.mc.titleEdit : t.mc.titleNew}}</text>
+        <view class="overlay-close" bindtap="closeManagedForm"><text class="close-x">✕</text></view>
+      </view>
+      <scroll-view scroll-y class="overlay-scroll">
+        <view class="mc-note"><text class="mc-note-text">{{t.mc.note}}</text></view>
+        <view class="form-row">
+          <text class="form-label">{{t.mc.lastName}}</text>
+          <input class="form-input" value="{{mcForm.last_name}}" data-field="last_name" bindinput="onMcInput" />
+        </view>
+        <view class="form-row">
+          <text class="form-label">{{t.mc.firstName}}</text>
+          <input class="form-input" value="{{mcForm.first_name}}" data-field="first_name" bindinput="onMcInput" />
+        </view>
+        <view class="form-row">
+          <text class="form-label">{{t.mc.nickname}}</text>
+          <input class="form-input" placeholder="{{t.mc.nicknameHint}}" value="{{mcForm.nickname}}" data-field="nickname" bindinput="onMcInput" />
+        </view>
+        <picker mode="date" value="{{mcForm.birth_date || '1970-01-01'}}" end="{{today}}" bindchange="onMcDate">
+          <view class="form-row">
+            <text class="form-label">{{t.mc.birthDate}} *</text>
+            <text class="form-value">{{mcForm.birth_date || '—'}}</text>
+          </view>
+        </picker>
+        <picker mode="selector" range="{{t.mc.genders}}" value="{{mcGenderIndex < 0 ? 0 : mcGenderIndex}}" bindchange="onMcGender">
+          <view class="form-row">
+            <text class="form-label">{{t.mc.gender}} *</text>
+            <text class="form-value">{{mcGenderIndex < 0 ? '—' : t.mc.genders[mcGenderIndex]}}</text>
+          </view>
+        </picker>
+        <view class="form-row">
+          <text class="form-label">{{t.mc.phone}}</text>
+          <input class="form-input" type="number" maxlength="11" value="{{mcForm.contact_phone}}" data-field="contact_phone" bindinput="onMcInput" />
+        </view>
+        <view class="form-row">
+          <text class="form-label">{{t.mc.ref}}</text>
+          <input class="form-input" placeholder="{{t.mc.refHint}}" value="{{mcForm.external_ref}}" data-field="external_ref" bindinput="onMcInput" />
+        </view>
+      </scroll-view>
+      <view class="overlay-footer">
+        <view class="overlay-cancel-btn" bindtap="closeManagedForm"><text>{{t.mc.cancel}}</text></view>
+        <view class="overlay-confirm-btn {{mcBusy ? 'btn-busy' : ''}}" bindtap="submitManagedForm">
+          <text>{{mcBusy ? '…' : t.mc.save}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ── Managed customer: order with a redeem code ───────────────────── -->
+  <view wx:if="{{redeemOpen}}" class="overlay-mask mc-mask" catchtouchmove="noop">
+    <view class="overlay-panel" catchtap="noop">
+      <view class="overlay-header">
+        <text class="overlay-title">{{t.mc.redeemTitle}}</text>
+        <view class="overlay-close" bindtap="closeRedeemForm"><text class="close-x">✕</text></view>
+      </view>
+      <scroll-view scroll-y class="overlay-scroll">
+        <view class="mc-note"><text class="mc-note-text">{{t.mc.redeemHint}}</text></view>
+        <view class="form-row">
+          <text class="form-label">{{t.mc.redeemCode}}</text>
+          <input class="form-input" value="{{redeemForm.code}}" data-field="code" bindinput="onRedeemInput" />
+        </view>
+        <view class="form-row">
+          <text class="form-label">{{t.mc.redeemName}}</text>
+          <input class="form-input" value="{{redeemForm.name}}" data-field="name" bindinput="onRedeemInput" />
+        </view>
+        <view class="form-row">
+          <text class="form-label">{{t.mc.redeemPhone}}</text>
+          <input class="form-input" type="number" maxlength="11" value="{{redeemForm.phone}}" data-field="phone" bindinput="onRedeemInput" />
+        </view>
+        <view class="form-row">
+          <text class="form-label">{{t.mc.redeemAddress}}</text>
+          <input class="form-input" value="{{redeemForm.address}}" data-field="address" bindinput="onRedeemInput" />
+        </view>
+      </scroll-view>
+      <view class="overlay-footer">
+        <view class="overlay-cancel-btn" bindtap="closeRedeemForm"><text>{{t.mc.cancel}}</text></view>
+        <view class="overlay-confirm-btn {{redeemBusy ? 'btn-busy' : ''}}" bindtap="submitRedeem">
+          <text>{{redeemBusy ? '…' : t.mc.redeemSubmit}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
   <!-- ── Client Detail Sheet ───────────────────────────────────────────── -->
   <view wx:if="{{detailOpen}}" class="overlay-mask" catchtouchmove="noop">
     <view class="overlay-panel" catchtap="noop">
 
       <view class="overlay-header">
         <text class="overlay-title">{{detailClient.nickname || t.detailTitle}}</text>
+        <view wx:if="{{detailClient.account_type === 'managed'}}" class="mc-edit-btn" bindtap="openManagedForm" data-client="{{detailClient}}">
+          <text class="mc-edit-text">{{t.mc.edit}}</text>
+        </view>
         <view class="overlay-close" bindtap="closeClientDetail">
           <text class="close-x">✕</text>
         </view>
@@ -574,9 +669,18 @@
 
         <!-- Pinned compose area -->
         <view class="msg-compose">
+          <view wx:if="{{vivaThinking}}" class="mc-thinking"><text class="mc-thinking-text">{{t.mc.thinking}}</text></view>
           <toolbox wx:if="{{chatToolboxOpen}}" tools="{{chatToolList}}" disabled="{{chatToolBusy}}" bind:toolaction="handleChatToolAction" />
-          <view class="reminder-trigger" bindtap="openReminderComposer">
-            <text class="reminder-trigger-text">{{t.setReminder}}</text>
+          <view class="mc-trigger-row">
+            <view class="reminder-trigger" bindtap="openReminderComposer">
+              <text class="reminder-trigger-text">{{t.setReminder}}</text>
+            </view>
+            <view wx:if="{{detailClient.account_type === 'managed'}}" class="reminder-trigger" bindtap="openRedeemForm">
+              <text class="reminder-trigger-text">{{t.mc.redeem}}</text>
+            </view>
+            <view wx:if="{{detailClient.account_type === 'managed'}}" class="reminder-trigger" bindtap="scanBoxForCustomer">
+              <text class="reminder-trigger-text">{{t.mc.boxScan}}</text>
+            </view>
           </view>
           <view class="compose-row">
             <view class="chat-plus-btn {{chatToolboxOpen ? 'chat-plus-open' : ''}}" bindtap="toggleChatToolbox">
@@ -584,7 +688,7 @@
             </view>
             <textarea
               class="compose-input"
-              placeholder="{{t.msgPh}}"
+              placeholder="{{detailClient.account_type === 'managed' ? t.mc.askPh : t.msgPh}}"
               value="{{msgText}}"
               bindinput="onMsgInput"
               maxlength="500"

@@ -1,5 +1,6 @@
 const app = getApp()
 const { BASE } = require('../../utils/config.js')
+const session = require('../../utils/session.js')
 const { resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
 const { maskPhone } = require('../../utils/phone.js')
 
@@ -176,6 +177,9 @@ Page({
         }
         return
       }
+      // A bind can merge this account into the one that already owned the number; the
+      // response then carries that account's session.
+      session.saveSession(app, res.data.session_token)
       const updatedUser = { ...user, ...res.data.user, phoneSet: true, phone_verified: true, pendingPhoneVerification: false }
       const { phone: _ph, email: _em, ...userToStore } = updatedUser
       // See login.js's _finishLogin for why this is persisted (masked, not raw) —

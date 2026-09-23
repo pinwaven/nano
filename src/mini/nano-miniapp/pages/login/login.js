@@ -1,5 +1,6 @@
 const app = getApp()
 const { BASE, CHANNEL_SLUG, CHANNEL_DISPLAY, IS_DEV, VERSION, WX_VERSION, EMAIL_LOGIN_AVAILABLE } = require('../../utils/config.js')
+const session = require('../../utils/session.js')
 const { maskPhone, maskEmail } = require('../../utils/phone.js')
 
 const LOGIN_PHONE_RE = /^1\d{10}$/
@@ -132,6 +133,7 @@ Page({
       const res = await this._callWxLogin(code, this._inviteCode)
 
       if (res.data?.guest) {
+        session.clearSession(app)
         app.globalData.user = { guest: true }
         wx.reLaunch({ url: '/pages/main/main' })
         return
@@ -191,6 +193,7 @@ Page({
   // Only reached for a deliberate sign-up (see wxLogin/submitCode) — never a silent
   // auto-created account, so this never blocks ordinary browsing.
   _finishNewUser(data) {
+    session.saveSession(app, data.session_token)
     const user = { ...data.user, pendingPhoneVerification: true }
     const channel = data.channel || null
     app.globalData.user = user
@@ -210,6 +213,7 @@ Page({
   },
 
   _finishLogin(data) {
+    session.saveSession(app, data.session_token)
     const user = data.user
     const channel = data.channel || null
     const coach = data.coach || null
@@ -250,6 +254,11 @@ Page({
     app.globalData.channel = lastSession.channel || null
     app.globalData.coach = lastSession.coach || null
     app.globalData.lang = lastSession.user.language === 'en' ? 'en' : 'zh'
+    // The snapshot carries that account's own session (main.js/coach.js handleLogout). One
+    // taken before sessions existed has none; restoreSession then upgrades it once.
+    session.clearSession(app)
+    if (lastSession.session_token) session.saveSession(app, lastSession.session_token)
+    else session.restoreSession(app)
     wx.setStorageSync('nano_user', lastSession.user)
     wx.setStorageSync('nano_channel', lastSession.channel || null)
     wx.setStorageSync('nano_coach', lastSession.coach || null)
