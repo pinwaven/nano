@@ -7,7 +7,8 @@
  * (decided 2026-09-23: "leave no other endpoints between Curia and nano"). Three scopes, each with
  * its own per-environment token, so one leaked credential opens one scope:
  *
- *   TWIN_API_TOKEN         /api/twin/{ping,docs,versions,bundle,feed/*,document-url,contributions*}
+ *   TWIN_API_TOKEN         /api/twin/{ping,docs,versions,bundle,feed/*,document-url,contributions*,
+ *                                     subjects,record/*,file}
  *   VIVA_AG_API_TOKEN      /api/twin/viva-ag/*       the paid deep-analysis queue
  *   DOC_EXTRACT_API_TOKEN  /api/twin/doc-extract/*   the document-extraction queue
  *
@@ -25,6 +26,7 @@ const path = require('path');
 const zlib = require('zlib');
 const read = require('./lib/read');
 const contributions = require('./lib/contributions');
+const record = require('./lib/record');
 const { CONTRACT_VERSION, contractText } = require('./lib/contract');
 const { fail, REASONS } = require('./lib/reasons');
 const { pool } = require('./shared/worker/lib/db');
@@ -183,6 +185,13 @@ async function routeTwin({ path: p, method, query, body }) {
         if (p === '/bundle') return read.bundle(query);
         if (p === '/document-url') return read.documentUrl(query);
         if (p === '/contributions') return contributions.list(query);
+        // The full record of one subject, for a report addressed to them (lib/record.js).
+        if (p === '/subjects') return record.subjects(query);
+        if (p === '/record/profile') return record.profile(query);
+        if (p === '/record/tables') return record.tables(query);
+        if (p === '/record/table') return record.table(query);
+        if (p === '/record/reference') return record.reference();
+        if (p === '/file') return record.file(query);
         const feed = /^\/feed\/([a-z-]+)$/.exec(p);
         if (feed) return read.feed(feed[1], query);
     } else if (method === 'POST') {

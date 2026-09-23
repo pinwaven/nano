@@ -145,3 +145,21 @@ test('the change signal reads twin_touch, and the touch trigger cannot abort a c
     assert.match(sql, /FROM \(SELECT DISTINCT user_id FROM twin_changed/);
     assert.match(sql, /mint_all_users BOOLEAN NOT NULL DEFAULT FALSE/);
 });
+
+test('the full record: health tables only, and no identifier or contact column in any row', () => {
+    const record = require(path.join(TWIN, 'lib/record.js'));
+    for (const t of ['user_phones', 'user_emails', 'user_identities', 'partners', 'coach_client_notes', 'credit_ledger', 'users']) {
+        assert.ok(!record.ALLOW.has(t), `${t} is not a health record`);
+    }
+    const row = record.scrub({ id: 1, user_id: 'U', phone: '138', contact_phone: '139', shipping_address: 'x', shipping_phone: 'y',
+        api_key: 'k', api_secret: 's', result_token: 't', wx_app_openid: 'o', government_id: 'g', lab_request: { name: 'n' },
+        lab_final_result: { ok: 1 }, report_pdf_key: 'lab-reports/a.pdf', data: { v: 1 } });
+    assert.deepEqual(Object.keys(row).sort(), ['data', 'id', 'lab_final_result', 'report_pdf_key']);
+    for (const k of ['phone', 'email', 'government_id', 'wx_app_openid', 'user_id']) assert.ok(!record.PROFILE.includes(k), k);
+});
+
+test('a file key is matched exactly, never as a pattern', () => {
+    const src = strip(fs.readFileSync(path.join(TWIN, 'lib/record.js'), 'utf8'));
+    const fileFn = src.slice(src.indexOf('async function file('));
+    assert.ok(!/\bLIKE\b/i.test(fileFn), 'a LIKE lets a key with % presign a file nobody named');
+});

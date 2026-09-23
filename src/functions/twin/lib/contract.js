@@ -11,7 +11,7 @@ token opens this). Every response is HTTP 200 with \`{success, reason?, error?}\
 (no or wrong token) and 404 (no such route). Send \`Accept-Encoding: gzip\`.
 
 A subject is named only by \`subject_ref\` (\`vs_\` + 24 hex). No response carries a user id,
-openid, phone or nickname.
+openid or phone, and only \`/subjects\` and \`/record/*\` carry the person's name.
 
 ## Read
 
@@ -45,6 +45,22 @@ Store \`next_after\` and pass it next time. \`has_more: false\` = caught up to t
 changes younger than \`settle_seconds\` are held back so a cursor never passes a row whose
 transaction had not committed yet. With a filter, deletions are still sent unfiltered.
 On \`health-events\`, \`origin\` is the contribution_uid a row came from, when it came from one.
+
+## The full record — for a report addressed to the person
+
+These carry the person's name, because a report is written to them by name; nothing else here does.
+
+- \`GET /subjects?q=<nano user id | exact nickname>\` → \`[{subject_ref, nickname, created_at}]\`,
+  exact matches only.
+- \`GET /record/profile?subject_ref=\` → nickname, first/last name, gender, birth date, language,
+  body data, wearable, channel. Never phone, email, openid or an ID number.
+- \`GET /record/tables?subject_ref=\` → which health-record tables hold rows and how many, plus the
+  joined views \`questionnaire_answers\` and \`cartridges_named\`.
+- \`GET /record/table?subject_ref=&table=&offset=&limit=<≤2000>\` → rows, \`has_more\`. \`user_id\`,
+  credentials, contact and address columns and the raw lab exchange are removed from every row.
+- \`GET /record/reference\` → \`dots\`, \`biomarker_catalog\`, \`health_plan_templates\`.
+- \`GET /file?subject_ref=&key=\` → a ten-minute URL for a file whose storage key one of this
+  subject's rows names (documents, report images, photos, lab PDFs); \`not_found\` otherwise.
 
 ## Write — contributions
 

@@ -73,6 +73,25 @@ sequence stamped by trigger on every insert and update of those four tables, wit
 lower number can become visible after a higher one, and without the settle a cursor would pass it
 forever. The job-scoped `/viva-ag/*` history endpoints keep their snapshot-id cursors unchanged.
 
+## The full record, for a report addressed to the person
+
+Curia's health-report skill reads far more than the bundle: every table that is the person's health
+record, two joined views, the reference tables and the files behind the rows. It used to hold nano's
+read-write database account and the bucket keys to do it; since 2026-09-23 it reads
+`/subjects`, `/record/{profile,tables,table,reference}` and `/file` instead (`lib/record.js`):
+
+- one subject per call; tables from an allowlist (`ALLOW`) — not the coach CRM, identity,
+  commission, academy or partner tables;
+- `user_id`, credentials, contact channels, addresses and the raw lab exchange (`lab_request`,
+  `lab_response`, which carry name, phone and ID number) are dropped from every row (`DENY`);
+- the profile is what a report is addressed with — nickname, the person's name, gender, birth
+  date, language, body data, diet preferences — never phone, email, openid or an ID number. These
+  routes are the only ones that carry a name;
+- `/file` presigns a key for ten minutes only when one of this subject's rows names it, matched
+  exactly (a `LIKE` would let a key with `%` presign any file);
+- DATE columns come back as `YYYY-MM-DD` via a per-query type parser, so the queue handlers sharing
+  the pool keep their own parsing.
+
 ## Writes — contributions
 
 Everything the replica's side adds comes back as one envelope:

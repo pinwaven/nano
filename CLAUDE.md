@@ -730,3 +730,6 @@ are real prod chat text.
 - **Every user has a subject_ref on dev** (decided 2026-09-23, `scripts/twin-all-users.js`); new users are
   minted at signup by trigger.
 - **Reports say who produced them** (`lib/reportAttribution.js`) on the 综合报告 card and the AG panel.
+- **Curia's copy of the health-report skill reads through `/record/*` and `/file`** (`twin/lib/record.js`):
+  health-record tables only, identifiers and contact columns stripped. Adding a table there is adding it
+  to what Curia can read about a person — use `ALLOW`, never widen `DENY`'s complement.
