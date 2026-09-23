@@ -1,0 +1,12 @@
+{
+  "name": "nano-twin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The twin function: an external replica's reads of a user's digital twin, and its report deliveries back",
+  "main": "index.js",
+  "dependencies": {
+    "ali-oss": "^6.23.0",
+    "luxon": "^3.7.2",
+    "pg": "^8.20.0"
+  }
+}

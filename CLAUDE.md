@@ -711,3 +711,15 @@ are real prod chat text.
 - Cost: ~6 s / ~3.3k tokens against 0.7 s / 1.3k for the classifier, plus two small
   indexed queries for history and state. Relevance on same-route turns is within run-to-run noise;
   do not expect a general quality lift from it.
+
+## 48. The twin function — Curia's exchange with the twin, both directions — Rules
+
+`src/functions/twin` (FC `twin-dev`), `docs/architecture/twin-function.md`, contract at `GET /api/twin/docs`.
+- **`shared/` is a byte-identical copy of the worker's bundle modules** (`scripts/sync-twin-shared.js`,
+  run pre-deploy; `tests/twin-function.test.js` fails on drift). Edit `worker/lib/`, never `shared/`:
+  two builds of `buildTwinBundle` give one twin two `twin_version`s.
+- **Migrate before deploying the worker**: `lib/twinMirror.js` reads `twin_touch`
+  (`migration_twin_sync.sql`) on the claim path.
+- **Every write from Curia is a contribution** with a sender-minted uid and a required `origin`; only
+  kinds with a landing place are accepted (`report` today). Don't add a door beside it.
+- **Every-user subjects are a decision, not a migration**: `scripts/twin-all-users.js --apply`.

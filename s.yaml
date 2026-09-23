@@ -438,6 +438,62 @@ resources:
             authType: anonymous
             methods: ["GET", "POST", "DELETE", "OPTIONS"]
 
+  # The twin function (docs/architecture/twin-function.md): an external twin holder's (Curia's)
+  # reads of every subject's twin and its contributions back — reports now; extracted values and
+  # physician agents' findings next. Its own function so it deploys without touching the worker.
+  # shared/ is a byte-identical copy of the worker's bundle modules; pre-deploy re-copies it, and
+  # tests/twin-function.test.js fails on drift. Apply migration_twin_sync.sql before first deploy.
+  twin:
+    component: fc3
+    actions:
+      pre-deploy:
+        - run: node scripts/sync-twin-shared.js
+          path: ./
+    props:
+      region: ${vars.region}
+      functionName: twin-dev
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 512
+      timeout: 120
+      code: ./src/functions/twin
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        TWIN_ENV: "dev"
+        DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
+        DB_NAME: "nano_db_dev"
+        # nano_admin until a narrower account exists: it needs SELECT on the twin tables and
+        # INSERT/UPDATE on viva_ag_jobs and twin_contributions only. nano_admin cannot CREATE ROLE
+        # on this cluster; the account is a console act (PolarDB → Accounts).
+        DB_USER: "nano_admin"
+        DB_PASS: ${env(DB_PASS)}
+        DB_SSL: "false"
+        TZ: "Asia/Shanghai"
+        # Distinct per environment and from VIVA_AG_API_TOKEN / DOC_EXTRACT_API_TOKEN: this one
+        # reads every subject's twin and writes to it. Issue as "twn_" + 32 hex.
+        TWIN_API_TOKEN: ${env(TWIN_API_TOKEN)}
+        TWIN_SETTLE_SECONDS: "60"
+        OSS_REGION: "oss-cn-shanghai"
+        OSS_BUCKET: "waven-nano"
+        OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
+        OSS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
+        OSS_CNAME_DOMAIN: ${env(OSS_CNAME_DOMAIN)}
+      triggers:
+        - triggerName: http-twin
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["GET", "POST"]
+
   nano-domain:
     component: fc3-domain
     props:
@@ -452,6 +508,9 @@ resources:
         routes:
           - path: /QJaeMN3iR8.txt
             functionName: nano-worker-dev
+          # Before /api/*: the twin function owns its own prefix.
+          - path: /api/twin/*
+            functionName: twin-dev
           - path: /api/*
             functionName: nano-worker-dev
           - path: /api
