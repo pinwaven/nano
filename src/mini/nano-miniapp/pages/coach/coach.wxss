@@ -1692,3 +1692,19 @@
 .mc-thinking { padding: 6px 16px 0; }
 .mc-thinking-text { font-size: 12px; color: #0ea5e9; }
 .mc-trigger-row { display: flex; gap: 8px; }
+
+/* Managed-customer sheet: inset fields, stable touch targets, scrollable on small screens. */
+.mc-form-panel { height: 82vh; max-height: 760px; }
+.mc-form-scroll { height: 0; min-height: 0; }
+.mc-form-body { padding: 20px; }
+.mc-form-panel .mc-note { padding: 0 0 20px; }
+.mc-form-panel .mc-note-text { font-size: 13px; }
+.mc-form-panel .form-row { margin-bottom: 18px; min-width: 0; }
+.mc-name-row { display: flex; gap: 14px; }
+.mc-name-row .form-row { flex: 1; }
+.mc-form-panel .form-label { font-size: 13px; line-height: 20px; margin-bottom: 8px; color: var(--text); }
+.mc-form-panel .form-input { height: 46px; padding: 0 12px; font-size: 15px; }
+.mc-picker-control { display: flex; align-items: center; justify-content: space-between; height: 46px; padding: 0 12px; box-sizing: border-box; border: 1rpx solid var(--navy-border); border-radius: 12rpx; background: rgba(255,255,255,0.05); }
+.mc-form-panel .form-value { font-size: 15px; }
+.mc-picker-arrow { color: var(--text-muted); margin-left: 12px; }
+.mc-form-panel .overlay-footer { flex-shrink: 0; padding: 12px 20px calc(16px + env(safe-area-inset-bottom)); }

@@ -422,44 +422,48 @@
 
   <!-- ── Managed customer form (create / edit) ─────────────────────────── -->
   <view wx:if="{{mcFormOpen}}" class="overlay-mask mc-mask" catchtouchmove="noop">
-    <view class="overlay-panel" catchtap="noop">
+    <view class="overlay-panel mc-form-panel" catchtap="noop">
       <view class="overlay-header">
         <text class="overlay-title">{{mcEditId ? t.mc.titleEdit : t.mc.titleNew}}</text>
         <view class="overlay-close" bindtap="closeManagedForm"><text class="close-x">✕</text></view>
       </view>
-      <scroll-view scroll-y class="overlay-scroll">
-        <view class="mc-note"><text class="mc-note-text">{{t.mc.note}}</text></view>
-        <view class="form-row">
-          <text class="form-label">{{t.mc.lastName}}</text>
-          <input class="form-input" value="{{mcForm.last_name}}" data-field="last_name" bindinput="onMcInput" />
-        </view>
-        <view class="form-row">
-          <text class="form-label">{{t.mc.firstName}}</text>
-          <input class="form-input" value="{{mcForm.first_name}}" data-field="first_name" bindinput="onMcInput" />
-        </view>
-        <view class="form-row">
-          <text class="form-label">{{t.mc.nickname}}</text>
-          <input class="form-input" placeholder="{{t.mc.nicknameHint}}" value="{{mcForm.nickname}}" data-field="nickname" bindinput="onMcInput" />
-        </view>
-        <picker mode="date" value="{{mcForm.birth_date || '1970-01-01'}}" end="{{today}}" bindchange="onMcDate">
-          <view class="form-row">
-            <text class="form-label">{{t.mc.birthDate}} *</text>
-            <text class="form-value">{{mcForm.birth_date || '—'}}</text>
+      <scroll-view scroll-y class="overlay-scroll mc-form-scroll">
+        <view class="mc-form-body">
+          <view class="mc-note"><text class="mc-note-text">{{t.mc.note}}</text></view>
+          <view class="mc-name-row">
+            <view class="form-row">
+              <text class="form-label">{{t.mc.lastName}}</text>
+              <input class="form-input" value="{{mcForm.last_name}}" data-field="last_name" bindinput="onMcInput" />
+            </view>
+            <view class="form-row">
+              <text class="form-label">{{t.mc.firstName}}</text>
+              <input class="form-input" value="{{mcForm.first_name}}" data-field="first_name" bindinput="onMcInput" />
+            </view>
           </view>
-        </picker>
-        <picker mode="selector" range="{{t.mc.genders}}" value="{{mcGenderIndex < 0 ? 0 : mcGenderIndex}}" bindchange="onMcGender">
           <view class="form-row">
-            <text class="form-label">{{t.mc.gender}} *</text>
-            <text class="form-value">{{mcGenderIndex < 0 ? '—' : t.mc.genders[mcGenderIndex]}}</text>
+            <text class="form-label">{{t.mc.nickname}}</text>
+            <input class="form-input" placeholder="{{t.mc.nicknameHint}}" value="{{mcForm.nickname}}" data-field="nickname" bindinput="onMcInput" />
           </view>
-        </picker>
-        <view class="form-row">
-          <text class="form-label">{{t.mc.phone}}</text>
-          <input class="form-input" type="number" maxlength="11" value="{{mcForm.contact_phone}}" data-field="contact_phone" bindinput="onMcInput" />
-        </view>
-        <view class="form-row">
-          <text class="form-label">{{t.mc.ref}}</text>
-          <input class="form-input" placeholder="{{t.mc.refHint}}" value="{{mcForm.external_ref}}" data-field="external_ref" bindinput="onMcInput" />
+          <picker mode="date" value="{{mcForm.birth_date || '1970-01-01'}}" end="{{today}}" bindchange="onMcDate">
+            <view class="form-row">
+              <text class="form-label">{{t.mc.birthDate}} *</text>
+              <view class="mc-picker-control"><text class="form-value">{{mcForm.birth_date || t.mc.selectDate}}</text><text class="mc-picker-arrow">⌄</text></view>
+            </view>
+          </picker>
+          <picker mode="selector" range="{{t.mc.genders}}" value="{{mcGenderIndex < 0 ? 0 : mcGenderIndex}}" bindchange="onMcGender">
+            <view class="form-row">
+              <text class="form-label">{{t.mc.gender}} *</text>
+              <view class="mc-picker-control"><text class="form-value">{{mcGenderIndex < 0 ? t.mc.selectGender : t.mc.genders[mcGenderIndex]}}</text><text class="mc-picker-arrow">⌄</text></view>
+            </view>
+          </picker>
+          <view class="form-row">
+            <text class="form-label">{{t.mc.phone}}</text>
+            <input class="form-input" type="number" maxlength="11" value="{{mcForm.contact_phone}}" data-field="contact_phone" bindinput="onMcInput" />
+          </view>
+          <view class="form-row">
+            <text class="form-label">{{t.mc.ref}}</text>
+            <input class="form-input" placeholder="{{t.mc.refHint}}" value="{{mcForm.external_ref}}" data-field="external_ref" bindinput="onMcInput" />
+          </view>
         </view>
       </scroll-view>
       <view class="overlay-footer">

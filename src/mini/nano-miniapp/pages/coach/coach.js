@@ -138,7 +138,7 @@ const T = {
     mc: {
       add: '+ 新建托管客户', edit: '编辑资料', badge: '托管', titleNew: '新建托管客户', titleEdit: '编辑客户资料',
       lastName: '姓', firstName: '名', nickname: '显示名称', nicknameHint: '留空则用姓名',
-      birthDate: '出生日期', gender: '性别', genders: ['男', '女'], phone: '联系电话', ref: '客户编号',
+      selectDate: '请选择出生日期', selectGender: '请选择性别', birthDate: '出生日期', gender: '性别', genders: ['男', '女'], phone: '联系电话', ref: '客户编号',
       refHint: '贵机构系统中的编号（可选）', save: '保存', cancel: '取消', created: '已创建', saved: '已保存',
       note: '托管客户不会登录小程序，由您代为检测、配方与咨询。',
       askPh: '问 Viva 关于该客户的问题…', thinking: 'Viva 正在思考…', noReply: 'Viva 暂未回复，请稍后刷新查看',
@@ -312,7 +312,7 @@ const T = {
     mc: {
       add: '+ New managed customer', edit: 'Edit profile', badge: 'Managed', titleNew: 'New managed customer', titleEdit: 'Edit customer',
       lastName: 'Last name', firstName: 'First name', nickname: 'Display name', nicknameHint: 'Defaults to the full name',
-      birthDate: 'Date of birth', gender: 'Sex', genders: ['Male', 'Female'], phone: 'Contact phone', ref: 'Customer ID',
+      selectDate: 'Select date of birth', selectGender: 'Select sex', birthDate: 'Date of birth', gender: 'Sex', genders: ['Male', 'Female'], phone: 'Contact phone', ref: 'Customer ID',
       refHint: 'Their ID in your own system (optional)', save: 'Save', cancel: 'Cancel', created: 'Created', saved: 'Saved',
       note: 'Managed customers never sign in; you scan, formulate and consult for them.',
       askPh: 'Ask Viva about this customer…', thinking: 'Viva is thinking…', noReply: 'No reply from Viva yet — refresh in a moment',
