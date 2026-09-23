@@ -141,6 +141,18 @@ describe('token signing', () => {
     assert.equal(auth.verifyChannelAdminToken(expired), null);
     assert.equal(auth.verifyChannelAdminToken('ch.not-base64.zz'), null);
   });
+
+  test('signup proof is bound to the login type and normalized identifier', () => {
+    process.env.TOKEN_SIGNING_SECRET = SECRET;
+    installDbMock(emptyDb);
+    const auth = require(path.join(WORKER, 'lib/auth.js'));
+    const token = auth.signSignupProof('phone', '+8613800000000', 'zh');
+    assert.match(token, /^signup\./);
+    assert.equal(auth.verifySignupProof(token, 'phone', '+8613800000000').language, 'zh');
+    assert.equal(auth.verifySignupProof(token, 'email', '+8613800000000'), null);
+    assert.equal(auth.verifySignupProof(token, 'phone', '+8613900000000'), null);
+    assert.equal(auth.verifyUserToken(token), null, 'a signup proof is never a user session');
+  });
 });
 
 describe('superadmin login', () => {

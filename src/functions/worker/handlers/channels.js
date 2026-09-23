@@ -12,17 +12,19 @@ const {
 // the miniapp login page BEFORE any login when it was opened from a channel QR code
 // (scene `ch:<id>`, see pages/login/login.js). Only what the login response already returns
 // to every user of that channel (name/logo/locale) — nothing operational. Keyed on the numeric
-// id rather than key_name so a printed QR survives a channel rename.
+// id so a printed QR survives a channel rename; web landing links may use key_name.
 async function handleGetChannelBranding(query) {
-    const id = parseInt(query?.id, 10);
-    if (!Number.isInteger(id) || id <= 0) return { statusCode: 400, success: false, error: 'id is required' };
+    const id = Number(query?.id);
+    const key = typeof query?.key_name === 'string' ? query.key_name.trim() : '';
+    const byKey = query?.id == null && /^[a-zA-Z0-9_-]{1,100}$/.test(key);
+    if (!byKey && (!Number.isSafeInteger(id) || id <= 0)) return { statusCode: 400, success: false, error: 'id or key_name is required' };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const { rows } = await pool.query(
             `SELECT id, name, key_name, effective_channel_logo(id) AS logo_url,
                     effective_channel_config(id, 'locale') #>> '{}' AS locale
-             FROM channels WHERE id = $1 LIMIT 1`,
-            [id]
+             FROM channels WHERE ${byKey ? 'key_name' : 'id'} = $1 LIMIT 1`,
+            [byKey ? key : id]
         );
         if (rows.length === 0) return { statusCode: 404, success: false, error: 'channel_not_found' };
         const c = rows[0];

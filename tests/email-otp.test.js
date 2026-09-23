@@ -26,7 +26,7 @@ const CHANNELS = [
     { id: 5, key_name: 'waven-china-zj', parent_channel_id: 4, name: 'Waven China ZJ' },
 ];
 let now = Date.now();
-const db = { codes: [], users: [], emails: [], audit: [], merges: [], trials: [] };
+const db = { codes: [], users: [], emails: [], invitations: [], invitationUses: [], coaches: [], audit: [], merges: [], trials: [] };
 let nextId = 1;
 
 const rootKey = id => {
@@ -85,6 +85,33 @@ async function query(sql, params = []) {
         const c = CHANNELS.find(x => x.key_name === params[0]); return { rows: c ? [{ id: c.id }] : [] };
     }
 
+    // ── signup invitation ──
+    if (/SELECT id, channel_id, created_by FROM invitations/.test(s)) {
+        const inv = db.invitations.find(x => x.code === params[0] && x.is_active && (!x.max_uses || x.use_count < x.max_uses));
+        return { rows: inv ? [{ id: inv.id, channel_id: inv.channel_id, created_by: inv.created_by }] : [] };
+    }
+    if (/SELECT id FROM coaches WHERE user_id = \$1 AND status = 'active'/.test(s)) {
+        const c = db.coaches.find(x => x.user_id === params[0] && x.status === 'active');
+        return { rows: c ? [{ id: c.id }] : [] };
+    }
+    if (/SELECT c.id FROM coaches c JOIN users u/.test(s)) {
+        const rows = db.coaches.filter(c => c.status === 'active' && db.users.find(u => u.user_id === c.user_id)?.channel_id === params[0]).map(c => ({ id: c.id }));
+        return { rows };
+    }
+    if (/SELECT u.user_id, u.channel_id, COALESCE\(own.id, assigned.id\) AS coach_id/.test(s)) {
+        const u = db.users.find(x => x.referral_code === params[0]);
+        const own = u && db.coaches.find(c => c.user_id === u.user_id && c.status === 'active');
+        return { rows: u ? [{ user_id: u.user_id, channel_id: u.channel_id, coach_id: own?.id || u.coach_id || null }] : [] };
+    }
+    if (/UPDATE invitations SET use_count = use_count \+ 1/.test(s)) {
+        const inv = db.invitations.find(x => x.id === params[0] && x.is_active && (!x.max_uses || x.use_count < x.max_uses));
+        if (!inv) return { rows: [] };
+        inv.use_count += 1; return { rows: [{ id: inv.id }] };
+    }
+    if (/INSERT INTO invitation_uses/.test(s)) {
+        db.invitationUses.push({ invitation_id: params[0], user_id: params[1] }); return { rows: [] };
+    }
+
     // ── users / user_emails ──
     if (/JOIN user_emails ue ON ue.user_id = u.user_id WHERE ue.email = \$1/.test(s)) {
         const e = db.emails.find(x => x.email === params[0]);
@@ -94,9 +121,9 @@ async function query(sql, params = []) {
     if (/FROM users u .*WHERE u.user_id = \$1 LIMIT 1/.test(s)) {
         const u = db.users.find(x => x.user_id === params[0]); return { rows: u ? [userSelectRow(u)] : [] };
     }
-    if (/^INSERT INTO users \(user_id, email, email_verified_at, external_app, language, channel_id, referral_code, created_at\)/.test(s)) {
+    if (/^INSERT INTO users \(user_id, email, email_verified_at, external_app, language, channel_id, coach_id,/.test(s)) {
         if (db.users.some(u => u.email === params[1])) { const e = new Error('dup'); e.code = '23505'; throw e; }
-        db.users.push({ user_id: params[0], email: params[1], email_verified_at: new Date(now), external_app: 'email', language: params[2], channel_id: params[3], referral_code: params[4], created_at: new Date(now), roles: ['user'], phone: null, nickname: null });
+        db.users.push({ user_id: params[0], email: params[1], email_verified_at: new Date(now), external_app: 'email', language: params[2], channel_id: params[3], coach_id: params[4], invited_by_invitation_id: params[5], referred_by_user_id: params[6], referral_code: params[7], created_at: new Date(now), roles: ['user'], phone: null, nickname: null });
         return { rows: [] };
     }
     if (/^INSERT INTO user_emails \(user_id, email, verified_at, is_primary\) VALUES \(\$1, \$2, NOW\(\), true\)/.test(s)) {
@@ -135,7 +162,14 @@ const pool = { query, connect: async () => ({ query, release: () => {} }) };
 const sent = [];
 stub('lib/db', { pool });
 stub('lib/email', { sendEmailOtp: async (email, code, lang) => { sent.push({ email, code, lang }); return null; }, sendMail: async () => null, isConfigured: () => false });
-stub('lib/auth', { generateUserId: () => `u${nextId++}`, generateReferralCode: async () => '000001', generatePhoneOtpCode: () => String(100000 + crypto.randomInt(900000)), getWxAccessToken: async () => 'tok' });
+stub('lib/auth', {
+    generateUserId: () => `u${nextId++}`,
+    generateReferralCode: async () => '000001',
+    generatePhoneOtpCode: () => String(100000 + crypto.randomInt(900000)),
+    getWxAccessToken: async () => 'tok',
+    signSignupProof: (kind, identifier, language) => `${kind}:${identifier}:${language}`,
+    verifySignupProof: (token, kind, identifier) => token.startsWith(`${kind}:${identifier}:`) ? { kind, identifier } : null,
+});
 stub('lib/personaOverride', { grantSignupTrial: async (_pool, user_id, channelId) => { db.trials.push({ user_id, channelId }); } });
 stub('handlers/user-merge', { mergeUsers: async (w, l, m) => { db.merges.push({ winner: w, loser: l, matched_on: m }); }, resolveMergedUser: async (_c, r) => r });
 stub('handlers/partners', { syncPartnerPhoneFromUser: async () => {} });
@@ -146,7 +180,7 @@ stub('lib/phone', { normalizeCnPhone: p => p });
 const { handleEmailOtpSend, handleEmailOtpVerify, handleEmailOtpBind, emailLoginAllowed } = require(path.join(WORKER, 'handlers', 'email-otp.js'));
 const { normalizeEmail, VERIFY_MAX_ATTEMPTS } = require(path.join(WORKER, 'lib', 'email-otp.js'));
 
-const reset = () => { db.codes = []; db.users = []; db.emails = []; db.audit = []; db.merges = []; db.trials = []; sent.length = 0; now = Date.now(); };
+const reset = () => { db.codes = []; db.users = []; db.emails = []; db.invitations = []; db.invitationUses = []; db.coaches = []; db.audit = []; db.merges = []; db.trials = []; sent.length = 0; now = Date.now(); };
 const lastCode = () => sent[sent.length - 1].code;
 const seedUser = (user_id, channel_id, email, extra = {}) => {
     db.users.push({ user_id, channel_id, email: email || null, email_verified_at: email ? new Date(now) : null, phone: null, roles: ['user'], created_at: new Date(now - 1e6), nickname: 'x', ...extra });
@@ -165,6 +199,14 @@ test('send: normalizes the address, issues one code, and refuses a second inside
     assert.strictEqual(r2.error, 'rate_limited');
     assert.ok(r2.retry_after > 0 && r2.retry_after <= 60);
     assert.strictEqual(sent.length, 1, 'nothing sent on the throttled attempt');
+});
+
+test('send: email login defaults to English while preserving an explicit Chinese choice', async () => {
+    reset();
+    await handleEmailOtpSend({ email: 'english@x.io' });
+    await handleEmailOtpSend({ email: 'chinese@x.io', language: 'zh' });
+    assert.strictEqual(sent[0].lang, 'en');
+    assert.strictEqual(sent[1].lang, 'zh');
 });
 
 test('send: at most 5 codes per address per hour', async () => {
@@ -213,7 +255,7 @@ test('verify: five wrong guesses consume the code; the right one no longer works
     assert.strictEqual(db.users.length, 0);
 });
 
-test('verify: a used code cannot be replayed; a resend invalidates the previous code', async () => {
+test('verify: a valid new-user code yields one signup proof; the OTP cannot be replayed', async () => {
     reset();
     await handleEmailOtpSend({ email: 'r@x.io' });
     const first = lastCode();
@@ -221,54 +263,72 @@ test('verify: a used code cannot be replayed; a resend invalidates the previous 
     await handleEmailOtpSend({ email: 'r@x.io' });
     const second = lastCode();
     assert.strictEqual((await handleEmailOtpVerify({ email: 'r@x.io', code: first })).error, 'invalid_code', 'superseded code');
-    assert.strictEqual((await handleEmailOtpVerify({ email: 'r@x.io', code: second })).success, true);
+    const verified = await handleEmailOtpVerify({ email: 'r@x.io', code: second, require_invite: true });
+    assert.strictEqual(verified.invite_required, true);
+    assert.ok(verified.signup_proof);
     assert.strictEqual((await handleEmailOtpVerify({ email: 'r@x.io', code: second })).error, 'invalid_code', 'replay');
 });
 
 // ── verify: who gets in ─────────────────────────────────────────────────────
-test('verify: an unknown address creates a waven user with a verified primary email', async () => {
+test('verify: an unknown address asks for an invite, then creates the user under its coach and channel', async () => {
     reset();
+    db.users.push({ user_id: 'coach-user', channel_id: 2, roles: ['user', 'coach'], created_at: new Date(now - 1e6), referral_code: '999999' });
+    db.coaches.push({ id: 7, user_id: 'coach-user', status: 'active' });
+    db.invitations.push({ id: 4, code: '123456', channel_id: 2, created_by: 'coach-user', is_active: true, max_uses: 1, use_count: 0 });
     await handleEmailOtpSend({ email: 'New@x.io', language: 'en' });
-    const r = await handleEmailOtpVerify({ email: 'new@x.io', code: lastCode(), language: 'en' });
+    const first = await handleEmailOtpVerify({ email: 'new@x.io', code: lastCode(), language: 'en', require_invite: true });
+    assert.strictEqual(first.invite_required, true);
+    const r = await handleEmailOtpVerify({ email: 'new@x.io', signup_proof: first.signup_proof, invite_code: '123456', language: 'en' });
     assert.strictEqual(r.success, true, JSON.stringify(r));
-    const u = db.users[0];
+    const u = db.users.find(row => row.email === 'new@x.io');
     assert.strictEqual(u.email, 'new@x.io');
     assert.strictEqual(u.external_app, 'email');
     assert.strictEqual(u.language, 'en');
-    assert.strictEqual(u.channel_id, 1, 'root waven channel, like the WeChat default');
+    assert.strictEqual(u.channel_id, 2, 'the invitation decides the channel, including non-Waven channels');
+    assert.strictEqual(u.coach_id, 7);
+    assert.strictEqual(u.invited_by_invitation_id, 4);
     assert.deepStrictEqual(db.emails, [{ user_id: u.user_id, email: 'new@x.io', verified_at: db.emails[0].verified_at, is_primary: true }]);
-    assert.deepStrictEqual(db.trials, [{ user_id: u.user_id, channelId: 1 }]);
+    assert.deepStrictEqual(db.trials, [{ user_id: u.user_id, channelId: 2 }]);
     assert.strictEqual(r.user.email_verified, true);
-    assert.strictEqual(r.channel.key_name, 'waven');
-    assert.strictEqual(r.channel.root_key_name, 'waven');
+    assert.strictEqual(r.channel.key_name, 'aeviva-china');
+    assert.strictEqual(r.channel.root_key_name, 'aeviva');
     assert.strictEqual(r.coach, null);
+    assert.strictEqual(db.invitations[0].use_count, 1);
+    assert.deepStrictEqual(db.invitationUses, [{ invitation_id: 4, user_id: u.user_id }]);
 });
 
-test('verify: an existing waven-tree user logs in; an aeviva-tree user is refused', async () => {
+test('verify: non-web clients keep the existing signup path when they do not require an invite', async () => {
+    reset();
+    await handleEmailOtpSend({ email: 'mini@x.io' });
+    const r = await handleEmailOtpVerify({ email: 'mini@x.io', code: lastCode() });
+    assert.strictEqual(r.success, true, JSON.stringify(r));
+    assert.strictEqual(r.user.email, 'mini@x.io');
+    assert.strictEqual(r.user.language, 'en');
+    assert.strictEqual(r.user.coach_id, null);
+    assert.strictEqual(r.channel.key_name, 'waven');
+});
+
+test('verify: existing email users can log in from every channel tree', async () => {
     reset();
     seedUser('zj', 5, 'zj@x.io');      // waven-china-zj → root waven
     seedUser('ac', 2, 'ac@x.io');      // aeviva-china   → root aeviva
     seedUser('none', null, 'none@x.io');
 
-    for (const [email, ok, who] of [['zj@x.io', true, 'zj'], ['none@x.io', true, 'none'], ['ac@x.io', false, 'ac']]) {
+    for (const [email, who] of [['zj@x.io', 'zj'], ['none@x.io', 'none'], ['ac@x.io', 'ac']]) {
         now += 61e3;
         await handleEmailOtpSend({ email });
         const r = await handleEmailOtpVerify({ email, code: lastCode() });
-        if (ok) {
-            assert.strictEqual(r.success, true, email);
-            assert.strictEqual(r.user.user_id, who);
-        } else {
-            assert.deepStrictEqual(r, { success: false, error: 'channel_not_supported' });
-        }
+        assert.strictEqual(r.success, true, email);
+        assert.strictEqual(r.user.user_id, who);
     }
-    assert.strictEqual(db.users.length, 3, 'no sign-up on a refused login');
+    assert.strictEqual(db.users.length, 3, 'existing logins do not create duplicate users');
 });
 
-test('the allow-rule is about the channel ROOT', () => {
+test('email login is channel-agnostic', () => {
     assert.strictEqual(emailLoginAllowed(null), true);
     assert.strictEqual(emailLoginAllowed('waven'), true);
-    assert.strictEqual(emailLoginAllowed('aeviva'), false);
-    assert.strictEqual(emailLoginAllowed('waven-china'), false, 'a leaf key is never passed here; only roots');
+    assert.strictEqual(emailLoginAllowed('aeviva'), true);
+    assert.strictEqual(emailLoginAllowed('superiormed'), true);
 });
 
 // ── super OTP ───────────────────────────────────────────────────────────────
@@ -319,7 +379,7 @@ test('bind: an address owned by an older account merges the two, earlier-created
     assert.strictEqual(r.user.user_id, 'old');
 });
 
-test('bind: refused when either side is an aeviva account, and nothing is merged', async () => {
+test('bind: a fresh email works in every tree, but conflicts do not merge across roots', async () => {
     reset();
     seedUser('av', 2, 'av@x.io');
     seedUser('wv', 1, null);
@@ -331,7 +391,7 @@ test('bind: refused when either side is an aeviva account, and nothing is merged
     now += 61e3;
     await handleEmailOtpSend({ email: 'fresh@x.io' });
     const r2 = await handleEmailOtpBind({ user_id: 'av', email: 'fresh@x.io', code: lastCode() });
-    assert.deepStrictEqual(r2, { success: false, error: 'channel_not_supported' });
+    assert.strictEqual(r2.success, true, JSON.stringify(r2));
 });
 
 test('normalizeEmail', () => {

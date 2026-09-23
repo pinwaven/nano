@@ -90,6 +90,22 @@ function verifyUserToken(token) {
     return data && typeof data.sub === 'string' ? data : null;
 }
 
+// Short-lived proof that a browser login identifier has already passed OTP verification.
+// New web users use it to submit a coach invitation code without asking for or replaying the
+// one-time code. It carries no user session authority and is accepted only by the matching
+// phone/email signup handler.
+const SIGNUP_PROOF_TTL_SECONDS = 10 * 60;
+
+function signSignupProof(kind, identifier, language = 'zh') {
+    return signToken('signup', { kind, identifier, language }, SIGNUP_PROOF_TTL_SECONDS);
+}
+
+function verifySignupProof(token, kind, identifier) {
+    const data = verifyToken(token, 'signup');
+    if (!data || data.kind !== kind || data.identifier !== identifier) return null;
+    return data;
+}
+
 // All permissions a root channel admin holds (hardcoded — no manual config needed).
 // Does not include superadmin-only features (global channels, dots, chips hardware, etc.).
 const CHANNEL_ADMIN_FULL_PERMS = [
@@ -207,6 +223,8 @@ module.exports = {
     verifySuperadminToken,
     signUserToken,
     verifyUserToken,
+    signSignupProof,
+    verifySignupProof,
     CHANNEL_ADMIN_FULL_PERMS,
     LEGACY_TAB_EXPANSION,
     expandPermissions,

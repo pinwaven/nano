@@ -51,7 +51,9 @@ export function AppProvider({ children }) {
   const [textScale, setTextScaleState] = useState(() => Number(storage.get(K.textScale) || 0));
   const [lang, setLangState] = useState(() => {
     const u = storage.get(K.user); const c = storage.get(K.channel);
-    return u?.language === 'en' ? 'en' : (c?.locale === 'en' ? 'en' : 'zh');
+    if (u) return u.language === 'en' ? 'en' : 'zh';
+    if (c) return c.locale === 'en' ? 'en' : 'zh';
+    return 'en';
   });
   const [viva, setViva] = useState({ personaType: 'nano', expiresAt: null, expired: false, expiresAtDisplay: '', vivaAgActive: false });
   const [credits, setCredits] = useState({ balance: 0, currency: 'CNY' });

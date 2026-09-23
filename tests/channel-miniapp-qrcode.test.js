@@ -76,6 +76,23 @@ test('channel-branding rejects a missing or non-numeric id and 404s an unknown o
     assert.equal(r.error, 'channel_not_found');
 });
 
+test('channel-branding resolves a public slug with a bound query parameter', async () => {
+    rows = { 'FROM channels WHERE key_name': [CHANNEL] };
+    const r = await handleGetChannelBranding({ key_name: 'superiormed' });
+    assert.equal(r.success, true);
+    assert.deepEqual(queries[0].params, ['superiormed']);
+    assert.match(queries[0].sql, /WHERE key_name = \$1/);
+    assert.deepEqual(Object.keys(r.channel).sort(), ['id', 'key_name', 'locale', 'logo_url', 'name']);
+});
+
+test('channel-branding rejects malformed selectors and handles unknown slugs', async () => {
+    for (const query of [{ key_name: "x' OR 1=1" }, { id: '7junk' }, { key_name: ' ' }]) {
+        assert.equal((await handleGetChannelBranding(query)).statusCode, 400);
+    }
+    assert.equal(queries.length, 0);
+    assert.equal((await handleGetChannelBranding({ key_name: 'missing' })).statusCode, 404);
+});
+
 // ---- /channels/:id/miniapp-qrcode ----------------------------------------------------------------
 
 function fakeWx(handler) {

@@ -11,12 +11,19 @@ is `TODO.md` → "Security: Client Auth & Unauthenticated Takeover Paths".
 | `u.<payload>.<hmac>` | a signed-in miniapp / web user-app user | `role:'user'` + `adminCtx.user` | `lib/userAccess.js` route allowlist + identity checks |
 | `sa.<payload>.<hmac>` | web admin panel superadmin (`/admin/login`) | `role:'superadmin'` | everything; the kino function accepts it too |
 | `ch.<payload>.<hmac>` | web admin panel channel admin | `role:'channel'` | `requirePermission` per route |
+| `signup.<payload>.<hmac>` | browser between successful OTP and new-account creation | no API role | accepted only by the matching phone/email verify handler for 10 minutes |
 | `GCN_API_TOKEN` / `VIVA_AG_API_TOKEN` / `DOC_EXTRACT_API_TOKEN` | the three services | `role:'superadmin'` | exact-path allowlists in the gate |
 | `API_BEARER_TOKEN` | **legacy** — compiled into old miniapp builds | `role:'superadmin'`, `legacyAppBearer` | everything, logged as `legacy_app_bearer`; off with `LEGACY_APP_BEARER=reject` |
 
 `u.`/`sa.`/`ch.` are signed by `lib/auth.js` `signToken()` with **`TOKEN_SIGNING_SECRET`**
 (`TOKEN_SIGNING_SECRET_PROD` on prod, deliberately different). Never with `API_BEARER_TOKEN` —
 it is public (git history, old builds). Unset secret → signing throws, verifying returns null.
+
+`signup.` is also signed by `TOKEN_SIGNING_SECRET`, but it is not a session credential and the
+request gate gives it no authority. It only proves that one normalized phone or email already
+passed OTP, allowing the new-user invitation step without replaying the one-time code. It is
+bound to the identifier and login type, expires after ten minutes, and is refused once that
+account exists.
 
 `adminCtx` starts `role:'anonymous'`; only a recognised credential raises it. No credential on a
 non-public route is 401.

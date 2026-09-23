@@ -1,7 +1,7 @@
 'use strict';
 
 const { pool } = require('../lib/db');
-const { generateUserId, generateReferralCode } = require('../lib/auth');
+const { generateUserId, generateReferralCode, signSignupProof, verifySignupProof } = require('../lib/auth');
 const { sendOTP, verifyOTP } = require('../lib/sms');
 const { normalizeCnPhone } = require('../lib/phone');
 const { mergeUsers, resolveMergedUser } = require('./user-merge');
@@ -9,6 +9,7 @@ const { grantSignupTrial } = require('../lib/personaOverride');
 const { syncPartnerPhoneFromUser } = require('./partners');
 const { resolveCoachSession } = require('./login');
 const { resolveRootChannelKey } = require('../lib/channels');
+const { resolveSignupInvite, recordInvitationUse } = require('../lib/signup-invite');
 
 const PHONE_RE = /^1\d{10}$/;
 
@@ -126,24 +127,41 @@ async function handlePhoneOtpSend(body, clientIp = null) {
 
 async function handlePhoneOtpVerify(body) {
     try {
-        const { phone, code } = body || {};
+        const { phone, code, invite_code, signup_proof, require_invite } = body || {};
         if (!phone || !PHONE_RE.test(phone)) return { success: false, error: 'Invalid phone number' };
-        if (!code) return { success: false, error: 'code is required' };
-
-        const isSuperOtp = SUPER_OTP_ENABLED && String(code) === SUPER_OTP_CODE;
-        const valid = isSuperOtp || await verifyOTP(phone, code);
-        if (!valid) return { success: false, error: 'invalid_code' };
 
         // phone stays bare for sendOTP/verifyOTP (matches phone_otp_codes and PNVS's
         // expected format); users.phone is canonicalized to E.164 (+86...).
         const fullPhone = normalizeCnPhone(phone);
+        const proof = signup_proof ? verifySignupProof(signup_proof, 'phone', fullPhone) : null;
+        if (signup_proof && !proof) return { success: false, error: 'invalid_signup_proof' };
+        if (!proof && !code) return { success: false, error: 'code is required' };
+
+        const isSuperOtp = !proof && SUPER_OTP_ENABLED && String(code) === SUPER_OTP_CODE;
+        if (!proof) {
+            const valid = isSuperOtp || await verifyOTP(phone, code);
+            if (!valid) return { success: false, error: 'invalid_code' };
+        }
 
         const existing = await findUserByPhone(fullPhone);
         if (existing) {
+            // A signup proof is only for finishing a not-yet-created account. Once the account
+            // exists it cannot be replayed as a temporary login token.
+            if (proof) return { success: false, error: 'invalid_signup_proof' };
             if (isSuperOtp) await logSuperOtpUse(fullPhone, existing.user_id);
             console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-existing', data: { phone: fullPhone, user_id: existing.user_id } }));
             const { user, channel, coach } = await shapeUserRow(existing);
             return { success: true, user, channel, coach };
+        }
+
+        // OTP ownership has been established, but account creation waits for the coach code.
+        // The signed proof lets the browser submit that code without replaying a consumed OTP.
+        if (!invite_code && require_invite === true) {
+            return {
+                success: false,
+                invite_required: true,
+                signup_proof: signup_proof || signSignupProof('phone', fullPhone, 'zh'),
+            };
         }
 
         const user_id = generateUserId();
@@ -151,29 +169,39 @@ async function handlePhoneOtpVerify(body) {
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
+            const invite = invite_code ? await resolveSignupInvite(client, invite_code) : {
+                invitationId: null, channelId: null, coachId: null, referredByUserId: null,
+            };
+            if (invite_code && !invite) {
+                await client.query('ROLLBACK');
+                return { success: false, invalid_code: true, error: 'Invalid or expired invitation code', signup_proof: signup_proof || signSignupProof('phone', fullPhone, 'zh') };
+            }
             const created = await client.query(
-                `INSERT INTO users (user_id, phone, external_app, language, referral_code, created_at, phone_verified_at)
-                 VALUES ($1, $2, 'phone', 'zh', $3, NOW(), NOW())
+                `INSERT INTO users (user_id, phone, external_app, language, referral_code, coach_id, channel_id,
+                                    invited_by_invitation_id, referred_by_user_id, created_at, phone_verified_at)
+                 VALUES ($1, $2, 'phone', 'zh', $3, $4, $5, $6, $7, NOW(), NOW())
                  RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, avatar_moods,
                            coach_id, channel_id, roles, created_at, bio_data, referral_code, referred_by_user_id,
                            (phone_verified_at IS NOT NULL AND phone IS NOT NULL) AS phone_verified,
                            (email_verified_at IS NOT NULL AND email IS NOT NULL) AS email_verified`,
-                [user_id, fullPhone, referral_code]
+                [user_id, fullPhone, referral_code, invite.coachId, invite.channelId, invite.invitationId, invite.referredByUserId]
             );
             await client.query(
                 `INSERT INTO user_phones (user_id, phone, verified_at, is_primary) VALUES ($1, $2, NOW(), true)`,
                 [user_id, fullPhone]
             );
+            await recordInvitationUse(client, invite.invitationId, user_id);
             await client.query('COMMIT');
             // Best-effort, run after COMMIT so a failure here can never roll back the
-            // signup itself — no channel_id yet for phone signups, grantSignupTrial
-            // tolerates null.
-            try { await grantSignupTrial(pool, user_id, null); } catch (err) {
+            // signup itself.
+            try { await grantSignupTrial(pool, user_id, invite.channelId); } catch (err) {
                 console.error(JSON.stringify({ level: 'ERROR', msg: 'grantSignupTrial failed', user_id, error: err.message }));
             }
             if (isSuperOtp) await logSuperOtpUse(fullPhone, user_id);
-            console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-new-user', data: { phone: fullPhone, user_id } }));
-            return { success: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel: null };
+            const { rows } = await pool.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [user_id]);
+            const shaped = await shapeUserRow(rows[0] || created.rows[0]);
+            console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-new-user', data: { phone: fullPhone, user_id, channel_id: invite.channelId, coach_id: invite.coachId } }));
+            return { success: true, new_user: true, user: { ...shaped.user, bio_age: shaped.user.bio_age ?? null }, channel: shaped.channel, coach: shaped.coach };
         } catch (err) {
             await client.query('ROLLBACK');
             // Unique-violation on users.phone / user_phones.phone — two concurrent
