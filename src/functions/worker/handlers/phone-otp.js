@@ -1,7 +1,7 @@
 'use strict';
 
 const { pool } = require('../lib/db');
-const { generateUserId, generateReferralCode } = require('../lib/auth');
+const { generateUserId, generateReferralCode, signSignupProof, verifySignupProof } = require('../lib/auth');
 const { sendOTP, verifyOTP } = require('../lib/sms');
 const { normalizeCnPhone } = require('../lib/phone');
 const { mergeUsers, resolveMergedUser } = require('./user-merge');
@@ -9,18 +9,20 @@ const { grantSignupTrial } = require('../lib/personaOverride');
 const { syncPartnerPhoneFromUser } = require('./partners');
 const { resolveCoachSession } = require('./login');
 const { resolveRootChannelKey } = require('../lib/channels');
+const { resolveSignupInvite, recordInvitationUse } = require('../lib/signup-invite');
 
 const PHONE_RE = /^1\d{10}$/;
 
 // Admin-impersonation "super OTP" — accepting this code for ANY phone in handlePhoneOtpVerify
 // logs the caller in as that phone's account, for reproducing a specific user's issue without
-// their phone. Hardcoded, not env-configurable — SUPER_OTP_ENABLED is a pure kill switch,
-// independent of the code value. Scoped ONLY to handlePhoneOtpVerify's login path — verifyOTP()
-// itself must never accept this, since it's also called from handlePhoneOtpBind, which is
-// reachable with no auth at all and takes user_id straight from the request body: a universal
-// bypass there would let anyone attach any phone number to any account.
-const SUPER_OTP_ENABLED = process.env.SUPER_OTP_ENABLED === 'true';
-const SUPER_OTP_CODE = '761111';
+// their phone. The code is the SUPER_OTP_CODE env secret (it used to be a source literal, which
+// made it public); SUPER_OTP_ENABLED stays the kill switch, and an unset or short code disables
+// the feature rather than accepting something guessable. Scoped ONLY to the login paths
+// (handlePhoneOtpVerify, handleEmailOtpVerify) — verifyOTP() itself must never accept it, since
+// it is also called from the bind handlers, and a universal bypass there would let anyone attach
+// any phone number to any account.
+const SUPER_OTP_CODE = String(process.env.SUPER_OTP_CODE || '');
+const SUPER_OTP_ENABLED = process.env.SUPER_OTP_ENABLED === 'true' && SUPER_OTP_CODE.length >= 6;
 
 // Records a completed super-OTP login. Fires from all three success paths in
 // handlePhoneOtpVerify (existing user, brand-new user, race-recovery re-fetch).
@@ -33,8 +35,9 @@ async function logSuperOtpUse(phone, userId) {
 
 const USER_SELECT = `
     SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
-           u.avatar_url, u.avatar_character, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
-           u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
+           u.avatar_url, u.avatar_character, u.avatar_moods, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
+           u.referred_by_user_id, u.merged_into_user_id,
+           (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
            (u.email_verified_at IS NOT NULL AND u.email IS NOT NULL) AS email_verified, b.bio_age,
            cu.nickname AS coach_name,
            c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
@@ -56,7 +59,22 @@ const USER_SELECT = `
 // gates the GCN store and email login on, since a waven-china-zj user is a Waven user.
 // Shared with handlers/email-otp.js.
 async function shapeUserRow(row) {
-    const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = row;
+    // All phone/email/QR login responses pass through this shaper. Identity tables normally
+    // move to the survivor during a merge, but resolving again here also covers a QR session
+    // that was confirmed with a cached loser user_id and any FK row that could not be repointed.
+    // The response and the session minted from it must both name the active account.
+    const seen = new Set();
+    while (row?.merged_into_user_id && !seen.has(row.user_id)) {
+        seen.add(row.user_id);
+        const { rows } = await pool.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [row.merged_into_user_id]);
+        if (!rows.length) break;
+        row = rows[0];
+    }
+    const {
+        channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale,
+        merged_into_user_id: _mergedIntoUserId,
+        ...user
+    } = row;
     const channel = channel_name
         ? { name: channel_name, key_name: channel_key, root_key_name: await resolveRootChannelKey(user.channel_id), logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
         : null;
@@ -77,10 +95,42 @@ async function findUserByPhone(phone) {
     return rows[0] || null;
 }
 
-async function handlePhoneOtpSend(body) {
+// Same per-address limits as lib/email-otp.js, plus a per-IP cap because the cost vector here
+// is spraying many different numbers from one client. IP is FC's requestContext.http.sourceIp
+// (index.js) — never X-Forwarded-For, which the client controls; when absent, only the
+// per-phone limits apply.
+const SEND_MIN_INTERVAL_SECONDS = 60;
+const SEND_HOURLY_MAX_PER_PHONE = 5;
+const SEND_HOURLY_MAX_PER_IP = 30;  // generous: a clinic or carrier NAT shares one IP
+
+async function checkPhoneOtpSendLimit(phone, clientIp) {
+    const { rows } = await pool.query(
+        `SELECT COUNT(*) FILTER (WHERE phone = $1 AND created_at > NOW() - INTERVAL '${SEND_MIN_INTERVAL_SECONDS} seconds')::int AS recent,
+                COUNT(*) FILTER (WHERE phone = $1)::int AS phone_hourly,
+                COUNT(*) FILTER (WHERE $2::text IS NOT NULL AND client_ip = $2)::int AS ip_hourly
+         FROM phone_otp_send_log
+         WHERE (phone = $1 OR ($2::text IS NOT NULL AND client_ip = $2))
+           AND created_at > NOW() - INTERVAL '1 hour'`,
+        [phone, clientIp || null]
+    );
+    const { recent, phone_hourly, ip_hourly } = rows[0];
+    if (recent > 0) return { ok: false, retry_after: SEND_MIN_INTERVAL_SECONDS };
+    if (phone_hourly >= SEND_HOURLY_MAX_PER_PHONE || ip_hourly >= SEND_HOURLY_MAX_PER_IP) return { ok: false, retry_after: 3600 };
+    return { ok: true };
+}
+
+async function handlePhoneOtpSend(body, clientIp = null) {
     try {
         const { phone } = body || {};
         if (!phone || !PHONE_RE.test(phone)) return { success: false, error: 'Invalid phone number' };
+
+        const limit = await checkPhoneOtpSendLimit(phone, clientIp);
+        if (!limit.ok) {
+            console.log(JSON.stringify({ level: 'WARN', msg: 'phone-otp-rate-limited', data: { phone, client_ip: clientIp } }));
+            return { success: false, error: 'rate_limited', retry_after: limit.retry_after };
+        }
+        // Logged before the send, so a failing SMS still counts against the limit.
+        await pool.query('INSERT INTO phone_otp_send_log (phone, client_ip) VALUES ($1, $2)', [phone, clientIp || null]);
 
         await sendOTP(phone);
         console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-sent', data: { phone } }));
@@ -93,24 +143,41 @@ async function handlePhoneOtpSend(body) {
 
 async function handlePhoneOtpVerify(body) {
     try {
-        const { phone, code } = body || {};
+        const { phone, code, invite_code, signup_proof, require_invite } = body || {};
         if (!phone || !PHONE_RE.test(phone)) return { success: false, error: 'Invalid phone number' };
-        if (!code) return { success: false, error: 'code is required' };
-
-        const isSuperOtp = SUPER_OTP_ENABLED && String(code) === SUPER_OTP_CODE;
-        const valid = isSuperOtp || await verifyOTP(phone, code);
-        if (!valid) return { success: false, error: 'invalid_code' };
 
         // phone stays bare for sendOTP/verifyOTP (matches phone_otp_codes and PNVS's
         // expected format); users.phone is canonicalized to E.164 (+86...).
         const fullPhone = normalizeCnPhone(phone);
+        const proof = signup_proof ? verifySignupProof(signup_proof, 'phone', fullPhone) : null;
+        if (signup_proof && !proof) return { success: false, error: 'invalid_signup_proof' };
+        if (!proof && !code) return { success: false, error: 'code is required' };
+
+        const isSuperOtp = !proof && SUPER_OTP_ENABLED && String(code) === SUPER_OTP_CODE;
+        if (!proof) {
+            const valid = isSuperOtp || await verifyOTP(phone, code);
+            if (!valid) return { success: false, error: 'invalid_code' };
+        }
 
         const existing = await findUserByPhone(fullPhone);
         if (existing) {
+            // A signup proof is only for finishing a not-yet-created account. Once the account
+            // exists it cannot be replayed as a temporary login token.
+            if (proof) return { success: false, error: 'invalid_signup_proof' };
             if (isSuperOtp) await logSuperOtpUse(fullPhone, existing.user_id);
             console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-existing', data: { phone: fullPhone, user_id: existing.user_id } }));
             const { user, channel, coach } = await shapeUserRow(existing);
             return { success: true, user, channel, coach };
+        }
+
+        // OTP ownership has been established, but account creation waits for the coach code.
+        // The signed proof lets the browser submit that code without replaying a consumed OTP.
+        if (!invite_code && require_invite === true) {
+            return {
+                success: false,
+                invite_required: true,
+                signup_proof: signup_proof || signSignupProof('phone', fullPhone, 'zh'),
+            };
         }
 
         const user_id = generateUserId();
@@ -118,29 +185,39 @@ async function handlePhoneOtpVerify(body) {
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
+            const invite = invite_code ? await resolveSignupInvite(client, invite_code) : {
+                invitationId: null, channelId: null, coachId: null, referredByUserId: null,
+            };
+            if (invite_code && !invite) {
+                await client.query('ROLLBACK');
+                return { success: false, invalid_code: true, error: 'Invalid or expired invitation code', signup_proof: signup_proof || signSignupProof('phone', fullPhone, 'zh') };
+            }
             const created = await client.query(
-                `INSERT INTO users (user_id, phone, external_app, language, referral_code, created_at, phone_verified_at)
-                 VALUES ($1, $2, 'phone', 'zh', $3, NOW(), NOW())
-                 RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character,
+                `INSERT INTO users (user_id, phone, external_app, language, referral_code, coach_id, channel_id,
+                                    invited_by_invitation_id, referred_by_user_id, created_at, phone_verified_at)
+                 VALUES ($1, $2, 'phone', 'zh', $3, $4, $5, $6, $7, NOW(), NOW())
+                 RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, avatar_moods,
                            coach_id, channel_id, roles, created_at, bio_data, referral_code, referred_by_user_id,
                            (phone_verified_at IS NOT NULL AND phone IS NOT NULL) AS phone_verified,
                            (email_verified_at IS NOT NULL AND email IS NOT NULL) AS email_verified`,
-                [user_id, fullPhone, referral_code]
+                [user_id, fullPhone, referral_code, invite.coachId, invite.channelId, invite.invitationId, invite.referredByUserId]
             );
             await client.query(
                 `INSERT INTO user_phones (user_id, phone, verified_at, is_primary) VALUES ($1, $2, NOW(), true)`,
                 [user_id, fullPhone]
             );
+            await recordInvitationUse(client, invite.invitationId, user_id);
             await client.query('COMMIT');
             // Best-effort, run after COMMIT so a failure here can never roll back the
-            // signup itself — no channel_id yet for phone signups, grantSignupTrial
-            // tolerates null.
-            try { await grantSignupTrial(pool, user_id, null); } catch (err) {
+            // signup itself.
+            try { await grantSignupTrial(pool, user_id, invite.channelId); } catch (err) {
                 console.error(JSON.stringify({ level: 'ERROR', msg: 'grantSignupTrial failed', user_id, error: err.message }));
             }
             if (isSuperOtp) await logSuperOtpUse(fullPhone, user_id);
-            console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-new-user', data: { phone: fullPhone, user_id } }));
-            return { success: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel: null };
+            const { rows } = await pool.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [user_id]);
+            const shaped = await shapeUserRow(rows[0] || created.rows[0]);
+            console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-new-user', data: { phone: fullPhone, user_id, channel_id: invite.channelId, coach_id: invite.coachId } }));
+            return { success: true, new_user: true, user: { ...shaped.user, bio_age: shaped.user.bio_age ?? null }, channel: shaped.channel, coach: shaped.coach };
         } catch (err) {
             await client.query('ROLLBACK');
             // Unique-violation on users.phone / user_phones.phone — two concurrent

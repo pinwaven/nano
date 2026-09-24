@@ -21,7 +21,9 @@
       "Bash(mkdir -p img)",
       "Bash(rm -f img/*)",
       "Bash(pdftoppm -r 40 -png 吕品Pin_全维度健康分析报告_2026-09-16.pdf img/p)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(pdftoppm -r 40 -png \"乔通宇_全维度健康分析报告_2026-09-21.pdf\" img/p)",
+      "Bash(python3 -)"
     ]
   },
   "enabledPlugins": {

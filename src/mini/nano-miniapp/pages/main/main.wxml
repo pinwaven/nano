@@ -44,16 +44,7 @@
         <text class="menu-item-label">{{t.coachMenu}}</text>
       </view>
       <view wx:if="{{isAdmin}}" class="menu-divider"></view>
-      <view wx:if="{{isAdmin}}" class="menu-item" bindtap="openAdmin">
-        <text class="menu-item-icon">⚙</text>
-        <text class="menu-item-label">{{t.adminMenu}}</text>
-      </view>
-      <view wx:if="{{isSuperadmin}}" class="menu-divider"></view>
-      <view wx:if="{{isSuperadmin}}" class="menu-item" bindtap="openSuperadmin">
-        <text class="menu-item-icon">🌐</text>
-        <text class="menu-item-label">{{t.superadminMenu}}</text>
-      </view>
-      <view wx:if="{{isSuperadmin}}" class="menu-item" bindtap="openWebAdmin">
+      <view wx:if="{{isAdmin}}" class="menu-item" bindtap="openWebAdmin">
         <text class="menu-item-icon">🖥</text>
         <text class="menu-item-label">{{t.webAdminMenu}}</text>
       </view>
@@ -454,7 +445,7 @@
                         <text class="pcard-arrow">›</text>
                       </view>
                     </view>
-                    <!-- :::grocery — supermarket products for a diet suggestion (CLAUDE.md §44).
+                    <!-- :::grocery — supermarket products for a diet suggestion (CLAUDE.md §46).
                          Server-written rows with a thumbnail; a tap copies the product name so the
                          user can search it in the supermarket's own app. -->
                     <view wx:elif="{{seg.t === 'grocery'}}" class="gcard">
@@ -769,6 +760,7 @@
         text-scale="{{textScale}}"
         viva-ag-enabled="{{vivaAgActive}}"
         bindchooseavatar="handleHealthChooseAvatar"
+        bindcustomavatar="handleHealthCustomAvatar"
         bindguesttap="openGuestSheet"
         bind:gotochat="handleAgGoToChat"
         bind:textscalestep="onTextScaleStep"

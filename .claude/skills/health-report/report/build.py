@@ -54,9 +54,19 @@ html = (f'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>{
         f'<style>{css}</style></head><body>{render_pages(meta.FOOTER)}</body></html>')
 base = os.path.join(WORK, meta.OUTPUT_BASENAME)
 open(base + '.html', 'w', encoding='utf-8').write(html)
-chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-r = subprocess.run([chrome, '--headless=new', '--disable-gpu', '--no-pdf-header-footer', f'--print-to-pdf={base}.pdf', base + '.html'],
+import shutil
+chrome = os.environ.get('CHROME') or next((c for c in ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', shutil.which('google-chrome'), shutil.which('google-chrome-stable'), shutil.which('chromium'), shutil.which('chromium-browser')] if c and os.path.exists(c)), None)
+if not chrome: print('no Chrome/Chromium found — set CHROME=<path>'); sys.exit(1)
+src_html, out_pdf = base + '.html', base + '.pdf'
+stage = None
+if '/snap/' in chrome:   # snap confinement: no /tmp access — stage through the snap's own writable dir
+    stage = os.path.expanduser('~/snap/chromium/common/health-report'); os.makedirs(stage, exist_ok=True)
+    src_html, out_pdf = os.path.join(stage, 'report.html'), os.path.join(stage, 'report.pdf')
+    shutil.copyfile(base + '.html', src_html)
+    if os.path.exists(out_pdf): os.remove(out_pdf)
+r = subprocess.run([chrome, '--headless=new', '--disable-gpu', '--no-pdf-header-footer', f'--print-to-pdf={out_pdf}', src_html],
                    capture_output=True, text=True)
+if stage and os.path.exists(out_pdf): shutil.move(out_pdf, base + '.pdf'); os.remove(src_html)
 ok = os.path.exists(base + '.pdf')
 print(f'pages: {len(PAGES)} | pdf: {base}.pdf | written: {ok}')
 if not ok: print(r.stderr[-2000:]); sys.exit(1)

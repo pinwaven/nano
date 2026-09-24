@@ -447,7 +447,7 @@ Component({
           typeLabel: this._typeLabel(d.doc_type),
           sizeLabel: this._sizeLabel(d.size_bytes),
           extLabel: this._extLabel(d.extraction),
-          extBusy: !!d.extraction && ['queued', 'claimed', 'processing'].includes(d.extraction.status),
+          extBusy: !!d.extraction && ['queued', 'claimed', 'processing', 'grouped'].includes(d.extraction.status),
           extDone: !!d.extraction && d.extraction.status === 'completed',
           extNone: !d.extraction,
           extFailed: !!d.extraction && d.extraction.status === 'failed',

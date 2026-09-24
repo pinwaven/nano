@@ -1,8 +1,10 @@
 // HTTP client mirroring the miniapp's utils/request.js (typed errors) and main.js:_req
-// (sandbox injection, per-call timeout). Identity is the shared app bearer plus an
-// `openid`/`user_id` param — there is no per-user session token (see CLAUDE.md / TODO.md).
+// (sandbox injection, per-call timeout). Identity is the signed-in user's own session
+// (session.js); the `openid`/`user_id` params still name whose data, and the server checks
+// that the session may act for that user.
 import axios from 'axios';
 import { API } from './config.js';
+import { getSessionToken, reportAuthFailure } from './session.js';
 
 export class RequestError extends Error {
   constructor(kind, message, statusCode, data) {
@@ -23,9 +25,13 @@ const http = axios.create({
   validateStatus: () => true,
 });
 http.interceptors.request.use(cfg => {
-  const token = import.meta.env.VITE_API_TOKEN;
+  const token = getSessionToken();
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
   return cfg;
+});
+http.interceptors.response.use(res => {
+  if (res.status === 401) reportAuthFailure();
+  return res;
 });
 
 /**

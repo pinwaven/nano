@@ -26,12 +26,16 @@ const COACH_ROW = {
     channel_sub_age_names: null, channel_locale: 'zh',
 };
 const PLAIN_ROW = { ...COACH_ROW, user_id: 'plainuser', nickname: '普通用户', roles: ['user'] };
+const MERGED_ROW = { ...PLAIN_ROW, user_id: 'inactive', merged_into_user_id: COACH_ROW.user_id };
 
 let userRow = COACH_ROW;
 
 const pool = {
     query: async (sql, params) => {
         if (/JOIN user_phones up/.test(sql)) return { rows: userRow ? [userRow] : [] };
+        if (/WHERE u\.user_id = \$1 LIMIT 1/.test(sql) && params[0] === COACH_ROW.user_id) {
+            return { rows: [COACH_ROW] };
+        }
         // The coach-identity lookup under test.
         if (/FROM coaches c JOIN users u2/.test(sql)) {
             return { rows: params[0] === COACH_ROW.user_id ? [{ id: 44, channel_id: 2, user_id: COACH_ROW.user_id }] : [] };
@@ -76,6 +80,14 @@ const run = async (name, fn) => { await fn(); console.log(`  ok  ${name}`); };
         assert.ok(res.user.roles.includes('coach'), 'roles drive the panel permission check');
         assert.strictEqual(res.channel.key_name, 'aeviva-china');
         assert.ok(!('channel_name' in res.user), 'channel fields must stay stripped out of user');
+    });
+
+    await run('a phone login row that lost a merge lands on the active survivor', async () => {
+        userRow = MERGED_ROW;
+        const res = await handlePhoneOtpVerify({ phone: '13818058348', code: '123456' });
+        assert.strictEqual(res.user.user_id, COACH_ROW.user_id);
+        assert.strictEqual(res.channel.key_name, 'aeviva-china');
+        assert.strictEqual(res.coach.id, 44);
     });
 
     console.log('\nall coach-session login tests passed');

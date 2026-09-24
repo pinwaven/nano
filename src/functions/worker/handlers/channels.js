@@ -5,7 +5,81 @@ const {
     signChannelAdminToken,
     CHANNEL_ADMIN_FULL_PERMS,
     expandPermissions,
+    getWxAccessToken,
 } = require('../lib/auth');
+
+// GET /channel-branding?id=<channels.id> — the public display fields of one channel, read by
+// the miniapp login page BEFORE any login when it was opened from a channel QR code
+// (scene `ch:<id>`, see pages/login/login.js). Only what the login response already returns
+// to every user of that channel (name/logo/locale) — nothing operational. Keyed on the numeric
+// id so a printed QR survives a channel rename; web landing links may use key_name.
+async function handleGetChannelBranding(query) {
+    const id = Number(query?.id);
+    const key = typeof query?.key_name === 'string' ? query.key_name.trim() : '';
+    const byKey = query?.id == null && /^[a-zA-Z0-9_-]{1,100}$/.test(key);
+    if (!byKey && (!Number.isSafeInteger(id) || id <= 0)) return { statusCode: 400, success: false, error: 'id or key_name is required' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query(
+            `SELECT id, name, key_name, effective_channel_logo(id) AS logo_url,
+                    effective_channel_config(id, 'locale') #>> '{}' AS locale
+             FROM channels WHERE ${byKey ? 'key_name' : 'id'} = $1 LIMIT 1`,
+            [byKey ? key : id]
+        );
+        if (rows.length === 0) return { statusCode: 404, success: false, error: 'channel_not_found' };
+        const c = rows[0];
+        return { success: true, channel: { id: c.id, name: c.name, key_name: c.key_name, logo_url: c.logo_url || null, locale: c.locale || 'zh' } };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetChannelBranding failed', data: { id, error: err.message } }));
+        return { success: false, error: err.message };
+    }
+}
+
+// GET /channels/:id/miniapp-qrcode — a WeChat 小程序码 for the ROOT (Waven) miniprogram that
+// opens pages/login/login with scene `ch:<id>`, so the login screen shows this channel's logo
+// and a brand-new scanner is assigned to it (channel_slug fallback in handlers/login.js).
+// Always minted against WX_APPID_WAVEN: the brand-specific builds (aeviva/fusion appids) get
+// their branding from utils/config.js's APPID_TO_CHANNEL and don't need a scene. Returned as
+// base64 JSON rather than image bytes so the admin panel can drop it in an <img> and the
+// caller can save it; wxacode.getUnlimited codes never expire, so nothing is cached here.
+async function handleGetChannelMiniappQrcode(channelId, adminCtx) {
+    const id = parseInt(channelId, 10);
+    if (!Number.isInteger(id) || id <= 0) return { statusCode: 400, success: false, error: 'invalid channel id' };
+    if (adminCtx?.role === 'channel' && id !== adminCtx.channelId) {
+        const owns = await verifySubchannelOwnership(id, adminCtx);
+        if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
+    }
+    const appid = process.env.WX_APPID_WAVEN || process.env.WX_APPID;
+    const secret = process.env.WX_APPID_WAVEN ? process.env.WX_SECRET_WAVEN : process.env.WX_SECRET;
+    if (!appid || !secret) return { success: false, error: 'WeChat root miniprogram credentials not configured' };
+    try {
+        if (!pool) return { success: false, error: 'Database pool not initialized' };
+        const { rows } = await pool.query('SELECT id, name, key_name FROM channels WHERE id = $1 LIMIT 1', [id]);
+        if (rows.length === 0) return { statusCode: 404, success: false, error: 'channel_not_found' };
+        const scene = `ch:${id}`;
+        const page = 'pages/login/login';
+        const token = await getWxAccessToken(appid, secret);
+        const res = await fetch(`https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // check_path=false: the code must be mintable before a build that contains the page
+            // is released; env_version stays 'release' so scanning opens the published app.
+            body: JSON.stringify({ scene, page, check_path: false, env_version: 'release', width: 430 }),
+        });
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json') || ct.includes('text/plain')) {
+            const data = await res.json().catch(() => ({}));
+            const msg = `WX wxacode error: ${data.errmsg || 'unknown'} (${data.errcode ?? '?'})`;
+            console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetChannelMiniappQrcode wxacode failed', data: { id, appid, errcode: data.errcode, errmsg: data.errmsg } }));
+            return { success: false, error: msg };
+        }
+        const buf = Buffer.from(await res.arrayBuffer());
+        return { success: true, channel: rows[0], appid, scene, page, content_type: ct || 'image/jpeg', image_base64: buf.toString('base64') };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'ERROR', msg: 'handleGetChannelMiniappQrcode failed', data: { id, error: err.message } }));
+        return { success: false, error: err.message };
+    }
+}
 
 async function handleGetChannels(adminCtx) {
     try {
@@ -515,6 +589,8 @@ async function handlePutChannelPartnerTiersPermission(channelId, body, adminCtx)
 }
 
 module.exports = {
+    handleGetChannelBranding,
+    handleGetChannelMiniappQrcode,
     handleGetChannels,
     handlePostChannel,
     handlePutChannel,

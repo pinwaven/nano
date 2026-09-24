@@ -2,10 +2,12 @@ const { pool } = require('../lib/db');
 const { resolveEffectivePersona } = require('../lib/persona');
 const OpenAI = require('openai');
 const { getPersonaSettings } = require('./personaSettings');
+// Pure formatter, kept in lib/ so the twin function can share it without this handler's deps.
+const { formatQuestionnaireContext } = require('../lib/questionnaireContext');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
-    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    baseURL: `${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/compatible-mode/v1`,
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,28 +17,6 @@ const getLlmClient = () => new OpenAI({
 // Helper: get nested value from object by dot-path (e.g. "actual.weight")
 function getNestedPath(obj, dotPath) {
     return dotPath.split('.').reduce((cur, k) => (cur != null ? cur[k] : undefined), obj);
-}
-
-function formatQuestionnaireContext(rows, language) {
-    if (!rows || rows.length === 0) return null;
-    const isZh = language === 'zh';
-    const grouped = {};
-    for (const r of rows) {
-        const qName = isZh ? (r.name_zh || r.name) : r.name;
-        if (!grouped[qName]) grouped[qName] = [];
-        let answer = r.answer;
-        if (Array.isArray(answer)) answer = answer.join(', ');
-        else if (typeof answer === 'object' && answer !== null) answer = Object.entries(answer).map(([k, v]) => `${k}: ${v}`).join(', ');
-        else answer = String(answer ?? '—');
-        const question = isZh ? (r.prompt_zh || r.prompt_en) : (r.prompt_en || r.prompt_zh);
-        grouped[qName].push(`  ${question}: ${answer}`);
-    }
-    const lines = [isZh ? '用户问卷回答（由护理团队收集）：' : 'QUESTIONNAIRE RESPONSES (collected by care team):'];
-    for (const [name, items] of Object.entries(grouped)) {
-        lines.push(`[${name}]`);
-        lines.push(...items);
-    }
-    return lines.join('\n');
 }
 
 // GET /api/pending-questionnaires?openid={user_id}

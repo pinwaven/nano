@@ -5380,7 +5380,7 @@ button.consent-row::after { border: none; }
   line-height: 1;
 }
 
-/* :::grocery — supermarket products for a diet suggestion (CLAUDE.md §44). Same shell as
+/* :::grocery — supermarket products for a diet suggestion (CLAUDE.md §46). Same shell as
    .pcard, with a thumbnail column. */
 .gcard {
   margin: 14rpx 0 18rpx;

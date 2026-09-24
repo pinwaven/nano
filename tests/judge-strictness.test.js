@@ -151,3 +151,79 @@ test('today and the test date in one reply yields only the test date', () => {
     extractDateMentions('今天是2026年8月22日。你的检测日期为2026年8月18日。'),
     ['2026-08-18']);
 });
+
+// ── heading scope and negation (2026-09-23) ─────────────────────────────────
+// A health-advice report wrote, under "#### ⚠️ 微血管年龄偏高", a sentence that never repeated the
+// dimension's name and blamed hsCRP (a Resilience input). The heading now scopes the lines below it.
+
+test('a dimension named only by its markdown heading scopes the sentences under it', () => {
+  const report = [
+    '#### ⚠️ 微血管年龄偏高（+8.9 岁）',
+    '- 胱抑素 C 处于正常范围（0.84 mg/L），但微血管结构已呈现早期老化迹象，主要由 hsCRP 偏高引起。',
+    '#### ✅ 抗压年龄（43.9 岁）',
+    '- 其核心驱动是 hsCRP（1.04 mg/L，偏高）。',
+  ].join('\n');
+  assert.deepStrictEqual(dims(report), ['MicroVascularAge<-hsCRP']);
+});
+
+test('a heading naming no single dimension clears the scope', () => {
+  const report = ['### 🔹 细胞年龄', '由 CD38 驱动。', '### 生活方式建议', '睡眠不足会导致 hsCRP 升高。'].join('\n');
+  assert.deepStrictEqual(dims(report), []);
+});
+
+test('a sentence denying the link is not a misattribution', () => {
+  assert.deepStrictEqual(dims('微血管年龄偏高并非由 hsCRP 驱动，它只由胱抑素C计算。'), []);
+  assert.deepStrictEqual(dims('Micro-Vascular Age is not driven by hsCRP.'), []);
+});
+
+test('the added cause verbs fire; soft association still does not', () => {
+  assert.deepStrictEqual(dims('微血管年龄偏高可能由 hsCRP 偏高所致。'), ['MicroVascularAge<-hsCRP']);
+  assert.deepStrictEqual(dims('微血管年龄与 CD38 可能存在关联。'), []);
+});
+
+test('inside a dimension\'s own section, 结合…提示 with another dimension\'s marker is caught (live 2026-09-23)', () => {
+  const run3 = ['#### ⚠️ **微血管年龄：59.9 岁（偏高 8.9 岁）**',
+    '- 尽管 **胱抑素 C 正常（0.84 mg/L）**，但该指标对早期微血管功能障碍敏感性有限；结合 hsCRP 升高与 CD38 高表达，提示**慢性炎症与免疫代谢紊乱可能正悄然影响微循环稳态**。'].join('\n');
+  assert.deepStrictEqual(dims(run3).sort(), ['MicroVascularAge<-CD38', 'MicroVascularAge<-hsCRP']);
+  const run4 = ['#### ⚠️ 微血管年龄：59.9岁（偏高8.9岁）',
+    '- 东方人群洞见指出：本维度暂无特异性标志物异常，但结合其hsCRP升高与CD38高表达，提示慢性低度炎症与NAD⁺耗竭共同构成微血管内皮功能退化的潜在协同机制。'].join('\n');
+  assert.deepStrictEqual(dims(run4).sort(), ['MicroVascularAge<-CD38', 'MicroVascularAge<-hsCRP']);
+});
+
+test('the same soft words outside a dimension section, or about the section\'s own input, stay silent', () => {
+  assert.deepStrictEqual(dims(['### 生活方式建议', '- 活动：规律运动有助于改善微血管灌注与CD38相关通路活性。'].join('\n')), []);
+  assert.deepStrictEqual(dims(['#### 微血管年龄（+8.9 岁）', '- 胱抑素 C 仍在正常范围，提示需持续观察、下次检测复核。'].join('\n')), []);
+  assert.deepStrictEqual(dims(['#### 微血管年龄（+8.9 岁）', '- 该维度只由胱抑素 C 计算，与 hsCRP 无关。'].join('\n')), []);
+});
+
+// ── stripDimensionMisattributions: the last resort after REVISE ────────────
+const { stripDimensionMisattributions } = require(path.join(WORKER, 'lib', 'factCheck.js'));
+
+test('removes exactly the flagged sentence, and a bullet left empty by it', () => {
+  const report = [
+    '#### ▪ 微血管年龄：59.9 岁（+8.9 岁，偏高、需关注）',
+    '- 尽管胱抑素 C（0.84 mg/L）处于正常范围，但该维度仍显著升高，建议持续观察。',
+    '- 东方人群洞见指出：本维度暂无已验证的族群特异性诱因，但结合其同时存在的 hsCRP 升高与 CD38 过表达，高度提示三者存在病理耦合。',
+    '- 相关原粒：原粒14号 脉络畅流。',
+    '#### 抗压年龄',
+    '- 核心驱动是 hsCRP（偏高）。',
+  ].join('\n');
+  const { text, removed } = stripDimensionMisattributions(report, D);
+  assert.strictEqual(removed.length, 1);
+  assert.deepStrictEqual(removed[0].biomarkers.sort(), ['CD38', 'hsCRP']);
+  assert.ok(!text.includes('病理耦合'));
+  assert.ok(!text.includes('东方人群洞见'), 'the emptied bullet goes too');
+  assert.ok(text.includes('建议持续观察') && text.includes('脉络畅流') && text.includes('核心驱动是 hsCRP'));
+  assert.deepStrictEqual(dims(text), [], 'nothing left to flag');
+});
+
+test('keeps the rest of a line when only one of its sentences misattributes', () => {
+  const t = '胱抑素C仍正常。微血管年龄偏高可能由 hsCRP 偏高所致。建议下次检测复核。';
+  const { text } = stripDimensionMisattributions(t, D);
+  assert.strictEqual(text, '胱抑素C仍正常。建议下次检测复核。');
+});
+
+test('a clean reply is returned untouched', () => {
+  const t = '### 细胞年龄\n- 由 CD38 驱动。';
+  assert.strictEqual(stripDimensionMisattributions(t, D).text, t);
+});

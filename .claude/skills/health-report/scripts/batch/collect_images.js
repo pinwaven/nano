@@ -3,12 +3,12 @@
 //   set -a && source .env && set +a && node collect_images.js <workdir> [--all]
 // Default: health_checkup_report, lab_import, bp_reading biomarker photos + health_reports images. --all adds health_photo/food_photo.
 const fs = require('fs'), path = require('path');
-const ROOT = '/Users/pin/waven/nano';
+const ROOT = require('path').join(__dirname, '..', '..', '..', '..', '..');
 const OSS = require(path.join(ROOT, 'src/functions/worker/node_modules/ali-oss'));
 const W = process.argv[2]; const ALL = process.argv.includes('--all');
 const load = n => { const p = path.join(W, 'data', n + '.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : []; };
 (async () => {
-  const client = new OSS({ region: process.env.OSS_REGION || 'oss-cn-shanghai', accessKeyId: process.env.OSS_ACCESS_KEY_ID, accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET, bucket: process.env.OSS_BUCKET, secure: true });
+  const client = new OSS({ region: process.env.OSS_REGION || 'oss-cn-shanghai', accessKeyId: process.env.OSS_ACCESS_KEY_ID, accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET, bucket: process.env.OSS_BUCKET, secure: true, timeout: 600000 });
   const dir = path.join(W, 'docs'); fs.mkdirSync(dir, { recursive: true });
   const items = [];
   for (const b of load('biomarkers')) {
@@ -24,7 +24,7 @@ const load = n => { const p = path.join(W, 'data', n + '.json'); return fs.exist
   for (const it of items) {
     if (seen.has(it.key)) continue; seen.add(it.key);
     const out = path.join(dir, it.tag + path.extname(it.key || '.jpg'));
-    try { await client.get(it.key, out); console.log(out, fs.statSync(out).size); } catch (e) { console.log('FAIL', it.key, e.message); }
+    try { if (fs.existsSync(out) && fs.statSync(out).size > 0) { seen.add(it.key); continue; } await client.get(it.key, out, { timeout: 600000 }); console.log(out, fs.statSync(out).size); } catch (e) { console.log('FAIL', it.key, e.message); }
   }
   console.log(seen.size, 'images');
 })();

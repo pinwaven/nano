@@ -57,7 +57,7 @@ if (!url) { console.error('DATABASE_URL not set'); process.exit(1); }
       RETURNING id, job_uid`,
       [jobUid, user.user_id, user.channel_id, user.language || 'zh', ck, '全维度健康分析报告（逐份通读上传文件 + 平台全部数据）', docIds,
        crypto.randomBytes(24).toString('hex'), summary, key, JSON.stringify(files),
-       JSON.stringify({ source: 'claude-code', pdf_pages: null, generated_at: new Date().toISOString().slice(0, 10) })]);
+       JSON.stringify({ source: 'viva-analyst', pdf_pages: null, generated_at: new Date().toISOString().slice(0, 10) })]);
     console.log('inserted viva_ag_jobs', row, prod ? '(PROD)' : '(dev)');
   } catch (e) {
     console.error('INSERT failed — delete the orphan object:', key); throw e;

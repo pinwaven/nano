@@ -1,3 +1,4 @@
+const { scanResultMessage, managedVoiceBlock } = require('../lib/managedVoice');
 const { pool } = require('../lib/db');
 const { humanizeDotCodes } = require('../lib/dotNames');
 const { humanizeSubAgeKeys } = require('../lib/subAgeLabels');
@@ -15,10 +16,12 @@ const { formatQuestionnaireContext, canCreateDynamicQuestionnaire, createDynamic
 const { handlePostReminder } = require('./coaches');
 const OpenAI = require('openai');
 const intentClassifierTemplate = require('../prompts/chat/intentClassifier');
+const { runUnderstanding, fetchUnderstandingInputs, understandingMode, resolvedRequestLine } = require('../lib/understanding');
 const nanoPrompts = {
     casual_chat:        require('../prompts/nano/chat/casual'),
     biomarker_question: require('../prompts/nano/chat/biomarker'),
     nutrition_question: require('../prompts/nano/chat/nutrition'),
+    lifestyle_question: require('../prompts/nano/chat/lifestyle'),
     longevity_science:  require('../prompts/nano/chat/science'),
     record_action:      require('../prompts/nano/chat/record'),
     set_reminder:       require('../prompts/nano/chat/reminder'),
@@ -28,6 +31,7 @@ const vivaPrompts = {
     casual_chat:        require('../prompts/viva/chat/casual'),
     biomarker_question: require('../prompts/viva/chat/biomarker'),
     nutrition_question: require('../prompts/viva/chat/nutrition'),
+    lifestyle_question: require('../prompts/viva/chat/lifestyle'),
     longevity_science:  require('../prompts/viva/chat/science'),
     record_action:      require('../prompts/viva/chat/record'),
     set_reminder:       require('../prompts/viva/chat/reminder'),
@@ -59,6 +63,7 @@ const { MAX_RECOMMENDATIONS } = require('../prompts/chat/productRecommendBlock')
 const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
 const { messageAsksAboutFoodSensitivity } = require('../prompts/chat/foodSensitivityBlock');
 const { messageAsksForMealPlan } = require('../prompts/chat/mealPlanRequest');
+const { messageAsksForLifestylePlan } = require('../prompts/chat/lifestyleRequest');
 const { fetchWearableDaily, fetchHrvReadings, messageAsksAboutWearable } = require('../lib/wearableDaily');
 const { analyzeWearable } = require('../lib/wearableAnalysis');
 
@@ -100,7 +105,10 @@ function _filterProductsByUserFacts(products, userFacts) {
 // (lib/agenticChat.js) instead of the default single-pass generation + retry-on-failure path.
 // casual_chat/emotional_support stay on the fast path regardless of persona, to bound
 // latency/cost (see 2026-07-28 planning discussion).
-const HIGH_RISK_INTENTS = new Set(['biomarker_question', 'nutrition_question', 'longevity_science', 'record_action']);
+// lifestyle_question (exercise / sleep-routine plans, 2026-09-22) is agentic too: it cites the
+// same biomarkers, sub-ages and wearable averages as biomarker_question, so it needs the same
+// grounding, and its own template carries no grocery/store/formulation vocabulary.
+const HIGH_RISK_INTENTS = new Set(['biomarker_question', 'nutrition_question', 'lifestyle_question', 'longevity_science', 'record_action']);
 
 // timeout/maxRetries: without an explicit cap, a single stalled DashScope call can hang up to
 // the SDK's 10-minute default — well past the worker FC function's own 300s timeout (s.yaml).
@@ -112,7 +120,7 @@ const HIGH_RISK_INTENTS = new Set(['biomarker_question', 'nutrition_question', '
 // catch/fail-open handling instead.
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
-    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    baseURL: `${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/compatible-mode/v1`,
     timeout: 60_000,
     maxRetries: 1,
 });
@@ -214,10 +222,26 @@ async function resolveOrUpsertUser(body) {
     // If openid matches an existing user_id (admin-created or simulator users), use it directly.
     // Otherwise fall back to the external_id upsert (production WeChat flow).
     const byUserId = await pool.query(
-        'SELECT user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at FROM users WHERE user_id = $1',
+        'SELECT user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at, account_type FROM users WHERE user_id = $1',
         [openid]
     );
     if (byUserId.rows.length > 0) return byUserId.rows[0];
+
+    // An 8-hex value is OUR user_id format (lib/auth generateUserId), never a WeChat openid
+    // (28 chars, starts with 'o'). One that matches no row here is an id issued by a
+    // different environment — a prod session carried into dev by wx.storage (see
+    // app.js's nano_base check) — or a deleted/mistyped id. Falling through would mint a
+    // brand-new account keyed on it (external_id = a foreign user_id, default channel,
+    // signup trial granted) and every later request would silently land there while the
+    // client keeps showing the cached profile. Live incident 2026-09-19: dev ghost
+    // c2e34ddf, external_id '82ae9e14' (a prod user_id), 185 health_events and 6 ECG
+    // strips before it was noticed. Refuse instead; the client re-logs in.
+    if (/^[0-9a-f]{8}$/.test(openid)) {
+        const err = new Error('User not found');
+        err.statusCode = 404;
+        err.reason = 'user_not_found';
+        throw err;
+    }
 
     const userQuery = `
         INSERT INTO users (user_id, external_id, external_app, nickname, phone, email, gender, birth_date, language, bio_data, channel_id)
@@ -232,7 +256,7 @@ async function resolveOrUpsertUser(body) {
             language = COALESCE(EXCLUDED.language, users.language),
             bio_data = users.bio_data || EXCLUDED.bio_data,
             updated_at = CURRENT_TIMESTAMP
-        RETURNING user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at, (xmax = 0) AS inserted;
+        RETURNING user_id, birth_date, bio_data, nickname, language, phone, email, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at, account_type, (xmax = 0) AS inserted;
     `;
     const userResult = await pool.query(userQuery, [
         generateUserId(), openid, nickname, phone || null, email || null,
@@ -378,10 +402,7 @@ async function handlePostBiomarkers(body) {
         );
         const biomarkerId = biomarkerResult.rows[0].id;
 
-        const lang = user.language || 'zh';
-        const content = lang === 'zh'
-            ? `已完成生物标志物检测分析。您的生理年龄为 **${bioAgeReport.BioAge.toFixed(1)} 岁**。请用健康管理小工具查看详细分析！`
-            : `I've analyzed your biomarker test. Your biological age is **${bioAgeReport.BioAge.toFixed(1)} years**. Check your health advice tool for details!`;
+        const content = scanResultMessage(bioAgeReport.BioAge, user);
         await pool.query(
             'INSERT INTO notifications (user_id, biomarker_id, notification_type, content, status) VALUES ($1, $2, $3, $4, $5)',
             [user_id, biomarkerId, 'biological_report', content, 'pending']
@@ -1219,7 +1240,7 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
     }
 
     // Detect a recommend_grocery action — supermarket products the model picked from
-    // get_grocery_products rows this turn (prompts/chat/groceryBlock.js, CLAUDE.md §44). Same
+    // get_grocery_products rows this turn (prompts/chat/groceryBlock.js, CLAUDE.md §46). Same
     // discipline as recommend_product above, with one difference forced by scale: the catalog is
     // thousands of rows and was never in the prompt, so validation is a fresh read of the ids
     // (lib/groceryCatalog.js resolveGroceryProducts) — an id that resolves to no active food row
@@ -1312,7 +1333,7 @@ Rewrite your previous reply using ONLY these exact values, this exact date, and 
 // FK-threading/placeholder-row need here, so the two-phase split isn't warranted.
 async function _fireQuestionnaireAnsweredFollowup(userId, assignmentId) {
     const userRes = await pool.query(
-        `SELECT user_id, nickname, gender, birth_date, language, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at FROM users WHERE user_id = $1`,
+        `SELECT user_id, nickname, gender, birth_date, language, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at, account_type FROM users WHERE user_id = $1`,
         [userId]
     );
     if (!userRes.rows.length) return;
@@ -1428,6 +1449,13 @@ async function handlePostChat(body) {
 
     const user = await resolveOrUpsertUser(body);
     const user_id = user.user_id;
+    const coachSpeaker = body.speaker === 'coach';
+    if (coachSpeaker && user.account_type !== 'managed') {
+        return { statusCode: 403, success: false, error: 'coach_chat_managed_only' };
+    }
+    // A managed customer never writes in their own thread: the conversation partner is their
+    // coach, whose rows are 'coach'. Those rows are the user side of the history for this account.
+    const historyUserRoles = user.account_type === 'managed' ? new Set(['user', 'coach']) : new Set(['user']);
 
     // Resolve persona from an active per-user override, else channel config (defaults to 'nano')
     let channelPersonaType = 'nano';
@@ -1471,24 +1499,78 @@ async function handlePostChat(body) {
             const client = getLlmClient();
             const model = process.env.MODEL || 'qwen-plus-latest';
 
-            // Step 1: Classify the user's intent
+            // Step 1: Work out what the user is asking, and route on it (§47).
+            //
+            // Two routers live here. The classifier (prompts/chat/intentClassifier.js) reads the
+            // message alone — no history, no user state — and picks one of 8 labels. The
+            // understanding (lib/understanding.js) reads it with the last 4 turns and a one-line
+            // user state and says what is being asked before naming a route. Which one decides is
+            // CHAT_UNDERSTANDING_MODE: 'off' (classifier only), 'shadow' (both run, classifier
+            // decides, disagreements are logged), 'on' (understanding decides, classifier is the
+            // fallback when it fails). The label picks the TEMPLATE — the rules, data, tools and
+            // vocabulary the model is handed — so a miss here is not a worse answer but an answer
+            // written in the wrong world (2026-09-22: an exercise plan answered with a 盒马
+            // shopping list).
             let intent = 'casual_chat';
             let required_data = [];
-            try {
-                const classifierCompletion = await client.chat.completions.create({
-                    model: process.env.CLASSIFIER_MODEL || model,
-                    messages: [{ role: 'user', content: intentClassifierTemplate(message) }],
-                    max_tokens: 60,
-                    temperature: 0.1,
-                });
-                const raw = classifierCompletion.choices[0].message.content.trim();
-                const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
-                intent = parsed.intent || 'casual_chat';
-                required_data = Array.isArray(parsed.required_data) ? parsed.required_data : [];
-            } catch (classifyErr) {
-                console.log(JSON.stringify({ level: 'WARN', msg: 'Intent classification failed, defaulting to casual_chat', error: classifyErr.message }));
+            const uMode = understandingMode();
+            const runClassifier = async () => {
+                try {
+                    const classifierCompletion = await client.chat.completions.create({
+                        model: process.env.CLASSIFIER_MODEL || model,
+                        messages: [{ role: 'user', content: intentClassifierTemplate(message) }],
+                        max_tokens: 60,
+                        temperature: 0.1,
+                    });
+                    const raw = classifierCompletion.choices[0].message.content.trim();
+                    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+                    return {
+                        intent: parsed.intent || 'casual_chat',
+                        required_data: Array.isArray(parsed.required_data) ? parsed.required_data : [],
+                    };
+                } catch (classifyErr) {
+                    console.log(JSON.stringify({ level: 'WARN', msg: 'Intent classification failed, defaulting to casual_chat', error: classifyErr.message }));
+                    return { intent: 'casual_chat', required_data: [] };
+                }
+            };
+            // In shadow mode both routers run on every turn, so they run CONCURRENTLY: the
+            // classifier decides there, and making the user wait for the two calls end to end
+            // would push a sync casual_chat turn towards its 30s client budget (§22) for a result
+            // that is only written to the log.
+            const understandingPromise = uMode === 'off' ? null
+                : fetchUnderstandingInputs(pool, user_id, personaType)
+                    .then(inputs => runUnderstanding({
+                        client, message, history: inputs.history, state: inputs.state,
+                        logContext: { user_id, handler: 'handlePostChat' },
+                    }));
+            const classifierPromise = uMode === 'on' ? null : runClassifier();
+            const understanding = understandingPromise ? await understandingPromise : null;
+            const understandingRoutes = uMode === 'on' && !!understanding?.ok;
+            let classifierIntent = null;
+            if (!understandingRoutes) {
+                // 'on' with a failed understanding is the only path that pays for both serially.
+                const c = await (classifierPromise || runClassifier());
+                intent = c.intent;
+                required_data = c.required_data;
+                classifierIntent = intent;
+            } else {
+                intent = understanding.route;
+                required_data = understanding.required_data;
             }
-            console.log(JSON.stringify({ level: 'INFO', msg: 'Chat intent classified', intent, required_data }));
+            console.log(JSON.stringify({
+                level: 'INFO', msg: 'Chat intent classified', user_id, intent, required_data,
+                mode: uMode, routed_by: understandingRoutes ? 'understanding' : 'classifier',
+                classifier_intent: classifierIntent,
+                understanding: understanding?.ok ? {
+                    route: understanding.route, request: understanding.understanding.request,
+                    family: understanding.understanding.family, topics: understanding.understanding.topics,
+                    continuation_of: understanding.understanding.continuation_of,
+                    confidence: understanding.understanding.confidence,
+                    clarify: understanding.understanding.clarify,
+                    needs: understanding.understanding.needs,
+                    ms: understanding.ms, tokens: understanding.tokens,
+                } : null,
+            }));
 
             // "我要定制营养素" is a request to ACT, not a question. Answering it with a generated
             // essay is the wrong response — the 营养定制 tool is the thing that actually formulates a
@@ -1514,8 +1596,17 @@ async function handlePostChat(body) {
             // which is the correct answer for a model that has no order data and the wrong one
             // when a tool could have fetched it. Only casual_chat is promoted: every other intent
             // either already has the tools or is answering a different question entirely.
+            //
+            // `!understandingRoutes` on every PROMOTION below (§47): these five regexes are
+            // patches for a router that could not see history or user state, and the understanding
+            // was measured at 98.7% / 94.0% held-out WITHOUT them. Left on, they would override a
+            // route the understanding chose deliberately — 「运动方案要怎么配合饮食」 is a diet
+            // question the lifestyle regex would demote. The DEMOTIONS from formulate_dots stay
+            // in both modes: that route starts a real formulation, and a message matching one of
+            // these regexes is never a request to formulate, so the check can only prevent a
+            // wrong action, never cause one.
             if (messageAsksAboutFormulationPackage(message)
-                && (intent === 'formulate_dots' || intent === 'casual_chat')) {
+                && (intent === 'formulate_dots' || (!understandingRoutes && intent === 'casual_chat'))) {
                 console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_package_question', user_id, from: intent }));
                 intent = 'nutrition_question';
             }
@@ -1526,7 +1617,7 @@ async function handlePostChat(body) {
             // a request to formulate, where a misread starts a whole new 28-day formulation
             // instead of answering.
             if (messageAsksAboutFoodSensitivity(message)
-                && (intent === 'formulate_dots' || intent === 'casual_chat')) {
+                && (intent === 'formulate_dots' || (!understandingRoutes && intent === 'casual_chat'))) {
                 console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_food_sensitivity_question', user_id, from: intent }));
                 intent = 'nutrition_question';
             }
@@ -1536,7 +1627,7 @@ async function handlePostChat(body) {
             // eat this week" from its own template and needs no tool.
             // A wearable question classified casual_chat has no tools and no per-day block —
             // 「我昨晚睡得怎么样」 would be answered from a 7-day average or from nothing.
-            if (messageAsksAboutWearable(message) && intent === 'casual_chat') {
+            if (!understandingRoutes && messageAsksAboutWearable(message) && intent === 'casual_chat') {
                 console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_wearable_question', user_id, from: intent }));
                 intent = 'biomarker_question';
             }
@@ -1544,6 +1635,30 @@ async function handlePostChat(body) {
                 console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_meal_plan_question', user_id, from: intent }));
                 intent = 'nutrition_question';
             }
+            // An exercise / sleep-routine plan is lifestyle_question (prompts/chat/lifestyleRequest.js).
+            // Only the intents that would answer it with the wrong template are demoted: nutrition's
+            // template teaches the grocery tool (the 2026-09-22 prod miss), casual_chat has no
+            // tools and no wearable block, and formulate_dots would start a formulation.
+            if (messageAsksForLifestylePlan(message)
+                && (intent === 'formulate_dots'
+                    || (!understandingRoutes && (intent === 'nutrition_question' || intent === 'casual_chat')))) {
+                console.log(JSON.stringify({ level: 'INFO', msg: 'reclassified_as_lifestyle_question', user_id, from: intent }));
+                intent = 'lifestyle_question';
+            }
+            // One greppable line per turn where the two routers disagree, taken AFTER the
+            // backstops so it compares what actually shipped against what the understanding would
+            // have chosen. In shadow mode this IS the rollout evidence (§47): the measured win is
+            // entirely in the turns where the two differ, so the decision to flip
+            // CHAT_UNDERSTANDING_MODE on prod is made by reading these.
+            if (understanding?.ok && understanding.route !== intent) {
+                console.log(JSON.stringify({
+                    level: 'INFO', msg: 'route_disagreement', user_id, mode: uMode,
+                    routed: intent, understanding_route: understanding.route,
+                    message: String(message).slice(0, 200),
+                    request: understanding.understanding.request,
+                }));
+            }
+
             if (intent === 'formulate_dots') {
                 if (body.client === 'miniapp' && !sandbox) {
                     // Persisted here because this branch returns before the shared insert below.
@@ -1651,7 +1766,7 @@ async function handlePostChat(body) {
                     console.log(JSON.stringify({ level: 'WARN', msg: 'wearable_insights_fetch_failed', user_id, error: err.message }));
                     return null;
                 });
-            // Grocery catalogs on file (§44). Tiny, and fetched on every turn for the same reason
+            // Grocery catalogs on file (§46). Tiny, and fetched on every turn for the same reason
             // formulation_packages_available is: the block carries no data, only the vocabulary
             // and the tool name, and only the nutrition templates render it.
             fetches.grocery_suppliers = fetchActiveSuppliers(pool).catch(err => {
@@ -1778,21 +1893,37 @@ async function handlePostChat(body) {
                 // react-markdown with no directive plugin, so a marker would show as literal
                 // ":::" lines there. CHAT_MARKERS=off is a no-deploy kill switch.
                 rich_format: body.client === 'miniapp' && process.env.CHAT_MARKERS !== 'off',
+                // Which surface asked — the app-guide block (prompts/chat/appGuideBlock.js) only
+                // describes the miniapp's screens to a miniapp user; elsewhere it keeps the rule.
+                client: body.client || null,
             };
 
             const activePrompts = personaType === 'viva' ? vivaPrompts : nanoPrompts;
             const promptBuilder = activePrompts[intent] || activePrompts.casual_chat;
-            const systemPrompt = promptBuilder(llmContext);
+            // The only part of the understanding that reaches GENERATE, and only for a message
+            // that cannot be read on its own (「那运动呢？」). Appended to the system prompt rather
+            // than passed separately so it crosses the EventBridge boundary (§22) with no new
+            // field — handleChatGenerateEvent rebuilds its message list from systemPrompt.
+            const systemPrompt = promptBuilder(llmContext)
+                + (understandingRoutes ? (resolvedRequestLine(understanding) || '') : '')
+                + (coachSpeaker ? managedVoiceBlock(user, { asked: true }) : '');
             const useAgenticLoop = HIGH_RISK_INTENTS.has(intent);
 
             // Save the incoming user message to the conversation log — skipped in sandbox
             // mode (superadmin "login as" sessions), which never persist against the
             // impersonated user's real account.
+            //
+            // Its id goes back to the client (`user_message_id`): every reply to THIS turn is a
+            // chat_messages row after it, which is what lets the miniapp tell "the same reply
+            // arriving on the other delivery channel" from "a new reply that happens to repeat an
+            // earlier one" — de-duplicating on text alone swallowed the second (2026-09-23).
+            let userMessageId = null;
             if (!sandbox) {
-                await pool.query(
-                    'INSERT INTO chat_messages (user_id, role, content, persona_type) VALUES ($1, $2, $3, $4)',
-                    [user_id, 'user', message, personaType]
+                const { rows: savedUser } = await pool.query(
+                    'INSERT INTO chat_messages (user_id, role, content, persona_type) VALUES ($1, $2, $3, $4) RETURNING id',
+                    [user_id, coachSpeaker ? 'coach' : 'user', message, personaType]
                 );
+                userMessageId = savedUser[0]?.id ?? null;
             }
 
             // Fetch recent conversation history scoped to the current persona
@@ -1808,11 +1939,12 @@ async function handlePostChat(body) {
             );
 
             // Normalize roles ('ai' → 'assistant') and collapse consecutive same-role turns
-            // Only 'user' and 'ai' rows are forwarded; 'coach', 'action', and anything else is UI-only
+            // Only 'user' and 'ai' rows are forwarded ('coach' too for a managed customer — see
+            // historyUserRoles); 'action' and anything else is UI-only
             const cleanHistory = [];
             for (const row of historyResult.rows) {
-                if (row.role !== 'user' && row.role !== 'ai') continue;
-                const role = row.role === 'ai' ? 'assistant' : row.role;
+                if (!historyUserRoles.has(row.role) && row.role !== 'ai') continue;
+                const role = row.role === 'ai' ? 'assistant' : 'user';
                 const last = cleanHistory[cleanHistory.length - 1];
                 if (last && last.role === role) {
                     last.content = row.content;
@@ -1857,7 +1989,7 @@ async function handlePostChat(body) {
                         event_id: eventId, user_id, message, intent, llmContext, systemPrompt,
                         cleanHistory, language: user.language, personaType, birth_date: user.birth_date,
                     });
-                    return { success: true, user_id, processing: true };
+                    return { success: true, user_id, processing: true, user_message_id: userMessageId };
                 } catch (ebErr) {
                     console.log(JSON.stringify({ level: 'WARN', msg: 'chat_generate_publish_failed_fallback_sync', user_id, intent, error: ebErr.message }));
                     // Fail open (same principle as dispatcher/index.js's EventBridge fallback,
@@ -1953,10 +2085,11 @@ SQL must be a SELECT statement. $1 is always user_id.`,
                 }
             }
 
-            return await finalizeChatReply({
+            const finalized = await finalizeChatReply({
                 rawReply, extraValidDates, extraValidValues, llmContext, systemPrompt, cleanHistory,
                 chatMessages, user, user_id, personaType, sandbox, useAgenticLoop, client, model, intent, message,
             });
+            return userMessageId ? { ...finalized, user_message_id: userMessageId } : finalized;
         } catch (err) {
             console.error('LLM Chat Error:', err);
             const fallbackText = "I'm sorry, I'm having trouble connecting to my brain right now. Please try again later.";
@@ -2252,9 +2385,11 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
         }
 
         const strippedReply = rawReply.slice(0, extracted.start).trim();
-        finalContent = strippedReply || (lang === 'zh'
-            ? '这是根据您当前数据评估出的原粒配比，仅供参考。'
-            : 'Here is the dot allocation evaluated from your current data, for reference.');
+        finalContent = strippedReply || (llmContext.managed_voice
+            ? (lang === 'zh' ? '这是根据该客户当前数据评估出的原粒配比，仅供参考。' : "Here is the dot allocation evaluated from the customer's current data, for reference.")
+            : (lang === 'zh'
+                ? '这是根据您当前数据评估出的原粒配比，仅供参考。'
+                : 'Here is the dot allocation evaluated from your current data, for reference.'));
     } else {
         // No usable action JSON — fall back to the deterministic single-shot formulator so the
         // user is never left with nothing (same resilience principle as the 2026-07-29
@@ -2267,6 +2402,7 @@ async function finalizeFormulaDotsGenerate({ rawReply, extraValidDates, extraVal
             personaType,
             lang,
             currentSolarTerm: llmContext.current_solar_term,
+            voiceBlock: llmContext.managed_voice || '',
             essentialKnowledge: llmContext.essential_knowledge,
             userFacts: llmContext.user_facts,
             activeHealthPlans: llmContext.active_health_plans,
@@ -2464,6 +2600,20 @@ async function handleChatGenerateEvent(payload) {
     const markDone = () => pool.query(`UPDATE chat_generate_events SET status = 'done' WHERE event_id = $1`, [event_id])
         .catch(err => console.error('markDone failed:', err));
 
+    // Not a chat turn at all: the custom-avatar pipeline rides this event for its off-request
+    // execution (§22) and nothing else — no LLM chat context, no delivery tail, no watchdog. It
+    // reports through avatar_generations.status, which the picker polls.
+    if (kind === 'avatar_generate') {
+        try {
+            const { runAvatarGeneration } = require('./avatar_generation');
+            await runAvatarGeneration(payload.gen_id);
+        } catch (err) {
+            console.error(JSON.stringify({ level: 'ERROR', msg: 'avatar_generate_event_failed', gen_id: payload.gen_id, error: err.message }));
+        }
+        await markDone();
+        return;
+    }
+
     const client = getLlmClient();
     const model = process.env.MODEL || 'qwen-plus-latest';
     const user = { birth_date, language };
@@ -2518,6 +2668,7 @@ async function handleChatGenerateEvent(payload) {
                         dotsFormulary: llmContext.dots,
                         personaType, lang: language,
                         currentSolarTerm: llmContext.current_solar_term,
+                        voiceBlock: llmContext.managed_voice || '',
                         essentialKnowledge: llmContext.essential_knowledge,
                         userFacts: llmContext.user_facts,
                         activeHealthPlans: llmContext.active_health_plans,
@@ -2663,7 +2814,7 @@ async function handlePostHealthAdvice(body) {
 
     try {
         const userResult = await pool.query(
-            `SELECT user_id, nickname, gender, birth_date, language, bio_data, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at
+            `SELECT user_id, nickname, gender, birth_date, language, bio_data, channel_id, viva_subscription_expires_at, persona_override_type, persona_override_expires_at, account_type
              FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
             [openid]
         );
@@ -2820,11 +2971,17 @@ async function handlePostHealthAdvice(body) {
             essential_knowledge: essentialKnowledge,
             user_facts: factsResult.rows,
             now_iso: getNowShanghai().toISO(),
-        });
+        }) + managedVoiceBlock(user);
 
-        const userMsg = isZh
-            ? '请分析我目前的健康状态，并给我专业的健康建议。'
-            : 'Please analyze my current health status and give me personalized health advice.';
+        // A managed customer's advice is requested by, and written for, their coach (§49): the
+        // trigger is the coach's and is stored as a 'coach' row, which that account's chat history
+        // counts as the user side.
+        const managed = user.account_type === 'managed';
+        const userMsg = managed
+            ? (isZh ? '请分析该客户目前的健康状态，并给出专业的健康建议。' : "Please analyze this customer's current health status and give personalized health advice.")
+            : (isZh
+                ? '请分析我目前的健康状态，并给我专业的健康建议。'
+                : 'Please analyze my current health status and give me personalized health advice.');
 
         // Reshaped to the SAME llmContext contract handlePostChat produces (chat.js §22), so
         // runAgenticTurn, its dedicated tools, and JUDGE — all built against that contract —
@@ -2859,7 +3016,7 @@ async function handlePostHealthAdvice(body) {
         // (handleChatGenerateEvent) doesn't save the user's own message itself, it's assumed
         // already persisted by the time the event fires.
         if (!sandbox) {
-            await saveChatMessage(user_id, 'user', userMsg, null, personaType);
+            await saveChatMessage(user_id, managed ? 'coach' : 'user', userMsg, null, personaType);
         }
 
         // Same rationale as handlePostChat's fork (CLAUDE.md §22): the agentic loop can take
@@ -2990,7 +3147,7 @@ async function handlePostAnalyzeImage(body) {
 
     try {
         const userResult = await pool.query(
-            `SELECT user_id, nickname, gender, birth_date, language, bio_data FROM users
+            `SELECT user_id, nickname, gender, birth_date, language, bio_data, account_type FROM users
              WHERE user_id = $1 OR external_id = $1 LIMIT 1`,
             [openid]
         );
@@ -3005,7 +3162,7 @@ async function handlePostAnalyzeImage(body) {
             nickname: user.nickname,
             age,
             gender: user.gender,
-        });
+        }) + managedVoiceBlock(user);
 
         const ext = oss_key.split('.').pop().toLowerCase();
         const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
@@ -3074,7 +3231,7 @@ async function handlePostAnalyzeImage(body) {
         // health tab. The actual persistence happens later via POST /health-reports.
         if (contentType === 'health_report') {
             const userTrigger = isZh ? '（图片）' : '(image)';
-            await saveChatMessage(user_id, 'user', userTrigger, get_url || null);
+            await saveChatMessage(user_id, user.account_type === 'managed' ? 'coach' : 'user', userTrigger, get_url || null);
             await saveChatMessage(user_id, 'ai', narrative);
             console.log(JSON.stringify({ level: 'INFO', msg: 'Lab report analyzed (pending consent)', user_id, observation_count: observations.length }));
             return {
@@ -3169,7 +3326,7 @@ async function handlePostAnalyzeImage(body) {
         }
 
         const userTrigger = isZh ? '（图片）' : '(image)';
-        await saveChatMessage(user_id, 'user', userTrigger, get_url || null);
+        await saveChatMessage(user_id, user.account_type === 'managed' ? 'coach' : 'user', userTrigger, get_url || null);
         await saveChatMessage(user_id, 'ai', narrative);
 
         console.log(JSON.stringify({ level: 'INFO', msg: 'Image analyzed', user_id, biomarker_id, content_type: contentType }));

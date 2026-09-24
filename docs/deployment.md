@@ -44,6 +44,14 @@ s dispatcher deploy  -y
 s worker deploy -y
 s admin-panel deploy -y
 
+# Or via npm — these go through scripts/s.sh, which loads .env and runs the
+# repo-local `s` with npx, so they work from sh on Linux as well as zsh on macOS.
+# On a fresh checkout, run `npm ci --omit=dev` inside src/functions/<fn>/ first:
+# `s deploy` zips the directory as-is and a function shipped without
+# node_modules answers 502 (`Cannot find module 'pg'`).
+npm run deploy:worker
+npm run deploy:worker:prod
+
 # Deploy only the domain routing
 s nano-domain deploy -y
 ```
@@ -62,6 +70,7 @@ All sensitive values are set in `s.yaml` under each function's `environmentVaria
 | `DB_SSL` | dispatcher, worker | Set to `"false"` for internal VPC connections |
 | `TZ` | All functions | Timezone — set to `Asia/Shanghai` |
 | `DASHSCOPE_API_KEY` | worker | Aliyun DashScope API key for LLM calls |
+| `DASHSCOPE_HOST` | worker, agent | Model Studio API host, no path. Unset → the shared `https://dashscope.aliyuncs.com`. Dev is on the workspace-dedicated domain `https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com` (2026-09-21); prod stays on the shared host until flipped in `s-prod.yaml`. Every LLM call site appends `/compatible-mode/v1` (OpenAI SDK) or `/api/v1/...` (native, `avatarGen.js`) to it — the API key must belong to that workspace. Ref: https://help.aliyun.com/zh/model-studio/regions |
 | `MODEL` | worker | LLM model name (default: `qwen-turbo`) |
 | `WORKER_URL` | dispatcher, admin-panel | Internal VPC URL of `nano-worker` |
 | `WORKER_FUNCTION_NAME` | dispatcher | FC function name of the worker |

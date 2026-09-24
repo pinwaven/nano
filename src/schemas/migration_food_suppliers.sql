@@ -1,4 +1,4 @@
--- Grocery catalogs the AI may point a user at when it gives diet advice. CLAUDE.md §44.
+-- Grocery catalogs the AI may point a user at when it gives diet advice. CLAUDE.md §46.
 --
 -- SUPPLIER-GENERIC ON PURPOSE. The first catalog is 盒马 (scraped from the app, temp/hema/), but a
 -- second supermarket is a second `food_suppliers` row plus rows in `supplier_products` — not a

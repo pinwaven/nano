@@ -1,5 +1,6 @@
 const app = getApp()
 const { BASE, VERSION } = require('../../utils/config.js')
+const session = require('../../utils/session.js')
 const toolActions = require('../../utils/tool-actions')
 const { maskPhone } = require('../../utils/phone.js')
 
@@ -18,8 +19,6 @@ const T = {
     darkMode: '深色模式',
     kinoSimMenu: 'Kino 模拟器',
     userPanelMenu: '我的健康',
-    adminMenu: '渠道管理',
-    superadminMenu: '超管面板',
     logout: '退出',
     exitSandbox: '退出沙盒',
     sandboxBanner: '沙盒模式：正在以「{name}」的身份查看，任何操作都不会保存',
@@ -135,6 +134,30 @@ const T = {
     crmMoveTitle: '移动到阶段…', crmMoveSuccess: '已更新阶段', crmMoveError: '更新失败，请重试',
     crmAppointments: '近期预约', crmActivity: '动态', noActivity: '暂无动态', noAppointments: '暂无预约',
     newAppt: '+ 新增预约', apptTitle: '预约标题', apptDate: '日期', apptTime: '时间',
+    // Managed customers — login-less accounts the coach runs for the channel (SuperiorMed)
+    mc: {
+      add: '+ 新建托管客户', edit: '编辑资料', badge: '托管', titleNew: '新建托管客户', titleEdit: '编辑客户资料',
+      lastName: '姓', firstName: '名', nickname: '显示名称', nicknameHint: '留空则用姓名',
+      selectDate: '请选择出生日期', selectGender: '请选择性别', birthDate: '出生日期', gender: '性别', genders: ['男', '女'], phone: '联系电话', ref: '客户编号',
+      refHint: '贵机构系统中的编号（可选）', save: '保存', cancel: '取消', created: '已创建', saved: '已保存',
+      note: '托管客户不会登录小程序，由您代为检测、配方与咨询。',
+      askPh: '问 Viva 关于该客户的问题…', thinking: 'Viva 正在思考…', noReply: 'Viva 暂未回复，请稍后刷新查看',
+      redeem: '兑换码下单', redeemTitle: '用兑换码为客户下单', redeemCode: '兑换码', redeemName: '收件人', redeemPhone: '收件电话',
+      redeemAddress: '收件地址', redeemSubmit: '确认下单', redeemHint: '使用渠道购买的原粒兑换码，为该客户最新的配方下单，无需付款。请先为客户完成营养定制。',
+      redeemDone: '已下单', redeemPending: '已兑换，订单确认中',
+      redeemErrors: { code_required: '请输入兑换码', shipping_required: '请填写完整收件信息', code_not_found: '兑换码不存在',
+        code_already_redeemed: '该兑换码已被使用', formulation_in_flight: '该客户已有进行中的订单', redeem_for_managed_only: '仅可为托管客户兑换',
+        redeemer_not_linked: '请先在小程序中打开一次商城，以关联您的商城账户',
+        fallback: '兑换失败，请重试' },
+      boxScan: '扫码激活盒子', boxOk: '已激活，客户的 28 天周期从今天开始', boxAlready: '这盒已经激活过了', boxFail: '无法激活',
+      boxErrors: {
+        invalid_box_code: '这不是原粒包装上的二维码。', box_not_found: '未找到该包装，请确认扫描的是原粒盒身的二维码。',
+        not_your_box: '这盒原粒是为其他人定制的，请勿给该客户服用。', claimed_by_other: '这盒已被其他账号激活。',
+        batch_recalled: '该批次已被召回，请勿服用。', formulation_not_approved: '该配方尚未通过专家审核，请稍后再试。',
+        fallback: '暂时无法激活，请稍后再试。' },
+      errors: { birth_date_required: '请填写出生日期', gender_required: '请选择性别', name_required: '请填写姓名或客户编号',
+        invalid_phone: '手机号格式不正确', external_ref_in_use: '该客户编号已存在', managed_customers_not_enabled: '当前渠道未开通托管客户', fallback: '保存失败，请重试' },
+    },
     apptFormats: { video: '视频通话', phone: '电话', in_person: '面诊', wechat: '微信' },
     apptCreate: '创建预约', apptCancel: '取消',
     kpiTitle: '我的指标', kpiClients: '总客户', kpiActive: '活跃', kpiAtRisk: '需关注', kpiCommission: '本月佣金',
@@ -173,8 +196,6 @@ const T = {
     darkMode: 'Dark Mode',
     kinoSimMenu: 'Kino Simulator',
     userPanelMenu: 'My Health',
-    adminMenu: 'Channel Admin',
-    superadminMenu: 'Super Admin',
     logout: 'Logout',
     exitSandbox: 'Exit Sandbox',
     sandboxBanner: 'Sandbox: viewing as "{name}" — nothing is saved',
@@ -288,6 +309,29 @@ const T = {
     crmMoveTitle: 'Move to stage…', crmMoveSuccess: 'Stage updated', crmMoveError: 'Update failed, please retry',
     crmAppointments: 'Upcoming', crmActivity: 'Activity', noActivity: 'No activity yet', noAppointments: 'No upcoming appointments',
     newAppt: '+ New Appointment', apptTitle: 'Title', apptDate: 'Date', apptTime: 'Time',
+    mc: {
+      add: '+ New managed customer', edit: 'Edit profile', badge: 'Managed', titleNew: 'New managed customer', titleEdit: 'Edit customer',
+      lastName: 'Last name', firstName: 'First name', nickname: 'Display name', nicknameHint: 'Defaults to the full name',
+      selectDate: 'Select date of birth', selectGender: 'Select sex', birthDate: 'Date of birth', gender: 'Sex', genders: ['Male', 'Female'], phone: 'Contact phone', ref: 'Customer ID',
+      refHint: 'Their ID in your own system (optional)', save: 'Save', cancel: 'Cancel', created: 'Created', saved: 'Saved',
+      note: 'Managed customers never sign in; you scan, formulate and consult for them.',
+      askPh: 'Ask Viva about this customer…', thinking: 'Viva is thinking…', noReply: 'No reply from Viva yet — refresh in a moment',
+      redeem: 'Order with code', redeemTitle: 'Order for this customer with a code', redeemCode: 'Redeem code', redeemName: 'Recipient', redeemPhone: 'Recipient phone',
+      redeemAddress: 'Shipping address', redeemSubmit: 'Place order', redeemHint: 'Spend a Dots code your channel bought to order this customer\'s latest formula — no payment. Run 营养定制 for them first.',
+      redeemDone: 'Ordered', redeemPending: 'Code redeemed — order being confirmed',
+      redeemErrors: { code_required: 'Enter a code', shipping_required: 'Fill in the shipping details', code_not_found: 'Code not found',
+        code_already_redeemed: 'That code has been used', formulation_in_flight: 'This customer already has an order in progress', redeem_for_managed_only: 'Only for managed customers',
+        redeemer_not_linked: 'Open the store from the app once to link your store account',
+        fallback: 'Redeem failed, please retry' },
+      boxScan: 'Scan box to activate', boxOk: "Activated — the customer's 28-day cycle starts today", boxAlready: 'This box was already activated', boxFail: "Couldn't activate",
+      boxErrors: {
+        invalid_box_code: "That isn't a code from a Dots box.", box_not_found: 'Box not found — scan the QR on the Dots box itself.',
+        not_your_box: "This box was made for someone else — don't give it to this customer.", claimed_by_other: 'Another account already activated this box.',
+        batch_recalled: 'This batch was recalled — do not use it.', formulation_not_approved: 'The formula has not passed expert review yet.',
+        fallback: "Couldn't activate this box just now. Please try again shortly." },
+      errors: { birth_date_required: 'Date of birth is required', gender_required: 'Please choose a sex', name_required: 'Enter a name or customer ID',
+        invalid_phone: 'Invalid phone number', external_ref_in_use: 'That customer ID already exists', managed_customers_not_enabled: 'Managed customers are not enabled for this channel', fallback: 'Save failed, please retry' },
+    },
     apptFormats: { video: 'Video Call', phone: 'Phone', in_person: 'In Person', wechat: 'WeChat' },
     apptCreate: 'Create', apptCancel: 'Cancel',
     kpiTitle: 'My KPIs', kpiClients: 'Total Clients', kpiActive: 'Active', kpiAtRisk: 'At Risk', kpiCommission: 'Commission',
@@ -460,6 +504,17 @@ Page({
     crmPipelineColumns: [],
     crmActivityFeed: [],
     crmUpcomingAppts: [],
+    // Managed customers
+    mcEnabled: false,
+    mcFormOpen: false,
+    mcEditId: '',
+    mcForm: {},
+    mcGenderIndex: -1,
+    mcBusy: false,
+    vivaThinking: false,
+    redeemOpen: false,
+    redeemForm: {},
+    redeemBusy: false,
     apptFormOpen: false,
     apptClientId: '',
     apptClientName: '',
@@ -545,6 +600,10 @@ Page({
     this._loadAll()
   },
 
+  onUnload() {
+    this._stopVivaPoll()
+  },
+
   async _loadAll() {
     this.setData({ loading: true })
     // No coach id means globalData.coach was never populated by whichever login path ran. The
@@ -625,7 +684,7 @@ Page({
       const clientFilterStages = this._buildFilterStages(clients)
       this.setData({
         clients, invites: invitesRes.data?.invitations || [], clientFilterStages,
-        clientsLoadState: '', diagText: '',
+        clientsLoadState: '', diagText: '', mcEnabled: !!payload.managed_customers_enabled,
       })
       this._filterClients()
     } catch (e) {
@@ -785,16 +844,6 @@ Page({
     wx.navigateBack({ delta: 1, animationType: 'slide-out-right', animationDuration: 280 })
   },
 
-  openAdmin() {
-    this.setData({ menuOpen: false })
-    wx.navigateTo({ url: '/pages/admin/admin' })
-  },
-
-  openSuperadmin() {
-    this.setData({ menuOpen: false })
-    wx.navigateTo({ url: '/pages/superadmin/superadmin' })
-  },
-
   exitSandbox() {
     const origin = wx.getStorageSync('nano_sandbox_origin')
     wx.removeStorageSync('nano_sandbox_origin')
@@ -831,9 +880,11 @@ Page({
         channel: app.globalData.channel,
         coach: app.globalData.coach,
         maskedPhone: user.maskedPhone || maskPhone(phone) || '',
+        session_token: app.globalData.apiToken || '',
       })
     }
     wx.removeStorageSync('nano_user')
+    session.clearSession(app)
     app.globalData.user = null
     wx.reLaunch({ url: '/pages/login/login?loggedOut=1' })
   },
@@ -884,6 +935,8 @@ Page({
   },
 
   closeClientDetail() {
+    this._stopVivaPoll()
+    this.setData({ vivaThinking: false })
     this.setData({ detailOpen: false, detailClient: null, chatMessages: [], msgText: '', chatScrollId: '', chatToolboxOpen: false, chatToolBusy: false })
   },
 
@@ -1149,6 +1202,7 @@ Page({
   async sendMessage() {
     const { detailClient, msgText, lang } = this.data
     if (!msgText.trim() || !detailClient) return
+    if (detailClient.account_type === 'managed') return this._askVivaAboutCustomer()
     this.setData({ msgBusy: true })
     try {
       await this._req(`${BASE}/api/coach-instruction`, 'POST', {
@@ -1163,6 +1217,144 @@ Page({
     } finally {
       this.setData({ msgBusy: false })
     }
+  },
+
+  // A managed customer never reads their chat, so the coach's message goes to Viva instead of to
+  // them: POST /chat with speaker:'coach' runs the turn in the customer's context, stores the
+  // coach's message as a 'coach' row and Viva's answer as an 'ai' row in the customer's thread.
+  // Agentic turns reply asynchronously; there is no notification poll on this page, so poll the
+  // thread for an 'ai' row newer than the coach's message (the same 285 s budget main.js uses).
+  async _askVivaAboutCustomer() {
+    const { detailClient, msgText, lang } = this.data
+    const t = T[lang]
+    const text = msgText.trim()
+    this.setData({ msgBusy: true })
+    try {
+      const res = await this._req(`${BASE}/api/chat`, 'POST', {
+        openid: detailClient.user_id, message: text, speaker: 'coach', client: 'coach',
+      }, 90000)
+      if (!res.data || !res.data.success) throw new Error(res.data && res.data.error)
+      this.setData({ msgText: '' })
+      if (res.data.processing) {
+        this.setData({ vivaThinking: true })
+        await this._loadClientChat()
+        this._startVivaPoll(detailClient.user_id, res.data.user_message_id)
+      } else {
+        await this._loadClientChat()
+      }
+    } catch (e) {
+      wx.showToast({ title: t.sendError, icon: 'none' })
+    } finally {
+      this.setData({ msgBusy: false })
+    }
+  },
+
+  // A managed customer's Dots are paid by their channel with prepaid codes (CLAUDE.md §49): the
+  // coach spends one here. The server attaches the customer's latest proposal and makes the coach
+  // the GCN buyer; GCN then hands the formula to compounding. The shipping address usually is the
+  // clinic's, so the last one used is remembered.
+  openRedeemForm() {
+    const c = this.data.detailClient
+    if (!c) return
+    let lastAddress = ''
+    try { lastAddress = wx.getStorageSync('nano_mc_last_address') || '' } catch (e) {}
+    this.setData({
+      redeemOpen: true, redeemBusy: false,
+      redeemForm: {
+        code: '', name: c.nickname || [c.last_name, c.first_name].filter(Boolean).join(''),
+        phone: String(c.contact_phone || '').replace(/^\+86/, ''), address: lastAddress,
+      },
+    })
+  },
+  closeRedeemForm() { if (!this.data.redeemBusy) this.setData({ redeemOpen: false }) },
+  onRedeemInput(e) { this.setData({ [`redeemForm.${e.currentTarget.dataset.field}`]: e.detail.value }) },
+  async submitRedeem() {
+    const { redeemForm: f, redeemBusy, detailClient, lang } = this.data
+    if (redeemBusy || !detailClient) return
+    const t = T[lang].mc
+    if (!f.code.trim()) { wx.showToast({ title: t.redeemErrors.code_required, icon: 'none' }); return }
+    if (!f.name.trim() || !f.phone.trim() || !f.address.trim()) { wx.showToast({ title: t.redeemErrors.shipping_required, icon: 'none' }); return }
+    this.setData({ redeemBusy: true })
+    try {
+      const res = await this._req(`${BASE}/api/formulation-redeem`, 'POST', {
+        openid: detailClient.user_id, code: f.code.trim(),
+        shipping_name: f.name.trim(), shipping_phone: f.phone.trim(), shipping_address: f.address.trim(),
+      }, 30000)
+      const d = res.data || {}
+      if (!d.success) {
+        wx.showToast({ title: t.redeemErrors[d.reason] || d.reason || t.redeemErrors.fallback, icon: 'none', duration: 3000 })
+        this.setData({ redeemBusy: false })
+        return
+      }
+      try { wx.setStorageSync('nano_mc_last_address', f.address.trim()) } catch (e) {}
+      wx.showToast({ title: d.pending_confirmation ? t.redeemPending : t.redeemDone, icon: 'success' })
+      this.setData({ redeemOpen: false, redeemBusy: false })
+      this._loadClientChat()
+    } catch (e) {
+      wx.showToast({ title: T[lang].networkError, icon: 'none' })
+      this.setData({ redeemBusy: false })
+    }
+  },
+
+  // The box for a managed customer arrives at the clinic; scanning it is what starts their cycle
+  // (POST /box-claim, the same call the customer's own app makes — CLAUDE.md §28). The server
+  // refuses a box made for anyone else (not_your_box), which is the check that matters here.
+  scanBoxForCustomer() {
+    const { detailClient, lang } = this.data
+    if (!detailClient) return
+    const t = T[lang].mc
+    wx.scanCode({
+      onlyFromCamera: false,
+      success: async (res) => {
+        wx.showLoading({ title: '…', mask: true })
+        try {
+          const r = await this._req(`${BASE}/api/box-claim`, 'POST', { openid: detailClient.user_id, box_code: res.result })
+          wx.hideLoading()
+          if (r.data && r.data.success) {
+            wx.showToast({ title: r.data.already_claimed ? t.boxAlready : t.boxOk, icon: 'none', duration: 2500 })
+            this._loadClientChat()
+          } else {
+            wx.showModal({ title: t.boxFail, content: t.boxErrors[r.data && r.data.reason] || t.boxErrors.fallback, showCancel: false })
+          }
+        } catch (e) {
+          wx.hideLoading()
+          wx.showToast({ title: t.boxErrors.fallback, icon: 'none' })
+        }
+      },
+      fail: () => {},
+    })
+  },
+
+  _startVivaPoll(userId, afterId) {
+    this._stopVivaPoll()
+    const deadline = Date.now() + 285000
+    const tick = async () => {
+      const client = this.data.detailClient
+      if (!client || client.user_id !== userId) return this._stopVivaPoll()
+      try {
+        const params = `user_id=${encodeURIComponent(userId)}${this._coachId ? `&coach_id=${this._coachId}` : ''}`
+        const res = await this._req(`${BASE}/api/coach-user-chat?${params}`)
+        const msgs = (res.data && res.data.messages) || []
+        if (msgs.some(m => m.role === 'ai' && (!afterId || Number(m.id) > Number(afterId)))) {
+          this._stopVivaPoll()
+          this.setData({ vivaThinking: false })
+          return this._loadClientChat()
+        }
+      } catch (e) { /* transient — keep polling until the deadline */ }
+      if (Date.now() > deadline) {
+        this._stopVivaPoll()
+        this.setData({ vivaThinking: false })
+        wx.showToast({ title: T[this.data.lang].mc.noReply, icon: 'none' })
+        return
+      }
+      this._vivaPollTimer = setTimeout(tick, 3000)
+    }
+    this._vivaPollTimer = setTimeout(tick, 3000)
+  },
+
+  _stopVivaPoll() {
+    if (this._vivaPollTimer) clearTimeout(this._vivaPollTimer)
+    this._vivaPollTimer = null
   },
 
   // ── Reminders ────────────────────────────────────────────────────────────
@@ -1657,6 +1849,59 @@ Page({
     this.setData({ apptFormOpen: true, apptClientId: client ? client.user_id : '', apptClientName: client ? (client.nickname || '') : '', apptTitleText: '', apptDate: todayStr(), apptTime: '10:00', apptFormat: 'video', apptLink: '' })
   },
   closeApptForm() { this.setData({ apptFormOpen: false }) },
+
+  // ── Managed customers (server: handlers/managedCustomers.js) ──────────────────
+  // One form for create and edit; opened from the client list (+ button) or a managed client's
+  // detail header (edit). The server validates too — these checks only save a round trip.
+  openManagedForm(e) {
+    const client = e && e.currentTarget && e.currentTarget.dataset.client
+    const f = client ? {
+      last_name: client.last_name || '', first_name: client.first_name || '', nickname: client.nickname || '',
+      birth_date: client.birth_date ? String(client.birth_date).slice(0, 10) : '', gender: client.gender || '',
+      contact_phone: client.contact_phone || '', external_ref: client.external_ref || '',
+    } : { last_name: '', first_name: '', nickname: '', birth_date: '', gender: '', contact_phone: '', external_ref: '' }
+    this.setData({
+      mcFormOpen: true, mcEditId: client ? client.user_id : '', mcForm: f, mcBusy: false, today: todayStr(),
+      mcGenderIndex: f.gender === 'male' ? 0 : f.gender === 'female' ? 1 : -1,
+    })
+  },
+  closeManagedForm() { this.setData({ mcFormOpen: false }) },
+  onMcInput(e) { this.setData({ [`mcForm.${e.currentTarget.dataset.field}`]: e.detail.value }) },
+  onMcDate(e) { this.setData({ 'mcForm.birth_date': e.detail.value }) },
+  onMcGender(e) {
+    const i = Number(e.detail.value)
+    this.setData({ mcGenderIndex: i, 'mcForm.gender': i === 0 ? 'male' : 'female' })
+  },
+  async submitManagedForm() {
+    const { mcForm: f, mcEditId, mcBusy, lang } = this.data
+    if (mcBusy) return
+    const t = T[lang].mc
+    const err = !f.birth_date ? 'birth_date_required' : !f.gender ? 'gender_required'
+      : !(f.nickname || f.last_name || f.first_name || f.external_ref) ? 'name_required' : null
+    if (err) { wx.showToast({ title: t.errors[err], icon: 'none' }); return }
+    this.setData({ mcBusy: true })
+    try {
+      const body = { ...f }
+      const res = mcEditId
+        ? await this._req(`${BASE}/api/managed-customers/${encodeURIComponent(mcEditId)}`, 'PUT', body)
+        : await this._req(`${BASE}/api/managed-customers`, 'POST', { ...body, coach_id: this._coachId })
+      if (!res.data || !res.data.success) {
+        const code = res.data && res.data.error
+        wx.showToast({ title: t.errors[code] || t.errors.fallback, icon: 'none' })
+        this.setData({ mcBusy: false })
+        return
+      }
+      wx.showToast({ title: mcEditId ? t.saved : t.created, icon: 'success' })
+      this.setData({ mcFormOpen: false, mcBusy: false })
+      if (mcEditId && this.data.detailClient && this.data.detailClient.user_id === mcEditId) {
+        this.setData({ detailClient: { ...this.data.detailClient, ...res.data.customer } })
+      }
+      this._loadAll()
+    } catch (e) {
+      wx.showToast({ title: T[lang].networkError, icon: 'none' })
+      this.setData({ mcBusy: false })
+    }
+  },
   onApptTitleInput(e) { this.setData({ apptTitleText: e.detail.value }) },
   onApptDateChange(e) { this.setData({ apptDate: e.detail.value }) },
   onApptTimeChange(e) { this.setData({ apptTime: e.detail.value }) },
@@ -1752,7 +1997,7 @@ Page({
 
   _req(url, method = 'GET', data = null, timeoutMs = null) {
     return new Promise((resolve, reject) => {
-      const opts = { url, method, header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` }, success: resolve, fail: reject }
+      const opts = { url, method, header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` }, success: (res) => { session.checkAuthStatus(app, res.statusCode); resolve(res) }, fail: reject }
       if (app.globalData.sandboxMode && method !== 'GET') data = { ...(data || {}), sandbox: true }
       if (data) opts.data = data
       // Default (unset) falls back to wx.request's built-in 60s timeout. /api/health-advice for

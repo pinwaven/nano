@@ -1,0 +1,56 @@
+/* Browser mechanics only; visual rules come from the miniapp's scoped WXSS. */
+.web-coach { height: 100%; min-height: 0; position: relative; }
+.web-coach .coach-page { height: 100%; }
+.web-coach .coach-content { flex: 1; min-height: 0; }
+.web-coach .app-header { padding-right: 48px !important; padding-top: 16px; }
+.web-coach .coach-refresh { position: absolute; top: 12px; right: 14px; border: 0; background: transparent; color: var(--text-sub); font-size: 24px; cursor: pointer; }
+.web-coach .tab-bar { position: relative; flex-shrink: 0; }
+.web-coach .overlay-panel { height: 82%; max-height: 90%; }
+.web-coach .overlay-scroll, .web-coach .overlay-scroll-full { min-height: 0; overflow-y: auto; }
+.web-coach .chat-history { min-height: 0; position: relative; }
+.web-coach .form-input { width: 100%; min-width: 0; color: inherit; font: inherit; box-sizing: border-box; }
+.web-coach textarea { font-family: inherit; color: inherit; resize: vertical; }
+.web-coach .coach-picker { position: relative; }
+.web-coach .coach-picker > input, .web-coach .coach-picker > select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.web-coach .coach-picker:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 6px; }
+.web-coach [role=button] { cursor: pointer; }
+.web-coach [role=button]:focus-visible, .web-coach button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.web-coach .mc-form-panel { height: 82%; }
+.web-coach .coach-appointment-body { padding: 20px; }
+.web-coach .coach-appointment .form-row { display: block; margin-bottom: 18px; }
+.web-coach .coach-appointment .form-input { display: block; height: 46px; margin-top: 8px; }
+.web-coach .coach-appointment { z-index: 220; }
+.web-coach button { font-family: inherit; }
+.web-coach .uh-scroll { height: auto; overflow: visible; }
+.web-coach .health-tab { min-height: 100%; }
+
+/* The browser coach panel reuses the regular user chat renderer. The generated miniapp chat
+   remains the source for native WeChat, while this mount supplies rich cards, history paging,
+   voice input, toolbox behavior and the durable async reply poll on the web. */
+.web-coach .chat-panel > :not(.coach-chat-mount) { display: none; }
+.web-coach .coach-chat-mount { flex: 1; min-height: 0; position: relative; }
+.web-coach .coach-client-chat { position: absolute; inset: 0; }
+.web-coach .coach-client-chat .chat-inner { padding-bottom: 18px; }
+.web-coach .coach-chat-actions {
+  display: flex;
+  gap: 8px;
+  padding: 5px 14px 7px;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.web-coach .coach-chat-actions button {
+  border: 1px solid rgba(99, 117, 236, .28);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(99, 117, 236, .1);
+  color: var(--blue);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.web-coach .btn-busy { pointer-events: none; opacity: .6; }
+@media (min-width: 640px) {
+  /* Match the existing desktop phone frame's notch clearance. */
+  .web-coach .status-bar-spacer { height: 40px !important; }
+}

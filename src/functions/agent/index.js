@@ -4,7 +4,7 @@ const proactivePromptTemplate = require('./prompts/proactive');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
-    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    baseURL: `${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/compatible-mode/v1`,
 });
 
 // Environment-scoped EventBridge source — see dispatcher/index.js's DISPATCHER_EVENT_SOURCE

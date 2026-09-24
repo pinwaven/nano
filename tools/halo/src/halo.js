@@ -283,4 +283,74 @@ class HaloClient {
   }
 }
 
+// Probe the two raw optical streams the X3 SDK exposes, both unverified until now:
+//   path 'stream'  -- 0x11 [01] on / [00] off (CMD_Realtime_ppi): frames of 8-byte
+//                     blocks after a 2-byte header; the SDK reads bytes 4..7 of each
+//                     block, byte-reversed (little-endian), as the PPG value and
+//                     ignores bytes 0..3 -- recorded raw here so they can be inspected.
+//   path 'glucose' -- 0x78 [01] start / [03] stop / [05] quit, 0x3a data frames,
+//                     the same "blood glucose" collection the V8 streams at 50 Hz.
+// Every notification is kept raw; nothing is derived.
+HaloClient.prototype.recordPpg = async function (opts = {}) {
+  const path = opts.path || 'stream';
+  const captureMs = opts.captureMs == null ? 30000 : opts.captureMs;
+  const { ppgControlPacket, setPpgStreamPacket } = protocol;
+  const frames = [], acks = [];
+  let firstAt = null, lastAt = null, stopEarly = null;
+  const stopPromise = new Promise((resolve) => { stopEarly = resolve; });
+  if (typeof opts.onStopSignal === 'function') opts.onStopSignal(() => stopEarly());
+  const dataOp = path === 'glucose' ? 0x3a : 0x11;
+
+  this._ble.onNotify((data) => {
+    const receivedAt = Date.now();
+    const raw = Buffer.from(data).toString('hex');
+    if (data[0] === dataOp && data.length > 16) {
+      if (firstAt == null) firstAt = receivedAt;
+      lastAt = receivedAt;
+      const rec = { opcode: data[0], length: data.length, header: [data[1], data[2]], raw, receivedAt };
+      if (data[0] === 0x3a) {
+        const width = data.length === 153 ? 3 : data.length === 203 ? 4 : 0;
+        rec.width = width; rec.samples = null;
+        if (width) { rec.samples = []; for (let i = 3; i + width <= data.length; i += width) { let v = 0; for (let k = 0; k < width; k++) v = v * 256 + data[i + k]; rec.samples.push(v); } }
+      } else {
+        // 8-byte blocks from offset 2: [b0 b1 b2 b3 | b4 b5 b6 b7]; SDK value = LE(b4..b7)
+        rec.blocks = [];
+        for (let off = 2; off + 8 <= data.length; off += 8) {
+          const head = data.readUInt32LE ? null : null;
+          const b = Array.from(data.slice(off, off + 8));
+          rec.blocks.push({ head_le: b[0] + b[1] * 256 + b[2] * 65536 + b[3] * 16777216, head_be: ((b[0] * 256 + b[1]) * 256 + b[2]) * 256 + b[3],
+            ppg_le: b[4] + b[5] * 256 + b[6] * 65536 + b[7] * 16777216, ppg_be: ((b[4] * 256 + b[5]) * 256 + b[6]) * 256 + b[7] });
+        }
+      }
+      frames.push(rec);
+      if (opts.onPacket) opts.onPacket(rec);
+      return;
+    }
+    const other = { opcode: data[0], length: data.length, raw, receivedAt };
+    acks.push(other);
+    if (opts.onAck) opts.onAck(other);
+  });
+
+  const start = path === 'glucose' ? ppgControlPacket(1, 0) : setPpgStreamPacket(true);
+  try {
+    await this._ble.write(start);
+    await Promise.race([new Promise((resolve) => setTimeout(resolve, captureMs)), stopPromise]);
+  } finally {
+    try {
+      if (path === 'glucose') {
+        await this._ble.write(ppgControlPacket(3, 0));
+        await new Promise((r) => setTimeout(r, 500));
+        await this._ble.write(ppgControlPacket(5, 0));
+      } else {
+        await this._ble.write(setPpgStreamPacket(false));
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    } catch (err) {
+      console.error(`[warn] failed to send PPG stop: ${err.message}`);
+    }
+    this._ble.onNotify(null);
+  }
+  return { path, frames, acks, firstAt, lastAt };
+};
+
 module.exports = { HaloClient };

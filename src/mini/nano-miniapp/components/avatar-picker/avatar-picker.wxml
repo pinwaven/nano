@@ -1,13 +1,56 @@
 <view wx:if="{{visible}}" class="ap-overlay {{theme === 'light' ? 'theme-light' : ''}}" bindtap="onBackdropTap">
   <view class="ap-sheet" catchtap="onSheetTap">
     <view class="ap-header">
-      <text class="ap-title">{{lang === 'en' ? 'Choose an Avatar' : '选择头像'}}</text>
+      <text class="ap-title">{{t.title}}</text>
       <view class="ap-close" bindtap="onBackdropTap">
         <text class="ap-close-icon">✕</text>
       </view>
     </view>
+
+    <view wx:if="{{phase === 'uploading' || phase === 'generating'}}" class="ap-panel">
+      <view class="ap-panel-row">
+        <view class="ap-spinner"></view>
+        <text class="ap-panel-text">{{phase === 'uploading' ? t.uploading : t.generating}}</text>
+      </view>
+      <text class="ap-panel-privacy">{{t.privacy}}</text>
+      <view wx:if="{{phase === 'generating'}}" class="ap-panel-actions">
+        <view class="ap-btn ap-btn-ghost" bindtap="onClosePanel"><text>{{t.ok}}</text></view>
+      </view>
+    </view>
+    <view wx:elif="{{phase === 'preview'}}" class="ap-panel">
+      <text class="ap-panel-title">{{t.previewTitle}}</text>
+      <view class="ap-preview-row">
+        <view wx:for="{{preview}}" wx:key="mood" class="ap-preview-item">
+          <image class="ap-preview-img" src="{{item.url}}" mode="aspectFill" />
+          <text class="ap-preview-label">{{item.label}}</text>
+        </view>
+      </view>
+      <text class="ap-panel-hint">{{t.previewHint}}</text>
+      <view class="ap-panel-actions">
+        <view class="ap-btn ap-btn-ghost {{busy ? 'ap-btn-disabled' : ''}}" bindtap="onRegenerate"><text>{{t.regenerate}}</text></view>
+        <view class="ap-btn ap-btn-primary {{busy ? 'ap-btn-disabled' : ''}}" bindtap="onApply"><text>{{t.use}}</text></view>
+      </view>
+    </view>
+    <view wx:elif="{{phase === 'error'}}" class="ap-panel">
+      <text class="ap-panel-text ap-panel-error">{{errorText}}</text>
+      <view class="ap-panel-actions">
+        <view class="ap-btn ap-btn-ghost" bindtap="onClosePanel"><text>✕</text></view>
+        <view class="ap-btn ap-btn-primary" bindtap="onRegenerate"><text>{{t.tryAgain}}</text></view>
+      </view>
+    </view>
+
     <scroll-view class="ap-grid-scroll" scroll-y="true">
       <view class="ap-grid">
+        <view wx:if="{{allowUpload}}"
+              class="ap-item ap-item-custom {{selectedId === CUSTOM_ID ? 'ap-item-selected' : ''}} {{customThumb ? '' : 'ap-item-custom-empty'}}"
+              bindtap="onCustomTap">
+          <image wx:if="{{customThumb}}" class="ap-item-img" src="{{customThumb}}" mode="aspectFill" />
+          <view wx:else class="ap-item-custom-inner">
+            <text class="ap-item-custom-icon">📷</text>
+            <text class="ap-item-custom-text">{{t.myPhoto}}</text>
+          </view>
+          <view wx:if="{{customThumb}}" class="ap-item-custom-badge"><text>📷</text></view>
+        </view>
         <view
           wx:for="{{gallery}}"
           wx:key="id"
@@ -18,6 +61,7 @@
           <image class="ap-item-img" src="{{item.thumb}}" mode="aspectFill" />
         </view>
       </view>
+      <text wx:if="{{allowUpload && !customThumb && phase === 'idle'}}" class="ap-grid-hint">{{t.myPhotoHint}} · {{t.privacy}}</text>
     </scroll-view>
   </view>
 </view>

@@ -1,4 +1,5 @@
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
+const { getBiomarkerStatusLine } = require('../../chat/biomarkerStatusLine');
 const { getWearableDailyBlock } = require('../../chat/wearableDailyBlock');
 const { getSubAgeInputsBlock } = require('../../chat/subAgeInputsBlock');
 const { getOutputFormatBlock } = require('../../chat/outputFormat');
@@ -15,7 +16,7 @@ module.exports = ({ user_profile, biomarkers, biomarkers_tested_at, bioage, ques
     ? `LATEST KINO TEST DATE: ${biomarkers_tested_at || 'unknown'} — this is the ONLY test date you may cite. Never invent or guess a different date.
 BIO AGE: ${bioage.BioAge} vs chronological ${bioage.ChronoAge} (Δ ${bioage.AgeDifference})
 Sub-ages — Cellular: ${bioage.SubAges?.CellularAge ?? '—'} | Metabolic: ${bioage.SubAges?.MetabolicAge ?? '—'} | Micro-Vascular: ${bioage.SubAges?.MicroVascularAge ?? '—'} | Resilience: ${bioage.SubAges?.ResilienceAge ?? '—'}
-BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values available.'} — these are the ONLY current values you may cite. Do not reuse figures from earlier turns in the conversation even if they look similar; always defer to these exact numbers.`
+BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values available.'} — these are the ONLY current values you may cite. Do not reuse figures from earlier turns in the conversation even if they look similar; always defer to these exact numbers.${getBiomarkerStatusLine(biomarkers, isZh)}`
     : `BIOMARKER DATA: No test on record. Suggest the user run a Kino chip scan.`;
 
   const planSection = active_health_plans && active_health_plans.length > 0
@@ -26,8 +27,8 @@ BIOMARKERS: ${hasBiomarkers ? JSON.stringify(biomarkers) : 'No raw values availa
 
   const twinSection = health_twin
     ? (isZh
-        ? `数字孪生 · 日常监测（近7天均值）：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / 深睡 ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 静息心率 ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'} | SpO₂ ${health_twin.avg_spo2 != null ? health_twin.avg_spo2.toFixed(1) + '%' : '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}`
-        : `TWIN · DAILY MONITORING (7-day avg): Sleep ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / Deep ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | Steps ${health_twin.avg_daily_steps ?? '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | Resting HR ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'} | SpO₂ ${health_twin.avg_spo2 != null ? health_twin.avg_spo2.toFixed(1) + '%' : '—'}${health_twin.latest_weight_kg ? ' | Weight ' + health_twin.latest_weight_kg + ' kg' : ''}`)
+        ? `数字孪生 · 日常监测（近7天均值）：睡眠 ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / 深睡+REM ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | 步数 ${health_twin.avg_daily_steps ?? '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | 静息心率 ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'} | SpO₂ ${health_twin.avg_spo2 != null ? health_twin.avg_spo2.toFixed(1) + '%' : '—'}${health_twin.latest_weight_kg ? ' | 体重 ' + health_twin.latest_weight_kg + ' kg' : ''}`
+        : `TWIN · DAILY MONITORING (7-day avg): Sleep ${health_twin.avg_sleep_hours != null ? health_twin.avg_sleep_hours.toFixed(1) + 'h' : '—'} / Deep+REM ${health_twin.avg_deep_sleep_pct != null ? health_twin.avg_deep_sleep_pct.toFixed(0) + '%' : '—'} | Steps ${health_twin.avg_daily_steps ?? '—'} | HRV ${health_twin.avg_hrv_ms != null ? health_twin.avg_hrv_ms.toFixed(0) + 'ms' : '—'} | Resting HR ${health_twin.avg_resting_hr != null ? health_twin.avg_resting_hr.toFixed(0) + ' bpm' : '—'} | SpO₂ ${health_twin.avg_spo2 != null ? health_twin.avg_spo2.toFixed(1) + '%' : '—'}${health_twin.latest_weight_kg ? ' | Weight ' + health_twin.latest_weight_kg + ' kg' : ''}`)
     : '';
 
   return `${getFactConstraintBlock(essential_knowledge, isZh)}
@@ -58,7 +59,8 @@ RESPONSE RULES:
 - Reference their specific numbers. Never give generic advice when you have real data.
 - 2–3 short paragraphs max. No markdown headers (##).
 - Explain what the numbers mean in plain language — what's driving the reading, and what it feels like in the body.
-- Cross-reference Precision Testing biomarkers with daily-monitoring signals (sleep, HRV, activity) when both are available — patterns across data sources are more meaningful than any single reading.
+- When both Precision Testing biomarkers and daily-monitoring signals (sleep, HRV, activity) are available, present them side by side and say what each reflects — but never build a causal chain between them ("HRV dropped → capillary pressure rose → swelling", "high CD38 → inflammation → higher CD38"); there is no determinable causal link.
+- **When the user describes a symptom or discomfort** (swelling, dizziness, chest tightness, pain, palpitations, persistent fatigue…): first explain in general medical terms the common kinds of causes; name the warning signs that call for prompt medical care (e.g. one-sided leg swelling with pain or redness, chest pain, shortness of breath, sudden worsening); then say which of their data may be relevant and what the data cannot answer. Kino markers and wearable data cannot diagnose or "rule out" any condition — never say kidney/heart causes are ruled out, never derive a mechanism for the symptom from HRV or biomarkers, and never read today's partial step count as a collapse in activity.
 - If the user is in an active health plan, relate the biomarker readings to their plan goal and progress.
 - End with one concrete next step, then stop cleanly. The final sentence must never be a question, and this applies just as much to a question-mark-free invitation to keep chatting — "Let me know if you'd like a comparison chart", "I'm happy to walk through the details", "Feel free to ask" are all forbidden closers too, not just literal "Would you like me to...?" ones. Give the recommendation itself and stop; don't offer to be available for more.`;
 };

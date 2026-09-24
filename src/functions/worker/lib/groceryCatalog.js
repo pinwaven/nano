@@ -1,6 +1,6 @@
 'use strict';
 
-// Grocery catalogs (food_suppliers / supplier_products — CLAUDE.md §44): the reads shared by the
+// Grocery catalogs (food_suppliers / supplier_products — CLAUDE.md §46): the reads shared by the
 // get_grocery_products tool (lib/agenticTools.js) and the recommend_grocery tail
 // (handlers/chat.js finalizeChatReply), so the model is shown and the card renders the SAME rows.
 //
@@ -29,7 +29,8 @@ function _factTerm(fact) {
 // 素食 is the one restriction that is a category, not a word. Product names rarely say 肉.
 const VEGETARIAN_RE = /(素食|纯素|吃素|vegetarian|vegan)/i;
 const ANIMAL_CATEGORY_RE = /(肉禽蛋品|海鲜水产)/;
-const ANIMAL_NAME_RE = /(肉|鸡|鸭|鹅|牛|羊|猪|鱼|虾|蟹|贝|蛤|蚝|鱿|章鱼|三文鱼|培根|火腿|香肠|肠$)/;
+// Whole words, not single characters: 牛 alone would take 牛奶 and 牛油果 from a vegetarian.
+const ANIMAL_NAME_RE = /(猪肉|牛肉|羊肉|鸡肉|鸭肉|鹅肉|鸡翅|鸡腿|鸡胸|牛排|排骨|里脊|五花|培根|火腿|香肠|腊肉|肉丸|肉片|肉馅|肉末|肉松|鱼|虾|蟹|贝|蛤|蚝|鱿|章鱼|海参|鲍鱼|海鲜)/;
 
 function filterGroceryByUserFacts(products, userFacts) {
     const facts = (userFacts || []).filter(f => f && (f.category === 'allergy' || f.category === 'dietary_restriction'));

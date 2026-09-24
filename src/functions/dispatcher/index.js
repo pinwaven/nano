@@ -147,6 +147,10 @@ exports.handler = async (event, context) => {
                 // if not expired, else channel default — mirrors worker/lib/persona.js's
                 // resolveEffectivePersona/hasActiveVivaAccess, expressed inline since this FC
                 // function has its own duplicated lib/ and can't require() the worker's copy.
+                // Every scan below excludes managed customers (migration_managed_customers.sql): a
+                // coach operates them and they never open the app, so a check-in, program card or
+                // nudge would only land in a chat their coach reads. They also never heartbeat, so
+                // last_active_at already keeps them out — the explicit guard is so that stays true.
                 const checkinResult = await pool.query(
                     `WITH eff AS (
                        SELECT u.*, c.config AS channel_config,
@@ -162,6 +166,7 @@ exports.handler = async (event, context) => {
                      FROM eff
                      JOIN nutrition_plans np ON np.user_id = eff.user_id AND np.status = 'active'
                      WHERE 'user' = ANY(eff.roles)
+                       AND eff.account_type <> 'managed'
                        AND COALESCE((eff.preferences->>'daily_checkin_enabled')::boolean, true) = true
                        AND eff.last_active_at > NOW() - INTERVAL '2 minutes'
                        AND (eff.effective_persona_type != 'viva'
@@ -209,6 +214,7 @@ exports.handler = async (event, context) => {
                  JOIN programs p ON p.id = e.program_id AND p.status = 'active'
                  WHERE e.status = 'active'
                    AND 'user' = ANY(u.roles)
+                   AND u.account_type <> 'managed'
                    AND u.last_active_at > NOW() - INTERVAL '2 minutes'
                    AND COALESCE((u.preferences->>'program_checkin_enabled')::boolean, true) = true
                    AND NOT EXISTS (
@@ -246,6 +252,7 @@ exports.handler = async (event, context) => {
                    AND dp.offered_on < (NOW() AT TIME ZONE 'Asia/Shanghai')::date
                    AND dp.nudge_count < 5
                    AND 'user' = ANY(u.roles)
+                   AND u.account_type <> 'managed'
                    AND u.last_active_at > NOW() - INTERVAL '2 minutes'
                    AND COALESCE((u.preferences->>'program_checkin_enabled')::boolean, true) = true
                    AND NOT EXISTS (
@@ -271,6 +278,7 @@ exports.handler = async (event, context) => {
                 FROM users
                 WHERE last_active_at > NOW() - INTERVAL '2 minutes'
                   AND 'user' = ANY(roles)
+                  AND account_type <> 'managed'
                   AND COALESCE(
                     (SELECT role FROM chat_messages
                      WHERE user_id = users.user_id

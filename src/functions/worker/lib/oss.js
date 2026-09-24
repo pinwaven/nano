@@ -115,4 +115,14 @@ async function putObjectBuffer(key, buffer, contentType = 'application/octet-str
     return key;
 }
 
-module.exports = { generateKey, generatePresignedPutUrl, generatePresignedGetUrl, headObject, deleteObject, getObjectBuffer, putObjectBuffer };
+// Server-side image processing: OSS resizes/re-encodes `sourceKey` and writes the result as a new
+// object at `targetKey` (e.g. process 'image/resize,m_fill,w_300,h_300/format,jpg/quality,q_82').
+// Confirmed live on waven-nano (2026-09-19, ~0.5 s) — this is what keeps jimp/sharp out of the
+// worker bundle. Throws on failure; callers decide whether a missing derivative is fatal.
+async function processObjectSave(sourceKey, targetKey, process) {
+    const client = getClient();
+    await client.processObjectSave(sourceKey, targetKey, process);
+    return targetKey;
+}
+
+module.exports = { generateKey, generatePresignedPutUrl, generatePresignedGetUrl, headObject, deleteObject, getObjectBuffer, putObjectBuffer, processObjectSave };

@@ -1,5 +1,6 @@
 const app = getApp()
 const { BASE, VERSION, WX_VERSION, IS_DEV } = require('../../utils/config.js')
+const session = require('../../utils/session.js')
 const toolActions = require('../../utils/tool-actions')
 const { resolveAvatarUrl, DEFAULT_MOOD } = require('../../utils/mood.js')
 const { maskPhone } = require('../../utils/phone.js')
@@ -375,9 +376,7 @@ const T = {
     mdTakeaway: '关键要点',
     mdLinkCopy: '复制链接',
     mdLinkCopied: '链接已复制',
-    adminMenu: '渠道管理',
     coachMenu: '教练面板',
-    superadminMenu: '超管面板',
     webAdminMenu: '网页后台',
     kinoSimMenu: 'Kino 模拟器',
     referralMenu: '邀请好友',
@@ -734,9 +733,7 @@ const T = {
     mdTakeaway: 'Key takeaway',
     mdLinkCopy: 'Copy link',
     mdLinkCopied: 'Link copied',
-    adminMenu: 'Channel Admin',
     coachMenu: 'Coach Panel',
-    superadminMenu: 'Super Admin',
     webAdminMenu: 'Web Admin',
     kinoSimMenu: 'Kino Simulator',
     referralMenu: 'Invite Friends',
@@ -1512,6 +1509,13 @@ Page({
   _dotsLoadedAt: 0,
   _plansLoadedAt: 0,
   _lastMsgId: null,
+  // Turn scoping for the AI de-dup (see _aiKey). _turnSeq counts sends; _aiDedupeSeq is the first
+  // turn whose renders still count as duplicates, _aiRowFloor the server id of the user message
+  // that opened it. Both stay at their defaults until a /api/chat reply carries user_message_id,
+  // which leaves an older server behaving exactly as before.
+  _turnSeq: 0,
+  _aiDedupeSeq: 0,
+  _aiRowFloor: null,
   _chatWaitStartedAt: null,
   _chatWaitBudgetMs: null,
   _touchX: 0,
@@ -1519,7 +1523,7 @@ Page({
 
   onLoad(options) {
     this._seenIds = new Set()
-    this._renderedAiKeys = new Set()
+    this._renderedAiKeys = new Map()
     const user = app.globalData.user
     if (!user) {
       wx.reLaunch({ url: '/pages/login/login' })
@@ -1931,7 +1935,7 @@ Page({
     this._openAevivaStoreGated({ intent: 'view_product', sku_id: skuId })
   },
 
-  // Tapping a row of the :::grocery card (CLAUDE.md §44). The supermarket's app is not ours
+  // Tapping a row of the :::grocery card (CLAUDE.md §46). The supermarket's app is not ours
   // and has no deep link a Mini Program can verify, so the row's one job is to hand the user the
   // exact product name: copied to the clipboard, with a toast saying which app to search in.
   handleGroceryCardTap(e) {
@@ -2841,17 +2845,9 @@ Page({
     this._openAevivaStoreGated({ intent: 'buy_viva_subscription' })
   },
 
-  openAdmin() {
-    this.setData({ menuOpen: false })
-    wx.navigateTo({ url: '/pages/admin/admin' })
-  },
-
-
-  openSuperadmin() {
-    this.setData({ menuOpen: false })
-    wx.navigateTo({ url: '/pages/superadmin/superadmin' })
-  },
-
+  // The native admin / superadmin pages were removed (2026-09-23): both panels run on the web
+  // admin panel, which has its own login. They were the only reason the miniapp shipped an
+  // admin-capable token.
   openWebAdmin() {
     this.setData({ menuOpen: false })
     wx.navigateTo({ url: '/pages/webadmin/webadmin' })
@@ -3129,9 +3125,11 @@ Page({
         channel: app.globalData.channel,
         coach: app.globalData.coach,
         maskedPhone: user.maskedPhone || maskPhone(phone) || '',
+        session_token: app.globalData.apiToken || '',
       })
     }
     wx.removeStorageSync('nano_user')
+    session.clearSession(app)
     app.globalData.user = null
     wx.reLaunch({ url: '/pages/login/login?loggedOut=1' })
   },
@@ -3577,6 +3575,12 @@ Page({
   // catch-up poll (durable, see _poll) — and either can win the race, so whichever renders first
   // registers its text here and the other drops it. Keyed on normalised text because a
   // notification row carries no chat_messages id to match on.
+  //
+  // Text alone cannot tell "the same reply on the other channel" from "a new reply that repeats
+  // an earlier one": asked 「你是什么大模型？」 then 「你背后是什么模型？」, Viva answered both
+  // word for word, and the second was dropped as a duplicate — dots gone, no bubble (dev,
+  // 2026-09-23). So each key remembers the turn it was rendered in, and once a turn is scoped
+  // (_scopeAiDedupeToTurn) only a render from THIS turn makes a later copy a duplicate.
   _aiKey(content) {
     return String(content || '').replace(/\s+/g, ' ').trim().slice(0, 160)
   },
@@ -3584,17 +3588,32 @@ Page({
   _markRenderedAi(content) {
     const k = this._aiKey(content)
     if (!k || !this._renderedAiKeys) return
-    this._renderedAiKeys.add(k)
-    // Bounded — a long session must not grow this without limit. Sets iterate in insertion
+    // delete-then-set moves a re-rendered key to the end, so eviction stays oldest-first.
+    this._renderedAiKeys.delete(k)
+    this._renderedAiKeys.set(k, this._turnSeq)
+    // Bounded — a long session must not grow this without limit. Maps iterate in insertion
     // order, so this evicts the oldest key.
     if (this._renderedAiKeys.size > 200) {
-      this._renderedAiKeys.delete(this._renderedAiKeys.values().next().value)
+      this._renderedAiKeys.delete(this._renderedAiKeys.keys().next().value)
     }
   },
 
-  _isRenderedAi(content) {
+  // `anyTurn` is for a chat_messages row at or below _aiRowFloor — a reply to an EARLIER turn
+  // that the catch-up can still return (_lastMsgId only advances past rows it fetched), which the
+  // old any-turn rule must keep dropping or it would re-render an old reply.
+  _isRenderedAi(content, anyTurn = false) {
     const k = this._aiKey(content)
-    return !!k && !!this._renderedAiKeys && this._renderedAiKeys.has(k)
+    if (!k || !this._renderedAiKeys) return false
+    const seq = this._renderedAiKeys.get(k)
+    return seq !== undefined && (anyTurn || seq >= this._aiDedupeSeq)
+  },
+
+  // Called with /api/chat's user_message_id: every reply to this turn is a chat_messages row
+  // after that id, and only renders from this turn count as duplicates from here on.
+  _scopeAiDedupeToTurn(userMessageId) {
+    if (typeof userMessageId !== 'number') return
+    this._aiDedupeSeq = this._turnSeq
+    this._aiRowFloor = userMessageId
   },
 
   _addMsg(role, rawContent, persist = false) {
@@ -3957,6 +3976,9 @@ Page({
 
   async _sendMessage(text) {
     const { user, t } = this.data
+    // A new turn: a reply rendered from here on (by either channel, even while the request below
+    // is still in flight) is tagged with it — see _scopeAiDedupeToTurn.
+    this._turnSeq += 1
     this._addMsg('user', text)
     this.setData({ typing: true, chatStatusText: '', toolboxOpen: false })
     try {
@@ -3971,6 +3993,7 @@ Page({
       // that tool is what actually produces a formulation, so running it beats describing it.
       // The user's own message already stands in the chat and was persisted server-side, hence
       // skipUserMsg — the tool must not append its own canned trigger line on top of it.
+      this._scopeAiDedupeToTurn(res.data?.user_message_id)
       if (res.data?.launch_tool === 'formula_dots') {
         this._startFormulaDots({ skipUserMsg: true })
         return
@@ -4117,7 +4140,9 @@ Page({
           this._lastMsgId = Math.max(...rows.map(m => m.id))
           // An ai row normally arrives here just after the notification channel already showed
           // the same text — drop those instead of double-rendering.
-          const fresh = rows.filter(m => m.role === 'coach' || !this._isRenderedAi(m.content))
+          const floor = this._aiRowFloor
+          const fresh = rows.filter(m => m.role === 'coach'
+            || !this._isRenderedAi(m.content, floor !== null && typeof m.id === 'number' && m.id <= floor))
           const gotAi = fresh.some(m => m.role !== 'coach')
           fresh.forEach(m => { if (m.role !== 'coach') this._markRenderedAi(m.content) })
           if (fresh.length > 0) {
@@ -5254,6 +5279,15 @@ Page({
     }).catch(() => {}).finally(done)
   },
 
+  // A generated ("my photo") avatar was applied by the picker via POST /avatar-generation/apply;
+  // the server row is already updated, so this is only the local mirror of it.
+  handleHealthCustomAvatar(e) {
+    const d = e.detail || {}
+    if (!d.avatar_url || !d.avatar_moods) return
+    const { user } = this.data
+    this._updateUser({ ...user, avatar_url: d.avatar_url, avatar_character: d.avatar_character || 'custom', avatar_moods: d.avatar_moods })
+  },
+
   onProfileUpdated(e) {
     const updated = e.detail
     if (!updated) return
@@ -5597,7 +5631,7 @@ Page({
       const opts = {
         url, method,
         header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
-        success: resolve,
+        success: (res) => { session.checkAuthStatus(app, res.statusCode); resolve(res) },
         fail: reject,
       }
       if (app.globalData.sandboxMode && method !== 'GET') data = { ...(data || {}), sandbox: true }

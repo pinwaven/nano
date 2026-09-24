@@ -26,8 +26,13 @@ const pool = {
         }
         return { rows: [], rowCount: 0 };
     },
+    // A transaction client over the same scripted rows, so the claim-time page grouping runs
+    // in these tests the way it does in production.
+    connect: async () => ({ query: (sql, params) => pool.query(sql, params), release: () => {} }),
 };
 stub('lib/db', { pool });
+// Presigning needs OSS credentials no test has; the claim tests below hand out documents.
+stub('lib/oss', { generatePresignedGetUrl: (key) => `https://oss.invalid/${key}?sig=x` });
 
 let reportCalls = [];
 let reportWritten = 1;
@@ -410,4 +415,84 @@ test('accepted and written are both reported, and can differ', async () => {
     const r = await dx.handlePostDocExtractResult(RESULT);
     assert.equal(r.accepted.observations_accepted, 1, 'the validator accepted one');
     assert.equal(r.accepted.observations_written, 0, 'but none were persisted');
+});
+
+
+// ── contract 4: page groups ──────────────────────────────────────────────────────────────────
+test('photos of one report uploaded together are grouped at claim: one head, the rest grouped', async () => {
+    const t = (m) => `2026-09-19T05:41:${String(m).padStart(2, '0')}Z`;
+    reset({
+        // three photos by u-1 within a minute, one photo by u-2, one photo by u-1 an hour later
+        'FROM doc_extraction_jobs j\\s+JOIN health_documents d': [
+            { id: 1, user_id: 'u-1', created_at: t(0) }, { id: 2, user_id: 'u-1', created_at: t(30) },
+            { id: 3, user_id: 'u-1', created_at: t(59) }, { id: 4, user_id: 'u-2', created_at: t(10) },
+            { id: 5, user_id: 'u-1', created_at: '2026-09-19T06:50:00Z' },
+        ],
+        'UPDATE doc_extraction_jobs\\s+SET status = .claimed': [],
+    });
+    await dx.handlePostDocExtractClaim({ worker_id: 'w1' });
+    const heads = queries.filter(q => /SET group_uid = \$2, group_role = 'head'/.test(q.sql));
+    const members = queries.filter(q => /group_role = 'member', status = 'grouped'/.test(q.sql));
+    assert.equal(heads.length, 1, 'exactly one group');
+    assert.equal(heads[0].params[0], 1, 'the earliest page is the head');
+    assert.deepEqual(members[0].params[0], [2, 3], 'the other two pages within the window are members');
+    assert.match(members[0].sql, /status = 'grouped'/);
+    // u-2's single photo and u-1's later one were left alone.
+    assert.ok(!members[0].params[0].includes(4) && !members[0].params[0].includes(5));
+});
+
+test('the grouping query takes only queued, unattempted, ungrouped image jobs, locked', () => {
+    const fn = SOURCE.slice(SOURCE.indexOf('async function _groupQueuedJobs'), SOURCE.indexOf('async function _groupPages'));
+    assert.match(fn, /status = 'queued' AND j\.group_uid IS NULL AND j\.attempts = 0/);
+    assert.match(fn, /content_type LIKE 'image\/%'/);
+    assert.match(fn, /FOR UPDATE OF j SKIP LOCKED/);
+    assert.match(fn, /BEGIN[\s\S]*COMMIT/);
+});
+
+test('a head claim carries every page, head first; a lone upload carries no group', async () => {
+    reset({
+        'UPDATE doc_extraction_jobs\\s+SET status = .claimed': [{ id: 9, job_uid: 'job-h', document_id: 131, user_id: 'u-1', attempts: 1, max_attempts: 3, created_at: new Date(), claim_expires_at: new Date(), group_uid: 'g-1' }],
+        'FROM health_documents WHERE id': [{ id: 131, oss_key: 'health-documents/u-1/p1.jpg', filename: 'p1.jpg', content_type: 'image/jpeg', created_at: new Date() }],
+        'WHERE j.group_uid = \\$1': [
+            { id: 131, oss_key: 'health-documents/u-1/p1.jpg', filename: 'p1.jpg', content_type: 'image/jpeg', created_at: new Date(), group_role: 'head', job_id: 9 },
+            { id: 132, oss_key: 'health-documents/u-1/p2.jpg', filename: 'p2.jpg', content_type: 'image/jpeg', created_at: new Date(), group_role: 'member', job_id: 10 },
+        ],
+    });
+    const r = await dx.handlePostDocExtractClaim({ worker_id: 'w1' });
+    assert.equal(r.success, true);
+    assert.equal(r.job.document.document_id, 131);
+    assert.equal(r.job.group.page_count, 2);
+    assert.deepEqual(r.job.group.pages.map(p => [p.page, p.document_id]), [[1, 131], [2, 132]]);
+    assert.ok(r.job.group.pages.every(p => typeof p.url === 'string' && !('summary' in p)));
+
+    reset({
+        'UPDATE doc_extraction_jobs\\s+SET status = .claimed': [{ id: 9, job_uid: 'job-s', document_id: 140, user_id: 'u-1', attempts: 1, max_attempts: 3, created_at: new Date(), claim_expires_at: new Date(), group_uid: null }],
+        'FROM health_documents WHERE id': [{ id: 140, oss_key: 'health-documents/u-1/r.pdf', filename: 'r.pdf', content_type: 'application/pdf', created_at: new Date() }],
+    });
+    const single = await dx.handlePostDocExtractClaim({ worker_id: 'w1' });
+    assert.equal(single.job.group, undefined);
+});
+
+test('a head result closes every page with its reading and one message; a terminal head failure fails them', async () => {
+    reset({
+        'FROM doc_extraction_jobs WHERE job_uid': [{ ...CLAIMED_JOB, group_uid: 'g-1', group_role: 'head' }],
+        'WHERE j.group_uid = \\$1': [
+            { id: 412, group_role: 'head', job_id: 1, created_at: new Date() },
+            { id: 413, group_role: 'member', job_id: 2, created_at: new Date() },
+            { id: 414, group_role: 'member', job_id: 3, created_at: new Date() },
+        ],
+    });
+    const r = await dx.handlePostDocExtractResult(RESULT);
+    assert.equal(r.success, true);
+    const memberDocs = queries.filter(q => /UPDATE health_documents[\s\S]*grouped_into/.test(q.sql) || (/UPDATE health_documents/.test(q.sql) && /第 \d+ 页/.test(String(q.params?.[4]))));
+    assert.equal(memberDocs.length, 2, 'both member documents stamped');
+    assert.equal(memberDocs[0].params[1], 'lab_report', 'member takes the head\'s type');
+    assert.match(String(memberDocs[0].params[4]), /第 2 页，共 3 页/);
+    const memberJobs = queries.filter(q => /grouped_into/.test(String(q.params?.[1])) && /doc_extraction_jobs/.test(q.sql));
+    assert.equal(memberJobs.length, 2);
+    assert.equal(delivered.length, 1, 'one chat message for the whole report');
+
+    reset({ 'FROM doc_extraction_jobs WHERE job_uid': [{ ...CLAIMED_JOB, attempts: 3, max_attempts: 3, group_uid: 'g-1', group_role: 'head' }] });
+    await dx.handlePostDocExtractFail({ job_uid: 'job-1', result_token: 'good-token', reason: 'unreadable', retryable: false });
+    assert.ok(queries.some(q => /group_head_failed/.test(q.sql) && /status = 'grouped'/.test(q.sql)), 'members failed with the head');
 });

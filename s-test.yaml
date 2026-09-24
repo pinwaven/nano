@@ -81,6 +81,8 @@ resources:
         WX_SECRET_WAVEN: ${env(WX_SECRET_WAVEN)}
         WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        # Signs nano's own sessions (ch./sa.) — never API_BEARER_TOKEN, which is public.
+        TOKEN_SIGNING_SECRET: ${env(TOKEN_SIGNING_SECRET)}
         OSS_REGION: "oss-cn-shanghai"
         OSS_BUCKET: "waven-nano"
         OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
@@ -210,6 +212,8 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        # Signs nano's own sessions (ch./sa.) — never API_BEARER_TOKEN, which is public.
+        TOKEN_SIGNING_SECRET: ${env(TOKEN_SIGNING_SECRET)}
         KINO_ACTIVATION_TOKEN: "JND7MAED2wd4QUG7rMlG3_YpU0B_lqOjVM_LFsFzcdA"
         KINO_ROOT_TOKEN_ENCRYPTION_KEY: "935eb5474873526ee812addf266aa69266c704e5d16e6d67cae83e0b79a6f155"
         KINO_COMM_TOKEN_TTL_DAYS: "7"

@@ -8,10 +8,12 @@ import Toolbox from './Toolbox.jsx';
 import FocusSheet from './FocusSheet.jsx';
 import VoiceInput from './VoiceInput.jsx';
 
-export default function ChatTab({ onGuestTap }) {
+export default function ChatTab({ onGuestTap, context = null, footerActions = null }) {
   const app = useApp();
-  const { t, isGuest, isAeviva } = app;
-  const chat = useChat(app);
+  const { t, isAeviva } = app;
+  const coachMode = !!context?.coachMode;
+  const isGuest = coachMode ? false : app.isGuest;
+  const chat = useChat(app, context || {});
   const { messages, typing, statusText, obStep, ob, hasMoreHistory, historyLoading, kinoScanPending, toolboxOpen, isSending } = chat;
   const [input, setInput] = useState('');
   const listRef = useRef(null);
@@ -44,14 +46,14 @@ export default function ChatTab({ onGuestTap }) {
   useEffect(autoGrow, [input]);
 
   const segCtx = {
-    isAeviva,
+    isAeviva: isAeviva && !coachMode,
     onToggleTier: chat.toggleFormulaTier, onFormulaSubmit: chat.handleFormulaSubmit, onFormulaOrder: chat.handleFormulaOrder,
     onProductTap: chat.handleProductTap, onPlayLesson: chat.playLesson, onLessonEnded: chat.lessonEnded, onCheckinStart: chat.startCheckin,
   };
   const inputVisible = obStep === 'done' || isGuest;
 
   return (
-    <div className="chat-tab">
+    <div className={`chat-tab${coachMode ? ' coach-client-chat' : ''}`}>
       <div className="chat-messages chat-scroll" ref={listRef}>
         <div className="chat-inner">
           {hasMoreHistory ? (
@@ -97,7 +99,7 @@ export default function ChatTab({ onGuestTap }) {
         </div>
       </div>
 
-      {!isGuest && <Questionnaire question={ob.question} typing={typing} onSubmit={chat.saveAnswer} onOther={chat.saveOtherText} />}
+      {!isGuest && !coachMode && <Questionnaire question={ob.question} typing={typing} onSubmit={chat.saveAnswer} onOther={chat.saveOtherText} />}
 
       {kinoScanPending && (
         <div className="ob-bar kino-scan-bar">
@@ -108,6 +110,8 @@ export default function ChatTab({ onGuestTap }) {
 
       {inputVisible && <div className="ai-disclaimer"><span className="ai-disclaimer-text">{t.aiDisclaimer}</span></div>}
 
+      {inputVisible && footerActions}
+
       {inputVisible && (
         <div className="input-container">
           {toolboxOpen && <Toolbox disabled={typing} onAction={chat.handleToolAction} />}
@@ -115,7 +119,7 @@ export default function ChatTab({ onGuestTap }) {
             <div className={`plus-btn${toolboxOpen ? ' plus-btn-open' : ''}`} onClick={() => { if (isGuest) { onGuestTap?.(); return; } if (typing && !toolboxOpen) return; chat.setToolboxOpen(!toolboxOpen); }}>
               <span className="plus-icon">+</span>
             </div>
-            <textarea ref={taRef} className="chat-textarea" placeholder={t.inputPh} value={input} maxLength={500} rows={1}
+            <textarea ref={taRef} className="chat-textarea" placeholder={context?.placeholder || t.inputPh} value={input} maxLength={500} rows={1}
               onChange={e => setInput(e.target.value)} onKeyDown={onKey} />
             {!input && !isGuest ? (
               <VoiceInput disabled={typing || isSending} onResult={r => setInput(cur => (cur ? `${cur}${/\s$/.test(cur) ? '' : ' '}${r}` : r))} />

@@ -7,12 +7,9 @@
 // user_phones / users.phone are for phones. Codes are nano's own (lib/email-otp.js) because
 // DirectMail only delivers — there is no PNVS-style managed verification for email.
 //
-// Waven-only, by design: aeviva stays phone-only. "Waven" means the ROOT of the user's channel
-// tree (lib/channels.js), so waven-china / waven-china-zj users qualify, and so does a user
-// with no channel at all (a brand-new email sign-up is placed on the root `waven` channel, the
-// same default the WeChat login paths use — login.js's key_name = 'waven' lookup). This is a
-// dedicated allow-rule and deliberately NOT GCN_LINKED_CHANNEL_KEYS: that set now includes
-// waven for the store link, and reusing it as a deny-list would lock waven out of email login.
+// Email identities are channel-agnostic. A new browser user is assigned through a coach
+// invitation; legacy non-browser callers without an invitation keep the root `waven` fallback.
+// Once created, the same email must remain usable for later login regardless of channel.
 
 const { pool } = require('../lib/db');
 const { generateUserId, generateReferralCode } = require('../lib/auth');
@@ -21,11 +18,13 @@ const { resolveRootChannelKey } = require('../lib/channels');
 const { mergeUsers, resolveMergedUser } = require('./user-merge');
 const { grantSignupTrial } = require('../lib/personaOverride');
 const { USER_SELECT, shapeUserRow, SUPER_OTP_ENABLED, SUPER_OTP_CODE } = require('./phone-otp');
+const { signSignupProof, verifySignupProof } = require('../lib/auth');
+const { resolveSignupInvite, recordInvitationUse } = require('../lib/signup-invite');
 
 const EMAIL_LOGIN_ROOT_CHANNEL = 'waven';
 
 function emailLoginAllowed(rootKey) {
-    return rootKey == null || rootKey === EMAIL_LOGIN_ROOT_CHANNEL;
+    return true;
 }
 
 // Same backdoor phone-otp.js honours, same scoping rule: login path only, never bind. Audited
@@ -51,7 +50,7 @@ async function wavenChannelId() {
 }
 
 function langOf(body) {
-    return body && body.language === 'en' ? 'en' : 'zh';
+    return body && body.language === 'zh' ? 'zh' : 'en';
 }
 
 async function handleEmailOtpSend(body) {
@@ -74,51 +73,64 @@ async function handleEmailOtpSend(body) {
 }
 
 // Login-or-sign-up by email. A known address logs into its account (any attached email, not
-// just the primary); an unknown one creates a fresh user on the root `waven` channel — the one
-// visible difference from phone sign-up, which leaves channel_id NULL (the aeviva-branded
-// miniapp build also uses /phone-otp/verify, so a default there would need channel_slug
-// plumbing that this endpoint, hidden on that build, does not).
+// just the primary); an unknown one must supply a coach invitation after OTP verification.
 async function handleEmailOtpVerify(body) {
     try {
-        const { email: rawEmail, code } = body || {};
+        const { email: rawEmail, code, invite_code, signup_proof, require_invite } = body || {};
         const email = normalizeEmail(rawEmail);
         if (!isValidEmail(email)) return { success: false, error: 'invalid_email' };
-        if (!code) return { success: false, error: 'code is required' };
+        const proof = signup_proof ? verifySignupProof(signup_proof, 'email', email) : null;
+        if (signup_proof && !proof) return { success: false, error: 'invalid_signup_proof' };
+        if (!proof && !code) return { success: false, error: 'code is required' };
 
-        const isSuperOtp = SUPER_OTP_ENABLED && String(code) === SUPER_OTP_CODE;
-        if (!isSuperOtp) {
+        const isSuperOtp = !proof && SUPER_OTP_ENABLED && String(code) === SUPER_OTP_CODE;
+        if (!proof && !isSuperOtp) {
             const check = await verifyEmailOtp(email, String(code));
             if (!check.ok) return { success: false, error: check.error };
         }
 
         const existing = await findUserByEmail(email);
         if (existing) {
-            const rootKey = await resolveRootChannelKey(existing.channel_id);
-            if (!emailLoginAllowed(rootKey)) {
-                console.log(JSON.stringify({ level: 'INFO', msg: 'email-otp-channel-refused', data: { email, user_id: existing.user_id, root_key: rootKey } }));
-                return { success: false, error: 'channel_not_supported' };
-            }
+            if (proof) return { success: false, error: 'invalid_signup_proof' };
             if (isSuperOtp) await logSuperOtpUse(email, existing.user_id);
             console.log(JSON.stringify({ level: 'INFO', msg: 'email-otp-login-existing', data: { email, user_id: existing.user_id } }));
             const { user, channel, coach } = await shapeUserRow(existing);
             return { success: true, user, channel, coach };
         }
 
+        if (!invite_code && require_invite === true) {
+            return {
+                success: false,
+                invite_required: true,
+                signup_proof: signup_proof || signSignupProof('email', email, langOf(body)),
+            };
+        }
+
         const user_id = generateUserId();
         const referral_code = await generateReferralCode();
-        const channelId = await wavenChannelId();
         const client = await pool.connect();
+        let channelId = null;
         try {
             await client.query('BEGIN');
+            const invite = invite_code ? await resolveSignupInvite(client, invite_code) : {
+                invitationId: null, channelId: null, coachId: null, referredByUserId: null,
+            };
+            if (invite_code && !invite) {
+                await client.query('ROLLBACK');
+                return { success: false, invalid_code: true, error: 'Invalid or expired invitation code', signup_proof: signup_proof || signSignupProof('email', email, langOf(body)) };
+            }
+            channelId = invite.channelId || await wavenChannelId();
             await client.query(
-                `INSERT INTO users (user_id, email, email_verified_at, external_app, language, channel_id, referral_code, created_at)
-                 VALUES ($1, $2, NOW(), 'email', $3, $4, $5, NOW())`,
-                [user_id, email, langOf(body), channelId, referral_code]
+                `INSERT INTO users (user_id, email, email_verified_at, external_app, language, channel_id, coach_id,
+                                    invited_by_invitation_id, referred_by_user_id, referral_code, created_at)
+                 VALUES ($1, $2, NOW(), 'email', $3, $4, $5, $6, $7, $8, NOW())`,
+                [user_id, email, langOf(body), channelId, invite.coachId, invite.invitationId, invite.referredByUserId, referral_code]
             );
             await client.query(
                 `INSERT INTO user_emails (user_id, email, verified_at, is_primary) VALUES ($1, $2, NOW(), true)`,
                 [user_id, email]
             );
+            await recordInvitationUse(client, invite.invitationId, user_id);
             await client.query('COMMIT');
         } catch (err) {
             await client.query('ROLLBACK');
@@ -148,7 +160,7 @@ async function handleEmailOtpVerify(body) {
         const { rows } = await pool.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [user_id]);
         const { user, channel, coach } = await shapeUserRow(rows[0]);
         console.log(JSON.stringify({ level: 'INFO', msg: 'email-otp-login-new-user', data: { email, user_id, channel_id: channelId } }));
-        return { success: true, user: { ...user, bio_age: user.bio_age ?? null, coach_name: user.coach_name ?? null }, channel, coach };
+        return { success: true, new_user: true, user: { ...user, bio_age: user.bio_age ?? null, coach_name: user.coach_name ?? null }, channel, coach };
     } catch (err) {
         console.log(JSON.stringify({ level: 'ERROR', msg: 'email-otp-verify-error', data: { err: err.message } }));
         return { success: false, error: err.message };
@@ -175,16 +187,15 @@ async function handleEmailOtpBind(body) {
         const me = await client.query('SELECT user_id, channel_id, created_at, merged_into_user_id FROM users WHERE user_id = $1', [user_id]);
         if (me.rows.length === 0) return { success: false, error: 'user_not_found' };
         const myRoot = await resolveRootChannelKey(me.rows[0].channel_id, client);
-        if (!emailLoginAllowed(myRoot)) return { success: false, error: 'channel_not_supported' };
-
         const conflict = await client.query('SELECT user_id FROM user_emails WHERE email = $1 AND user_id != $2', [email, user_id]);
         if (conflict.rows.length > 0) {
             const ownerId = conflict.rows[0].user_id;
             const owner = await client.query('SELECT user_id, channel_id, created_at, merged_into_user_id FROM users WHERE user_id = $1', [ownerId]);
             if (owner.rows.length === 0) return { success: false, error: 'user_not_found' };
             const ownerRoot = await resolveRootChannelKey(owner.rows[0].channel_id, client);
-            if (!emailLoginAllowed(ownerRoot)) return { success: false, error: 'channel_not_supported' };
-
+            // A verified address may merge duplicate accounts inside one organization tree,
+            // but must not move private data between unrelated channel trees.
+            if (myRoot && ownerRoot && myRoot !== ownerRoot) return { success: false, error: 'channel_not_supported' };
             const resolvedCurrent = await resolveMergedUser(client, me.rows[0]);
             const resolvedOwner = await resolveMergedUser(client, owner.rows[0]);
             let winnerId = resolvedCurrent.user_id;

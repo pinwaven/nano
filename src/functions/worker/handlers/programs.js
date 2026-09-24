@@ -41,7 +41,7 @@ const OpenAI = require('openai');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
-    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    baseURL: `${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/compatible-mode/v1`,
 });
 
 const _log = (level, msg, data) => console.log(JSON.stringify({ level, msg, ...(data || {}) }));

@@ -6,7 +6,7 @@ export const IS_DEV_BACKEND = (typeof __API_IS_DEV__ !== 'undefined' && __API_IS
   || (typeof location !== 'undefined' && /-dev\./.test(location.hostname));
 
 // Shown in the header next to the nickname, like the miniapp's `v{version}`. Bump on release.
-export const VERSION = '0916-1';
+export const VERSION = '0924-1';
 
 export const API = '/api';
 
@@ -29,10 +29,8 @@ export function gcnStoreSlug(channel) {
 export function isAevivaChannel(channel) {
   return !!gcnStoreSlug(channel);
 }
-// Email login/management is the complement: the Waven root (or no channel yet) only.
 export function emailLoginAllowedFor(channel) {
-  const root = channelRootKey(channel);
-  return !root || root === 'waven';
+  return true;
 }
 export function gcnStoreHost(channel) {
   const slug = gcnStoreSlug(channel) || 'aeviva';

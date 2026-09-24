@@ -242,12 +242,22 @@ function UserModal({ user, coaches, channels, session, onClose, onSave, onManage
 function DeleteConfirm({ user, onClose, onConfirm }) {
   const { t } = useLang();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const extraRoles = (user.roles || ['user']).filter(r => r !== 'user');
   const blocked = extraRoles.length > 0;
   const handleDelete = async () => {
     setBusy(true);
-    try { await axios.delete(`/api/users/${user.user_id || user.id}`); onConfirm(); }
-    catch { /* silent */ } finally { setBusy(false); }
+    setError('');
+    try {
+      const response = await axios.delete(`/api/users/${user.user_id || user.id}`);
+      if (!response.data?.success) throw new Error(response.data?.error || 'user_delete_failed');
+      onConfirm();
+    } catch (err) {
+      const detail = err.response?.data?.error || err.message;
+      setError(t.modal.deleteFailed(detail));
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -266,6 +276,7 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
               {t.modal.deleteWarning(<strong>{user.nickname || user.external_id || user.user_id}</strong>)}
             </p>
           )}
+          {error && <div className="form-error" style={{ marginBottom: 16 }}>{error}</div>}
           <div className="modal-footer">
             <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
             {!blocked && (
@@ -346,6 +357,68 @@ const bmLabelsZh = {
 };
 
 // ── UserDetailModal ───────────────────────────────────────────────────────────
+
+// Managed customers (docs/architecture/managed-customers.md): login-less accounts a coach
+// created for a B2B channel. Shows the coach-entered contact phone and the channel's own
+// reference, and lets an admin with users:write release the customer into a regular account.
+function ManagedCustomerRows({ user, session, isZh }) {
+  // 'managed' → 'confirming' (in-page second step) → 'busy' → 'released'. Not window.confirm: the
+  // Claude desktop browser pane (and some embedded webviews) suppress native dialogs, so a
+  // confirm() there returns false and the button silently does nothing.
+  const [state, setState] = useState(user.account_type === 'managed' ? 'managed' : 'released');
+  const [note, setNote] = useState('');
+  const release = async () => {
+    setState('busy');
+    setNote('');
+    try {
+      const r = await axios.post(`/api/managed-customers/${encodeURIComponent(user.user_id)}/release`);
+      setState('released');
+      if (r.data?.phone_note === 'phone_in_use') {
+        setNote(isZh ? '联系电话已被其他账户使用，未设为登录手机号。' : 'The contact phone belongs to another account, so it was not set as a login phone.');
+      }
+    } catch (e) {
+      setState('managed');
+      setNote(e.response?.data?.error || 'Release failed');
+    }
+  };
+  const warning = isZh
+    ? '释放后，该客户将成为普通用户：可用联系电话通过验证码登录，并自行使用小程序。教练关系与所有数据保留。'
+    : 'Released, this customer becomes a regular user who can sign in with an OTP to their contact phone and use the app themselves. Their coach and all data stay.';
+  const canWrite = hasPermission(session, PERMS.USERS_WRITE);
+  return (
+    <>
+      <span className="drawer-info-key">{isZh ? '账户类型' : 'Account type'}</span>
+      <span className="drawer-info-val" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {state === 'released'
+          ? <Badge color="#64748b">{isZh ? '已释放' : 'Released'}</Badge>
+          : <Badge color="#0ea5e9">{isZh ? '托管客户' : 'Managed'}</Badge>}
+        {state === 'managed' && canWrite && (
+          <button className="btn btn-secondary btn-sm" onClick={() => setState('confirming')}>
+            {isZh ? '释放为普通用户' : 'Release'}
+          </button>
+        )}
+        {(state === 'confirming' || state === 'busy') && (
+          <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 12, color: '#b45309', lineHeight: 1.5 }}>{warning}</span>
+            <span style={{ display: 'inline-flex', gap: 8 }}>
+              <button className="btn btn-primary btn-sm" disabled={state === 'busy'} onClick={release}>
+                {state === 'busy' ? '…' : (isZh ? '确认释放' : 'Confirm release')}
+              </button>
+              <button className="btn btn-secondary btn-sm" disabled={state === 'busy'} onClick={() => setState('managed')}>
+                {isZh ? '取消' : 'Cancel'}
+              </button>
+            </span>
+          </span>
+        )}
+        {note && <span style={{ fontSize: 12, color: '#b45309' }}>{note}</span>}
+      </span>
+      <span className="drawer-info-key">{isZh ? '联系电话' : 'Contact phone'}</span>
+      <span className="drawer-info-val">{fmt(user.contact_phone)}</span>
+      <span className="drawer-info-key">{isZh ? '渠道客户编号' : 'Channel ref'}</span>
+      <span className="drawer-info-val mono">{fmt(user.external_ref)}</span>
+    </>
+  );
+}
 
 function UserDetailModal({ user, onClose, session, onDeleted, initialTab }) {
   const { t, lang } = useLang();
@@ -632,6 +705,9 @@ function UserDetailModal({ user, onClose, session, onDeleted, initialTab }) {
                         })}
                       </div>
                     </span>
+                    {(user.account_type === 'managed' || user.managed_released_at) && (
+                      <ManagedCustomerRows user={user} session={session} isZh={isZh} />
+                    )}
                   </div>
                 </div>
 
@@ -2068,14 +2144,13 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
       sort_dir: sortDir,
     };
 
-    if (isChannel) {
-      if (includeSubchannels) {
-        params.include_subchannels = 'true';
-      }
-    } else {
-      if (channelFilter) {
-        params.filter_channel_id = channelFilter;
-      }
+    // A selected channel chip is an exact filter for both channel admins and
+    // superadmins. Without this, channel-admin chips only changed colour while
+    // every request continued to ask for the full subtree.
+    if (channelFilter) {
+      params.filter_channel_id = channelFilter;
+    } else if (isChannel && includeSubchannels) {
+      params.include_subchannels = 'true';
     }
 
     axios.get(baseUrl, { params, signal: abortRef.current.signal })
@@ -2167,14 +2242,10 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
       sort_dir: sortDir,
     };
 
-    if (isChannel) {
-      if (includeSubchannels) {
-        params.include_subchannels = 'true';
-      }
-    } else {
-      if (channelFilter) {
-        params.filter_channel_id = channelFilter;
-      }
+    if (channelFilter) {
+      params.filter_channel_id = channelFilter;
+    } else if (isChannel && includeSubchannels) {
+      params.include_subchannels = 'true';
     }
 
     axios.get(baseUrl, { params })

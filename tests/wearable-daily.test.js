@@ -99,3 +99,55 @@ test('fetchHrvReadings takes the measurement time from the external_id tail, fal
   assert.deepEqual(seen.params, ['u1', 30]);
   assert.equal((await fetchHrvReadings(pool, 'u1', 999)).length, 3); // days clamp, no throw
 });
+
+test('a night with no stage split reads as unknown, never as 0% deep+REM (V8, §18)', async () => {
+  const { fetchWearableDaily } = require('../src/functions/worker/lib/wearableDaily');
+  // What the miniapp stored for V8 nights before 2026-09-23: stages summed from nulls into 0s.
+  const pool = { query: async () => ({ rows: [
+    { date: '2026-09-22', sleep_minutes: 290, deep_minutes: 0, rem_minutes: 0, light_minutes: 0, awake_minutes: 0, sleep_start_min: 1303 },
+    { date: '2026-09-21', sleep_minutes: 300, deep_minutes: 60, rem_minutes: 0, light_minutes: 200, awake_minutes: 40, sleep_start_min: 1320 },
+  ] }) };
+  const rows = await fetchWearableDaily(pool, 'u1', 7);
+  assert.deepEqual([rows[0].deep_minutes, rows[0].rem_minutes, rows[0].light_minutes, rows[0].awake_minutes], [null, null, null, null]);
+  assert.equal(rows[1].rem_minutes, 0, 'a real zero inside a known split stays a zero');
+  const s = summarizeWearableDaily(rows, '2026-09-23');
+  assert.equal(s.last_night.restorative_pct, null);
+  const zh = describeWearableDaily(rows, true, '2026-09-23');
+  assert.doesNotMatch(zh, /深睡\+REM 占 0%/);
+  assert.match(zh, /2026-09-22：睡眠 4\.8h（设备未测量睡眠分期，入睡 21:43/);
+});
+
+test('onset and wake come from the night\'s longest session, not a min() over minute-of-day', async () => {
+  const { fetchWearableDaily, mainSleepSession } = require('../src/functions/worker/lib/wearableDaily');
+  // The real 2026-09-20 row from dev: a 21:25 night plus a 06:28 top-up. sleep_start_min is the
+  // stored min() — 388, i.e. 06:28 — and wake used to be onset + total minutes (15:19).
+  const sessions = [
+    { onset: '2026-09-20 21:25:01', totalMinutes: 415, sleepStart: 1285, sleepEnd: 1700, deep: null },
+    { onset: '2026-09-21 06:28:02', totalMinutes: 116, sleepStart: 388, sleepEnd: 504, deep: null },
+  ];
+  assert.deepEqual(mainSleepSession(sessions), { sleepStart: 1285, sleepEnd: 1700, totalMinutes: 415 });
+  assert.equal(mainSleepSession(null), null);
+  const pool = { query: async () => ({ rows: [
+    { date: '2026-09-20', sleep_minutes: 531, deep_minutes: 0, rem_minutes: 0, light_minutes: 0, awake_minutes: 0, sleep_start_min: 388, sleep_sessions: sessions },
+    { date: '2026-09-19', sleep_minutes: 300, sleep_start_min: 1400, sleep_sessions: null },
+  ] }) };
+  const rows = await fetchWearableDaily(pool, 'u1', 7);
+  assert.equal(rows[0].sleep_onset, '21:25');
+  assert.equal(rows[0].wake_time, '04:20');
+  assert.equal(rows[1].sleep_onset, '23:20', 'no sessions: the stored fields still apply');
+  assert.equal(rows[1].wake_time, '04:20');
+});
+
+test('get_wearable_daily says "not measured" for a stage-less night instead of four nulls', async () => {
+  const { createAgenticToolHandlers } = require('../src/functions/worker/lib/agenticTools');
+  const pool = { query: async () => ({ rows: [
+    { date: '2026-09-22', sleep_minutes: 290, deep_minutes: 0, rem_minutes: 0, light_minutes: 0, awake_minutes: 0, sleep_start_min: 1303 },
+    { date: '2026-09-21', sleep_minutes: 300, deep_minutes: 60, rem_minutes: 20, light_minutes: 200, awake_minutes: 20, sleep_start_min: 1320 },
+  ] }) };
+  const h = createAgenticToolHandlers({ pool, user_id: 'u1', language: 'zh' });
+  const { data } = await h.get_wearable_daily({ days: 7 });
+  assert.equal(data[0].sleep_stages, '设备未测量睡眠分期（不是没有深睡）');
+  assert.ok(!('deep_minutes' in data[0]));
+  assert.equal(data[1].deep_minutes, 60);
+  assert.equal(data[1].sleep_stages, undefined);
+});

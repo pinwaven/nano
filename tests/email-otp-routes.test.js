@@ -1,9 +1,8 @@
-// Routing invariants for the email-OTP endpoints (worker/index.js), pinned as source text the
-// same way the phone ones are relied on: the six self-service /email-otp/* routes are reachable
-// with no bearer (the login form has none yet), while the admin add — which attaches an
-// arbitrary address to an arbitrary account with no proof — must sit OUTSIDE that exempt prefix
-// and behind requireAdminTab('users'). A refactor that moves it under /email-otp/ would open an
-// unauthenticated account-takeover primitive without any test noticing otherwise.
+// Routing invariants for the email-OTP endpoints (worker/index.js), pinned as source text: only
+// send/verify are reachable with no bearer (the login form has none yet), while the admin add —
+// which attaches an arbitrary address to an arbitrary account with no proof — sits behind
+// requireAdminTab('users'). A refactor that made either public would open an unauthenticated
+// account-takeover primitive without any test noticing otherwise.
 const assert = require('node:assert');
 const test = require('node:test');
 const fs = require('node:fs');
@@ -13,13 +12,29 @@ const WORKER = path.join(__dirname, '..', 'src', 'functions', 'worker');
 const src = fs.readFileSync(path.join(WORKER, 'index.js'), 'utf8');
 const lines = src.split('\n');
 
-test('the bearer exemption covers /email-otp/ exactly as it covers /phone-otp/', () => {
-    const gate = lines.find(l => l.includes('const expectedBearer') === false && l.includes("!path.startsWith('/phone-otp/')"));
-    assert.ok(gate, 'bearer gate line not found');
-    assert.ok(gate.includes("!path.startsWith('/email-otp/')"), gate);
+// The gate exempts an exact set of paths, not prefixes: only the login steps (send/verify) are
+// reachable with no credential. bind / set-primary / remove / list take a user_id from the
+// request, so leaving them public was an account-takeover primitive (TODO.md "Security").
+const publicSet = (() => {
+    const m = src.match(/const PUBLIC_PATHS = new Set\(\[([\s\S]*?)\]\);/);
+    assert.ok(m, 'PUBLIC_PATHS not found');
+    // Entries are 'METHOD /path'; these checks are about the path.
+    return new Set([...m[1].matchAll(/'([^']+)'/g)].map(x => x[1].split(' ').pop()));
+})();
+
+test('only send and verify are bearer-exempt, for phone and email alike', () => {
+    for (const kind of ['phone-otp', 'email-otp']) {
+        assert.ok(publicSet.has(`/${kind}/send`), kind);
+        assert.ok(publicSet.has(`/${kind}/verify`), kind);
+        for (const p of ['bind', 'set-primary', 'remove', 'list', 'accept-unverified']) {
+            assert.ok(!publicSet.has(`/${kind}/${p}`), `/${kind}/${p} must need a credential`);
+        }
+    }
+    assert.ok(!src.includes("path.startsWith('/email-otp/')"), 'no prefix exemption');
+    assert.ok(!src.includes("path.startsWith('/phone-otp/')"), 'no prefix exemption');
 });
 
-test('every self-service email route is mounted under the exempt prefix', () => {
+test('every self-service email route is still mounted', () => {
     for (const p of ['/email-otp/send', '/email-otp/verify', '/email-otp/bind', '/email-otp/set-primary', '/email-otp/remove', '/email-otp/list']) {
         assert.ok(src.includes(`path === '${p}'`), `route ${p} missing`);
     }

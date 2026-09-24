@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
   Plus, Pencil, Trash2, X, Check, Copy, Tag, UserCog, Settings2,
-  Building2, Users, Cpu, Activity,
+  Building2, Users, Cpu, Activity, QrCode, Download,
 } from 'lucide-react';
 import { useLang, fmt, fmtDate, Badge, StatCard } from '../shared.jsx';
 
@@ -188,6 +188,44 @@ function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose,
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// 小程序码 for the root Waven miniprogram carrying scene `ch:<id>` — see
+// handleGetChannelMiniappQrcode. Minted on open, never cached: wxacode codes don't expire.
+function ChannelMiniappQrModal({ channel, onClose }) {
+  const { t } = useLang();
+  const ch = t.channels;
+  const [qr, setQr] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    axios.get(`/api/channels/${channel.id}/miniapp-qrcode`)
+      .then(r => { if (cancelled) return; r.data?.success ? setQr(r.data) : setError(r.data?.error || ch.miniappQrFailed); })
+      .catch(e => { if (!cancelled) setError(e.response?.data?.error || e.message || ch.miniappQrFailed); });
+    return () => { cancelled = true; };
+  }, [channel.id]);
+  const src = qr ? `data:${qr.content_type};base64,${qr.image_base64}` : null;
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{ch.miniappQrTitle} · {channel.name}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body" style={{ textAlign: 'center' }}>
+          {error && <p style={{ color: '#dc2626', marginBottom: 12 }}>{error}</p>}
+          {!error && !src && <p className="muted" style={{ marginBottom: 12 }}>{ch.miniappQrLoading}</p>}
+          {src && <img src={src} alt="" style={{ width: 240, height: 240, display: 'block', margin: '0 auto 12px' }} />}
+          {qr && <code className="code-tag" style={{ display: 'inline-block', marginBottom: 12 }}>{qr.page}?scene={qr.scene}</code>}
+          <p className="muted" style={{ fontSize: 12, marginBottom: 16 }}>{ch.miniappQrHint}</p>
+          <div className="modal-footer">
+            <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
+            {src && <a className="btn-primary" href={src} download={`miniapp-qr-${channel.key_name}.png`}><Download size={14} />{ch.miniappQrDownload}</a>}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -2118,6 +2156,7 @@ function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
           <td>
             <div className="row-actions">
               <button className="icon-btn" title={ch.titleAddSubchannel} onClick={() => setModal({ type: 'add', parentChannel: c })}><Plus size={13} /></button>
+              <button className="icon-btn" title={ch.titleMiniappQr} onClick={() => setModal({ type: 'miniapp-qr', channel: c })}><QrCode size={13} /></button>
               <button className="icon-btn" title={ch.titleSettings} onClick={() => setModal({
                 type: 'config', channel: c, channelId: c.id,
                 canGrantSubch: isSuperadmin || (session?.canManageSubchannels && c.id !== parseInt(session?.channelId)),
@@ -2175,6 +2214,7 @@ function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
       </div>
 
       {modal?.type === 'add'    && <ChannelModal channel={null} channels={channels} isSuperadmin={isSuperadmin} parentChannel={modal.parentChannel} onClose={() => setModal(null)} onSave={closeAndRefresh} />}
+      {modal?.type === 'miniapp-qr' && <ChannelMiniappQrModal channel={modal.channel} onClose={() => setModal(null)} />}
       {modal?.type === 'config' && (() => {
         const liveChannel = channels.find(c => c.id === modal.channelId) || modal.channel;
         const liveChildren = channels.filter(c => c.parent_channel_id === modal.channelId);

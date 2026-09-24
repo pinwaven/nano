@@ -1,6 +1,6 @@
 /**
  * Agentic plan -> generate -> judge -> revise loop for Viva's high-risk chat intents
- * (biomarker_question, nutrition_question, longevity_science, record_action).
+ * (biomarker_question, nutrition_question, lifestyle_question, longevity_science, record_action).
  *
  * Extends the existing single-retry pattern in handlers/chat.js (grounding-check retry,
  * fabrication-risk retry) into a bounded loop with an up-front PLAN step and a semantic
@@ -18,7 +18,7 @@
 'use strict';
 
 const { AGENTIC_TOOL_DEFS, createAgenticToolHandlers } = require('./agenticTools');
-const { detectAllRisks, detectDimensionMisattribution, detectDotNameMismatch } = require('./factCheck');
+const { detectAllRisks, detectDimensionMisattribution, stripDimensionMisattributions, detectDotNameMismatch } = require('./factCheck');
 const { formatToShanghai } = require('./time-utils');
 const { classifyBiomarkers, THRESHOLDS: BIOMARKER_THRESHOLDS, DIMENSION_BIOMARKERS } = require('./biomarkerStatus');
 const planTemplate = require('../prompts/chat/planTemplate');
@@ -27,6 +27,7 @@ const { findRelevantEntries } = require('./knowledgeBase');
 const { messageAsksAboutFormulationPackage } = require('../prompts/chat/formulationPackageBlock');
 const { messageAsksAboutFoodSensitivity } = require('../prompts/chat/foodSensitivityBlock');
 const { messageAsksAboutWearable } = require('./wearableDaily');
+const { messageMentionsFood } = require('../prompts/chat/mealPlanRequest');
 const { insightDates } = require('./wearableAnalysis');
 
 const GENERATE_MAX_ITERS = 3;
@@ -65,9 +66,16 @@ function buildForcedToolQueue(plan, message, validToolNames, maxForced) {
         // full window rather than the model extrapolating from three days.
         ...(messageAsksAboutWearable(message) ? ['get_wearable_daily'] : []),
     ];
+    // PLAN never sees the conversation or the system prompt — only the message and the intent
+    // label — and it named get_grocery_products for 「根据我的情况定制运动方案」 on prod
+    // 2026-09-22 because the label said nutrition_question. Forcing that call made GENERATE mine
+    // a week-old meal plan out of history for keywords and then answer the (empty) lookup instead
+    // of the user. So the grocery tool is forced only when the user's own words mention food;
+    // otherwise it stays available under tool_choice:'auto', which is a hint, not a mandate.
+    const advisoryOnly = (t) => t === 'get_grocery_products' && !messageMentionsFood(message);
     const queue = Array.from(new Set([
         ...deterministic,
-        ...(plan?.tools_needed || []),
+        ...(plan?.tools_needed || []).filter(t => !advisoryOnly(t)),
     ])).filter(t => validToolNames.has(t));
     return queue.slice(0, Math.max(0, maxForced));
 }
@@ -548,6 +556,20 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     // elapsed, shipping the latest draft rather than risk exceeding the FC function's own
     // timeout (see TURN_DEADLINE_MS comment above runAgenticTurn).
     let latestResult = judgeResult;
+    // off_topic exists to catch GENERATE answering in the wrong world (an exercise plan answered
+    // with a grocery list). A clause-level REVISE keeps its draft's subject, so when the first
+    // JUDGE found the draft on topic, a RE-JUDGE calling the revision off_topic is a false
+    // positive — and acting on it is destructive: the off-topic framing asks for a brand-new
+    // reply. Dev 2026-09-23: a re-judge flagged 「帮我定制运动计划」's plan off_topic while its own
+    // detail said the draft "delivers a detailed, day-by-day… weekly movement plan"; the NEW reply
+    // explained the six Kino markers instead, and the next re-judge passed it.
+    const draftWasOffTopic = (judgeResult.violations || []).some(v => v.category === 'off_topic');
+    const dropLateOffTopic = (result) => {
+        if (draftWasOffTopic || !(result.violations || []).some(v => v.category === 'off_topic')) return result;
+        const violations = result.violations.filter(v => v.category !== 'off_topic');
+        console.log(JSON.stringify({ level: 'WARN', msg: 'agentic_rejudge_off_topic_dropped', context: logContext }));
+        return violations.length ? { ...result, violations } : { verdict: 'PASS', violations: [] };
+    };
     for (let round = 0; round < REVISE_MAX_ROUNDS && latestResult.verdict === 'REJECT'; round++) {
         // A round is a REVISE completion plus a full RE-JUDGE, so it costs at least as much as
         // the stage just measured (the JUDGE for round 1, the previous whole round after that).
@@ -600,7 +622,20 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         const languagePin = /[\u4e00-\u9fff]/.test(rawReply)
             ? '\n\nLANGUAGE: the reply is in Simplified Chinese. Every sentence of your rewrite must be in Simplified Chinese too — never leave an English sentence, clause or parenthetical in it, and never translate a flagged sentence into English while fixing it. The correction hints above are written in English FOR YOU: never paste a hint\'s wording into the reply (「classified as normal (elevated threshold: >15%)」 reached a user this way) — restate what it means in Simplified Chinese. If a flagged claim cannot be supported, delete that sentence rather than hedging it in English.'
             : '';
-        const correctionPrompt = `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}${dimensionConstraintBlock}${actionPreserveBlock}${directivePreserveBlock}${languagePin}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
+        // An off_topic verdict (judgeTemplate.js) cannot be fixed by patching clauses: the whole
+        // reply is about the wrong subject, so "rewrite the SAME reply" would keep it wrong.
+        // Prod 2026-09-22: 「根据我的情况定制运动方案」 got a 盒马 substitution list; a clause-level
+        // REVISE round only tidied its availability claims. Restate the user's message and ask
+        // for a new answer to it instead.
+        const isOffTopic = (latestResult.violations || []).some(v => v.category === 'off_topic');
+        const rewriteFraming = isOffTopic
+            ? `Your previous reply answered the wrong question. The user's message this turn was:\n«${message}»\nWrite a NEW reply, in the same language and tone, that directly answers THAT message from the system prompt's rules and the data you have — do not keep the previous reply's subject, structure or tool-result narration, and do not describe why the earlier reply went elsewhere. Also fix:\n`
+            : `Your previous reply has factual issues found by a fact-checker. Rewrite the SAME reply, keeping the same language/tone/structure, but fix:\n`;
+        // A hint is the fact-checker's suggested fix, and on dev 2026-09-23 its wording carried new
+        // claims into the reply: a symptom answer came back with 「没有…证据提示肾脏、心脏或肝脏
+        // 器质性病变」 and 「目前尚无经批准的知识库条目…」, both from hints. Take the correction only.
+        const hintBoundary = `\n\nThe hints say what to fix. Apply only the correction — delete the flagged claim or put the right value in its place. Do not add any diagnosis, rule-out, cause or advice a hint proposes that your system prompt's rules would not allow on their own, and never mention the fact-checker, a knowledge base, "ground truth", data field names or null values in the reply.`;
+        const correctionPrompt = `${rewriteFraming}${(latestResult.violations || []).map(v => `- ${v.detail}${v.correction_hint ? ' — ' + v.correction_hint : ''}`).join('\n')}${hintBoundary}${dimensionConstraintBlock}${actionPreserveBlock}${directivePreserveBlock}${languagePin}\n\nYour rewritten reply MUST still include the full conversational prose responding to the user's message, not just a corrected action JSON tail on its own — a bare action JSON with no surrounding reply text is never an acceptable output.`;
         try {
             // Timed as one unit (REVISE completion + RE-JUDGE) — that whole cost is what the
             // next round's fit check has to budget for.
@@ -612,7 +647,7 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
                 });
                 const retryReply = retryCompletion.choices[0].message.content || rawReply;
                 budget.rejudge += 1;
-                const rejudgeResult = await runJudge(retryReply);
+                const rejudgeResult = dropLateOffTopic(await runJudge(retryReply));
                 console.log(JSON.stringify({ level: rejudgeResult.verdict === 'PASS' ? 'INFO' : 'WARN', msg: 'agentic_rejudge', context: logContext, round: round + 1, verdict: rejudgeResult.verdict, violations: rejudgeResult.violations }));
                 rawReply = retryReply; // ship the latest revision even if this round still REJECTs
                 latestResult = rejudgeResult;
@@ -624,6 +659,13 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
     }
 
     console.log(JSON.stringify({ level: 'INFO', msg: 'turn_budget_used', context: logContext, budget }));
+    // A misattribution that survived every REVISE round is removed here, sentence by sentence, with
+    // the same check that flagged it — REVISE sometimes rephrases the link instead of deleting it.
+    const stripped = stripDimensionMisattributions(rawReply, DIMENSION_BIOMARKERS, llmContext && llmContext.sub_age_display_names);
+    if (stripped.removed.length > 0) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'dimension_misattribution_stripped', context: logContext, removed: stripped.removed }));
+        rawReply = stripped.text;
+    }
     const { dates: toolDates, values: extraValidValues } = extractToolGroundTruth(toolCallLog);
     // Dates the system prompt itself handed the model (the per-day wearable block) are as valid
     // to cite as a tool result's; without this a correct 「2026-09-14 睡了5.4小时」 is rewritten

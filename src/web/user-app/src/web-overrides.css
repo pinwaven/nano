@@ -40,3 +40,5 @@ a.menu-item { text-decoration: none; color: inherit; }
 .pin-capture { position: absolute; opacity: 0; left: 0; top: 0; width: 100%; height: 100%; }
 .pin-field { position: relative; }
 .login-btn--ghost { background: transparent; border: 1px solid var(--navy-border); color: var(--text-sub); box-shadow: none; }
+
+button.menu-item { width: 100%; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }

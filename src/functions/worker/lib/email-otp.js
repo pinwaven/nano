@@ -78,15 +78,16 @@ async function issueEmailOtp(email, purpose = 'login', lang = 'zh') {
 
 // Returns { ok: true } or { ok: false, error: 'invalid_code' | 'too_many_attempts' }.
 // The live row is locked for the check+update so two parallel guesses cannot both pass.
-async function verifyEmailOtp(email, code) {
+async function verifyEmailOtp(email, code, purpose = null) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         const { rows } = await client.query(
             `SELECT id, code_hash, attempts FROM email_otp_codes
-             WHERE email = $1 AND consumed = FALSE AND expires_at > NOW()
+             WHERE email = $1 AND ($2::text IS NULL OR purpose = $2)
+               AND consumed = FALSE AND expires_at > NOW()
              ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
-            [email]
+            [email, purpose]
         );
         if (rows.length === 0) {
             await client.query('COMMIT');

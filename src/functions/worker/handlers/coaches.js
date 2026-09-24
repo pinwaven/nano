@@ -45,7 +45,39 @@ async function handleGetChannelUsers(channelId, query = {}) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
 
-        const includeSubchannels = query.include_subchannels === 'true';
+        const rootChannelId = parseInt(channelId);
+        if (!Number.isInteger(rootChannelId)) {
+            return { success: false, error: 'Invalid channelId', statusCode: 400 };
+        }
+
+        // Channel chips select one exact channel. The requested id must still belong to the
+        // caller's subtree: this endpoint is channel-admin scoped, and accepting an arbitrary
+        // filter_channel_id would turn a UI filter into a cross-channel data escape.
+        let scopedChannelId = rootChannelId;
+        let hasExactChannelFilter = false;
+        if (query.filter_channel_id != null && query.filter_channel_id !== '') {
+            const requestedChannelId = parseInt(query.filter_channel_id);
+            if (!Number.isInteger(requestedChannelId)) {
+                return { success: false, error: 'Invalid filter_channel_id', statusCode: 400 };
+            }
+            if (requestedChannelId !== rootChannelId) {
+                const allowed = await pool.query(`
+                    WITH RECURSIVE subtree AS (
+                        SELECT id FROM channels WHERE id = $1
+                        UNION ALL
+                        SELECT c.id FROM channels c JOIN subtree s ON c.parent_channel_id = s.id
+                    )
+                    SELECT 1 FROM subtree WHERE id = $2
+                `, [rootChannelId, requestedChannelId]);
+                if (allowed.rows.length === 0) {
+                    return { success: false, error: 'Channel filter is outside the permitted subtree', statusCode: 403 };
+                }
+            }
+            scopedChannelId = requestedChannelId;
+            hasExactChannelFilter = true;
+        }
+
+        const includeSubchannels = !hasExactChannelFilter && query.include_subchannels === 'true';
 
         // Lightweight query used by other tabs (e.g. Partners/Coach "linked user" search) that
         // just need the full user list for a dropdown — mirrors handleGetUsers' minimal branch.
@@ -62,7 +94,7 @@ async function handleGetChannelUsers(channelId, query = {}) {
                 `SELECT u.user_id, u.nickname, u.phone, u.coach_id, u.channel_id
                  FROM users u ${subtreeJoin}
                  ORDER BY u.created_at DESC`,
-                [channelId]
+                [scopedChannelId]
             );
             return { success: true, users: res.rows };
         }
@@ -90,7 +122,7 @@ async function handleGetChannelUsers(channelId, query = {}) {
             : 'JOIN (SELECT $1::int AS id) st ON u.channel_id = st.id';
 
         // ── Paginated user list (with optional search) ─────────────────────────
-        const listParams = [channelId];
+        const listParams = [scopedChannelId];
         let searchClause = '';
         if (search) {
             const idx = listParams.push(`%${search}%`);
@@ -144,12 +176,12 @@ async function handleGetChannelUsers(channelId, query = {}) {
                     SELECT DISTINCT ON (user_id) user_id, bio_age
                     FROM biomarkers ORDER BY user_id, tested_at DESC
                 ) b ON u.user_id = b.user_id
-            `, [channelId]),
+            `, [scopedChannelId]),
             pool.query(
                 includeSubchannels
                     ? `${subtreeCte} SELECT u.gender, p.created_at FROM coaches p JOIN users u ON p.user_id = u.user_id JOIN subtree st ON u.channel_id = st.id`
                     : `SELECT u.gender, p.created_at FROM coaches p JOIN users u ON p.user_id = u.user_id WHERE u.channel_id = $1`,
-                [channelId]
+                [scopedChannelId]
             ),
             pool.query(`
                 SELECT COUNT(*) FILTER (WHERE b.tested_at >= NOW() - INTERVAL '7 days') AS s7,
@@ -159,7 +191,7 @@ async function handleGetChannelUsers(channelId, query = {}) {
                 FROM biomarkers b
                 JOIN users u ON u.user_id = b.user_id
                 ${channelJoin}
-            `, [channelId]),
+            `, [scopedChannelId]),
         ]);
 
         const stats = statsRes.rows[0] || {};
@@ -271,6 +303,7 @@ async function handleGetCoachUsers(coachId, query = {}, channelId = null) {
         const result = await pool.query(
             `SELECT u.user_id, u.external_id, u.nickname, u.avatar_url, u.birth_date, u.language, u.gender,
                     u.coach_id, u.channel_id, u.roles, u.created_at, u.phone, u.email,
+                    u.account_type, u.first_name, u.last_name, u.contact_phone, u.external_ref,
                     b.bio_age, b.data AS bio_data, b.tested_at AS last_scan_at,
                     m.last_msg_at,
                     lm.last_user_msg, lm.last_user_msg_at,
@@ -304,7 +337,14 @@ async function handleGetCoachUsers(coachId, query = {}, channelId = null) {
              ORDER BY COALESCE(m.last_msg_at, b.tested_at, u.created_at) DESC`,
             params
         );
-        return { success: true, users: result.rows };
+        // Whether this coach's channel lets them create managed customers (handlers/managedCustomers.js)
+        // — the coach panel shows its "add customer" action on this.
+        const mc = await pool.query(
+            `SELECT COALESCE(effective_channel_config(u.channel_id, 'managed_customers') = 'true'::jsonb, false) AS enabled
+               FROM coaches co JOIN users u ON u.user_id = co.user_id WHERE co.id = $1`,
+            [coachId]
+        );
+        return { success: true, users: result.rows, managed_customers_enabled: !!mc.rows[0]?.enabled };
     } catch (err) {
         return { success: false, error: err.message };
     }
@@ -394,8 +434,8 @@ async function handleGetCoachUserChat(userId, coachId) {
             if (check.rows.length === 0) return { success: false, error: 'Access denied', statusCode: 403 };
         }
         const result = await pool.query(
-            `SELECT role, content, created_at FROM (
-                SELECT role, content, created_at FROM chat_messages
+            `SELECT id, role, content, created_at FROM (
+                SELECT id, role, content, created_at FROM chat_messages
                 WHERE user_id = $1
                 ORDER BY created_at DESC
                 LIMIT 50

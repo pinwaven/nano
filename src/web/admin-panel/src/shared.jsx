@@ -61,36 +61,76 @@ function buildKinoMachinesUrl({ page = 1, q = '' } = {}) {
 }
 
 function LoginScreen({ onLogin, sessionExpired }) {
+  const [mode, setMode]         = useState('password')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [email, setEmail]       = useState('')
+  const [phone, setPhone]       = useState('')
+  const [code, setCode]         = useState('')
+  const [codeSent, setCodeSent] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
+
+  useEffect(() => {
+    if (cooldown <= 0) return undefined
+    const timer = setTimeout(() => setCooldown(v => Math.max(0, v - 1)), 1000)
+    return () => clearTimeout(timer)
+  }, [cooldown])
+
+  const saveSession = (data) => {
+    sessionStorage.setItem('nano_admin_token', data.token)
+    sessionStorage.setItem('nano_admin_user', data.username || username || email)
+    sessionStorage.setItem('nano_admin_role', data.role || 'superadmin')
+    sessionStorage.setItem('nano_admin_channel_id', data.channel_id ?? '')
+    sessionStorage.setItem('nano_admin_channel_name', data.channel_name || '')
+    sessionStorage.setItem('nano_admin_channel_logo', data.channel_logo || '')
+    sessionStorage.setItem('nano_admin_tabs', JSON.stringify(data.allowed_tabs || []))
+    sessionStorage.setItem('nano_admin_perms', JSON.stringify(data.allowed_perms || []))
+    sessionStorage.setItem('nano_admin_cms', data.can_manage_subchannels ? '1' : '')
+    sessionStorage.setItem('nano_admin_can_customize_store', data.can_customize_store ? '1' : '')
+    sessionStorage.setItem('nano_admin_can_manage_warehouses', data.can_manage_warehouses ? '1' : '')
+    sessionStorage.setItem('nano_admin_autonomous', data.autonomous ? '1' : '')
+    onLogin(data.token)
+  }
+
+  const sendCode = async () => {
+    const identifier = mode === 'sms_otp' ? phone : email
+    if (!identifier || loading || cooldown > 0) return
+    setLoading(true)
+    setError('')
+    try {
+      const res = await axios.post('/api/admin/login', {
+        mode, action: 'send', language: 'en',
+        ...(mode === 'sms_otp' ? { phone } : { email }),
+      })
+      if (!res.data?.success) throw new Error(res.data?.error || 'send_failed')
+      setCodeSent(true)
+      setCooldown(res.data.retry_after || 60)
+    } catch (err) {
+      const reason = err.response?.data?.error || err.message
+      setError(reason === 'rate_limited' ? 'Please wait before requesting another code.' : 'Could not send a code. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const submit = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
-      const res = await axios.post('/api/admin/login', { username, password })
+      const res = await axios.post('/api/admin/login', mode === 'otp'
+        ? { mode: 'otp', email, code }
+        : mode === 'sms_otp' ? { mode: 'sms_otp', phone, code }
+        : { username, password })
       if (res.data?.token) {
-        sessionStorage.setItem('nano_admin_token', res.data.token)
-        sessionStorage.setItem('nano_admin_user', username)
-        sessionStorage.setItem('nano_admin_role', res.data.role || 'superadmin')
-        sessionStorage.setItem('nano_admin_channel_id', res.data.channel_id ?? '')
-        sessionStorage.setItem('nano_admin_channel_name', res.data.channel_name || '')
-        sessionStorage.setItem('nano_admin_channel_logo', res.data.channel_logo || '')
-        sessionStorage.setItem('nano_admin_tabs', JSON.stringify(res.data.allowed_tabs || []))
-        sessionStorage.setItem('nano_admin_perms', JSON.stringify(res.data.allowed_perms || []))
-        sessionStorage.setItem('nano_admin_cms', res.data.can_manage_subchannels ? '1' : '')
-        sessionStorage.setItem('nano_admin_can_customize_store', res.data.can_customize_store ? '1' : '')
-        sessionStorage.setItem('nano_admin_can_manage_warehouses', res.data.can_manage_warehouses ? '1' : '')
-        sessionStorage.setItem('nano_admin_autonomous', res.data.autonomous ? '1' : '')
-        onLogin(res.data.token)
+        saveSession(res.data)
       } else {
         setError('Login failed')
       }
     } catch {
-      setError('Invalid username or password')
+      setError(mode !== 'password' ? 'Invalid or expired code' : 'Invalid username or password')
     } finally {
       setLoading(false)
     }
@@ -103,7 +143,16 @@ function LoginScreen({ onLogin, sessionExpired }) {
           <img src={wavenLogo} alt="Waven" style={{ width: 32, height: 32 }} />
           <span style={{ color: '#EEF2FF', fontWeight: 700, fontSize: 18, letterSpacing: 4 }}>NANO ADMIN</span>
         </div>
+        <div style={{ display: 'flex', gap: 4, padding: 4, marginBottom: 20, background: '#0B1C2E', borderRadius: 9 }}>
+          {[['password', 'Password'], ['otp', 'Email code'], ['sms_otp', 'SMS code']].map(([value, label]) => (
+            <button key={value} type="button" onClick={() => { setMode(value); setError(''); setCodeSent(false); setCode(''); setCooldown(0) }} style={{
+              flex: 1, border: 'none', borderRadius: 6, padding: '8px 0', cursor: 'pointer',
+              background: mode === value ? '#263F61' : 'transparent', color: mode === value ? '#EEF2FF' : '#7890AA', fontWeight: 600,
+            }}>{label}</button>
+          ))}
+        </div>
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {mode === 'password' ? <>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ color: 'rgba(166,196,229,0.6)', fontSize: 12, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' }}>Username</label>
             <input
@@ -125,15 +174,43 @@ function LoginScreen({ onLogin, sessionExpired }) {
               style={{ background: '#162E4A', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 8, padding: '10px 14px', color: '#EEF2FF', fontSize: 14, outline: 'none' }}
             />
           </div>
+          </> : mode === 'otp' ? <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ color: 'rgba(166,196,229,0.6)', fontSize: 12, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' }}>Admin email</label>
+            <input type="email" value={email} onChange={e => { setEmail(e.target.value); setCodeSent(false); setCode('') }} autoFocus required
+              style={{ background: '#162E4A', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 8, padding: '10px 14px', color: '#EEF2FF', fontSize: 14, outline: 'none' }} />
+          </div>
+          {codeSent && <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ color: 'rgba(166,196,229,0.6)', fontSize: 12, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' }}>6-digit code</label>
+            <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} required
+              style={{ background: '#162E4A', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 8, padding: '10px 14px', color: '#EEF2FF', fontSize: 18, letterSpacing: 6, outline: 'none' }} />
+          </div>}
+          </> : <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ color: 'rgba(166,196,229,0.6)', fontSize: 12, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' }}>Admin mobile</label>
+            <input type="tel" inputMode="numeric" value={phone} onChange={e => { setPhone(e.target.value.replace(/\D/g, '').slice(0, 11)); setCodeSent(false); setCode('') }} autoFocus required placeholder="China mobile number"
+              pattern="1[0-9]{10}" style={{ background: '#162E4A', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 8, padding: '10px 14px', color: '#EEF2FF', fontSize: 14, outline: 'none' }} />
+          </div>
+          {codeSent && <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ color: 'rgba(166,196,229,0.6)', fontSize: 12, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' }}>6-digit code</label>
+            <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} required
+              style={{ background: '#162E4A', border: '1px solid rgba(99,117,236,0.25)', borderRadius: 8, padding: '10px 14px', color: '#EEF2FF', fontSize: 18, letterSpacing: 6, outline: 'none' }} />
+          </div>}
+          </>}
           {sessionExpired && !error && <div style={{ color: '#fbbf24', fontSize: 13, textAlign: 'center' }}>Session expired — please sign in again.</div>}
           {error && <div style={{ color: '#f87171', fontSize: 13, textAlign: 'center' }}>{error}</div>}
           <button
-            type="submit"
-            disabled={loading}
+            type={mode !== 'password' && !codeSent ? 'button' : 'submit'}
+            onClick={mode !== 'password' && !codeSent ? sendCode : undefined}
+            disabled={loading || (mode !== 'password' && !codeSent && cooldown > 0) || (mode !== 'password' && codeSent && code.length !== 6)}
             style={{ marginTop: 8, background: 'linear-gradient(135deg, #6375EC, #8B9FFF)', border: 'none', borderRadius: 8, padding: '12px 0', color: '#fff', fontWeight: 700, fontSize: 14, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}
           >
-            {loading ? 'Signing in…' : 'Sign In'}
+            {loading ? (mode !== 'password' && !codeSent ? 'Sending…' : 'Signing in…') : mode !== 'password' && !codeSent ? 'Send code' : 'Sign In'}
           </button>
+          {mode !== 'password' && codeSent && <button type="button" onClick={sendCode} disabled={loading || cooldown > 0}
+            style={{ border: 'none', background: 'transparent', color: cooldown > 0 ? '#526A84' : '#8B9FFF', cursor: cooldown > 0 ? 'default' : 'pointer', fontSize: 12 }}>
+            {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
+          </button>}
         </form>
       </div>
     </div>
@@ -307,17 +384,20 @@ const GCN_SECTOR_FOR_ROOT_CHANNEL = Object.freeze({ aeviva: 'aeviva', waven: 'wa
 
 function rootChannelKey(channel, channels) {
   if (!channel) return null;
+  const fallbackKey = String(channel.key_name || '').split('-')[0] || null;
   if (Array.isArray(channels) && channels.length) {
     let cur = channel;
     for (let i = 0; i < 10 && cur && cur.parent_channel_id != null; i++) {
       const parent = channels.find(c => String(c.id) === String(cur.parent_channel_id));
-      if (!parent) break;
+      // Channel-scoped admins receive only their own subtree, so the parent of a
+      // sub-channel such as aeviva-china is intentionally absent. In that case the
+      // key-prefix convention is the only root information available.
+      if (!parent) return fallbackKey;
       cur = parent;
     }
     if (cur && cur.key_name) return cur.key_name;
   }
-  const key = String(channel.key_name || '');
-  return key ? key.split('-')[0] : null;
+  return fallbackKey;
 }
 
 // The GCN sector_id for a channel (object with key_name / parent_channel_id, or a bare key

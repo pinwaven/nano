@@ -315,7 +315,8 @@ def sparkbars(vals, w=520, h=90, color=C['blue'], labels=None, fmt='{:g}', hline
     for i, v in enumerate(vals):
         if v is None: continue
         bh = h * v / mx
-        s += f'<rect x="{i * bw + 3:.1f}" y="{h - bh:.1f}" width="{bw - 6:.1f}" height="{bh:.1f}" rx="3" fill="{color}"/>'
+        gap = min(6, bw * 0.3)  # narrow bars (many days on a half-width chart) would otherwise get a negative width
+        s += f'<rect x="{i * bw + gap / 2:.1f}" y="{h - bh:.1f}" width="{bw - gap:.1f}" height="{bh:.1f}" rx="{min(3, (bw - gap) / 2):.1f}" fill="{color}"/>'
         fs = 8 if n <= 8 else 6.5
         s += _txt(i * bw + bw / 2, h - bh - 4, fmt.format(v), fs, C['ink'], 'middle')
         if labels: s += _txt(i * bw + bw / 2, h + 14, labels[i], fs, C['muted'], 'middle')

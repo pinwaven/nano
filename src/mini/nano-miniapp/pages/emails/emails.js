@@ -1,5 +1,6 @@
 const app = getApp()
 const { BASE } = require('../../utils/config.js')
+const session = require('../../utils/session.js')
 const { maskPhone, maskEmail } = require('../../utils/phone.js')
 
 // Email twin of pages/phones/phones.js — a separate page rather than a generalised one, so
@@ -226,6 +227,9 @@ Page({
       // Either this account with the address attached, or the merge winner when the address
       // already belonged to an older account — the authoritative record for whoever the
       // user now is, so it replaces the cached session user (see phones.js).
+      // A bind can merge this account into the one that already owned the number; the
+      // response then carries that account's session.
+      session.saveSession(app, res.data.session_token)
       this._applyUpdatedUser(res.data.user, res.data.channel)
       this.setData({ addLoading: false, addMode: false })
       wx.showToast({ title: t.toastAdded, icon: 'success' })

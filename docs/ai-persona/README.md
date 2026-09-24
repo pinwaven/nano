@@ -1,6 +1,6 @@
 # AI Persona System
 
-Nano serves two AI personas — **Nano** (the original, bilingual, "Waven"-branded coach) and **Viva** (Chinese-only, "Aeviva"-branded, Eastern-population framing) — over what is, as of this writing, **one shared agentic chat engine**. This directory documents that engine in detail: how a persona is selected, how a chat turn actually runs (intent classification → PLAN → GENERATE → JUDGE → REVISE), how fabrication is guarded against, how the knowledge base and personal-memory systems work, and how the system proactively messages users outside of a direct chat turn.
+Nano serves two AI personas — **Nano** (the original, bilingual, "Waven"-branded coach) and **Viva** (Chinese-only, "Aeviva"-branded, Eastern-population framing) — over what is, as of this writing, **one shared agentic chat engine**. This directory documents that engine in detail: how a persona is selected, how a chat turn actually runs (routing via the UNDERSTAND step or the intent classifier → PLAN → GENERATE → JUDGE → REVISE), how fabrication is guarded against, how the knowledge base and personal-memory systems work, and how the system proactively messages users outside of a direct chat turn.
 
 ## Documents current, committed state
 
@@ -34,6 +34,7 @@ These docs describe the code as it exists on disk today. This directory is a det
 8. [Formula/Dots Generation & Reports](08-formula-dots-and-reports.md) — nutrition plan generation, vision/lab reports
 9. [Known Issues](09-known-issues.md) — CLAUDE.md drift, dead code, real functional gaps
 10. [Knowledge Entries Draft — Aeviva/Viva](10-knowledge-entries-draft-aeviva.md) — ~25 candidate `knowledge_entries` rows drafted from real prod chat questions, not yet inserted
+11. [Intent Routing — the UNDERSTAND Step](11-intent-understanding.md) — why the message-only classifier was replaced, what was measured, what was deliberately not built, and a runtime reference (inputs, output schema, backstops by mode, logs, env vars, how to extend)
 
 ## Where to start
 

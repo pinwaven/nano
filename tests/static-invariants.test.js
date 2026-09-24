@@ -83,12 +83,13 @@ test('every notification type written to BOTH chat_messages and notifications is
 test('VIVA_AG_ALLOWED_PATHS and viva-ag-openapi.json agree in both directions', () => {
     // doc-extraction-contract.test.js pins this for the extraction queue; the older AG queue had
     // no equivalent, and "the spec's paths and VIVA_AG_ALLOWED_PATHS should agree" was prose.
-    const indexJs = read(path.join(WORKER, 'index.js'));
+    // Answered by the twin function since 2026-09-23 (CLAUDE.md §48).
+    const indexJs = read(path.join(FN, 'twin', 'index.js'));
     const block = indexJs.slice(indexJs.indexOf('const VIVA_AG_ALLOWED_PATHS'));
     const allowed = [...block.slice(0, block.indexOf(']')).matchAll(/'(\/viva-ag\/[^']+)'/g)].map((x) => x[1]).sort();
-    const spec = JSON.parse(read(path.join(WORKER, 'docs', 'viva-ag-openapi.json')));
+    const spec = JSON.parse(read(path.join(FN, 'twin', 'docs', 'viva-ag-openapi.json')));
     const documented = Object.keys(spec.paths).sort();
-    assert.ok(allowed.length > 0, 'VIVA_AG_ALLOWED_PATHS could not be read out of index.js');
+    assert.ok(allowed.length > 0, 'VIVA_AG_ALLOWED_PATHS could not be read out of twin/index.js');
     assert.deepStrictEqual(documented.filter((p) => !allowed.includes(p)), [], 'documented but not allowlisted');
     assert.deepStrictEqual(allowed.filter((p) => !documented.includes(p)), [], 'allowlisted but undocumented');
 });

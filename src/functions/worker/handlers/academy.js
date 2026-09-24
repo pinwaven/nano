@@ -1,3 +1,4 @@
+const academyVisibility = require('../lib/academyVisibility');
 const { pool } = require('../lib/db');
 const { markLessonWatched } = require('../lib/programs');
 const ossLib = require('../lib/oss');
@@ -27,7 +28,7 @@ async function _requestCertificateImage({ certification, issuedCert, nickname })
 
 // ── Academy handlers ──────────────────────────────────────────────────────────
 
-async function handleGetAcademyCourses() {
+async function handleGetAcademyCourses(adminCtx) {
     try {
         const result = await pool.query(`
             SELECT c.*,
@@ -38,23 +39,23 @@ async function handleGetAcademyCourses() {
             LEFT JOIN academy_courses pc ON pc.id = c.prerequisite_course_id
             GROUP BY c.id, pc.title
             ORDER BY c.sort_order ASC, c.created_at DESC`);
-        return { success: true, courses: result.rows };
+        return { success: true, courses: await academyVisibility.filterCourses(result.rows, adminCtx) };
     } catch (err) {
         return { success: false, error: err.message };
     }
 }
 
-async function handlePostAcademyCourse(body) {
+async function handlePostAcademyCourse(body, adminCtx) {
     try {
         const { title, description, oss_key, status, sort_order, credit_value, level, prerequisite_course_id, thumbnail_oss_key } = body;
         if (!title) return { success: false, error: 'Title is required' };
         const result = await pool.query(
             `INSERT INTO academy_courses
-               (title, description, oss_key, status, sort_order, credit_value, level, prerequisite_course_id, thumbnail_oss_key)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+               (title, description, oss_key, status, sort_order, credit_value, level, prerequisite_course_id, thumbnail_oss_key, channel_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
             [title, description || null, oss_key || null, status || 'draft', sort_order || 0,
              credit_value != null ? credit_value : 10, level || 'foundation',
-             prerequisite_course_id || null, thumbnail_oss_key || null]
+             prerequisite_course_id || null, thumbnail_oss_key || null, adminCtx?.role === 'channel' ? adminCtx.channelId : null]
         );
         return { success: true, course: result.rows[0] };
     } catch (err) {
@@ -952,7 +953,7 @@ async function handleGetCertImageUrl(certNumber) {
     }
 }
 
-async function handleGetAcademyLearningPaths() {
+async function handleGetAcademyLearningPaths(adminCtx) {
     try {
         const pathsRes = await pool.query(
             'SELECT * FROM academy_learning_paths WHERE is_active = TRUE ORDER BY sort_order ASC, created_at ASC'
@@ -968,7 +969,10 @@ async function handleGetAcademyLearningPaths() {
             if (!coursesByPath[row.path_id]) coursesByPath[row.path_id] = [];
             coursesByPath[row.path_id].push(row);
         }
-        const paths = pathsRes.rows.map(p => ({ ...p, courses: coursesByPath[p.id] || [] }));
+        const visible = await academyVisibility.filterCourses(coursesRes.rows.map(c => ({ id: c.course_id })), adminCtx);
+        const ids = new Set(visible.map(c => c.id));
+        const paths = pathsRes.rows.map(p => ({ ...p, courses: coursesByPath[p.id] || [] }))
+            .filter(p => p.courses.length && p.courses.every(c => ids.has(c.course_id)));
         return { success: true, paths };
     } catch (err) {
         return { success: false, error: err.message };

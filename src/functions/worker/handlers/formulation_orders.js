@@ -582,14 +582,29 @@ async function handlePostFormulationRedeem(body) {
         if (!pool) return { success: false, reason: 'internal_error' };
 
         const { rows: [user] } = await pool.query(
-            'SELECT user_id FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]);
+            'SELECT user_id, account_type FROM users WHERE user_id = $1 OR external_id = $1 LIMIT 1', [openid]);
         if (!user) return { success: false, reason: 'user_not_found' };
+
+        // Someone else's session redeeming for this user (index.js sets _redeemer_user_id from
+        // the session, after lib/userAccess.js confirmed they coach this user). Only for a managed
+        // customer (CLAUDE.md §49): they have no GCN account, so GCN makes the coach the buyer.
+        // A regular client redeems their own codes.
+        const redeemer = body?._redeemer_user_id || null;
+        if (redeemer && user.account_type !== 'managed') return { success: false, reason: 'redeem_for_managed_only' };
 
         // Only ever this user's own proposal, and only a live one. A bad or foreign id is dropped
         // rather than refused: it is advisory downstream, and losing the auto-submit is a far
         // smaller harm than refusing to spend a code the user is entitled to spend.
         let intendedPlanId = null;
-        const planId = parseInt(body?.plan_id, 10);
+        let planId = parseInt(body?.plan_id, 10);
+        // The coach panel shows no formula card to take an id from; a managed customer has at
+        // most one live proposal (uniq_nutrition_plans_proposed), and that is the one meant.
+        if (!Number.isFinite(planId) && redeemer) {
+            const { rows: [p] } = await pool.query(
+                `SELECT id FROM nutrition_plans WHERE user_id = $1 AND status = 'proposed' ORDER BY id DESC LIMIT 1`,
+                [user.user_id]);
+            if (p) planId = Number(p.id);
+        }
         if (Number.isFinite(planId)) {
             const { rows: [plan] } = await pool.query(
                 `SELECT id FROM nutrition_plans
@@ -604,6 +619,7 @@ async function handlePostFormulationRedeem(body) {
                 nano_user_id: user.user_id,
                 code,
                 intended_nano_plan_id: intendedPlanId,
+                ...(redeemer && { redeemer_nano_user_id: redeemer }),
                 ...shipping,
             });
         } catch (err) {
@@ -613,6 +629,11 @@ async function handlePostFormulationRedeem(body) {
             console.error(JSON.stringify({ level: 'ERROR', msg: 'formulation_redeem_failed',
                 user_id: user.user_id, error: err.message, status: err.status,
                 gcn_error: err.body?.error }));
+            // The one refusal that is about the caller, not the code: a coach redeeming for a
+            // managed customer must have opened the store once, which links their GCN account.
+            if (/^redeemer nano identity not linked/.test(String(err.body?.error || ''))) {
+                return { success: false, reason: 'redeemer_not_linked' };
+            }
             return { success: false, reason: err.body?.error || 'gcn_unreachable' };
         }
 

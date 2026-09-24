@@ -36,16 +36,19 @@ function ChartSheet({ title, onClose, children }) {
   );
 }
 
-export default function HealthTab({ visible, onGuestTap }) {
+export default function HealthTab({ visible, onGuestTap, client = null, coachId = null, mode = 'self' }) {
   const app = useApp();
-  const { user, lang, t: T, theme, isGuest, vivaAgActive, saveUser, updateUser, on, emit } = app;
+  const { lang, t: T, theme, vivaAgActive, saveUser, updateUser, on, emit } = app;
+  const isSelf = mode === 'self';
+  const user = isSelf ? app.user : client;
+  const isGuest = isSelf && app.isGuest;
   const t = T.health;
   const isZh = lang !== 'en';
   const tc = hex => themeColor(hex, theme);
   const userId = user?.user_id;
   const [subTab, setSubTab] = useState('twin');
-  const showAgTab = !!vivaAgActive && !isGuest;
-  const h = useHealthData({ userId: isGuest ? null : userId, user, lang, t });
+  const showAgTab = isSelf && !!vivaAgActive && !isGuest;
+  const h = useHealthData({ userId: isGuest ? null : userId, user, lang, t, coachId, mode });
   const { d } = h;
   const rootRef = useRef(null);
   const [frameW, setFrameW] = useState(390);
@@ -63,6 +66,7 @@ export default function HealthTab({ visible, onGuestTap }) {
   const [avatarUpdating, setAvatarUpdating] = useState(false);
   const onAvatarTap = () => { clearTimeout(pillTimer.current); setPillsVisible(true); pillTimer.current = setTimeout(() => setPillsVisible(false), 5000); };
   const chooseAvatar = async avatarId => {
+    if (!isSelf) return;
     setPickerOpen(false);
     const url = avatarId ? resolveAvatarUrl(avatarId, DEFAULT_MOOD) : null;
     if (!url) return;
@@ -86,6 +90,7 @@ export default function HealthTab({ visible, onGuestTap }) {
     setEditing(true);
   };
   const saveEdit = async () => {
+    if (!isSelf) return;
     if (editSaving || !form) return;
     setEditSaving(true);
     try {
@@ -122,7 +127,7 @@ export default function HealthTab({ visible, onGuestTap }) {
   const openReport = async id => {
     setActiveReport({ id, loading: true });
     try {
-      const res = await api.get(`/health-reports/${id}?openid=${q(userId)}`);
+      const res = await api.get(`/health-reports/${id}?openid=${q(userId)}${coachId ? `&coach_id=${q(coachId)}` : ''}`);
       const report = res?.report || {}; const events = res?.events || []; const items = res?.items || [];
       const raw = report.raw_data || {};
       const statusRow = status => ({ status, statusLabel: status === 'high' ? t.rptHigh : status === 'low' ? t.rptLow : t.rptNormal, statusColor: status === 'high' ? '#ef4444' : status === 'low' ? '#0ea5e9' : '#10b981' });
@@ -156,7 +161,7 @@ export default function HealthTab({ visible, onGuestTap }) {
     setReportOpening(true);
     const win = window.open('', '_blank');
     try {
-      const res = await api.get(`/twin-reports/file?openid=${q(userId)}&job_uid=${q(jobUid)}&index=${Number(index) || 0}`);
+      const res = await api.get(`/twin-reports/file?openid=${q(userId)}&job_uid=${q(jobUid)}&index=${Number(index) || 0}${coachId ? `&coach_id=${q(coachId)}` : ''}`);
       if (!res?.success) throw new Error(res?.reason || 'no url');
       if (win) win.location.href = res.url; else window.open(res.url, '_blank');
     } catch { win?.close(); ui.toast(t.reportsErrOpen); }
@@ -174,6 +179,16 @@ export default function HealthTab({ visible, onGuestTap }) {
   const wearableBound = !!hint || !!d.ringData;
   const wearableName = hint?.name || (hint?.brand === 'halo' ? 'Halo Ring' : hint?.brand === 'v8' ? 'V8 Band' : hint?.brand === 'aizo' ? 'Aizo Ring' : hint?.brand ? 'Colmi Ring' : '');
   const brand = hint?.brand === 'x3' ? 'halo' : hint?.brand;
+  const ecgWhen = (iso) => {
+    const dt = new Date(iso); if (isNaN(dt)) return '';
+    const now = new Date(); const same = (a, b) => a.toDateString() === b.toDateString();
+    const hm = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+    if (now - dt < 5 * 60 * 1000) return t.ecgJustNow;
+    if (same(dt, now)) return `${t.ecgToday} ${hm}`;
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    if (same(dt, y)) return `${t.ecgYesterday} ${hm}`;
+    return `${dt.getMonth() + 1}/${dt.getDate()} ${hm}`;
+  };
   const rd = d.ringData;
   const sa = d.subAgeZ;
   const zoneStyle = key => sa[key] ? { background: sa[key].fill, boxShadow: `0 0 ${sa[key].glow}px ${sa[key].color}`, borderColor: `${tc(sa[key].color)}88` } : {};
@@ -206,12 +221,12 @@ export default function HealthTab({ visible, onGuestTap }) {
               <div className="health-hero">
                 <div className="health-hero-bg" />
                 <div className="avatar-area">
-                  {!editing && <div className={`avatar-side-pill${pillsVisible ? ' avatar-pill-show' : ''}`} onClick={e => { e.stopPropagation(); setPillsVisible(false); setPickerOpen(true); }}><span className="avatar-pill-text">{t.changeAvatar}</span></div>}
-                  <div className="health-avatar-container" onClick={onAvatarTap}>
+                  {isSelf && !editing && <div className={`avatar-side-pill${pillsVisible ? ' avatar-pill-show' : ''}`} onClick={e => { e.stopPropagation(); setPillsVisible(false); setPickerOpen(true); }}><span className="avatar-pill-text">{t.changeAvatar}</span></div>}
+                  <div className="health-avatar-container" onClick={isSelf ? onAvatarTap : undefined}>
                     <div className="health-avatar-wrap">{avatarUrl ? <img className="health-avatar-img" src={avatarUrl} alt="" /> : <div className="health-avatar-placeholder"><span className="health-avatar-letter">{avatarLetter}</span></div>}</div>
                     {avatarUpdating && <div className="health-avatar-ring" />}
                   </div>
-                  {!editing && <div className={`avatar-side-pill${pillsVisible ? ' avatar-pill-show' : ''}`} onClick={e => { e.stopPropagation(); startEdit(); }}><span className="avatar-pill-text">✎  {t.editProfile}</span></div>}
+                  {isSelf && !editing && <div className={`avatar-side-pill${pillsVisible ? ' avatar-pill-show' : ''}`} onClick={e => { e.stopPropagation(); startEdit(); }}><span className="avatar-pill-text">✎  {t.editProfile}</span></div>}
                 </div>
               </div>
 
@@ -220,6 +235,8 @@ export default function HealthTab({ visible, onGuestTap }) {
                   <div className="ap-sheet" onClick={e => e.stopPropagation()}>
                     <div className="ap-header"><span className="ap-title">{isZh ? '选择头像' : 'Choose an Avatar'}</span><div className="ap-close" onClick={() => setPickerOpen(false)}><span className="ap-close-icon">✕</span></div></div>
                     <div className="ap-grid-scroll uh-scroll"><div className="ap-grid">
+                      {/* An applied generated set (miniapp-only upload flow, avatar-gallery.md §6) stays selectable here; re-picking it is a no-op. */}
+                      {user?.avatar_moods && (user.avatar_moods.thumb || user.avatar_moods[DEFAULT_MOOD]) && <div className={`ap-item${user?.avatar_character === 'custom' ? ' ap-item-selected' : ''}`} onClick={() => setPickerOpen(false)}><img className="ap-item-img" src={user.avatar_moods.thumb || user.avatar_moods[DEFAULT_MOOD]} alt="" /></div>}
                       {AVATAR_GALLERY.map(item => <div key={item.id} className={`ap-item${item.id === user?.avatar_character ? ' ap-item-selected' : ''}`} onClick={() => chooseAvatar(item.id)}><img className="ap-item-img" src={item.thumb} alt="" /></div>)}
                     </div></div>
                   </div>
@@ -450,6 +467,50 @@ export default function HealthTab({ visible, onGuestTap }) {
                   </div>
                 )}
 
+                {/* 心电节律 — V8 strips from GET /api/ecg. Read-only here: recording needs the
+                    band over BLE, which only the Mini Program has. */}
+                {(brand === 'v8' || d.ecgLatest) && (
+                  <div className="ecg-card">
+                    <div className="ecg-card-row">
+                      <div className="ecg-card-main">
+                        <span className="ecg-card-title">{t.ecgTitle}</span>
+                        {d.ecgLatest ? (
+                          <div className="ecg-card-hero">
+                            <span className="ecg-card-bpm">{d.ecgLatest.bpm}</span><span className="ecg-card-unit">bpm</span>
+                            <span className="ecg-card-meta">{ecgWhen(d.ecgLatest.recorded_at)} · {d.ecgLatest.accepted_beats} {t.ecgBeats} · RR±{d.ecgLatest.rr_sd_ms}ms</span>
+                          </div>
+                        ) : <span className="ecg-card-empty">{t.ecgEmptySelf}</span>}
+                      </div>
+                      {isSelf && brand === 'v8' && <div className="wd-sync-btn" onClick={wearableNotice}><span className="wd-sync-btn-text">{t.ecgRecord}</span></div>}
+                    </div>
+                    {d.ecgList.length > 1 && (
+                      <div className="ecg-card-list">{d.ecgList.slice(1, 5).map(it => <div key={it.id} className="ecg-card-list-row"><span className="ecg-card-list-when">{ecgWhen(it.recorded_at)}</span><span className="ecg-card-list-val">{it.bpm} bpm · RR±{it.rr_sd_ms}ms</span></div>)}</div>
+                    )}
+                    <span className="ecg-card-foot">{t.ecgNotDiagnosis}</span>
+                  </div>
+                )}
+                {/* 脉搏波 — raw PPG strips from GET /api/ppg, V8 band and Halo ring. Same card. */}
+                {(brand === 'v8' || brand === 'halo' || d.ppgLatest) && (
+                  <div className="ecg-card">
+                    <div className="ecg-card-row">
+                      <div className="ecg-card-main">
+                        <span className="ecg-card-title">{t.ppgTitle}</span>
+                        {d.ppgLatest ? (
+                          <div className="ecg-card-hero">
+                            <span className="ecg-card-bpm">{d.ppgLatest.bpm}</span><span className="ecg-card-unit">bpm</span>
+                            <span className="ecg-card-meta">{ecgWhen(d.ppgLatest.recorded_at)} · {d.ppgLatest.accepted_beats} {t.ecgBeats} · PP±{d.ppgLatest.rr_sd_ms}ms</span>
+                          </div>
+                        ) : <span className="ecg-card-empty">{t.ppgEmptySelf}</span>}
+                      </div>
+                      {isSelf && (brand === 'v8' || brand === 'halo') && <div className="wd-sync-btn" onClick={wearableNotice}><span className="wd-sync-btn-text">{t.ppgRecord}</span></div>}
+                    </div>
+                    {d.ppgList.length > 1 && (
+                      <div className="ecg-card-list">{d.ppgList.slice(1, 5).map(it => <div key={it.id} className="ecg-card-list-row"><span className="ecg-card-list-when">{ecgWhen(it.recorded_at)}</span><span className="ecg-card-list-val">{it.bpm} bpm · PP±{it.rr_sd_ms}ms</span></div>)}</div>
+                    )}
+                    <span className="ecg-card-foot">{t.ppgNotDiagnosis}</span>
+                  </div>
+                )}
+
                 {d.hasTwinData ? (d.twinBodyBar && (
                   <div className="ht-body-card">
                     <div className="ht-body-header"><span className="ht-body-title">{t.dtBody}</span>{d.twinBody && <span className="ht-body-vals">{d.twinBody}</span>}</div>
@@ -531,7 +592,7 @@ export default function HealthTab({ visible, onGuestTap }) {
               </div>
 
               {/* ── Personal Profile ── */}
-              {d.userFactsLoaded && (
+              {isSelf && d.userFactsLoaded && (
                 <div className="health-section">
                   <span className="section-title">{t.layerProfile}</span>
                   {d.userFacts.length > 0 ? (
@@ -543,7 +604,7 @@ export default function HealthTab({ visible, onGuestTap }) {
                 </div>
               )}
 
-              <HealthDocuments userId={userId} canUpload onLoaded={h.onDocsLoaded} />
+              <HealthDocuments userId={userId} coachId={coachId} canUpload={isSelf} onLoaded={h.onDocsLoaded} />
               <div style={{ height: 32 }} />
             </>
           )}

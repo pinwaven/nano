@@ -114,3 +114,93 @@ Receives the `chooseavatar` event from `user-health`, resolves the `relaxed` URL
 ## 5. Environment Variables
 
 Same OSS credentials as the rest of the app (see `docs/architecture/digital-assets.md` §6) — `OSS_ACCESS_KEY_ID`, `OSS_ACCESS_KEY_SECRET`, `OSS_REGION`, `OSS_BUCKET` (`waven-nano`). No new env vars.
+
+---
+
+## 6. Custom Avatars — "My photo" (2026-09-20)
+
+In the health tab's self view, the picker's first tile lets the user upload a photo of themselves;
+the worker generates a personal 4-mood set in the gallery's art style and the user previews and
+applies it. The gallery itself is unchanged, and so is every read site of `avatar_url`.
+
+### What the spike established (`temp/avatar-gen-spike.js`, 2026-09-19)
+
+- **Model:** DashScope `qwen-image-3.0` on the synchronous `multimodal-generation/generation`
+  endpoint — 1–3 input images + one instruction, PNG result URL valid 24 h, billed per generated
+  image. `AVATAR_GEN_MODEL` selects it. **The quota is requests/minute, account-wide**
+  (help.aliyun.com/zh/model-studio/rate-limit): `qwen-image-2.0-pro` looked best in the first
+  spike but allows 2/min — a single 4-call set needs two minutes and a second user 429s — so it
+  was replaced after a live failure. Compared on a real photo (2026-09-20): `qwen-image-2.0`
+  (2/s) renders grainy with textured backgrounds; `qwen-image-edit-plus` (2/s) drifts the face
+  and ignores the background; `qwen-image-3.0` (20/min) gave the best likeness, ~32 s per set.
+- **Prompts:** the subject is Chinese unless the photo clearly shows otherwise (most customers
+  are), with the East Asian features to preserve spelled out in the base step and repeated on
+  every mood edit. **Never name an accessory** — "same glasses / glasses if any" made the edit
+  model paint glasses on three of four variants; it is "keep accessories as in the photo, add
+  none".
+- **Two steps, not one:** photo + the gallery style reference (`avatars/style-ref/relaxed.png`, a
+  512 px gallery PNG uploaded once; **last** in the image list because the API takes the output
+  aspect from it) → the `relaxed` base; then three edits **of the base** for engaged / restored /
+  stressed. Editing the base, not the photo, is what holds identity and style across the row.
+- **Sequential, never parallel:** three concurrent mood calls returned `429 Throttling.RateQuota`
+  live. `generateImage` retries 429 with backoff and retries the result download once (an
+  `ECONNRESET` was seen). ≈ 8–10 s per call on 3.0, 35–60 s per attempt end to end.
+- **No image library in the worker:** the 300 px / 160 px JPEG derivatives come from OSS image
+  processing (`ossLib.processObjectSave`, confirmed on `waven-nano`), same spec as
+  `temp/upload-avatar-gallery.js`.
+
+### Pipeline — `worker/lib/avatarGen.js`
+
+`runAvatarGeneration(genId, deps)` is pure over injected `{pool, ossLib, llmClient, http, apiKey}`:
+
+1. **Gate** — `qwen-vl-plus` over the photo answers JSON; `evaluateGate` requires exactly one
+   real, frontal, clearly visible human face, else `status='rejected'` with `error_code`
+   `no_face | multiple_faces | not_a_photo | not_frontal` and **no image call is spent**.
+2. **Base** (relaxed) → 3. **Moods** → 4. **Store** originals to `avatars/custom/<user_id>/<gen_id>-<mood>-src.png`,
+   derive `…-<mood>.jpg` (300 px q82) and `…-thumb.jpg` (160 px q75, from relaxed), delete the originals.
+5. **Finish** — `mood_keys`, `status='done'`. Any throw → `status='failed'` (`gen_failed` / `store_failed`).
+
+**The source photo is deleted in a `finally`, on every outcome**, and `source_oss_key` is NULLed —
+a face photo never outlives the job (product decision: delete after generation).
+
+### Data — `migration_avatar_generations.sql`
+
+`avatar_generations` (one row per attempt; `uniq_avatar_generations_active` = one in-flight row per
+user, enforced by Postgres, not by a check) and `users.avatar_moods JSONB`
+(`{engaged, relaxed, restored, stressed, thumb}` → 10-year presigned URLs, the gallery convention).
+`avatar_character = 'custom'` is the only value that makes `avatar_moods` resolve; `handlePutUser`
+sets `avatar_moods = NULL` whenever any *other* character is written, so a stale set can never render.
+`avatar_moods` rides every self-row select that already carries `avatar_character` (§3).
+
+### Endpoints — `worker/handlers/avatar_generation.js` (app bearer + `openid`)
+
+| | |
+|---|---|
+| `POST /api/avatar-generation/presign` | server-minted key `avatar-uploads/<user_id>/<hex>.jpg`, `image/jpeg` signed, 10-min PUT. **Not** `/api/oss/presign` (authorizes nothing). |
+| `POST /api/avatar-generation {oss_key}` | refuses a key outside the caller's prefix (403), a missing upload, `> 6 MB`, the daily cap (`AVATAR_GEN_MAX_PER_DAY`, default 3; 429 `daily_limit`) and a concurrent job (409 `in_progress`); a refused upload is deleted. Publishes `kind:'avatar_generate'` on the existing `chat.generate` CloudEvent (§22 — no trigger change) and returns `{processing:true}`; on publish failure runs inline. |
+| `GET /api/avatar-generation` | the caller's latest row: `{gen_id, status, error_code, moods?}` — `moods` only when `done`, never a key. |
+| `POST /api/avatar-generation/apply {gen_id}` | row must be the caller's and `done`; writes `avatar_character='custom'`, `avatar_moods`, `avatar_url = relaxed`. |
+
+`handleChatGenerateEvent` branches on `kind === 'avatar_generate'` right after the dedupe claim,
+before any chat machinery.
+
+### Miniapp — `components/avatar-picker/`
+
+The component owns the flow (self view only — `allow-upload="{{mode === 'self'}}"`): tile →
+`wx.chooseMedia` (compressed) → `wx.cropImage` 1:1 when available → presign → PUT → create →
+5 s poll of `GET /api/avatar-generation` while pending/running (timer cleared on hide; the sheet
+may be closed, the job continues) → 4-up preview (restored | relaxed | engaged | stressed) with
+使用 / 重新生成 → apply → `customapplied` event → `user-health` `customavatar` →
+`main.js handleHealthCustomAvatar` mirrors the fields into the local user. Rejections render the
+`err_<code>` copy (both languages in the component's `T`).
+
+`utils/mood.js resolveAvatarUrl(avatarId, mood, customMoods)` — `'custom'` resolves from
+`customMoods` only. The web user-app follows through the shared module (`useHealthData.js`) and
+shows an applied set as a tile in `HealthTab.jsx`; the upload flow itself is miniapp-only for now.
+
+### Not done / known
+
+- No WeChat `mediaCheckAsync` (needs the 消息推送 callback, not configured) and no human review;
+  the gate is the only moderation. Output is a stylized cartoon of the input.
+- Cost ≈ 4 billed image calls per successful attempt; check the current per-image price.
+- A user-app upload UI, and re-rolling from a kept photo, are follow-ups (the photo is deleted).

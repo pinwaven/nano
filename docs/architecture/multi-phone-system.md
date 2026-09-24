@@ -105,14 +105,12 @@ twin of `syncPrimaryPhone`.
    previous one). `/email-otp/send` never consults `users`, so its response is identical for a
    known and an unknown address. Limits are per-address only — the handlers never see a client
    IP — which bounds a mail-quota DoS, not a takeover.
-2. **Waven only, on the channel ROOT.** `handlers/email-otp.js`'s allow-rule is
-   `root_key_name == null || root_key_name === 'waven'` via `lib/channels.js`'s
-   `resolveRootChannelKey` (recursive walk up `parent_channel_id`), so `waven-china` and
-   `waven-china-zj` users qualify and every aeviva-tree account is refused with
-   `channel_not_supported` — on login, and on either side of a bind-merge. This is **not**
-   `GCN_LINKED_CHANNEL_KEYS`, which now also includes waven and would lock it out. An email
-   sign-up lands on the root `waven` channel, the same default the WeChat login uses; a phone
-   sign-up still gets `channel_id NULL` (the aeviva-branded build shares `/phone-otp/verify`).
+2. **Channel-agnostic login, root-safe merging.** A verified email can sign up and log in under
+   any channel tree; the coach invitation decides a new browser user's channel. A user in any
+   tree can also bind a fresh verified address. If an address already belongs to another account,
+   `resolveRootChannelKey` must resolve both accounts to the same root before they may merge;
+   cross-organization merges return `channel_not_supported` so verified identity cannot move
+   private data between unrelated channel trees.
 3. **No backfill.** `users.email` values were typed by staff and never verified by their owner, so
    they do not become login identities; `users.email` also gets no unique index (uniqueness lives
    on `user_emails.email`). A legitimate address is attached by the user proving it, or by an
@@ -120,6 +118,36 @@ twin of `syncPrimaryPhone`.
 
 The super-OTP backdoor is honoured on `/email-otp/verify` (login only, never bind) and audits with
 `identifier_type = 'email'` (`migration_super_otp_audit_log_identifier_type.sql`).
+
+When two accounts merge, the earlier-created `user_id` remains the survivor. The survivor keeps
+the union of both rows' roles, and it moves into the loser's channel only when that channel is a
+descendant of the survivor's channel (or the survivor had no channel). This preserves deliberate
+child-channel assignments such as SuperiorMed without guessing between sibling organizations.
+After phone rows move, the survivor always has one primary whenever it has any phones; when no
+primary survives, the most recently verified number is promoted and copied into `users.phone`.
+The inactive merge row's `users.phone` cache is cleared first because the login identity has moved
+and the cache column remains globally unique.
+`migration_user_merge_preserve_access_context.sql` and
+`migration_user_merge_restore_primary_phone.sql` backfill these rules for existing merges.
+
+### Web new-user invitation step (2026-09-23)
+
+Phone and email login still take an existing user directly into the app. When the web client sends
+`require_invite:true` and the verified identifier is unknown, `/phone-otp/verify` or
+`/email-otp/verify` returns
+`{invite_required:true, signup_proof}` instead of creating an unassigned account. `signup_proof`
+is a signed ten-minute `signup.` token bound to the normalized identifier and login type. The web
+login then asks for the six-digit coach invitation code and resubmits it with that proof, so the
+consumed OTP is never replayed or resent.
+
+`lib/signup-invite.js` accepts active invitation codes and personal referral codes. It resolves
+the channel plus the inviting coach (or the referrer's coach), and account creation writes
+`coach_id`, `channel_id`, `invited_by_invitation_id`/`referred_by_user_id`, the login identity,
+and invitation usage in one transaction. Expired, inactive, and exhausted invitation codes are
+rejected. A signup proof cannot log into an account after it has been created.
+
+The flag keeps the miniapp's existing direct phone/email signup behavior unchanged; the new
+invitation gate is a web-login policy.
 
 **Surfaces:** miniapp login page (phone/email toggle — hidden on a brand-specific build and once
 an aeviva channel is stored, `EMAIL_LOGIN_AVAILABLE` in `utils/config.js`), `pages/emails/` (a
@@ -182,10 +210,10 @@ A user can hold more than one verified phone (`user_phones`, primary/secondary v
 - **Self-service (miniapp):** `GET/POST /phone-otp/{list,bind,set-primary,remove}` (`handlers/phone-otp.js`), new page `pages/phones/` reached from the main menu.
 - **Admin panel:** the Phones tab (in the tabbed user-detail drawer, `UserDetailModal` — click the user's row, not the pencil icon) has full list/set-primary/remove plus an **Add Phone** action (`POST /admin-phone-add` → `handlePhoneOtpAdminAdd`, attaches an unverified number with no OTP proof, for staff use). That endpoint is deliberately **not** under `/phone-otp/`'s bearer-auth exemption — it's gated by `requireAdminTab(adminCtx, 'users')` like every other admin user-write endpoint, since it lets the caller attach an arbitrary number to an arbitrary account with zero ownership proof. The older pencil-icon "编辑用户" modal (`UserModal`) now shows the real phone list read-only (with a "Manage in Phones tab" handoff) instead of its own separate, single-value phone input — it can no longer mutate phone data at all.
 - **Login (`handlePhoneOtpVerify`) matches through `user_phones`, not `users.phone`** — any verified phone, primary or secondary, logs into the same account (used by both the miniapp's phone-login screen and the web user-app). This also holds for an admin-added *unverified* phone the moment someone completes a real OTP check against it at login — it resolves to the existing account rather than forking a duplicate, though the login itself doesn't retroactively set that row's `verified_at` (known, un-fixed cosmetic gap — the phone still shows "Unverified" afterward even though possession was just proven).
+- **New web identities require a coach invitation.** After OTP verification, an unknown phone/email receives a short-lived signed signup proof. The browser asks for the coach code, then creates the account under the resolved channel and coach transactionally; existing users never see this step.
 - **GCN identity bridge (`gcn/src/functions/auth/index.js`'s `handleNanoSSO`):** previously matched a GCN consumer account by phone alone, so switching primary phone on nano's side silently forked a second GCN account. Fixed to resolve by `nano_user_id` first (phone-match only as fallback for first-time/pre-migration accounts), and to mirror nano's **full** phone list (not just primary) into GCN's own `user_phones` on every login, reconciled exactly (stale/removed numbers dropped) — this is also what lets GCN's own native OTP login recognize any of a user's nano-verified phones. `partners.phone` (the separate, single-value cache for a *provisioned partner/store* record — unrelated to the consumer-account phone above) is now kept in sync via `syncPartnerPhoneFromUser`, called from every phone-changing call site rather than only partner-record edits.
 
-- **Email is a second login identity (2026-09-15), Waven-only.** `user_emails` mirrors `user_phones`; `handlers/email-otp.js` mirrors `phone-otp.js`; DirectMail (`lib/email.js`, `no-reply@mail.gcn.net`, sender set by `DM_ACCOUNT_NAME` — empty means the code is logged, not sent) only delivers, so nano owns the code lifecycle in `lib/email-otp.js` (`email_otp_codes`, per-address rate limit, 5-attempt cap). The allow-rule is the channel **root** (`lib/channels.js` `resolveRootChannelKey` — `waven-china-zj` is a Waven user), deliberately not `GCN_LINKED_CHANNEL_KEYS`. No backfill of legacy `users.email`. `WEBVIEW_USER_SELECT` now returns `email_verified`, `emails[]` and `channel.root_key_name` — the last one **arms GCN's already-deployed channel/sector guard** (`channel_sector_mismatch`), so verify an `aeviva-china` user still enters `aeviva.gcn.net` after deploying it.
+- **Email is a second login identity (2026-09-15; all channels from 2026-09-24).** `user_emails` mirrors `user_phones`; `handlers/email-otp.js` mirrors `phone-otp.js`; DirectMail (`lib/email.js`, `no-reply@mail.gcn.net`, sender set by `DM_ACCOUNT_NAME` — empty means the code is logged, not sent) only delivers, so nano owns the code lifecycle in `lib/email-otp.js` (`email_otp_codes`, per-address rate limit, 5-attempt cap). Signup and login work in every channel tree; duplicate-account merges still require the same root channel. No backfill of legacy `users.email`. `WEBVIEW_USER_SELECT` returns `email_verified`, `emails[]` and `channel.root_key_name`, which arms GCN's channel/sector guard (`channel_sector_mismatch`).
 - **GCN linkage is resolved through the channel tree, not a leaf-key set (2026-09-15).** The six `GCN_LINKED_CHANNEL_KEYS` copies are gone: the worker uses `lib/channels.js` `resolveGcnSector` (`GCN_SECTOR_FOR_ROOT_CHANNEL = {aeviva, waven}`), the admin panel `shared.jsx` `gcnSectorForChannel`, the miniapp `main.js` `GCN_STORE_HOST_FOR_CHANNEL`. The waven tree is now GCN-linked exactly like aeviva (Store tab on `waven(-dev).gcn.net`, chat catalog, partner provisioning with `sector_id: 'waven'`, admin console embed at `/waven/dashboard-admin.html`); `fetchFormulationTiers(sector)` carries the sector so a waven user sees waven's packages.
 
 Full detail: `docs/architecture/multi-phone-system.md` (§6 for email).
-

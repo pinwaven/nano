@@ -41,7 +41,9 @@ import { UsersTab } from './tabs/UsersTab.jsx';
 import { ChangelogTab } from './tabs/ChangelogTab.jsx';
 
 axios.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('nano_admin_token') || import.meta.env.VITE_API_TOKEN
+  // Only a logged-in session. There used to be a fallback to VITE_API_TOKEN, which inlined the
+  // app bearer into this publicly served bundle.
+  const token = sessionStorage.getItem('nano_admin_token')
   if (token) config.headers['Authorization'] = `Bearer ${token}`
   return config
 })
@@ -133,7 +135,8 @@ function AdminPanel({ session, onLogout }) {
   // channels inside the tab itself, so there's no single "current channel" to key off here —
   // their label stays generic.
   const currentChannel = (data.channels || []).find(c => String(c.id) === String(session?.channelId));
-  const inventoryLabel = !isSuperadmin && gcnSectorForChannel(currentChannel, data.channels)
+  const isCurrentChannelGcnLinked = !isSuperadmin && !!gcnSectorForChannel(currentChannel, data.channels);
+  const inventoryLabel = isCurrentChannelGcnLinked
     ? 'GCN'
     : t.nav.inventory;
 
@@ -176,7 +179,7 @@ function AdminPanel({ session, onLogout }) {
   const defaultTab = 'dashboard';
   const [tab, setTab] = useState(defaultTab);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const isGcnEmbedTab = tab === 'inventory' && !isSuperadmin && GCN_LINKED_CHANNEL_KEYS.has(currentChannel?.key_name);
+  const isGcnEmbedTab = tab === 'inventory' && isCurrentChannelGcnLinked;
   const topbarLabel = isGcnEmbedTab ? 'GCN : Guardian Chain Network' : NAV.find(n => n.id === tab)?.label;
 
   const handleNavClick = (id) => { setTab(id); setSidebarOpen(false); };

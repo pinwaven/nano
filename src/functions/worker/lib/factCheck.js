@@ -240,32 +240,98 @@ const _BIOMARKER_ALIASES = {
     CystatinC: [/cystatin\s*-?c/i, /胱抑素\s*-?C?/],
 };
 
-// Strong, unambiguous causal attribution only.
-const _CAUSAL_MARKERS = /(核心驱动|主要驱动|核心因素|主导因素|驱动因素|所?驱动|主导|导致|造成|源于|决定于|由[^，。；\n]{0,12}计算得出|推高|拉高|归因于|drives?|driven by|core factor|main driver|caused by|explains?|determined by|attributable to)/i;
+// Strong, unambiguous causal attribution only. 相关/关联/影响 stay out on purpose (see above).
+const _CAUSAL_MARKERS = /(核心驱动|主要驱动|核心因素|主导因素|驱动因素|所?驱动|主导|导致|造成|源于|源自|决定于|由[^，。；\n]{0,12}计算得出|推高|拉高|归因于|引起|诱发|所致|drives?|driven by|core factor|main driver|caused by|due to|because of|explains?|determined by|attributable to)/i;
 
-function detectDimensionMisattribution(reply, dimensionBiomarkers, extraLabels) {
-    if (!reply || !dimensionBiomarkers) return [];
+// A sentence that DENIES the link ("并非由 hsCRP 驱动", "not driven by CD38") is the correct thing
+// to write, not a misattribution — the prompt itself asks for exactly that caveat.
+const _NEGATED_LINK = /(并非|不是|并不|不会|无关|不相关|没有关系|无直接|不属于|不参与|不计入|not (?:driven|caused|related|linked|a driver|an input|part of)|isn't|is not|does not (?:drive|feed|affect))/i;
+
+// Inside a dimension's OWN section (scoped by its heading) a softer link is enough. There, naming
+// another dimension's marker together with 结合/提示/影响/机制… is the report explaining this
+// dimension with it — live 2026-09-23, two of four reports wrote under "#### 微血管年龄" that its own
+// input was normal "但结合 hsCRP 升高与 CD38 高表达，提示慢性炎症……影响微循环稳态". Outside such a
+// section these words stay ignored: co-mention in ordinary prose is not attribution (the pinned
+// "微血管年龄与 CD38 可能存在关联" case), and false positives there are what cost REVISE rounds.
+const _SCOPED_LINK = /(结合|提示|影响|相关|有关|关联|协同|共同|机制|参与|因素|linked|related|associated|together with|combined with|contribut|suggests?)/i;
+
+// A markdown heading naming exactly one dimension ("#### ⚠️ 微血管年龄偏高", "**细胞年龄**") scopes
+// the lines under it: the health-advice report writes "胱抑素C正常……但微血管结构已呈老化迹象，
+// 由hsCRP偏高引起" under that heading without repeating the dimension's name in the sentence.
+const _HEADING_LINE = /^\s*(#{1,6}\s|\*\*[^*]{2,40}\*\*\s*[:：]?\s*$|[🔹🔸⚠️✅❗📌•-]*\s*\*\*[^*]{2,40}\*\*\s*$)/u;
+
+// Walks the reply the way the check reads it — lines, a heading's scope, then sentences with their
+// own trailing punctuation kept — and reports each misattributing sentence by position, so the
+// detector and the stripper below cannot disagree about which sentence was meant.
+function _findMisattributedSentences(reply, dimensionBiomarkers, extraLabels) {
+    if (!reply || !dimensionBiomarkers) return { lines: [], found: [] };
     const labels = {};
     for (const dim of Object.keys(dimensionBiomarkers)) {
         labels[dim] = (_DIMENSION_LABELS[dim] || []).slice();
         const override = extraLabels && extraLabels[dim];
         if (override && !labels[dim].includes(override)) labels[dim].push(override);
     }
-    const out = [];
-    const segments = String(reply).split(/[。！？!?\n]+|；|;/);
-    for (const seg of segments) {
-        if (!seg || !_CAUSAL_MARKERS.test(seg)) continue;
-        const named = Object.keys(labels).filter(dim => labels[dim].some(l => seg.includes(l)));
-        if (named.length !== 1) continue; // 0 = nothing to check, 2+ = ambiguous prose
-        const dim = named[0];
-        const own = dimensionBiomarkers[dim] || [];
-        for (const key of Object.keys(_BIOMARKER_ALIASES)) {
-            if (own.includes(key)) continue;
-            if (!_BIOMARKER_ALIASES[key].some(re => re.test(seg))) continue;
-            out.push({ dimension: dim, biomarker: key, allowed: own, quote: seg.trim().slice(0, 120) });
+    const namedIn = text => Object.keys(labels).filter(dim => labels[dim].some(l => text.includes(l)));
+    const lines = String(reply).split('\n');
+    const found = [];
+    let headingDim = null;
+    lines.forEach((line, li) => {
+        if (_HEADING_LINE.test(line)) {
+            const h = namedIn(line);
+            headingDim = h.length === 1 ? h[0] : null;
+            return;
         }
+        line.split(/(?<=[。！？!?；;])/).forEach((seg, si) => {
+            if (!seg.trim() || _NEGATED_LINK.test(seg)) return;
+            const named = namedIn(seg);
+            // 2+ = ambiguous prose; 0 = only checkable when a heading names the dimension.
+            const dim = named.length === 1 ? named[0] : (named.length === 0 ? headingDim : null);
+            if (!dim) return;
+            const inOwnSection = headingDim === dim;
+            if (!_CAUSAL_MARKERS.test(seg) && !(inOwnSection && _SCOPED_LINK.test(seg))) return;
+            const own = dimensionBiomarkers[dim] || [];
+            const biomarkers = Object.keys(_BIOMARKER_ALIASES)
+                .filter(key => !own.includes(key) && _BIOMARKER_ALIASES[key].some(re => re.test(seg)));
+            if (biomarkers.length) found.push({ li, si, dim, own, biomarkers, seg });
+        });
+    });
+    return { lines, found };
+}
+
+function detectDimensionMisattribution(reply, dimensionBiomarkers, extraLabels) {
+    const { found } = _findMisattributedSentences(reply, dimensionBiomarkers, extraLabels);
+    const out = [];
+    for (const f of found) {
+        const quote = f.seg.trim().replace(/[。！？!?；;]+$/, '').slice(0, 120);
+        for (const key of f.biomarkers) out.push({ dimension: f.dim, biomarker: key, allowed: f.own, quote });
     }
     return out;
+}
+
+// The last resort after REVISE: removes exactly the sentences the check flags, and a bullet or
+// line left with nothing but its marker. Used by runAgenticTurn only on a reply that still
+// misattributes after the REVISE budget is spent (live 2026-09-23: two REVISE rounds kept
+// rephrasing "结合 hsCRP 升高与 CD38 高表达，提示……" under 微血管年龄 instead of deleting it).
+// A deleted sentence costs a little context; a shipped one tells the user a wrong cause.
+function stripDimensionMisattributions(reply, dimensionBiomarkers, extraLabels) {
+    const { lines, found } = _findMisattributedSentences(reply, dimensionBiomarkers, extraLabels);
+    if (found.length === 0) return { text: reply, removed: [] };
+    const drop = new Map();
+    for (const f of found) {
+        if (!drop.has(f.li)) drop.set(f.li, new Set());
+        drop.get(f.li).add(f.si);
+    }
+    const out = [];
+    lines.forEach((line, li) => {
+        if (!drop.has(li)) { out.push(line); return; }
+        const kept = line.split(/(?<=[。！？!?；;])/).filter((_, si) => !drop.get(li).has(si)).join('');
+        // Drop a line left with nothing but its list/quote markers, or only a short label ending in a
+        // colon ("- 东方人群洞见：") whose content was the removed sentence.
+        const residue = kept.replace(/\*\*/g, '').replace(/[\s\-*+•→>#]/g, '');
+        if (residue === '' || (/[:：]$/.test(residue) && residue.length <= 16)) return;
+        out.push(kept);
+    });
+    return { text: out.join('\n'), removed: found.map(f => ({ dimension: f.dim, biomarkers: f.biomarkers, sentence: f.seg.trim() })) };
 }
 
 // Catches a store product the model invented rather than picked from the catalog it was given.
@@ -334,6 +400,7 @@ function detectAllRisks(reply, dotsFormulary, storeProducts) {
 module.exports = {
     detectFabricationRisk,
     detectDimensionMisattribution,
+    stripDimensionMisattributions,
     detectDotNameMismatch,
     detectFakeProductName,
     detectFakeStoreProduct,

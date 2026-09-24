@@ -43,14 +43,32 @@ function normalizePath(rawPath = '') {
   return rawPath.replace(/^\/kino/, '') || '/';
 }
 
+// A superadmin web-panel session (`sa.`), minted by the worker's /admin/login and signed with
+// TOKEN_SIGNING_SECRET — same format as worker/lib/auth.js's verifyToken, copied because each
+// FC function ships its own code. The panel's Hardware tab calls this function with it.
+function verifySuperadminSession(token) {
+  const secret = process.env.TOKEN_SIGNING_SECRET;
+  if (!secret || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3 || parts[0] !== 'sa') return null;
+  const expected = crypto.createHmac('sha256', secret).update(`sa.${parts[1]}`).digest('hex');
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(parts[2], 'hex'), Buffer.from(expected, 'hex'))) return null;
+    const data = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+    return data.exp > Math.floor(Date.now() / 1000) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 function requireAdminBearer(event) {
   const expected = process.env.API_BEARER_TOKEN;
+  const authHeader = getHeader(event.headers || {}, 'authorization');
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (verifySuperadminSession(token)) return { ok: true };
   if (!expected) {
     return { ok: false, response: jsonResponse(500, { success: false, error: 'API_BEARER_TOKEN not configured' }) };
   }
-
-  const authHeader = getHeader(event.headers || {}, 'authorization');
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
   if (token !== expected) {
     return { ok: false, response: jsonResponse(401, { success: false, error: 'Unauthorized' }) };
   }

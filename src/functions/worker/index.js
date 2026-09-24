@@ -1,3 +1,4 @@
+const academyVisibility = require('./lib/academyVisibility');
 const { pool } = require('./lib/db');
 const { recordOrderCommissions, recordUserReferralCommission } = require('./lib/commissions');
 const { getUserBalance, getLedgerHistory, creditUser, debitUser, getChannelExchangeRate, getChannelCurrency } = require('./lib/credits');
@@ -5,19 +6,17 @@ const { recordReferralCommission, generatePartnerPayouts, getPartnerProductDisco
 const ossLib = require('./lib/oss');
 const {
     generateUserId, generateReferralCode,
-    signChannelAdminToken, verifyChannelAdminToken,
+    signChannelAdminToken, verifyChannelAdminToken, verifySuperadminToken,
+    signUserToken, verifyUserToken,
     CHANNEL_ADMIN_FULL_PERMS, LEGACY_TAB_EXPANSION,
     expandPermissions, requirePermission, requireAdminTab,
     getWxAccessToken,
 } = require('./lib/auth');
 const { getNowShanghai, calculateAge } = require('./lib/time-utils');
+const { loadCaller, authorizeUserRequest, authorizeChatSpeaker } = require('./lib/userAccess');
 const { updateHealthTwin } = require('./lib/healthTwinUpdater');
-const {
-    handleGetDocExtractPing, handleGetDocExtractCatalog, handlePostDocExtractValidate,
-    handlePostDocExtractClaim, handlePostDocExtractHeartbeat, handlePostDocExtractResult,
-    handlePostDocExtractFail,
-} = require('./handlers/doc_extraction');
-const { handleGetDocExtractDocs, handleGetDocExtractOpenApi } = require('./handlers/doc_extraction_docs');
+// The two external job queues (Viva AG, document extraction) are answered by the twin function
+// (src/functions/twin), not here: every route between Curia and nano lives there (CLAUDE.md §48).
 const { BiomarkerEstimator } = require('./lib/estimator/BiomarkerEstimator');
 const { deriveTags } = require('./lib/estimator/tagDerivation');
 const { BioAgeCalculator } = require('./lib/bioage/BioAgeCalculator');
@@ -28,6 +27,7 @@ const nanoPrompts = {
     casual_chat:        require('./prompts/nano/chat/casual'),
     biomarker_question: require('./prompts/nano/chat/biomarker'),
     nutrition_question: require('./prompts/nano/chat/nutrition'),
+    lifestyle_question: require('./prompts/nano/chat/lifestyle'),
     longevity_science:  require('./prompts/nano/chat/science'),
     record_action:      require('./prompts/nano/chat/record'),
     set_reminder:       require('./prompts/nano/chat/reminder'),
@@ -37,6 +37,7 @@ const vivaPrompts = {
     casual_chat:        require('./prompts/viva/chat/casual'),
     biomarker_question: require('./prompts/viva/chat/biomarker'),
     nutrition_question: require('./prompts/viva/chat/nutrition'),
+    lifestyle_question: require('./prompts/viva/chat/lifestyle'),
     longevity_science:  require('./prompts/viva/chat/science'),
     record_action:      require('./prompts/viva/chat/record'),
     set_reminder:       require('./prompts/viva/chat/reminder'),
@@ -51,7 +52,7 @@ const systemHealthReportTemplate = require('./prompts/nano/systemHealthReport');
 
 const getLlmClient = () => new OpenAI({
     apiKey: process.env.DASHSCOPE_API_KEY,
-    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    baseURL: `${process.env.DASHSCOPE_HOST || 'https://dashscope.aliyuncs.com'}/compatible-mode/v1`,
 });
 
 const { handleGetAcademyCourses, handlePostAcademyCourse, handlePutAcademyCourse, handleDeleteAcademyCourse, handleGetAcademyLibrary, handlePostAcademyLibraryItem, handlePutAcademyLibraryItem, handleDeleteAcademyLibraryItem, handleGetAcademyLessons, handlePostAcademyLesson, handlePutAcademyLesson, handleDeleteAcademyLesson, handleGetAcademyProgress, handlePostAcademyProgress, handleGetAcademyCourseProgress, handleGetAcademyLibraryContent, handleGetAcademyLessonById, handlePostQuizAttempt, handleGetCoachCredits, handleGetCoachDashboard, handleGetAcademyLeaderboard, handleGetAcademyCertifications, handlePostAcademyCertification, handlePutAcademyCertification, handleDeleteAcademyCertification, handleGetCoachCertifications, handleGetAcademyTemplateImage, handleGetIssuedCertifications, handlePostCoachCertification, handlePutCoachCertification, handleVerifyCertificate, handleVerifyCertificatesByGovernmentId, handleGetCertImageUrl, handleGetAcademyLearningPaths, handlePostAcademyLearningPath, handlePutAcademyLearningPath, handleDeleteAcademyLearningPath, handlePostAcademyQuizQuestion, handlePutAcademyQuizQuestion, handleDeleteAcademyQuizQuestion, handleGetAcademyCourseProgressAll, handleGetAcademyEnrollments, handlePostAcademyEnrollment, handlePutAcademyEnrollment, handleDeleteAcademyEnrollment } = require('./handlers/academy');
@@ -73,16 +74,13 @@ const { handleGetKinoDevices, handlePostKinoDevice, handlePutKinoDevice, handleD
 const { handleGetKnowledgeEntries, handlePostKnowledgeEntry, handlePutKnowledgeEntry, handleDeleteKnowledgeEntry } = require('./handlers/knowledge');
 const { handleGetPersonaSettings, handlePutPersonaSettings } = require('./handlers/personaSettings');
 const { handleGetUserFacts, handlePostUserFact, handlePutUserFact, handleDeleteUserFact } = require('./handlers/userFacts');
+const { handlePostManagedCustomer, handlePutManagedCustomer, handleReleaseManagedCustomer } = require('./handlers/managedCustomers');
 const { handleGetFoodSensitivity } = require('./handlers/food_sensitivity');
 const { handleGetCreditBalance, handleGetCreditHistory, handlePostCreditWithdraw, handleGetUserWithdrawals, handleGetAdminWithdrawals, handlePutAdminWithdrawal, handleGetAdminUserCreditHistory, handlePostAdminUserCreditAdjustment } = require('./handlers/credits');
 const {
     handlePostVivaAgJob, handleGetVivaAgJobs, handleGetVivaAgJobDetail, handlePostVivaAgJobCancel, handleGetVivaAgResultUrl,
-    handleGetVivaAgPing, handlePostVivaAgClaim, handleGetVivaAgTwinBundle, handleGetVivaAgDocumentUrl,
-    handleGetVivaAgHealthEvents, handleGetVivaAgLabResults, handleGetVivaAgBiomarkerHistory, handleGetVivaAgChatHistory,
-    handlePostVivaAgHeartbeat, handlePostVivaAgResultUploadUrl, handlePostVivaAgResult, handlePostVivaAgFail,
-    handlePostVivaAgQuestionnaire, resumeVivaAgJobForAssignment,
+    resumeVivaAgJobForAssignment,
 } = require('./handlers/viva_ag');
-const { handleGetVivaAgDocs, handleGetVivaAgOpenApi } = require('./handlers/viva_ag_docs');
 const { handleGetTwinReports, handleGetTwinReportFile } = require('./handlers/twin_reports');
 const {
     handleGetHealthDocumentPresign, handlePostHealthDocument, handleGetHealthDocuments,
@@ -92,9 +90,14 @@ const {
     handlePatchHealthDocument,
 } = require('./handlers/health_documents');
 const { handleGetLabHistory } = require('./handlers/lab_history');
+const { handlePostEcg, handleGetEcgList, handleGetEcgWaveform, handleDeleteEcg } = require('./handlers/ecg');
+const { handlePostPpg, handleGetPpgList, handleGetPpgWaveform, handleDeletePpg } = require('./handlers/ppg');
+const {
+    handlePostAvatarGenerationPresign, handlePostAvatarGeneration, handleGetAvatarGeneration, handlePostAvatarGenerationApply,
+} = require('./handlers/avatar_generation');
 const { handleGetAdminUserPersonaSubscription, handlePostAdminUserPersonaSubscription, handleDeleteAdminUserPersonaSubscription, handleGetAdminPersonaSubscriptions, handlePostAdminUserVivaAg, handleDeleteAdminUserVivaAg } = require('./handlers/persona_subscriptions');
 const { handleGetAdminAccounts, handlePostAdminAccount, handlePutAdminAccount, handleDeleteAdminAccount, handleGetAdminChannelRoles, handlePostAdminChannelRole, handlePutAdminChannelRole, handleDeleteAdminChannelRole, handleAdminLogin } = require('./handlers/admin-accounts');
-const { handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
+const { handleGetChannelBranding, handleGetChannelMiniappQrcode, handleGetChannels, handlePostChannel, handlePutChannel, handleDeleteChannel, handlePutChannelManageSubchannels, handlePutChannelAdminTabs, handlePutChannelSubAgeLabels, handleGetChannelRewardsConfig, handlePutChannelRewardsConfig, handlePutChannelRewardsPermission, handlePutChannelStorePermission, handlePutChannelAutonomous, handlePutChannelWarehousePermission, handleGetChannelPartnerTiersConfig, handlePutChannelPartnerTiersConfig, handlePutChannelPartnerTiersPermission } = require('./handlers/channels');
 const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleSetIdentity, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation, handlePostFormulationPurchaseConfirmed } = require('./handlers/users');
 const { handleGetDotsInventory, handleGetNutritionPlan, handleGetFormulationCheckoutSnapshot, handleGetFormulationLabelByCode, handleGetFormulationReviewSnapshot, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
 const { handleGetFormulationOrders, handlePostFormulationSubmit, handlePostFormulationRedeem } = require('./handlers/formulation_orders');
@@ -143,6 +146,60 @@ const { handleGetVivaSubscriptionStatus, handleGetVivaSubscriptionPlans, handleP
 // yields a DIFFERENT openid (stored in users.wx_app_openid). Cross-client
 // account matching: wx_app_openid → wx_unionid → phone.
 
+
+// The only routes the bearer gate lets through with no credential, matched exactly. The gate
+// used to exempt whole prefixes (/qr-login/, /phone-otp/, /email-otp/), which also exempted
+// bind / remove / set-primary / accept-unverified / list — each of which takes a user_id from
+// the body, so anyone could attach their own phone to someone else's account and log in as them.
+//
+// These are the steps before a client has a session: every login, the branding shown on the
+// login screen, and the web user-app's one-time wvt exchange (GCN also calls that one,
+// server-side, with its own token).
+//
+// /qr-login/confirm is the exception: the released miniapp's pages/qrlogin sends it with no
+// Authorization header at all, so it stays public until the legacy app bearer is cut off
+// (LEGACY_APP_BEARER=reject), after which it needs the confirming user's own session.
+const PUBLIC_PATHS = new Set([
+    'POST /admin/login',
+    'POST /wx-login', 'POST /wx-app-login',
+    'POST /phone-otp/send', 'POST /phone-otp/verify',
+    'POST /email-otp/send', 'POST /email-otp/verify',
+    'POST /qr-login/init', 'GET /qr-login/status', 'POST /qr-login/confirm',
+    'GET /channel-branding', 'POST /exchange-webview-token',
+    // Guest browsing in the miniapp (a WeChat user with no account yet): the store list —
+    // openid there only picks which channel's catalog — and checking an invite code.
+    'GET /store-items', 'POST /validate-invite',
+]);
+
+// Method-aware on purpose: `GET /store-items` is public, `POST /store-items` creates one.
+function isPublicPathFor(method, path) {
+    if (path === '/qr-login/confirm' && process.env.LEGACY_APP_BEARER === 'reject') return false;
+    return PUBLIC_PATHS.has(`${method} ${path}`);
+}
+
+// Responses on these paths carry `session_token` when they carry a user (see the tail of the
+// handler). /qr-login/status is the web user-app's QR login; the binds can merge the caller into
+// the account that already owns the phone/email, which moves the device to that user.
+const SESSION_ISSUING_PATHS = new Set([
+    '/wx-login', '/wx-app-login',
+    '/phone-otp/verify', '/email-otp/verify',
+    '/qr-login/status', '/exchange-webview-token',
+    '/phone-otp/bind', '/email-otp/bind',
+]);
+
+async function handleSessionUpgrade(adminCtx, body) {
+    if (!adminCtx.legacyAppBearer) return { statusCode: 403, success: false, error: 'Forbidden' };
+    const userId = body && body.user_id;
+    if (!userId) return { statusCode: 400, success: false, error: 'user_id is required' };
+    try {
+        const caller = await loadCaller(String(userId));
+        if (!caller) return { statusCode: 404, success: false, error: 'user_not_found' };
+        console.log(JSON.stringify({ level: 'INFO', msg: 'session_upgrade', data: { user_id: caller.user_id } }));
+        return { success: true, session_token: signUserToken(caller.user_id), user_id: caller.user_id };
+    } catch (err) {
+        return { statusCode: 500, success: false, error: err.message };
+    }
+}
 
 exports.handler = async (req, resp, context) => {
     const isStandardHttp = resp && typeof resp.send === 'function';
@@ -292,127 +349,97 @@ exports.handler = async (req, resp, context) => {
         return { isBase64Encoded: false, statusCode: sc, headers: corsHeaders, body: JSON.stringify(labelResult) };
     }
 
-    // Per-job fencing token for the external viva-ag agent. Carried in a header rather than a
-    // query param on GET endpoints because query strings land in FC/SLS access logs and this
-    // token gates a full medical record. POST endpoints read it from the body instead.
-    // Case-insensitive: HTTP header names are case-insensitive and every client library
-    // normalises differently (Go canonicalises to X-Viva-Ag-Job-Token, node-fetch lowercases,
-    // curl passes whatever was typed). An external integrator should not have to guess.
-    const vivaAgJobToken = (() => {
-        const h = event.headers || {};
-        const key = Object.keys(h).find(k => k.toLowerCase() === 'x-viva-ag-job-token');
-        return (key && h[key]) || '';
-    })();
-
-    // Same shape and same reasoning as the viva-ag reader above, for the document-extraction
-    // agent's own per-job fencing token. A separate header rather than a shared one: the two
-    // queues issue independent tokens, and a worker holding one must never be able to present it
-    // to the other.
-    const docExtractJobToken = (() => {
-        const h = event.headers || {};
-        const key = Object.keys(h).find(k => k.toLowerCase() === 'x-doc-extract-job-token');
-        return (key && h[key]) || '';
-    })();
-
-    const adminCtx = { role: 'superadmin', username: 'superadmin', channelId: null, accountId: null, canManageSubchannels: false };
+    // Starts unprivileged: only a recognised credential below raises it. It used to start as
+    // superadmin and the whole gate was skipped when API_BEARER_TOKEN was unset, so a deploy with
+    // a missing env var served every route to anyone.
+    const adminCtx = { role: 'anonymous', username: null, channelId: null, accountId: null, canManageSubchannels: false };
     const expectedBearer = process.env.API_BEARER_TOKEN;
-    if (expectedBearer && rawPath && path !== '/admin/login' && !path.startsWith('/qr-login/') && !path.startsWith('/phone-otp/') && !path.startsWith('/email-otp/')) {
-        const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
-        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-        if (token === expectedBearer) {
+    // A public path is still identified when it carries a credential (a /wx-login from a
+    // signed-in client, GCN's /exchange-webview-token), but a missing or bad one never rejects
+    // it — a client holding an expired session must still be able to log in again.
+    const isPublicPath = isPublicPathFor(method, path);
+    const authHeader = (event.headers && (event.headers['authorization'] || event.headers['Authorization'])) || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    let gateFailure = null;   // { statusCode, error } — rejects only a non-public path
+    if (rawPath && (!isPublicPath || token)) {
+        const superadminSession = token.startsWith('sa.') ? verifySuperadminToken(token) : null;
+        if (expectedBearer && token === expectedBearer) {
+            // The shared app bearer, compiled into every released miniapp and the web user-app.
+            // Still superadmin during the grace window while clients move to per-user sessions;
+            // every use is logged so the cut-off (LEGACY_APP_BEARER=reject) can wait for zero.
+            if (process.env.LEGACY_APP_BEARER === 'reject') {
+                gateFailure = { statusCode: 401, error: 'Unauthorized' };
+            } else {
+                adminCtx.role = 'superadmin';
+                adminCtx.username = 'superadmin';
+                adminCtx.legacyAppBearer = true;
+                console.log(JSON.stringify({ level: 'INFO', msg: 'legacy_app_bearer', data: { method, path } }));
+            }
+        } else if (superadminSession) {
             adminCtx.role = 'superadmin';
+            adminCtx.username = superadminSession.username || 'superadmin';
+            adminCtx.accountId = superadminSession.sub;
         } else if (process.env.GCN_API_TOKEN && token === process.env.GCN_API_TOKEN) {
             // Scoped nano<-GCN service credential — distinct from API_BEARER_TOKEN (nano's
             // full superadmin bearer). Authenticated but restricted to the exact paths GCN's
             // nanoClient.js actually calls; anything else 403s even with a valid token.
             const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn', '/partner-types-gcn-sync', '/partner-tier-assignment-gcn-sync', '/formulation-checkout-snapshot', '/formulation-review-snapshot', '/ag-formulation-review-snapshot', '/ag-formulation-approved', '/formulation-purchase-confirmed', '/viva-subscription-plans', '/viva-subscription-checkout-confirmed']);
             if (!GCN_ALLOWED_PATHS.has(path)) {
-                const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
-                if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
-                return forbiddenPayload;
+                gateFailure = { statusCode: 403, error: 'Forbidden' };
             }
-            adminCtx.role = 'superadmin';
-            adminCtx.username = 'gcn-service';
-        } else if (process.env.VIVA_AG_API_TOKEN && token === process.env.VIVA_AG_API_TOKEN) {
-            // Scoped external credential for the viva-ag advanced-generation agent — distinct
-            // from API_BEARER_TOKEN (nano's superadmin bearer, also carried by the miniapp) and
-            // from GCN_API_TOKEN. Restricted to the job-queue paths; anything else 403s even
-            // with a valid token.
-            //
-            // Every endpoint below is JOB-scoped: there is deliberately no "fetch the twin for
-            // an arbitrary openid" path, and no /viva-ag/* response ever returns a user_id,
-            // openid or nickname. A leaked token can drain the queue, but it cannot enumerate
-            // users or reach a twin it wasn't handed a job for.
-            //
-            // MUST stay above the 'ch.' branch below — that one matches on PREFIX, so a token
-            // that happened to start with "ch." would be swallowed there and 401 as a malformed
-            // channel-admin JWT. Mint this token as "vag_" + 32 hex.
-            const VIVA_AG_ALLOWED_PATHS = new Set([
-                '/viva-ag/ping', '/viva-ag/docs', '/viva-ag/openapi.json',
-                '/viva-ag/jobs/claim', '/viva-ag/jobs/heartbeat',
-                '/viva-ag/jobs/result', '/viva-ag/jobs/fail', '/viva-ag/result-upload-url',
-                '/viva-ag/jobs/questionnaire',
-                '/viva-ag/twin-bundle', '/viva-ag/document-url',
-                // Paginated bulk-history resources the digest bundle deliberately omits.
-                '/viva-ag/health-events', '/viva-ag/lab-results',
-                '/viva-ag/biomarker-history', '/viva-ag/chat-history',
-            ]);
-            if (!VIVA_AG_ALLOWED_PATHS.has(path)) {
-                const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
-                if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
-                return forbiddenPayload;
+            if (!gateFailure) {
+                adminCtx.role = 'superadmin';
+                adminCtx.username = 'gcn-service';
             }
-            adminCtx.role = 'superadmin';
-            adminCtx.username = 'viva-ag-service';
-        } else if (process.env.DOC_EXTRACT_API_TOKEN && token === process.env.DOC_EXTRACT_API_TOKEN) {
-            // Scoped external credential for the document-extraction agent — a SEPARATE service
-            // from viva-ag even though the same platform runs both, so it gets a separate token.
-            // Extraction is available to every user (CLAUDE.md 38) while AG is a paid add-on, and
-            // one credential covering both would mean a compromise of the cheap, widely-used
-            // service also opened the queue of paid deep analyses.
-            //
-            // MUST stay above the 'ch.' branch below — that one matches on PREFIX, so a token
-            // that happened to start with "ch." would be swallowed there and 401 as a malformed
-            // channel-admin JWT. Mint this token as "dex_" + 32 hex.
-            //
-            // Exact match only, no prefixes: every parameter travels in the query string or body
-            // rather than a path segment, because this Set can only compare whole paths.
-            const DOC_EXTRACT_ALLOWED_PATHS = new Set([
-                '/doc-extract/ping', '/doc-extract/docs', '/doc-extract/openapi.json',
-                '/doc-extract/catalog', '/doc-extract/validate',
-                '/doc-extract/jobs/claim', '/doc-extract/jobs/heartbeat',
-                '/doc-extract/jobs/result', '/doc-extract/jobs/fail',
-            ]);
-            if (!DOC_EXTRACT_ALLOWED_PATHS.has(path)) {
-                const forbiddenPayload = { isBase64Encoded: false, statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: 'Forbidden' }) };
-                if (isStandardHttp) { resp.setStatusCode(403); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Forbidden' })); return; }
-                return forbiddenPayload;
-            }
-            adminCtx.role = 'superadmin';
-            adminCtx.username = 'doc-extract-service';
         } else if (token.startsWith('ch.')) {
             const payload = verifyChannelAdminToken(token);
             if (!payload) {
-                const unauthorizedPayload = { isBase64Encoded: false, statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized' }) };
-                if (isStandardHttp) { resp.setStatusCode(401); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Unauthorized' })); return; }
-                return unauthorizedPayload;
+                gateFailure = { statusCode: 401, error: 'Unauthorized' };
+            } else {
+                adminCtx.role = 'channel';
+                adminCtx.username = payload.username || payload.sub;
+                adminCtx.channelId = payload.cid;
+                adminCtx.accountId = payload.sub;
+                adminCtx.autonomous = payload.auto ?? false;
+                adminCtx.canManageSubchannels = adminCtx.autonomous || (payload.cms ?? false);
+                adminCtx.canManageWarehouses = adminCtx.autonomous || (payload.cmw ?? false);
+                adminCtx.tabs = payload.tabs ?? [];
+                adminCtx.perms = adminCtx.autonomous
+                    ? [...CHANNEL_ADMIN_FULL_PERMS]
+                    : (Array.isArray(payload.perms) ? payload.perms : expandPermissions(payload.tabs ?? []));
             }
-            adminCtx.role = 'channel';
-            adminCtx.username = payload.username || payload.sub;
-            adminCtx.channelId = payload.cid;
-            adminCtx.accountId = payload.sub;
-            adminCtx.autonomous = payload.auto ?? false;
-            adminCtx.canManageSubchannels = adminCtx.autonomous || (payload.cms ?? false);
-            adminCtx.canManageWarehouses = adminCtx.autonomous || (payload.cmw ?? false);
-            adminCtx.tabs = payload.tabs ?? [];
-            adminCtx.perms = adminCtx.autonomous
-                ? [...CHANNEL_ADMIN_FULL_PERMS]
-                : (Array.isArray(payload.perms) ? payload.perms : expandPermissions(payload.tabs ?? []));
+        } else if (token.startsWith('u.')) {
+            // Per-user session (miniapp / web user-app). Roles and coach rows are read fresh;
+            // what the session may call is decided per request by lib/userAccess.js.
+            const session = verifyUserToken(token);
+            let caller = null;
+            let lookupFailed = false;
+            if (session) {
+                try { caller = await loadCaller(session.sub); }
+                catch (err) { lookupFailed = true; console.error(JSON.stringify({ level: 'ERROR', msg: 'loadCaller failed', error: err.message })); }
+            }
+            if (lookupFailed) {
+                // 503, not 401: a DB blip must not make the client throw its session away.
+                gateFailure = { statusCode: 503, error: 'Service unavailable' };
+            } else if (!caller) {
+                gateFailure = { statusCode: 401, error: 'Unauthorized' };
+            } else {
+                adminCtx.role = 'user';
+                adminCtx.username = caller.user_id;
+                adminCtx.user = caller;
+            }
         } else {
-            const unauthorizedPayload = { isBase64Encoded: false, statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized' }) };
-            if (isStandardHttp) { resp.setStatusCode(401); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(JSON.stringify({ error: 'Unauthorized' })); return; }
-            return unauthorizedPayload;
+            gateFailure = { statusCode: 401, error: 'Unauthorized' };
         }
+    }
+    if (gateFailure && isPublicPath) {
+        gateFailure = null;
+        Object.assign(adminCtx, { role: 'anonymous', username: null, user: undefined, legacyAppBearer: undefined });
+    }
+    if (gateFailure) {
+        const failBody = JSON.stringify({ error: gateFailure.error });
+        if (isStandardHttp) { resp.setStatusCode(gateFailure.statusCode); Object.entries(corsHeaders).forEach(([k, v]) => resp.setHeader(k, v)); resp.send(failBody); return; }
+        return { isBase64Encoded: false, statusCode: gateFailure.statusCode, headers: corsHeaders, body: failBody };
     }
 
     try {
@@ -438,44 +465,36 @@ exports.handler = async (req, resp, context) => {
         // never provides.
         const sandbox = (parsedBody && parsedBody.sandbox === true) || query.sandbox === 'true';
 
-        if (sandbox && method !== 'GET' && path !== '/chat' && path !== '/health-advice') {
+        // A per-user session may only call the routes the clients use, about users it may act
+        // for (lib/userAccess.js). Checked before sandbox, so a sandbox flag cannot skip it.
+        let userDenied = adminCtx.role === 'user' && !isPublicPath
+            ? await authorizeUserRequest({ caller: adminCtx.user, method, path, query, body: parsedBody })
+            : null;
+        if (!userDenied && adminCtx.role === 'user' && method === 'POST' && path === '/chat') {
+            userDenied = await authorizeChatSpeaker(adminCtx.user, parsedBody);
+        }
+
+        if (!userDenied) userDenied = await academyVisibility.authorize(adminCtx, method, path, query, parsedBody || {});
+
+        if (adminCtx.role === 'user' && !userDenied) adminCtx.userRouteAuthorized = true;
+
+        if (userDenied) {
+            result = userDenied;
+        } else if (method === 'POST' && path === '/session/refresh') {
+            result = adminCtx.role === 'user'
+                ? { success: true, session_token: signUserToken(adminCtx.user.user_id), user_id: adminCtx.user.user_id }
+                : { statusCode: 401, success: false, error: 'A user session is required' };
+        } else if (method === 'POST' && path === '/session/upgrade') {
+            // One-time move of an already-signed-in client from the shared app bearer to its own
+            // session, so updating the miniapp does not log everyone out. Only the legacy bearer
+            // may call it — which during the grace window already grants superadmin, so minting
+            // a session here widens nothing — and it dies with that bearer.
+            result = await handleSessionUpgrade(adminCtx, parsedBody);
+        } else if (sandbox && method !== 'GET' && path !== '/chat' && path !== '/health-advice') {
             result = { success: true, sandbox: true };
         } else if (method === 'GET') {
-            // --- Document extraction: external agent (scoped DOC_EXTRACT_API_TOKEN) ---
-            // Exact-match only, same constraint as viva-ag below: the token's allowlist can only
-            // compare whole paths, so every parameter travels in the query string.
-            if (path === '/doc-extract/ping') {
-                result = await handleGetDocExtractPing();
-            } else if (path === '/doc-extract/docs') {
-                result = await handleGetDocExtractDocs();
-            } else if (path === '/doc-extract/openapi.json') {
-                result = await handleGetDocExtractOpenApi();
-            } else if (path === '/doc-extract/catalog') {
-                result = await handleGetDocExtractCatalog();
-            }
-            // --- Viva AG: external agent (scoped VIVA_AG_API_TOKEN) ---
-            // Exact-match only: the token's allowlist can only compare whole paths, so every
-            // parameter travels in the query string rather than a path segment.
-            else if (path === '/viva-ag/ping') {
-                result = await handleGetVivaAgPing();
-            } else if (path === '/viva-ag/docs') {
-                result = await handleGetVivaAgDocs();
-            } else if (path === '/viva-ag/openapi.json') {
-                result = await handleGetVivaAgOpenApi();
-            } else if (path === '/viva-ag/twin-bundle') {
-                result = await handleGetVivaAgTwinBundle(query, vivaAgJobToken);
-            } else if (path === '/viva-ag/document-url') {
-                result = await handleGetVivaAgDocumentUrl(query, vivaAgJobToken);
-            } else if (path === '/viva-ag/health-events') {
-                result = await handleGetVivaAgHealthEvents(query, vivaAgJobToken);
-            } else if (path === '/viva-ag/lab-results') {
-                result = await handleGetVivaAgLabResults(query, vivaAgJobToken);
-            } else if (path === '/viva-ag/biomarker-history') {
-                result = await handleGetVivaAgBiomarkerHistory(query, vivaAgJobToken);
-            } else if (path === '/viva-ag/chat-history') {
-                result = await handleGetVivaAgChatHistory(query, vivaAgJobToken);
-            // --- Viva AG: user-facing (app bearer + ?openid=) ---
-            } else if (path === '/viva-ag/jobs/detail') {
+            // --- Viva AG: user-facing (app bearer + ?openid=). The external agent's routes are the twin function's. ---
+            if (path === '/viva-ag/jobs/detail') {
                 result = await handleGetVivaAgJobDetail(query);
             } else if (path === '/viva-ag/jobs/result-url') {
                 result = await handleGetVivaAgResultUrl(query);
@@ -497,6 +516,19 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetHealthDocumentUrl(path.match(/^\/health-documents\/(\d+)\/url$/)[1], query);
             } else if (path === '/health-documents') {
                 result = await handleGetHealthDocuments(query);
+            // --- ECG strips from the V8 band (twin layer 2; summaries here, waveform by id) ---
+            } else if (path.match(/^\/ecg\/(\d+)\/waveform$/)) {
+                result = await handleGetEcgWaveform(path.match(/^\/ecg\/(\d+)\/waveform$/)[1], query);
+            } else if (path === '/ecg') {
+                result = await handleGetEcgList(query);
+            // --- PPG pulse-wave strips from the V8 band / Halo ring (same shape as /ecg) ---
+            } else if (path.match(/^\/ppg\/(\d+)\/waveform$/)) {
+                result = await handleGetPpgWaveform(path.match(/^\/ppg\/(\d+)\/waveform$/)[1], query);
+            } else if (path === '/ppg') {
+                result = await handleGetPpgList(query);
+            // --- Custom avatar generation (docs/architecture/avatar-gallery.md §6) ---
+            } else if (path === '/avatar-generation') {
+                result = await handleGetAvatarGeneration(query);
             } else if (path === '/kino-upgrade') {
                 result = await handleGetKinoUpgrade();
             } else if (path.includes('/kone-apk-releases')) {
@@ -504,7 +536,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/oss/kone-apk/presign')) {
                 result = await handleGetKoneApkPresign();
             } else if (path === '/digital-assets/presign') {
-                result = await handleGetDigitalAssetsPresign(query);
+                result = requirePermission(adminCtx, 'digital-assets:write') || await handleGetDigitalAssetsPresign(query);
             } else if (path === '/digital-assets') {
                 result = await handleGetDigitalAssets(query, adminCtx);
             } else if (path.includes('/kino-devices')) {
@@ -673,6 +705,11 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetPartnerPayouts(ppQuery);
             } else if (path.includes('/partners')) {
                 result = await handleGetPartners(query, adminCtx);
+            } else if (path === '/channel-branding') {
+                result = await handleGetChannelBranding(query);
+            } else if (path.match(/\/channels\/(\d+)\/miniapp-qrcode$/)) {
+                const channelId = path.match(/\/channels\/(\d+)\/miniapp-qrcode$/)[1];
+                result = await handleGetChannelMiniappQrcode(channelId, adminCtx);
             } else if (path.match(/\/channels\/(\d+)\/rewards-config$/)) {
                 const channelId = path.match(/\/channels\/(\d+)\/rewards-config$/)[1];
                 result = await handleGetChannelRewardsConfig(channelId, adminCtx);
@@ -683,8 +720,10 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetChannels(adminCtx);
             } else if (path.includes('/academy/course-progress')) {
                 result = await handleGetAcademyCourseProgressAll();
+            } else if (path === '/academy/channel-settings') {
+                result = await academyVisibility.settings(adminCtx);
             } else if (path.includes('/academy/courses')) {
-                result = await handleGetAcademyCourses();
+                result = await handleGetAcademyCourses(adminCtx);
             } else if (path.match(/\/academy\/library\/(\d+)\/content/)) {
                 const libId = path.match(/\/academy\/library\/(\d+)\/content/)[1];
                 result = await handleGetAcademyLibraryContent(libId);
@@ -715,7 +754,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/academy/certifications')) {
                 result = await handleGetAcademyCertifications();
             } else if (path.includes('/academy/learning-paths')) {
-                result = await handleGetAcademyLearningPaths();
+                result = await handleGetAcademyLearningPaths(adminCtx);
             } else if (path.includes('/oss/presign')) {
                 result = await handleGetOssPresign(query);
             } else if (path.match(/\/users\/([^/]+)/)) {
@@ -830,44 +869,36 @@ exports.handler = async (req, resp, context) => {
                 result = { success: false, error: `Unknown GET route: ${path}` };
             }
         } else if (method === 'POST') {
-            // --- Document extraction: external agent (scoped DOC_EXTRACT_API_TOKEN) ---
-            if (path === '/doc-extract/jobs/claim') {
-                result = await handlePostDocExtractClaim(parsedBody);
-            } else if (path === '/doc-extract/jobs/heartbeat') {
-                result = await handlePostDocExtractHeartbeat({ ...parsedBody, result_token: parsedBody?.result_token || docExtractJobToken });
-            } else if (path === '/doc-extract/jobs/result') {
-                result = await handlePostDocExtractResult({ ...parsedBody, result_token: parsedBody?.result_token || docExtractJobToken });
-            } else if (path === '/doc-extract/jobs/fail') {
-                result = await handlePostDocExtractFail({ ...parsedBody, result_token: parsedBody?.result_token || docExtractJobToken });
-            } else if (path === '/doc-extract/validate') {
-                result = await handlePostDocExtractValidate(parsedBody);
+            // --- Managed customers (coach creates; channel admin releases) ---
+            if (path === '/managed-customers') {
+                result = await handlePostManagedCustomer(parsedBody);
+            } else if (path.match(/^\/managed-customers\/([A-Za-z0-9_-]+)\/release$/)) {
+                result = await handleReleaseManagedCustomer(path.match(/^\/managed-customers\/([A-Za-z0-9_-]+)\/release$/)[1], adminCtx);
             }
+            // Document extraction and Viva AG external-agent routes: the twin function's.
             // --- Document extraction: user-facing (app bearer + ?openid=) ---
             else if (path.match(/^\/health-documents\/(\d+)\/extract$/)) {
                 result = await handlePostHealthDocumentExtract(path.match(/^\/health-documents\/(\d+)\/extract$/)[1], parsedBody);
             }
-            // --- Viva AG: external agent (scoped VIVA_AG_API_TOKEN) ---
-            else if (path === '/viva-ag/jobs/claim') {
-                result = await handlePostVivaAgClaim(parsedBody);
-            } else if (path === '/viva-ag/jobs/heartbeat') {
-                result = await handlePostVivaAgHeartbeat(parsedBody);
-            } else if (path === '/viva-ag/jobs/result') {
-                result = await handlePostVivaAgResult(parsedBody);
-            } else if (path === '/viva-ag/jobs/fail') {
-                result = await handlePostVivaAgFail(parsedBody);
-            } else if (path === '/viva-ag/jobs/questionnaire') {
-                result = await handlePostVivaAgQuestionnaire(parsedBody);
-            } else if (path === '/viva-ag/result-upload-url') {
-                result = await handlePostVivaAgResultUploadUrl(parsedBody);
             // --- Viva AG: user-facing (app bearer + openid) ---
-            } else if (path === '/viva-ag/jobs/cancel') {
+            else if (path === '/viva-ag/jobs/cancel') {
                 result = await handlePostVivaAgJobCancel(parsedBody);
             } else if (path === '/viva-ag/jobs') {
                 result = await handlePostVivaAgJob(parsedBody);
             } else if (path === '/health-documents') {
                 result = await handlePostHealthDocument(parsedBody);
+            } else if (path === '/ecg') {
+                result = await handlePostEcg(parsedBody);
+            } else if (path === '/ppg') {
+                result = await handlePostPpg(parsedBody);
+            } else if (path === '/avatar-generation/presign') {
+                result = await handlePostAvatarGenerationPresign(parsedBody);
+            } else if (path === '/avatar-generation/apply') {
+                result = await handlePostAvatarGenerationApply(parsedBody);
+            } else if (path === '/avatar-generation') {
+                result = await handlePostAvatarGeneration(parsedBody);
             } else if (path === '/admin/login') {
-                result = await handleAdminLogin(parsedBody);
+                result = await handleAdminLogin(parsedBody, (event.requestContext && event.requestContext.http && event.requestContext.http.sourceIp) || null);
             } else if (path === '/admin-accounts') {
                 result = await handlePostAdminAccount(parsedBody, adminCtx);
             } else if (path === '/admin-channel-roles') {
@@ -895,7 +926,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path === '/qr-login/confirm') {
                 result = await handlePostQrLoginConfirm(parsedBody);
             } else if (path === '/phone-otp/send') {
-                result = await handlePhoneOtpSend(parsedBody);
+                result = await handlePhoneOtpSend(parsedBody, (event.requestContext && event.requestContext.http && event.requestContext.http.sourceIp) || null);
             } else if (path === '/phone-otp/verify') {
                 result = await handlePhoneOtpVerify(parsedBody);
             } else if (path === '/phone-otp/bind') {
@@ -961,7 +992,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/kone-apk-releases')) {
                 result = await handlePostKoneApkRelease(parsedBody);
             } else if (path === '/digital-assets') {
-                result = await handlePostDigitalAsset(parsedBody, adminCtx);
+                result = requirePermission(adminCtx, 'digital-assets:write') || await handlePostDigitalAsset(parsedBody, adminCtx);
             } else if (path.includes('/kino-chip-batches')) {
                 result = await handlePostKinoChipBatch(parsedBody);
             } else if (path.includes('/kino-chip-models')) {
@@ -1005,7 +1036,17 @@ exports.handler = async (req, resp, context) => {
                 // Spending a prepaid 28-day code from inside the app. App bearer + the handler's
                 // own openid resolution; deliberately NOT GCN-allowlisted, since GCN is the
                 // callee here, exactly as for /formulation-submit below.
-                result = await handlePostFormulationRedeem(parsedBody);
+                //
+                // A coach redeeming a channel-bought code for their managed customer (§49): the
+                // redeemer is whoever the session says, never a body field.
+                const redeemFor = { ...(parsedBody || {}) };
+                delete redeemFor._redeemer_user_id;
+                if (adminCtx.role === 'user' && adminCtx.user
+                    && String(redeemFor.openid || '') !== adminCtx.user.user_id
+                    && String(redeemFor.openid || '') !== String(adminCtx.user.external_id || '')) {
+                    redeemFor._redeemer_user_id = adminCtx.user.user_id;
+                }
+                result = await handlePostFormulationRedeem(redeemFor);
             } else if (path.includes('/formulation-submit')) {
                 // The user confirming that a chat-tool proposal is the formula to compound for a
                 // 28-day package they already paid for. App bearer + the plan's own owner check
@@ -1090,7 +1131,7 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/partners')) {
                 result = await handlePostPartner(parsedBody, adminCtx);
             } else if (path === '/academy/courses') {
-                result = await handlePostAcademyCourse(parsedBody);
+                result = await handlePostAcademyCourse(parsedBody, adminCtx);
             } else if (path === '/academy/library') {
                 result = await handlePostAcademyLibraryItem(parsedBody);
             } else if (path === '/academy/lessons') {
@@ -1177,9 +1218,11 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostChat(parsedBody);
             }
         } else if (method === 'PUT') {
-            if (path.match(/\/digital-assets\/(\d+)/)) {
+            if (path.match(/^\/managed-customers\/([A-Za-z0-9_-]+)$/)) {
+                result = await handlePutManagedCustomer(path.match(/^\/managed-customers\/([A-Za-z0-9_-]+)$/)[1], parsedBody);
+            } else if (path.match(/\/digital-assets\/(\d+)/)) {
                 const assetId = path.match(/\/digital-assets\/(\d+)/)[1];
-                result = await handlePutDigitalAsset(assetId, parsedBody, adminCtx);
+                result = requirePermission(adminCtx, 'digital-assets:write') || await handlePutDigitalAsset(assetId, parsedBody, adminCtx);
             } else if (path.match(/\/kone-apk-releases\/(\d+)/)) {
                 const releaseId = path.match(/\/kone-apk-releases\/(\d+)/)[1];
                 result = await handlePutKoneApkRelease(releaseId, parsedBody);
@@ -1304,6 +1347,8 @@ exports.handler = async (req, resp, context) => {
             } else if (path.includes('/partners/')) {
                 const partnerId = path.split('/partners/')[1];
                 result = await handlePutPartner(partnerId, parsedBody);
+            } else if (path === '/academy/channel-settings') {
+                result = await academyVisibility.settings(adminCtx, parsedBody);
             } else if (path.includes('/academy/lessons/')) {
                 const lessonId = path.split('/academy/lessons/')[1];
                 result = await handlePutAcademyLesson(lessonId, parsedBody);
@@ -1382,7 +1427,11 @@ exports.handler = async (req, resp, context) => {
                 result = { success: false, error: `Unknown PUT route: ${path}` };
             }
         } else if (method === 'DELETE') {
-            if (path.match(/^\/health-documents\/(\d+)\/extraction$/)) {
+            if (path.match(/^\/ecg\/(\d+)$/)) {
+                result = await handleDeleteEcg(path.match(/^\/ecg\/(\d+)$/)[1], query);
+            } else if (path.match(/^\/ppg\/(\d+)$/)) {
+                result = await handleDeletePpg(path.match(/^\/ppg\/(\d+)$/)[1], query);
+            } else if (path.match(/^\/health-documents\/(\d+)\/extraction$/)) {
                 result = await handleDeleteHealthDocumentExtraction(path.match(/^\/health-documents\/(\d+)\/extraction$/)[1], query);
             } else if (path.match(/^\/health-reports\/(\d+)$/)) {
                 result = await handleDeleteHealthReport(path.match(/^\/health-reports\/(\d+)$/)[1], query);
@@ -1390,7 +1439,7 @@ exports.handler = async (req, resp, context) => {
                 result = await handleDeleteHealthDocument(path.match(/^\/health-documents\/(\d+)$/)[1], query);
             } else if (path.match(/\/digital-assets\/(\d+)/)) {
                 const assetId = path.match(/\/digital-assets\/(\d+)/)[1];
-                result = await handleDeleteDigitalAsset(assetId, adminCtx);
+                result = requirePermission(adminCtx, 'digital-assets:delete') || await handleDeleteDigitalAsset(assetId, adminCtx);
             } else if (path.match(/\/kone-apk-releases\/(\d+)/)) {
                 const releaseId = path.match(/\/kone-apk-releases\/(\d+)/)[1];
                 result = await handleDeleteKoneApkRelease(releaseId);
@@ -1568,6 +1617,15 @@ exports.handler = async (req, resp, context) => {
             result = { success: false, error: `Unknown route: ${method} ${path}` };
         }
 
+        // Every path that logs someone in, or re-points the device at another account (a bind
+        // that merged into the phone's existing owner), hands back a session for that user.
+        // Not to the GCN service calling /exchange-webview-token server-side — only the browser
+        // that brought the one-time wvt gets a session.
+        if (result && result.success && SESSION_ISSUING_PATHS.has(path) && !result.sandbox
+            && result.user && result.user.user_id && adminCtx.username !== 'gcn-service') {
+            result.session_token = signUserToken(result.user.user_id);
+        }
+
         const statusCode = result.statusCode || 200;
         const { statusCode: _sc, _rawText, _rawBinary, contentType, content, ...resultBody } = result;
         const isText = _rawText === true;
@@ -1584,6 +1642,34 @@ exports.handler = async (req, resp, context) => {
             body: isBinary ? (content || '') : (isText ? (content || '') : JSON.stringify(resultBody))
         };
 
+        // gzip for the two external agents when they ask for it and the body is
+        // worth it. Measured 2026-09-20 from the agent's host in Japan: the path out
+        // of this gateway is shaped to ~1-2 KB/s once a response lasts more than a
+        // few seconds, so a 245 KB subject-bundle stalled and was cut every time
+        // while a 48 KB response took 3 s. JSON of a twin compresses 6-10x, which
+        // puts every bundle in the regime that completes. Scoped to /viva-ag/ and
+        // /doc-extract/ so nothing about the miniapp's responses changes. The
+        // custom domain invokes this function in event mode (isStandardHttp is
+        // false there — confirmed via /viva-ag/ping), where a binary body travels
+        // base64 with isBase64Encoded: true; the standard path is kept in step.
+        const acceptEnc = String((event.headers && (event.headers['accept-encoding'] || event.headers['Accept-Encoding'])) || '');
+        const compressible = !isBinary && /gzip/i.test(acceptEnc)
+            && (path.startsWith('/viva-ag/') || path.startsWith('/doc-extract/'))
+            && Buffer.byteLength(responsePayload.body) >= 4096;
+        if (compressible) {
+            const gz = require('zlib').gzipSync(responsePayload.body);
+            responsePayload.headers = { ...responseHeaders, 'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding' };
+            responsePayload.isBase64Encoded = true;
+            responsePayload.body = gz.toString('base64');
+            if (isStandardHttp) {
+                resp.setStatusCode(statusCode);
+                Object.entries(responsePayload.headers).forEach(([k, v]) => resp.setHeader(k, v));
+                resp.send(gz);
+                return;
+            }
+            return responsePayload;
+        }
+
         if (isStandardHttp) {
             resp.setStatusCode(statusCode);
             Object.entries(responseHeaders).forEach(([k, v]) => resp.setHeader(k, v));
@@ -1594,13 +1680,16 @@ exports.handler = async (req, resp, context) => {
         return responsePayload;
 
     } catch (error) {
+        // A handler may throw with its own statusCode (e.g. resolveOrUpsertUser's 404 for an
+        // unknown user_id-shaped openid); anything else is a genuine 500.
+        const errStatus = Number.isInteger(error.statusCode) ? error.statusCode : 500;
         const errPayload = {
-            statusCode: 500,
+            statusCode: errStatus,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ error: error.message, debug: { path, method } })
+            body: JSON.stringify({ error: error.message, ...(error.reason ? { reason: error.reason } : {}), debug: { path, method } })
         };
         if (isStandardHttp) {
-            resp.setStatusCode(500);
+            resp.setStatusCode(errStatus);
             resp.send(errPayload.body);
             return;
         }

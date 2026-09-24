@@ -77,7 +77,16 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
+        # Workspace-dedicated Model Studio domain (cn-beijing), same as dev since 2026-09-21.
+        # Comment out to fall back to the shared dashscope.aliyuncs.com host.
+        DASHSCOPE_HOST: "https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com"
         MODEL: "qwen-plus-latest"
+        # The UNDERSTAND step (CLAUDE.md 47). Shadow on prod: both routers run, the classifier
+        # still decides, and every disagreement is logged (msg: route_disagreement) — the measured
+        # win is entirely in the turns where the two differ, so that log is what the decision to
+        # set "on" is made from. "off" drops back to the classifier alone.
+        CHAT_UNDERSTANDING_MODE: "shadow"
+        UNDERSTANDING_MODEL: "qwen3.8-flash"
         WX_APPID: "wxecbcf00ce480fcf2"
         WX_SECRET: ${env(WX_SECRET)}
         WX_APPID_WAVEN: "wx84bd7d00a6fd626e"
@@ -85,25 +94,16 @@ resources:
         NODE_ENV: "production"
         WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        # Signs nano's own sessions (ch./sa.) — never API_BEARER_TOKEN, which is public. Separate from dev on purpose: a dev token must not open prod.
+        TOKEN_SIGNING_SECRET: ${env(TOKEN_SIGNING_SECRET_PROD)}
         GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
-        # Scoped external credential for the viva-ag advanced-generation agent (CLAUDE.md 35).
-        # Distinct token per environment ON PURPOSE: dev and prod share the OSS bucket and the
-        # Aliyun account, so one shared token would let a dev-configured external agent claim
-        # and answer real prod users' jobs. Must NOT start with "ch." — that prefix is claimed
-        # by the channel-admin JWT branch in worker/index.js and would 401. Issue as
-        # "vag_" + 32 hex.
-        VIVA_AG_API_TOKEN: ${env(VIVA_AG_API_TOKEN_PROD)}
-        # Scoped external credential for the document-extraction agent. A SEPARATE service from
-        # viva-ag even though the same platform runs both, so it gets its own token: extraction is
-        # available to every user while AG is a paid add-on, and one credential covering both would
-        # mean a compromise of the cheap, widely-used service also opened the queue of paid deep
-        # analyses. Same per-environment split and same "ch." prohibition as above. Issue as
-        # "dex_" + 32 hex.
-        DOC_EXTRACT_API_TOKEN: ${env(DOC_EXTRACT_API_TOKEN_PROD)}
+        # External queue credentials now belong only to the twin function.
         # Per-user daily cap on external deep analyses. Each run is expensive, so this is a
         # cost guard, not a product limit — raise it deliberately rather than by accident. The
         # code default (handlers/viva_ag.js) is 3; dev sets 50 so testing isn't blocked.
         VIVA_AG_MAX_JOBS_PER_DAY: "10"
+        AVATAR_GEN_MODEL: "qwen-image-3.0"
+        AVATAR_GEN_MAX_PER_DAY: "3"
         GCN_API_BASE_URL: "https://edge.gcn.net"
         # Public aeviva sector site — where the formulation label QR points. Distinct from
         # GCN_API_BASE_URL (the server-to-server API edge): this one is a link a person opens,
@@ -127,7 +127,10 @@ resources:
         # never be what prod runs with.
         DM_ACCOUNT_NAME: ${env(DM_ACCOUNT_NAME)}
         DM_FROM_ALIAS: "Waven Nano"
-        # Admin-impersonation "super OTP" kill switch — see phone-otp.js's SUPER_OTP_CODE.
+        # Admin-impersonation "super OTP" — see phone-otp.js. The code is a secret from .env;
+        # left unset, the feature is off even with the switch below on.
+        SUPER_OTP_CODE: ${env(SUPER_OTP_CODE)}
+        # Kill switch.
         # Deliberately set "true" here too (unlike DEMO_MODE-style dev-only flags) since the
         # whole point is debugging real accounts, which mostly live in prod.
         SUPER_OTP_ENABLED: "true"
@@ -178,6 +181,9 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
+        # Workspace-dedicated Model Studio domain (cn-beijing), same as dev since 2026-09-21.
+        # Comment out to fall back to the shared dashscope.aliyuncs.com host.
+        DASHSCOPE_HOST: "https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com"
         MODEL: "qwen-plus-latest"
         # EVENT_SOURCE_SUFFIX intentionally left unset — see worker's comment above.
       triggers:
@@ -263,6 +269,8 @@ resources:
         DB_SSL: "false"
         TZ: "Asia/Shanghai"
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        # Signs nano's own sessions (ch./sa.) — never API_BEARER_TOKEN, which is public. Separate from dev on purpose: a dev token must not open prod.
+        TOKEN_SIGNING_SECRET: ${env(TOKEN_SIGNING_SECRET_PROD)}
         KINO_ACTIVATION_TOKEN: "JND7MAED2wd4QUG7rMlG3_YpU0B_lqOjVM_LFsFzcdA"
         KINO_ROOT_TOKEN_ENCRYPTION_KEY: "935eb5474873526ee812addf266aa69266c704e5d16e6d67cae83e0b79a6f155"
         KINO_COMM_TOKEN_TTL_DAYS: "7"
@@ -366,6 +374,74 @@ resources:
             authType: anonymous
             methods: ["GET", "OPTIONS"]
 
+  # The twin function — every route between Curia and nano (docs/architecture/twin-function.md).
+  # Curia production cutover confirmed 2026-09-23; worker queue routes retired.
+  # EVENT_SOURCE_SUFFIX is unset here, as on the prod worker.
+  twin:
+    component: fc3
+    actions:
+      pre-deploy:
+        - run: node scripts/sync-twin-shared.js
+          path: ./
+    props:
+      region: ${vars.region}
+      functionName: twin
+      runtime: nodejs20
+      handler: index.handler
+      memorySize: 512
+      timeout: 300
+      code: ./src/functions/twin
+      role: "acs:ram::1719995052853530:role/aliyunfcdefaultrole"
+      logConfig:
+        project: ${vars.logProject}
+        logstore: ${vars.logStore}
+        enableRequestMetrics: true
+        enableInstanceMetrics: true
+      vpcConfig:
+        securityGroupId: "sg-uf6hwn97w4pz60mmfgwz"
+        vSwitchIds: ["vsw-uf6438oo047ucsbmlvmxw"]
+        vpcId: "vpc-uf6oezl8wt6efyczo7wa4"
+      environmentVariables:
+        TWIN_ENV: "prod"
+        NODE_ENV: "production"
+        TWIN_API_TOKEN: ${env(TWIN_API_TOKEN_PROD)}
+        TWIN_SETTLE_SECONDS: "60"
+        DB_HOST: "amclbdsyqvfq.rwlb.rds.aliyuncs.com"
+        DB_NAME: "nano_db"
+        DB_USER: "nano_admin"
+        DB_PASS: ${env(DB_PASS)}
+        DB_SSL: "false"
+        TZ: "Asia/Shanghai"
+        VIVA_AG_API_TOKEN: ${env(VIVA_AG_API_TOKEN_PROD)}
+        DOC_EXTRACT_API_TOKEN: ${env(DOC_EXTRACT_API_TOKEN_PROD)}
+        AEVIVA_SITE_BASE_URL: "https://aeviva.gcn.net"
+        API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
+        AVATAR_GEN_MAX_PER_DAY: "3"
+        AVATAR_GEN_MODEL: "qwen-image-3.0"
+        CHAT_UNDERSTANDING_MODE: "shadow"
+        DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
+        DASHSCOPE_HOST: "https://llm-u2y1wl9irqjstpnp.cn-beijing.maas.aliyuncs.com"
+        GCN_API_BASE_URL: "https://edge.gcn.net"
+        GCN_SERVICE_TOKEN: ${env(GCN_SERVICE_TOKEN)}
+        MODEL: "qwen-plus-latest"
+        UNDERSTANDING_MODEL: "qwen3.8-flash"
+        VIVA_AG_MAX_JOBS_PER_DAY: "10"
+        WX_APPID: "wxecbcf00ce480fcf2"
+        WX_SECRET: ${env(WX_SECRET)}
+        WX_WEIGHT_TMPL_ID: ${env(WX_WEIGHT_TMPL_ID)}
+        GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
+        OSS_REGION: "oss-cn-shanghai"
+        OSS_BUCKET: "waven-nano"
+        OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
+        OSS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
+        OSS_CNAME_DOMAIN: ${env(OSS_CNAME_DOMAIN)}
+      triggers:
+        - triggerName: http-twin
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods: ["GET", "POST"]
+
   nano-domain:
     component: fc3-domain
     props:
@@ -380,6 +456,8 @@ resources:
         routes:
           - path: /QJaeMN3iR8.txt
             functionName: nano-worker
+          - path: /api/twin/*
+            functionName: twin
           - path: /api/*
             functionName: nano-worker
           - path: /api

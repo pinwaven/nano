@@ -144,17 +144,11 @@ const UNIT_CONVERSIONS = {
     Creatinine:       { 'mg/dl': v => v * 88.4 },
     BUN:              { 'mg/dl': v => v / 2.8 },
     UricAcid:         { 'mg/dl': v => v * 59.48 },
-    VitaminD:         { 'ng/ml': v => v * 2.496 },
     hsCRP:            { 'mg/dl': v => v * 10 },
     CRP:              { 'mg/dl': v => v * 10 },
     Hemoglobin:       { 'g/dl': v => v * 10 },
     // migration_biomarker_catalog_v2.sql keys. US-convention alternates only; a pair that is not a
     // fixed factor (Lp(a) nmol/L ↔ mg/L depends on isoform size) is deliberately absent.
-    VitaminB12:       { 'pg/ml': v => v * 0.738 },
-    Folate:           { 'ng/ml': v => v * 2.266 },
-    Estradiol:        { 'pg/ml': v => v * 3.671 },
-    Testosterone:     { 'ng/ml': v => v * 3.467 },
-    Cortisol:         { 'ug/dl': v => v * 27.59 },
     TBIL:             { 'mg/dl': v => v * 17.1 },
     DBIL:             { 'mg/dl': v => v * 17.1 },
     IBIL:             { 'mg/dl': v => v * 17.1 },
@@ -162,6 +156,25 @@ const UNIT_CONVERSIONS = {
     TP:               { 'g/dl': v => v * 10 },
     GLB:              { 'g/dl': v => v * 10 },
     MCHC:             { 'g/dl': v => v * 10 },
+    // 2026-09-22 — what Chinese labs actually print, measured on the two subjects extracted so
+    // far: B12 in ng/mL (0.07 on a real page, refused), TSH in µIU/mL (every thyroid panel;
+    // numerically identical to mIU/L), FT4 in ng/dL and FT3 in pg/mL (the mass units most
+    // Chinese immunoassay reports use). The rest are the same shape for their neighbours.
+    // `uiu/ml` is what the normaliser makes of both micro signs.
+    VitaminB12:       { 'pg/ml': v => v * 0.738, 'ng/ml': v => v * 738 },
+    TSH:              { 'uiu/ml': v => v },
+    Insulin:          { 'miu/l': v => v, 'pmol/l': v => v / 6.945 },
+    FT4:              { 'ng/dl': v => v * 12.87 },
+    FT3:              { 'pg/ml': v => v * 1.536 },
+    Ferritin:         { 'ng/ml': v => v },
+    Testosterone:     { 'ng/ml': v => v * 3.467, 'ng/dl': v => v * 0.03467 },
+    Estradiol:        { 'pg/ml': v => v * 3.671, 'ng/l': v => v * 3.671 },
+    Cortisol:         { 'ug/dl': v => v * 27.59, 'ug/l': v => v * 2.759 },
+    VitaminD:         { 'ng/ml': v => v * 2.496, 'ug/l': v => v * 2.496 },
+    Folate:           { 'ng/ml': v => v * 2.266, 'ug/l': v => v * 2.266 },
+    Hcy:              { 'mg/l': v => v * 7.397 },
+    // IFCC mmol/mol → NGSP %, the fixed master-equation form (NGSP = 0.09148·IFCC + 2.152).
+    HbA1c:            { 'mmol/mol': v => v * 0.09148 + 2.152 },
 };
 
 // PROSE GUARD. Two live runs against dev user 55761144's 22 documents (2026-09-15) had the

@@ -164,12 +164,40 @@ The ring sends a start-ACK immediately, then a result packet when measurement co
 
 Raw PPG data streams on CMD `0x3A` as 153- or 203-byte packets.
 
+**Confirmed live 2026-09-20 on `X3B 69526`** (`tools/halo`: `node bin/cli.js ppg
+--device halo --path glucose`). The ring acks `78 00 01`, pushes one `0xAA …`
+status frame, and ~3 s later streams `0x3A` frames of **203 bytes** — `3a 00
+<seq>` + 50 × 4-byte big-endian samples (top byte 0 → 24-bit counts, ~0.8–2.6 M
+on a finger) — one per second, contiguous, i.e. **50 Hz**, byte-for-byte the
+V8's format (`v8-smart-band.md` §6). Stop (`03`) and quit (`05`) are echoed and
+a `0xAB …` status frame follows the stop. `0xAA`/`0xAB` are not in the SDK; they
+carry what looks like a timestamp (`88 18 01 23` ≈ BCD-ish) and are ignored.
+The 153-byte / 3-byte variant was not seen. Finger PPG is far cleaner than the
+V8's wrist signal: with the hand still, a 40 s capture had the pulse band at a
+constant 1.35 Hz with 4–6× prominence over its neighbours, AC ≈ 0.5 % of DC,
+PPI median 720 ms (83 bpm), 38/50 intervals accepted, sd 51 ms; the systolic
+peak **and** the dicrotic wave are both visible. Motion swings the DC level 2–3×
+within seconds (typing during the first run), so a consumer must high-pass
+(~0.5 s) and reject windows whose DC range exceeds a few tens of percent. `HaloRing.recordPpg()` (same contract as `V8Band.recordPpg()`) drives this tap
+for the miniapp's `<strip-record kind="ppg">` → `POST /api/ppg`; the older
+`startBloodGlucose()` family, written from the SDK, is still unexercised but
+shares the `0x3A` parser, which matches what the ring sends.
+
 ### 3.13 Real-time PPG / PPI Streaming (`0x11`)
 ```
 value[1] = 1=Start, 0=Stop
 ```
 
 Streams raw PPG waveform points (32-bit Big-Endian) for signal analysis.
+
+**Probed 2026-09-20, no data.** `X3B 69526` (firmware as of that date) acks
+`11 01 …`, pushes one `0xAB …` status frame and then sends nothing for 40 s;
+`11 00` is acked the same way. Whether this needs a newer firmware, a
+different ring model, or an on-device precondition is unknown — the SDK's
+parser (`getRealtime_ppg`: 8-byte blocks, PPG in bytes 4–7 little-endian; the
+miniapp's `_parsePpgStream11` reads them big-endian, untested either way) has
+never been fed a real frame. `HaloRing.startPpgStream()` should be treated as
+non-functional until a ring produces a frame.
 
 ---
 

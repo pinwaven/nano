@@ -25,6 +25,8 @@ const initial = () => ({
   twinReports: [], twinReportLatest: null,
   stepsHistory: [], hrvHistory: [], stressHistory: [], bpHistory: [], glucoseHistory: [], latestBp: null, latestGlucose: null,
   ringData: null, wearableConnected: false, wearableServerHint: null, mood: null,
+  ecgList: [], ecgLatest: null,
+  ppgList: [], ppgLatest: null,
   docCount: 0, latestDocDate: null,
   twinLayers: [], twinLayersDone: 0,
 });
@@ -195,6 +197,20 @@ export function useHealthData({ userId, user, lang, t, coachId = null, mode = 's
     } catch { /* ignore */ }
   }, [userId, patch]);
 
+  // 心电节律 / 脉搏波 summaries (V8 band, Halo ring; twin layer 2). Read-only on the web —
+  // recording needs BLE.
+  const loadEcg = useCallback(async () => {
+    if (!userId) return;
+    const coach = mode === 'coach' && coachId ? `&coach_id=${q(coachId)}` : '';
+    await Promise.all(['ecg', 'ppg'].map(async (kind) => {
+      try {
+        const res = await api.get(`/${kind}?openid=${q(userId)}&limit=10${coach}`);
+        const items = res?.success && Array.isArray(res.items) ? res.items : [];
+        patch({ [`${kind}List`]: items, [`${kind}Latest`]: items[0] || null });
+      } catch { /* the card shows its empty state */ }
+    }));
+  }, [userId, mode, coachId, patch]);
+
   // _loadRingDataFromServer — the server is the single source of truth for ring charts.
   const loadRingData = useCallback(async () => {
     if (!userId) return;
@@ -245,7 +261,7 @@ export function useHealthData({ userId, user, lang, t, coachId = null, mode = 's
     if (!userId) return;
     loadedAt.current = Date.now();
     patch({ bioLoading: true });
-    loadHealthTwin(); loadHealthReports(); loadUserFacts(); loadFoodSensitivity(); loadTwinReports(); loadMetricHistory(); loadWearableHint(); loadRingData();
+    loadHealthTwin(); loadHealthReports(); loadUserFacts(); loadFoodSensitivity(); loadTwinReports(); loadMetricHistory(); loadWearableHint(); loadRingData(); loadEcg();
     try {
       const res = await api.get(`/biomarkers?openid=${q(userId)}`);
       const records = res?.records || [];
@@ -300,7 +316,7 @@ export function useHealthData({ userId, user, lang, t, coachId = null, mode = 's
       patch(newData);
       recomputeTwinLayers();
     } catch { patch({ bioLoading: false }); }
-  }, [userId, user, t, patch, loadHealthTwin, loadHealthReports, loadUserFacts, loadFoodSensitivity, loadTwinReports, loadMetricHistory, loadWearableHint, loadRingData, recomputeTwinLayers]);
+  }, [userId, user, t, patch, loadHealthTwin, loadHealthReports, loadUserFacts, loadFoodSensitivity, loadTwinReports, loadMetricHistory, loadWearableHint, loadRingData, loadEcg, recomputeTwinLayers]);
 
   const refreshIfStale = useCallback((maxAgeMs = 30000) => {
     if (!userId || dRef.current.bioLoading) return;
@@ -312,7 +328,7 @@ export function useHealthData({ userId, user, lang, t, coachId = null, mode = 's
 
   useEffect(() => { setD(initial()); if (userId) loadHealth(); }, [userId, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const avatarDisplayUrl = user?.avatar_character ? (resolveAvatarUrl(user.avatar_character, d.mood) || '') : '';
+  const avatarDisplayUrl = user?.avatar_character ? (resolveAvatarUrl(user.avatar_character, d.mood, user.avatar_moods) || '') : '';
 
   return { d, patch, loadHealth, refreshIfStale, loadHealthReports, loadUserFacts, onDocsLoaded, avatarDisplayUrl, recomputeTwinLayers };
 }

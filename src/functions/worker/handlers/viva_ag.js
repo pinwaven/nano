@@ -40,6 +40,8 @@ const { processAgFormulationResult } = require('./ag_formulation');
 const { validateAgQuestions, sanitizeDisplayText } = require('../lib/agQuestionnaire');
 const { createDynamicQuestionnaire } = require('./questionnaires');
 const { formatToShanghai } = require('../lib/time-utils');
+const { reportAttribution } = require('../lib/reportAttribution');
+const { ensureSubjectRef, twinChangedAtFor, twinVersionOf } = require('../lib/twinMirror');
 
 // ---------------------------------------------------------------------------------------
 // Constants
@@ -130,6 +132,7 @@ const REASONS = {
     TOO_MANY_RESULT_FILES: 'too_many_result_files',
     INVALID_QUESTIONS: 'invalid_questions',
     QUESTIONNAIRE_LIMIT_REACHED: 'questionnaire_limit_reached',
+    SUBJECT_NOT_FOUND: 'subject_not_found',
     INTERNAL_ERROR: 'internal_error',
 };
 
@@ -285,6 +288,8 @@ function _publicJob(row) {
         result_summary: row.result_summary || null,
         has_result_file: resultFiles.length > 0,
         result_files: resultFiles,
+        // Who produced the result, for the panel's line under a finished job (lib/reportAttribution.js).
+        attribution: row.status === 'completed' ? reportAttribution(row.result, row.language) : null,
         error_reason: row.error_reason || null,
         document_count: Array.isArray(row.document_ids) ? row.document_ids.length : 0,
         // Drives the AG panel's "needs your input" card. The assignment ids themselves stay
@@ -594,11 +599,17 @@ async function handlePostVivaAgClaim(body) {
                      FOR UPDATE SKIP LOCKED
                      LIMIT 1
               )
-            RETURNING job_uid, command, command_key, params, attempts, max_attempts,
+            RETURNING job_uid, user_id, command, command_key, params, attempts, max_attempts,
                       claim_expires_at, created_at, document_ids`,
             [workerId, String(leaseSeconds), resultToken]
         );
         if (!job) return { success: true, job: null };
+
+        // The subject's opaque handle and the twin's change signal ride with the claim so a
+        // worker holding a mirror can decide whether to re-pull before it fetches anything.
+        // user_id itself never leaves this function.
+        const subjectRef = await ensureSubjectRef(pool, job.user_id);
+        const twinChangedAt = await twinChangedAtFor(pool, job.user_id);
 
         console.log(JSON.stringify({ level: 'INFO', msg: 'viva_ag job claimed', job_uid: job.job_uid, worker_id: workerId, attempt: job.attempts }));
         return {
@@ -614,7 +625,9 @@ async function handlePostVivaAgClaim(body) {
                 lease_expires_at: formatToShanghai(job.claim_expires_at),
                 result_token: resultToken,
                 document_count: Array.isArray(job.document_ids) ? job.document_ids.length : 0,
-                twin_bundle_url: `/api/viva-ag/twin-bundle?job_uid=${encodeURIComponent(job.job_uid)}`,
+                twin_bundle_url: `/api/twin/viva-ag/twin-bundle?job_uid=${encodeURIComponent(job.job_uid)}`,
+                subject_ref: subjectRef,
+                twin_changed_at: twinChangedAt,
             },
         };
     } catch (err) {
@@ -652,6 +665,8 @@ async function handleGetVivaAgTwinBundle(query, jobToken) {
         return {
             success: true,
             ...bundle,
+            subject_ref: await ensureSubjectRef(pool, job.user_id),
+            twin_version: twinVersionOf(bundle),
             job: {
                 job_uid: job.job_uid,
                 command: job.command,

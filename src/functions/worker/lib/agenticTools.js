@@ -113,7 +113,7 @@ const AGENTIC_TOOL_DEFS = [
         type: 'function',
         function: {
             name: 'get_grocery_products',
-            // Grocery catalogs (CLAUDE.md §44): products a user can actually order from a
+            // Grocery catalogs (CLAUDE.md §46): products a user can actually order from a
             // supermarket app, so diet advice can end in a shopping list rather than a food name.
             description: "Look up real, currently listed products in the supermarket catalogs on file (e.g. 盒马) by ingredient or food keyword — 三文鱼, 西兰花, 燕麦, 无糖酸奶. Use it whenever you are recommending specific foods to eat and the user could buy them: pass the food words from your own meal plan as `keywords` (one product-shaped word each, not a dish name) and pick from the rows returned. Rows already exclude the user's recorded allergies and restrictions. Returns names and ids only — never quote a price; the system renders the product card itself from the ids you return in a recommend_grocery tail.",
             parameters: {
@@ -735,7 +735,15 @@ function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_na
                         : 'No wearable data (sleep, steps, heart rate…) has been synced recently. Say so plainly; do not substitute averages or guesses.',
                 }] };
             }
-            return { ok: true, data: rows };
+            // A night with no stage split (V8 never reports one — CLAUDE.md §18) is said in words.
+            // Bare `deep_minutes: null` read to the model as "none recorded", and it told a user
+            // their night had no restorative sleep (dev, 2026-09-23).
+            const notMeasured = language === 'zh' ? '设备未测量睡眠分期（不是没有深睡）' : 'not measured by this device (not the same as none)';
+            return { ok: true, data: rows.map(r => {
+                if (r.sleep_hours == null || r.deep_minutes != null || r.rem_minutes != null || r.light_minutes != null || r.awake_minutes != null) return r;
+                const { deep_minutes, rem_minutes, light_minutes, awake_minutes, ...rest } = r;
+                return { ...rest, sleep_stages: notMeasured };
+            }) };
         },
 
         async get_health_twin() {
@@ -791,7 +799,7 @@ function createAgenticToolHandlers({ pool, user_id, language, sub_age_display_na
             return { ok: true, data: flattened };
         },
 
-        // Grocery catalog search (lib/groceryCatalog.js, §44). Flat rows, no price (§37: a number
+        // Grocery catalog search (lib/groceryCatalog.js, §46). Flat rows, no price (§37: a number
         // the model was never given is a number it cannot leak — the :::grocery card draws the
         // price from the table). Allergy/restriction facts filter the rows in code, here and again
         // when the tail is resolved, so a product the user must not eat is never even offered.

@@ -71,6 +71,24 @@ function describeBioAge(bioage, language, overrides) {
     };
 }
 
+/**
+ * One sub-age against chronological age, computed so a prompt states the direction instead of
+ * leaving the model to subtract. A model left to do it drifts: the health-advice report called a
+ * dimension 43.9 years old for a 51-year-old "明显偏高" in its summary, because a marker feeding it
+ * was tagged 偏高 — while the same report's per-dimension section said "7.1 years younger". Within
+ * ±0.5 year counts as equal. `older` is the only direction that makes a dimension 偏高 / needs
+ * attention; that is the same rule the JUDGE's elevated_dimensions uses (SubAge > ChronoAge).
+ */
+function relationToChrono(age, chrono, language) {
+    const zh = _lang(language) === 'zh';
+    if (typeof age !== 'number' || typeof chrono !== 'number') return { diff: null, direction: null, text: '' };
+    const diff = Math.round((age - chrono) * 10) / 10;
+    const abs = Math.abs(diff).toFixed(1);
+    if (Math.abs(diff) < 0.5) return { diff, direction: 'equal', text: zh ? '与实际年龄基本持平' : 'about the same as chronological age' };
+    if (diff > 0) return { diff, direction: 'older', text: zh ? `比实际年龄老 ${abs} 岁` : `${abs} years older than chronological age` };
+    return { diff, direction: 'younger', text: zh ? `比实际年龄年轻 ${abs} 岁` : `${abs} years younger than chronological age` };
+}
+
 // Word-bounded so `BioAge` inside a longer identifier is left alone. CJK characters are
 // non-word to JS `\b`, so a token glued to Chinese text (`（BioAge 39.2岁）`) still matches.
 const KEY_RE = /\b(BioAge|ChronoAge|ResilienceAge|CellularAge|MetabolicAge|MicroVascularAge)\b/g;
@@ -107,4 +125,4 @@ function humanizeSubAgeKeys(text, language, overrides) {
     }).join('\n');
 }
 
-module.exports = { SUB_AGE_LABELS, SUB_AGE_KEYS, subAgeLabel, describeBioAge, humanizeSubAgeKeys };
+module.exports = { SUB_AGE_LABELS, SUB_AGE_KEYS, subAgeLabel, describeBioAge, relationToChrono, humanizeSubAgeKeys };

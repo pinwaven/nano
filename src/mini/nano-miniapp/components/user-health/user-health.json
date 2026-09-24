@@ -3,6 +3,7 @@
   "usingComponents": {
     "avatar-picker": "../avatar-picker/avatar-picker",
     "viva-ag-panel": "../viva-ag-panel/viva-ag-panel",
-    "health-documents": "../health-documents/health-documents"
+    "health-documents": "../health-documents/health-documents",
+    "strip-record": "../strip-record/strip-record"
   }
 }

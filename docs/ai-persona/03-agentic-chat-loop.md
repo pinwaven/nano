@@ -7,11 +7,11 @@ This is the mechanism behind any chat reply that touches health data closely eno
 ## Who runs the loop
 
 ```js
-const HIGH_RISK_INTENTS = new Set(['biomarker_question', 'nutrition_question', 'longevity_science', 'record_action']);
+const HIGH_RISK_INTENTS = new Set(['biomarker_question', 'nutrition_question', 'lifestyle_question', 'longevity_science', 'record_action']);
 const useAgenticLoop = HIGH_RISK_INTENTS.has(intent);
 ```
 
-This is **persona-agnostic** as of the current refactor — both Nano and Viva run the identical loop for these 4 intents. (CLAUDE.md's §21 still describes this as Viva-only; see [09-known-issues.md](09-known-issues.md).) `casual_chat`, `emotional_support`, and `set_reminder` never use it, for either persona.
+This is **persona-agnostic** as of the current refactor — both Nano and Viva run the identical loop for these 5 intents. `lifestyle_question` joined 2026-09-22. `casual_chat`, `emotional_support`, and `set_reminder` never use it, for either persona.
 
 Two other call sites also force it unconditionally, regardless of intent or persona:
 - `handlePostHealthAdvice` (the dedicated "Health Advice" tool/button) — `useAgenticLoop = true` always.
@@ -94,7 +94,7 @@ were made in.
 
 ## 21. Agentic Plan→Generate→Judge→Revise Loop (High-Risk Intents, Shared by Both Personas)
 
-Added 2026-07-28, originally Viva-only, **genericized to both personas by the 2026-08 persona-unification refactor** (see §16's note). Applies when the classified intent is in `HIGH_RISK_INTENTS` (`biomarker_question`, `nutrition_question`, `longevity_science`, `record_action`) — gated in `handlers/chat.js` via `useAgenticLoop = HIGH_RISK_INTENTS.has(intent)`, independent of `personaType`. Nano's and Viva's `casual_chat`/`emotional_support` are unaffected and take the pre-existing code path, for both personas.
+Added 2026-07-28, originally Viva-only, **genericized to both personas by the 2026-08 persona-unification refactor** (see §16's note). Applies when the classified intent is in `HIGH_RISK_INTENTS` (`biomarker_question`, `nutrition_question`, `lifestyle_question`, `longevity_science`, `record_action`) — gated in `handlers/chat.js` via `useAgenticLoop = HIGH_RISK_INTENTS.has(intent)`, independent of `personaType`. Nano's and Viva's `casual_chat`/`emotional_support` are unaffected and take the pre-existing code path, for both personas.
 
 ### Flow
 

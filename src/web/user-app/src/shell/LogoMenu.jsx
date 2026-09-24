@@ -1,5 +1,5 @@
-// The header dropdown (pages/main/main.wxml "Logo menu"), same rows, order and gating. Coach /
-// admin / superadmin rows link out to the web admin panel; the Kino Simulator overlay is not
+// The header dropdown (pages/main/main.wxml "Logo menu"), same rows, order and gating.
+// Coach opens its own route; admin / superadmin link to the web admin panel; the Kino Simulator overlay is not
 // ported (admin-only tooling, out of the twin's scope).
 import { useApp } from '../store/AppContext.jsx';
 import { ui } from '../components/ui/ui.js';
@@ -31,7 +31,7 @@ export default function LogoMenu({ open, onClose, onReferral, onVivaRedeem, onGu
             <div className="menu-divider" />
           </>
         )}
-        {isCoach && <a className="menu-item" href="/admin/" target="_blank" rel="noopener" onClick={onClose}><span className="menu-item-icon">👨‍⚕️</span><span className="menu-item-label">{t.coachMenu}</span></a>}
+        {isCoach && <button className="menu-item" onClick={close(() => app.setRoute('coach'))}><span className="menu-item-icon">👨‍⚕️</span><span className="menu-item-label">{t.coachMenu}</span></button>}
         {isAdmin && <div className="menu-divider" />}
         {isAdmin && adminLink}
         {isSuperadmin && <div className="menu-divider" />}

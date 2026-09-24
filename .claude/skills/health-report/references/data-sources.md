@@ -4,7 +4,7 @@
 what went wrong the first time.
 
 ## Trust grading (state it on the 阅读指南 page and in appendix C)
-- **A** — an uploaded lab/clinic PDF with a sample number, or a Kino/量康 record with raw values.
+- **A** — an uploaded lab/clinic PDF with a sample number, a 量康 record, or a Kino scan (`data.validated`).
 - **B** — platform records: wearable syncs, questionnaire answers, plans, chat.
 - **C** — old samples (>5 years), model-inferred values, or anything that conflicts with an A source.
 
@@ -14,10 +14,14 @@ what went wrong the first time.
 2017 report says "42 岁" and that is what its reference ranges used.
 
 ## `biomarkers` — the Kino / lab records
-- `test_type='kino_chip'` rows carry `data.validated` (use this), `data.actual` (raw, audit only —
-  never merge it over validated, CLAUDE.md §17), and `data.bioage_profile` (`BioAge`, `ChronoAge`,
-  `SubAges`, `Scores`, `Details.*_components`, `mFI`). Two scans two weeks apart can differ by a
-  year for method reasons; say so.
+- `test_type='kino_chip'` rows carry `data.validated` — **the user's authentic six-marker result**
+  (hsCRP, IL6, GDF15, GA, CystatinC, CD38); this is the only Kino panel the report reads, grade A,
+  charted and cited like any lab draw — and `data.bioage_profile` (`BioAge`, `ChronoAge`,
+  `SubAges`, `Scores`, `Details.*_components`, `mFI`), computed from it. `data.actual` is raw
+  reader telemetry for engineering audit only (CLAUDE.md §17): don't read it, don't compare it
+  with `validated`, don't count "in-window" readings, and never describe a validated value as
+  estimated, filled-in or a placeholder. Two scans two weeks apart can differ by a year for
+  method reasons; say so, as you would for two lab draws.
 - `test_type='health_checkup_report'` rows: `data.extracted` (per-marker value/unit/ref/status),
   `data.ai_analysis`, `data.source`/`source_zh` (e.g. 量康), `report_date`. Some of these are
   **photos of journal articles**, not the user's results — check `content_type` and the analysis
@@ -113,8 +117,10 @@ user turn; quote sparingly.
 
 ## Traps found in the premier-partner batch (2026-09-16, 41 users)
 - **`lab_import` / `health_reports(source='manual_upload', institution IN ('KINO','Aeviva'))` are usually App
-  screenshots** of the user's own 健康 page re-uploaded as a "lab result" — the estimated Kino panel written back
-  as if measured. Open the image; if it shows the Aeviva header and the six tiles, grade C and exclude.
+  screenshots** of the user's own 健康 page re-uploaded as a "lab result" — the same Kino panel the
+  `biomarkers` row already holds, written back a second time. Open the image; if it shows the Aeviva header
+  and the six tiles, treat it as a duplicate of that scan (not a new measurement) and cite the `kino_chip`
+  row instead.
 - **The photo extractor (`biomarkers.data.extracted`) misreads**: a liver-glycan "NA2F 13.40%" became
   "HbA1c 13.4%"; "乙肝表面抗体阳性" became "HBsAg 阳性"; "甲状腺未见异常" became "甲状腺结节". Never cite
   `extracted` without looking at the photo (`scripts/batch/collect_images.js` downloads them).
@@ -123,8 +129,30 @@ user turn; quote sparingly.
 - **Demo seeds are not only `annual_lab legacy`**: look for `external_id` like `<name>-lab-2026` /
   `<name>-sleep-dNN` (Apple Health 14-night blocks), `health_reports` ids ending `PIN01`, and a Kino row with a
   full six-item `actual` at 2026-05-06 12:3x with no device — all written the day the account was created.
-- **Platform-wide, 700 / 757 Kino scans carry only an hsCRP reading** (J2 readers) and most readings are outside
-  0.2–2.5 mg/L. For those users the BioAge and every sub-age are estimator output; count the in-window readings
-  (`0.2 ≤ actual.hsCRP ≤ 2.5`) — they are the only B-grade blood numbers such a user has.
+- **Don't audit Kino panels** (rule added 2026-09-22): the batch originally compared `data.actual` with the
+  reader window and downgraded most users' six-marker panel and BioAge to "C · 参考估算值". That is wrong for
+  the report — `data.validated` is the user's result. For a user with no uploaded documents the Kino panel is
+  their measured blood baseline; findings and Dots are built on it.
 - **Chats hold the clinical facts** for users with no documents: medications (阿立哌唑, 安博维 + 洛活喜, 二甲双胍,
   GLP-1 intent), pregnancy, POI, HBV carriage, home BP readings, pasted CBCs. Read every user turn.
+
+
+## `lab_orders` — QCS (量康) result PDFs nobody reads (found 2026-09-21)
+
+`lab_orders` rows (`lab_name='qcs'`, imported by a one-off `import-qcs-orders` script) carry
+`report_pdf_key` — an OSS key under `lab-reports/qcs/<order_id>/<goods_id>-<hash>.pdf` — for
+completed dried-blood-spot panels: 维生素 D, 同型半胱氨酸, 糖化血红蛋白, 尿酸, 120 项 IgG, AMH,
+NAD+, DNA 甲基化年龄, 有机酸 76 项, 基因检测, 肝脏健康评估 (N-glycan score), 免疫年龄评估.
+`lab_final_result.goods[].bodyindex_panels[].bodyindexes` is **empty** — the numbers live only in
+the PDF. `download-docs.js` only fetches `health_documents`, so these were missed for 23 of 41
+premier partners in the 2026-09-17 batch. Always list `lab_orders`, download every
+`report_pdf_key`, and note that an order with several goods stores only one key (乔通宇's
+免疫年龄评估 PDF was never saved). 2021-dated orders exist (墨霏) — old panels are 体质倾向, not
+current state.
+
+## Dev is a snapshot — real uploads land on prod
+
+Release miniapp builds talk to prod. On 2026-09-21 dev matched prod for most users but was
+missing 乔通宇's 21 screenshots, 黄毅's 6 new documents, 胡仿璇's 2, and recent chat turns.
+Before writing a report, compare the `extract.js` inventory on both, or extract with `--prod`
+(read-only) when the user's data is what matters.

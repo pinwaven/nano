@@ -18,12 +18,12 @@ bm = load('biomarkers') or []
 k = [b for b in bm if b['test_type'] == 'kino_chip']
 print(f'KINO {len(k)} scans; other biomarkers: {collections.Counter(b["test_type"] for b in bm if b["test_type"] != "kino_chip")}')
 for b in k:
-    d = b['data']; a = d.get('actual') or {}; bp = d.get('bioage_profile') or {}
-    print('  ', b['tested_at'][:16], 'dev', b.get('kino_device_id'), 'actual', {kk: round(v, 2) for kk, v in a.items()}, 'BA', bp.get('BioAge'), 'sub', {kk[:4]: round(v) for kk, v in (bp.get('SubAges') or {}).items()}, 'ctx', d.get('context', '')[:20])
+    d = b['data']; v = d.get('validated') or {}; bp = d.get('bioage_profile') or {}   # validated = the result (CLAUDE.md §17); actual is not printed
+    print('  ', b['tested_at'][:16], 'dev', b.get('kino_device_id'), 'validated', {kk: round(x, 2) for kk, x in v.items()}, 'BA', bp.get('BioAge'), 'sub', {kk[:4]: round(v) for kk, v in (bp.get('SubAges') or {}).items()}, 'ctx', d.get('context', '')[:20])
 for b in bm:
     if b['test_type'] == 'kino_chip': continue
     d = b['data']
-    if b['test_type'] == 'lab_import': print('  LAB_IMPORT', b['tested_at'][:10], 'actual', d.get('actual'), 'validated', d.get('validated'), 'BA', (d.get('bioage_profile') or {}).get('BioAge'), 'sub', {k[:4]: round(v) for k, v in ((d.get('bioage_profile') or {}).get('SubAges') or {}).items()})
+    if b['test_type'] == 'lab_import': print('  LAB_IMPORT', b['tested_at'][:10], 'validated', d.get('validated'), 'BA', (d.get('bioage_profile') or {}).get('BioAge'), 'sub', {k[:4]: round(v) for k, v in ((d.get('bioage_profile') or {}).get('SubAges') or {}).items()})
     elif b['test_type'] in ('health_checkup_report', 'health_photo', 'food_photo'):
         ex = d.get('extracted') or {}
         exs = '; '.join(f"{k}={v.get('value')}{v.get('unit') or ''}[{v.get('flag')}]" for k, v in ex.items()) if isinstance(ex, dict) else str(ex)[:200]

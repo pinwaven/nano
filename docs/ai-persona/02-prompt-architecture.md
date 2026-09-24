@@ -7,7 +7,8 @@ prompts/
   chat/                                    ← shared/generic, persona-agnostic
     factConstraint.js      — the anti-hallucination guardrail block, now shared
     factMemoryBlock.js     — "known user facts" + remember_fact instruction block, now shared
-    intentClassifier.js    — classifies into 7 intents, English, persona-agnostic
+    intentClassifier.js    — message-only intent classifier; the fallback router (and prod's router in shadow mode)
+    understanding.js       — the UNDERSTAND step: message + 4 turns + user state → resolved request + route (11-intent-understanding.md)
     planTemplate.js        — PLAN step of the agentic loop
   nano/
     systemChat.js                          — DEAD CODE, no require() site anywhere
@@ -76,7 +77,7 @@ const activePrompts = personaType === 'viva' ? vivaPrompts : nanoPrompts;
 const promptBuilder = activePrompts[intent] || activePrompts.casual_chat;
 ```
 
-An unrecognized/unclassified intent (or an intent-classifier parse failure) falls back to `casual_chat` for whichever persona is active.
+Both maps also carry `lifestyle_question` (exercise / sleep-routine plans, added 2026-09-22). `formulate_dots` is a valid route with no template: it hands the turn to the miniapp's formulation tool. An unrecognized/unclassified intent (or an intent-classifier parse failure) falls back to `casual_chat` for whichever persona is active. The UNDERSTAND step never produces an unknown intent, because a route outside `VALID_ROUTES` rejects the whole understanding and the classifier routes instead ([11-intent-understanding.md](11-intent-understanding.md)).
 
 ## Adding a third persona
 

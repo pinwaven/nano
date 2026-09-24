@@ -51,7 +51,9 @@ Page({
     wx.request({
       url: `${this.data.apiBase}/api/qr-login/confirm`,
       method: 'POST',
-      header: { 'Content-Type': 'application/json' },
+      // The confirming user's own session: once the server stops accepting builds without it,
+      // this is what proves the web login is being granted by the account it names.
+      header: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${app.globalData.apiToken}` },
       data: { session_id: this.data.sessionId, openid: storedUser.user_id },
       success: (res) => {
         if (res.data && res.data.success) {
