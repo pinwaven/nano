@@ -739,10 +739,18 @@ async function handleSetIdentity(user_id, body) {
 async function handleDeleteUser(user_id) {
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
-        await pool.query('DELETE FROM users WHERE user_id = $1', [user_id]);
+        const deleted = await pool.query('DELETE FROM users WHERE user_id = $1 RETURNING user_id', [user_id]);
+        if (deleted.rows.length === 0) {
+            return { statusCode: 404, success: false, error: 'user_not_found' };
+        }
         return { success: true };
     } catch (err) {
-        return { success: false, error: err.message };
+        console.error(JSON.stringify({
+            level: 'ERROR',
+            msg: 'admin_user_delete_failed',
+            data: { user_id, code: err.code, error: err.message },
+        }));
+        return { statusCode: 500, success: false, error: 'user_delete_failed' };
     }
 }
 

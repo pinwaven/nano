@@ -18,6 +18,80 @@ function quoteIdent(ident) {
     return `"${String(ident).replace(/"/g, '""')}"`;
 }
 
+// A merge keeps the older user_id, but the newer row can carry access that was assigned
+// deliberately after the original account was created (for example, promotion into a child
+// channel plus coach/admin roles). Keep every role and prefer the loser's channel only when it
+// is more specific than the winner's channel. Sibling/root changes remain on the winner because
+// there is no safe way to infer which organization should own the merged account.
+function reconcileAccessContextValues(winner, loser, loserLineage = []) {
+    const roles = [...new Set([...(winner.roles || []), ...(loser.roles || [])])];
+    const winnerChannel = winner.channel_id;
+    const loserChannel = loser.channel_id;
+    const loserAncestorIds = new Set(loserLineage.map(String));
+    const channelId = winnerChannel == null
+        ? loserChannel
+        : (loserChannel != null && loserAncestorIds.has(String(winnerChannel)) ? loserChannel : winnerChannel);
+    return { roles, channelId };
+}
+
+async function reconcileAccessContext(client, winnerId, loserId) {
+    const { rows } = await client.query(
+        'SELECT user_id, roles, channel_id FROM users WHERE user_id = ANY($1::text[])',
+        [[winnerId, loserId]]
+    );
+    const winner = rows.find(row => row.user_id === winnerId);
+    const loser = rows.find(row => row.user_id === loserId);
+    if (!winner || !loser) throw new Error('merge_user_not_found');
+
+    let loserLineage = [];
+    if (loser.channel_id != null) {
+        const lineage = await client.query(
+            `WITH RECURSIVE lineage AS (
+                 SELECT id, parent_channel_id FROM channels WHERE id = $1
+                 UNION ALL
+                 SELECT c.id, c.parent_channel_id
+                   FROM channels c JOIN lineage l ON c.id = l.parent_channel_id
+             )
+             SELECT id FROM lineage`,
+            [loser.channel_id]
+        );
+        loserLineage = lineage.rows.map(row => row.id);
+    }
+
+    const access = reconcileAccessContextValues(winner, loser, loserLineage);
+    await client.query(
+        'UPDATE users SET roles = $1::text[], channel_id = $2, updated_at = NOW() WHERE user_id = $3',
+        [access.roles, access.channelId, winnerId]
+    );
+}
+
+// Moving the loser's phones starts by demoting them so two primary rows cannot collide on the
+// winner. When the winner had no phone of its own, that safety step used to leave its only phone
+// marked secondary forever. Re-establish exactly one primary after all FK moves and synchronize
+// users.phone, which is the denormalized primary-phone cache used by integrations and admin UI.
+async function ensurePrimaryPhone(client, userId) {
+    const { rows } = await client.query(
+        `SELECT id, phone, verified_at, is_primary
+           FROM user_phones
+          WHERE user_id = $1
+          ORDER BY is_primary DESC, verified_at DESC NULLS LAST, created_at DESC, id DESC
+          LIMIT 1`,
+        [userId]
+    );
+    const selected = rows[0];
+    if (!selected) return null;
+
+    await client.query(
+        'UPDATE user_phones SET is_primary = (id = $2) WHERE user_id = $1',
+        [userId, selected.id]
+    );
+    await client.query(
+        'UPDATE users SET phone = $1, phone_verified_at = $2, updated_at = NOW() WHERE user_id = $3',
+        [selected.phone, selected.verified_at, userId]
+    );
+    return selected.phone;
+}
+
 // Looks for another account that's the same real person as `userId`, preferring the
 // high-confidence government_id signal when both sides have one, falling back to
 // normalized name + exact birth_date match. Returns null if no candidate found or if
@@ -167,6 +241,15 @@ async function mergeUsers(winnerId, loserId, matchedOn) {
         await client.query(`UPDATE user_emails SET is_primary = false WHERE user_id = $1`, [loserId]);
 
         await repointForeignKeys(client, winnerId, loserId, conflictNotes);
+        // The actual login identities now belong to the winner. Clear the loser's denormalized
+        // cache before promoting on the winner; users.phone is unique even though the loser row
+        // remains as an audit tombstone.
+        await client.query(
+            'UPDATE users SET phone = NULL, phone_verified_at = NULL, updated_at = NOW() WHERE user_id = $1',
+            [loserId]
+        );
+        await ensurePrimaryPhone(client, winnerId);
+        await reconcileAccessContext(client, winnerId, loserId);
         await client.query('UPDATE users SET merged_into_user_id = $1 WHERE user_id = $2', [winnerId, loserId]);
         await client.query(
             `INSERT INTO user_merges (winner_user_id, loser_user_id, matched_on, conflict_notes) VALUES ($1, $2, $3, $4)`,
@@ -231,4 +314,11 @@ async function resolveMergedUser(client, userRow) {
     return current;
 }
 
-module.exports = { findAndMergeDuplicateAccount, mergeUsers, resolveMergedUser, normalizeIdentity };
+module.exports = {
+    findAndMergeDuplicateAccount,
+    mergeUsers,
+    resolveMergedUser,
+    normalizeIdentity,
+    reconcileAccessContextValues,
+    ensurePrimaryPhone,
+};

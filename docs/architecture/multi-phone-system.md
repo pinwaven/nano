@@ -119,6 +119,17 @@ twin of `syncPrimaryPhone`.
 The super-OTP backdoor is honoured on `/email-otp/verify` (login only, never bind) and audits with
 `identifier_type = 'email'` (`migration_super_otp_audit_log_identifier_type.sql`).
 
+When two accounts merge, the earlier-created `user_id` remains the survivor. The survivor keeps
+the union of both rows' roles, and it moves into the loser's channel only when that channel is a
+descendant of the survivor's channel (or the survivor had no channel). This preserves deliberate
+child-channel assignments such as SuperiorMed without guessing between sibling organizations.
+After phone rows move, the survivor always has one primary whenever it has any phones; when no
+primary survives, the most recently verified number is promoted and copied into `users.phone`.
+The inactive merge row's `users.phone` cache is cleared first because the login identity has moved
+and the cache column remains globally unique.
+`migration_user_merge_preserve_access_context.sql` and
+`migration_user_merge_restore_primary_phone.sql` backfill these rules for existing merges.
+
 ### Web new-user invitation step (2026-09-23)
 
 Phone and email login still take an existing user directly into the app. When the web client sends

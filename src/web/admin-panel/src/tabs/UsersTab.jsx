@@ -242,12 +242,22 @@ function UserModal({ user, coaches, channels, session, onClose, onSave, onManage
 function DeleteConfirm({ user, onClose, onConfirm }) {
   const { t } = useLang();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const extraRoles = (user.roles || ['user']).filter(r => r !== 'user');
   const blocked = extraRoles.length > 0;
   const handleDelete = async () => {
     setBusy(true);
-    try { await axios.delete(`/api/users/${user.user_id || user.id}`); onConfirm(); }
-    catch { /* silent */ } finally { setBusy(false); }
+    setError('');
+    try {
+      const response = await axios.delete(`/api/users/${user.user_id || user.id}`);
+      if (!response.data?.success) throw new Error(response.data?.error || 'user_delete_failed');
+      onConfirm();
+    } catch (err) {
+      const detail = err.response?.data?.error || err.message;
+      setError(t.modal.deleteFailed(detail));
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -266,6 +276,7 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
               {t.modal.deleteWarning(<strong>{user.nickname || user.external_id || user.user_id}</strong>)}
             </p>
           )}
+          {error && <div className="form-error" style={{ marginBottom: 16 }}>{error}</div>}
           <div className="modal-footer">
             <button className="btn-secondary" onClick={onClose}>{t.modal.cancel}</button>
             {!blocked && (
@@ -2133,14 +2144,13 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
       sort_dir: sortDir,
     };
 
-    if (isChannel) {
-      if (includeSubchannels) {
-        params.include_subchannels = 'true';
-      }
-    } else {
-      if (channelFilter) {
-        params.filter_channel_id = channelFilter;
-      }
+    // A selected channel chip is an exact filter for both channel admins and
+    // superadmins. Without this, channel-admin chips only changed colour while
+    // every request continued to ask for the full subtree.
+    if (channelFilter) {
+      params.filter_channel_id = channelFilter;
+    } else if (isChannel && includeSubchannels) {
+      params.include_subchannels = 'true';
     }
 
     axios.get(baseUrl, { params, signal: abortRef.current.signal })
@@ -2232,14 +2242,10 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
       sort_dir: sortDir,
     };
 
-    if (isChannel) {
-      if (includeSubchannels) {
-        params.include_subchannels = 'true';
-      }
-    } else {
-      if (channelFilter) {
-        params.filter_channel_id = channelFilter;
-      }
+    if (channelFilter) {
+      params.filter_channel_id = channelFilter;
+    } else if (isChannel && includeSubchannels) {
+      params.include_subchannels = 'true';
     }
 
     axios.get(baseUrl, { params })

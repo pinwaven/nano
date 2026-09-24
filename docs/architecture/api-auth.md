@@ -48,7 +48,9 @@ session, and the body `openid` must be that user.
   existing account). Field: `session_token`.
 - **Carries only `sub`** (user id), 30 days. Roles and coach rows are read from the DB on every
   request (`loadCaller`), so revoking a role takes effect at once; a merged-away account follows
-  `merged_into_user_id`. A DB error loading the caller is **503**, not 401 — clients drop their
+  `merged_into_user_id`. Phone, email and QR login responses resolve that chain before returning
+  the user or minting a session, so the client never lands on a merge loser. A DB error loading
+  the caller is **503**, not 401 — clients drop their
   session on 401.
 - `POST /session/refresh` — new token for the caller (clients call it when theirs is >1 day old).
 - `POST /session/upgrade {user_id}` — **legacy bearer only**: lets an install signed in before

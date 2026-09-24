@@ -384,17 +384,20 @@ const GCN_SECTOR_FOR_ROOT_CHANNEL = Object.freeze({ aeviva: 'aeviva', waven: 'wa
 
 function rootChannelKey(channel, channels) {
   if (!channel) return null;
+  const fallbackKey = String(channel.key_name || '').split('-')[0] || null;
   if (Array.isArray(channels) && channels.length) {
     let cur = channel;
     for (let i = 0; i < 10 && cur && cur.parent_channel_id != null; i++) {
       const parent = channels.find(c => String(c.id) === String(cur.parent_channel_id));
-      if (!parent) break;
+      // Channel-scoped admins receive only their own subtree, so the parent of a
+      // sub-channel such as aeviva-china is intentionally absent. In that case the
+      // key-prefix convention is the only root information available.
+      if (!parent) return fallbackKey;
       cur = parent;
     }
     if (cur && cur.key_name) return cur.key_name;
   }
-  const key = String(channel.key_name || '');
-  return key ? key.split('-')[0] : null;
+  return fallbackKey;
 }
 
 // The GCN sector_id for a channel (object with key_name / parent_channel_id, or a bare key

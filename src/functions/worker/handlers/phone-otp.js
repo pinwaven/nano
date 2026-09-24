@@ -36,7 +36,8 @@ async function logSuperOtpUse(phone, userId) {
 const USER_SELECT = `
     SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
            u.avatar_url, u.avatar_character, u.avatar_moods, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
-           u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
+           u.referred_by_user_id, u.merged_into_user_id,
+           (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified,
            (u.email_verified_at IS NOT NULL AND u.email IS NOT NULL) AS email_verified, b.bio_age,
            cu.nickname AS coach_name,
            c.name AS channel_name, c.key_name AS channel_key, effective_channel_logo(c.id) AS channel_logo_url,
@@ -58,7 +59,22 @@ const USER_SELECT = `
 // gates the GCN store and email login on, since a waven-china-zj user is a Waven user.
 // Shared with handlers/email-otp.js.
 async function shapeUserRow(row) {
-    const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = row;
+    // All phone/email/QR login responses pass through this shaper. Identity tables normally
+    // move to the survivor during a merge, but resolving again here also covers a QR session
+    // that was confirmed with a cached loser user_id and any FK row that could not be repointed.
+    // The response and the session minted from it must both name the active account.
+    const seen = new Set();
+    while (row?.merged_into_user_id && !seen.has(row.user_id)) {
+        seen.add(row.user_id);
+        const { rows } = await pool.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [row.merged_into_user_id]);
+        if (!rows.length) break;
+        row = rows[0];
+    }
+    const {
+        channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale,
+        merged_into_user_id: _mergedIntoUserId,
+        ...user
+    } = row;
     const channel = channel_name
         ? { name: channel_name, key_name: channel_key, root_key_name: await resolveRootChannelKey(user.channel_id), logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
         : null;

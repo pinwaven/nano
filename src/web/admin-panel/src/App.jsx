@@ -135,7 +135,8 @@ function AdminPanel({ session, onLogout }) {
   // channels inside the tab itself, so there's no single "current channel" to key off here —
   // their label stays generic.
   const currentChannel = (data.channels || []).find(c => String(c.id) === String(session?.channelId));
-  const inventoryLabel = !isSuperadmin && gcnSectorForChannel(currentChannel, data.channels)
+  const isCurrentChannelGcnLinked = !isSuperadmin && !!gcnSectorForChannel(currentChannel, data.channels);
+  const inventoryLabel = isCurrentChannelGcnLinked
     ? 'GCN'
     : t.nav.inventory;
 
@@ -178,7 +179,7 @@ function AdminPanel({ session, onLogout }) {
   const defaultTab = 'dashboard';
   const [tab, setTab] = useState(defaultTab);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const isGcnEmbedTab = tab === 'inventory' && !isSuperadmin && GCN_LINKED_CHANNEL_KEYS.has(currentChannel?.key_name);
+  const isGcnEmbedTab = tab === 'inventory' && isCurrentChannelGcnLinked;
   const topbarLabel = isGcnEmbedTab ? 'GCN : Guardian Chain Network' : NAV.find(n => n.id === tab)?.label;
 
   const handleNavClick = (id) => { setTab(id); setSidebarOpen(false); };

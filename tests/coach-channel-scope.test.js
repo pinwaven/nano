@@ -33,12 +33,15 @@ const queries = [];
 const pool = {
     query: async (sql, params) => {
         queries.push({ sql, params });
+        if (/SELECT 1 FROM subtree WHERE id = \$2/.test(sql)) {
+            return { rows: params[1] === 7 ? [{ '?column?': 1 }] : [], rowCount: params[1] === 7 ? 1 : 0 };
+        }
         return { rows: [], rowCount: 0 };
     },
 };
 stub('lib/db', { pool });
 
-const { handleGetCoachUsers, handleGetCoachList, handleGetChannelCoaches } =
+const { handleGetCoachUsers, handleGetCoachList, handleGetChannelCoaches, handleGetChannelUsers } =
     require(path.join(WORKER, 'handlers', 'coaches.js'));
 
 // The roster query — handleGetCoachUsers also looks up the channel's managed-customers flag after it.
@@ -128,6 +131,44 @@ const run = async (name, fn) => { queries.length = 0; await fn(); console.log(` 
             const where = lines.find(l => /^\s*WHERE /.test(l));
             assert.ok(!where || !/assigned\.channel_id/.test(where), `subtree=${includeSub}: not in the WHERE`);
         }
+    });
+
+    await run('a channel-user chip selects one permitted descendant exactly', async () => {
+        const result = await handleGetChannelUsers('2', {
+            filter_channel_id: '7',
+            include_subchannels: 'true',
+            limit: '50',
+            offset: '0',
+        });
+        assert.strictEqual(result.success, true);
+        const validation = queries.find(q => /SELECT 1 FROM subtree WHERE id = \$2/.test(q.sql));
+        assert.deepStrictEqual(validation.params, [2, 7]);
+
+        const list = queries.find(q => /COUNT\(\*\) OVER\(\) AS _total/.test(q.sql));
+        assert.ok(list, 'the filtered user list query must run');
+        assert.match(list.sql, /JOIN \(SELECT \$1::int AS id\) st ON u\.channel_id = st\.id/,
+            'a selected chip is exact even while Include sub-channels remains checked');
+        assert.doesNotMatch(list.sql, /WITH RECURSIVE subtree/);
+        assert.deepStrictEqual(list.params, [7, 50, 0]);
+    });
+
+    await run('a channel-user chip cannot escape the caller subtree', async () => {
+        const result = await handleGetChannelUsers('2', { filter_channel_id: '99' });
+        assert.strictEqual(result.statusCode, 403);
+        assert.strictEqual(queries.length, 1, 'no user or stats query may run after scope rejection');
+        assert.deepStrictEqual(queries[0].params, [2, 99]);
+    });
+
+    await run('selecting the caller channel is exact and needs no ancestry query', async () => {
+        const result = await handleGetChannelUsers('2', {
+            filter_channel_id: '2',
+            include_subchannels: 'true',
+        });
+        assert.strictEqual(result.success, true);
+        assert.ok(!queries.some(q => /SELECT 1 FROM subtree WHERE id = \$2/.test(q.sql)));
+        const list = queries.find(q => /COUNT\(\*\) OVER\(\) AS _total/.test(q.sql));
+        assert.match(list.sql, /JOIN \(SELECT \$1::int AS id\) st ON u\.channel_id = st\.id/);
+        assert.deepStrictEqual(list.params, [2, 50, 0]);
     });
 
     console.log('\nall coach channel-scope checks passed');

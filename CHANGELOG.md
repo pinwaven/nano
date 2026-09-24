@@ -8,6 +8,18 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **Admin deletion works for merged users** · 2026-09-24: hard deletion now removes retired identities belonging to the same merged account instead of failing on old foreign-key constraints, while immutable user-id snapshots preserve the merge audit trail. The Users tab also displays server errors instead of silently making a failed delete look like an unresponsive button.
+
+- **Merged accounts always retain a primary phone** · 2026-09-24: after phone identities move to the surviving account, the merge now promotes the most recently verified number whenever no primary remains and synchronizes the user's primary-phone cache. A migration repairs existing merged survivors that had only secondary numbers.
+
+- **Every login lands on the active merged account** · 2026-09-24: the shared phone/email/QR login response shaper now follows `merged_into_user_id` before returning user, channel and coach data or minting the browser session. This closes the QR path where a cached inactive user id could briefly load the retired account even though subsequent authenticated requests resolved correctly.
+
+- **Merged users retain child-channel access** · 2026-09-24: duplicate-account merges now union both users' roles and preserve a newer, more specific child-channel assignment. Existing affected merges are repaired by migration, so a SuperiorMed coach/admin who also had an older Aeviva account remains in SuperiorMed and inherits its Academy course opt-out.
+
+- **Admin user channel filters work again** · 2026-09-24: channel chips in the web admin Users tab now send an exact `filter_channel_id` for channel admins as well as superadmins. The channel-users endpoint validates that selection against the caller's permitted subtree before applying it, and a selected chip takes precedence over the broader “Include sub-channels” option.
+
+- **Aeviva China GCN admin entry restored** · 2026-09-24: channel-scoped subtree responses now fall back to the channel-key root when the parent row is unavailable, restoring the `GCN` label and embedded console; removed a stale `GCN_LINKED_CHANNEL_KEYS` reference that crashed the panel when the entry was opened.
+
 - **International web signup defaults to English and supports email in every channel** · 2026-09-24: a fresh browser session opens in English, and the email signup API also defaults the new account and verification email to English when no preference is supplied; an explicit Chinese selection is preserved. After an unknown email is verified, account creation waits for the coach's six-digit invitation code and assigns that coach and channel; the resulting account can continue signing in by email even outside the Waven channel tree. Returning users retain their saved language. Web VERSION `0924-1`.
 
 - **Web login opens on phone** · 2026-09-24: the browser app now shows phone-number login first on a fresh start; email and WeChat QR remain available from the login tabs.
