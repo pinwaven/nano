@@ -65,6 +65,27 @@ the exit code; they're reported only.
 Selectors are Playwright's (`text=`, `role=`, CSS). If no step takes a `shot`, a final `end`
 screenshot is taken.
 
+### Admin panel: log in through the form
+
+`.env` holds a dev admin account as `NANO_ADMIN_USERNAME` / `NANO_ADMIN_PASSWORD` (git-ignored,
+never commit them). `--admin-token` needs a token you already have. To exercise the real login,
+write the steps to a scratch file from those variables and go through the sidebar:
+
+```bash
+set -a; . ./.env; set +a
+cat > "$SCRATCH/admin-login.json" <<EOF
+[{"fill": ["input >> nth=0", "$NANO_ADMIN_USERNAME"]},
+ {"fill": ["input[type=password]", "$NANO_ADMIN_PASSWORD"]},
+ {"click": "button:has-text(\"Sign In\")"},
+ {"waitFor": ".nav-item"}, {"wait": 6000}, {"shot": "dashboard"},
+ {"click": ".nav-item:has-text(\"用户管理\")"}, {"wait": 6000}, {"shot": "users"}]
+EOF
+node tools/web-review/review.js http://localhost:5176/admin/ --viewport desktop --steps "$SCRATCH/admin-login.json"
+```
+
+On `mobile` the sidebar is behind `.hamburger`; open it only when `.sidebar.open` is absent, or
+the click lands on the open sidebar and times out.
+
 ### In your own script
 
 ```js
@@ -82,3 +103,19 @@ const page = await (await browser.newContext(VIEWPORTS.mobile)).newPage();
   real iPhone. Check layouts that depend on exact text width on a device.
 - The dev servers proxy `/api` to **dev** (`nano-dev.gcn.net`), so a logged-in review reads and
   writes dev data.
+
+### Reading an admin-panel review (found 2026-09-25)
+
+- **Wait before believing an empty screen.** Admin tabs load 10–20 requests against dev and some
+  take several seconds; at the default 1.5 s wait, Channels, Users and Academy all looked empty
+  when they weren't. Use `wait` ≥ 6000 per tab, and log `/api` responses before calling a
+  screen broken.
+- **Recharts animates.** A screenshot taken during the load animation shows axes with no line or
+  bars. An axis scaled to real values with no data drawn means "too early", not "no data".
+- **Dev-server-only noise** — not bugs in the deployed panel:
+  - `404 /kino/kino-machines`: the Vite proxy only forwards `/api`, so the kino function is
+    unreachable from `localhost` (the Hardware tab then shows 加载失败).
+  - The 库存管理 GCN iframe is blocked: GCN's CSP `frame-ancestors` allows only the nano domains.
+  - Every request fires twice: React `StrictMode` in `main.jsx` double-runs effects in dev only.
+- A `200` can still be a failure: the worker often answers `{success:false, error}` with status
+  200 (the Academy SQL bug surfaced only that way). Check response bodies, not just statuses.

@@ -8,6 +8,12 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **Academy progress and leaderboard load again** · 2026-09-25: both web admin Academy endpoints failed on every request. `GET /academy/course-progress` still counted `academy_coach_progress.coach_user_id`, which `migration_academy_rename_coach_user_id.sql` renamed to `user_id`, and `GET /academy/leaderboard` selected a `users.name` column that doesn't exist (it now selects `nickname AS name`). The leaderboard UI also read `coach_user_id`, which the API never returned. Dev and prod both already have the renamed column, so this ships with a worker + admin-panel deploy and needs no migration.
+
+- **Web admin panel display fixes** · 2026-09-25: the login card fills the page instead of a 360px column (and fits a phone); dashboard KPI cards no longer truncate the value to "4…"; a bio-age delta that rounds to 0.0 reads "与实际持平" on both the dashboard and Users tab instead of "低于" on one and "高于" on the other; a failed Kino device list says "加载失败" rather than "保存失败"; ticket status badges no longer wrap; reward rate inputs match the panel's form style.
+
+- **Web admin panel fully translated** · 2026-09-25: the 检验中心 (Lab), 媒体资源 (Media) and 更新日志 (Changelog) tabs had no translation wiring and showed only English; they, plus the leftover English counts and headers in Rewards, Partners, Store, Invites, Finance, Admin Accounts, Tickets and Academy, now follow the language toggle. Lab and Media were also restyled from the old dark theme to the panel's light cards, inputs and modals (the lab report detail had near-white text on a white modal). Changelog dates are localized instead of raw ISO strings.
+
 - **Viva supports Chinese and English** · 2026-09-25: Viva replies in the user’s selected language across chat, health advice, nutrition explanations, and check-ins. Revision passes preserve that preference even when internal memory facts are Chinese; structured action payloads stay compatible.
 
 - **Admin deletion works for merged users** · 2026-09-24: hard deletion now removes retired identities belonging to the same merged account instead of failing on old foreign-key constraints, while immutable user-id snapshots preserve the merge audit trail. The Users tab also displays server errors instead of silently making a failed delete look like an unresponsive button.
