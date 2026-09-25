@@ -896,7 +896,7 @@ export default function StoreTab({ storeItems, orders, channels, skus = [], inve
                 <th>{t.table.key}</th>
                 <th>{t.table.nameEn}</th>
                 <th>{t.table.nameZh}</th>
-                <th>Linked SKU</th>
+                <th>{t.store.linkedSku}</th>
                 <th>{t.store.priceCny}</th>
                 <th>{t.store.priceUsd}</th>
                 <th>{t.store.priceCredits}</th>

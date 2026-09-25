@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { ScrollText } from 'lucide-react';
+import { useLang } from '../shared.jsx';
 
 const SECTION_COLORS = {
   'New Features': '#6366f1',
@@ -9,6 +10,8 @@ const SECTION_COLORS = {
 };
 
 export function ChangelogTab() {
+  const { t, lang } = useLang();
+  const tc = t.changelog;
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -16,19 +19,19 @@ export function ChangelogTab() {
   useEffect(() => {
     axios.get('/api/release-notes')
       .then(res => setEntries(res.data.entries || []))
-      .catch(() => setError('Failed to load release notes.'))
+      .catch(() => setError(tc.loadFailed))
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div style={{ padding: 32, color: '#888' }}>Loading...</div>;
+  if (loading) return <div style={{ padding: 32, color: '#888' }}>{t.topbar.loading}</div>;
   if (error) return <div style={{ padding: 32, color: '#f87171' }}>{error}</div>;
-  if (!entries.length) return <div style={{ padding: 32, color: '#888' }}>No release notes yet.</div>;
+  if (!entries.length) return <div style={{ padding: 32, color: '#888' }}>{tc.empty}</div>;
 
   return (
     <div style={{ padding: '24px 32px', maxWidth: 760 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
         <ScrollText size={20} style={{ color: '#6366f1' }} />
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Release Notes</h2>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{tc.title}</h2>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         {entries.map(entry => (
@@ -47,7 +50,7 @@ export function ChangelogTab() {
                 <span style={{ fontWeight: 600, fontSize: 14, color: '#374151' }}>{entry.title}</span>
               )}
               <span style={{ marginLeft: 'auto', fontSize: 12, color: '#9ca3af' }}>
-                {entry.published_at}
+                {entry.published_at ? new Date(entry.published_at).toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : ''}
               </span>
             </div>
             {(entry.summary || []).map(({ section, items }) => (
@@ -56,7 +59,7 @@ export function ChangelogTab() {
                   fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
                   color: SECTION_COLORS[section] || '#6b7280', marginBottom: 6,
                 }}>
-                  {section}
+                  {tc.sections[section] || section}
                 </div>
                 <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {(items || []).map((item, i) => (

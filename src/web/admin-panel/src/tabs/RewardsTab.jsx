@@ -48,7 +48,7 @@ function RewardsTab() {
       {!loading && (
         <div className="card">
           <div className="table-toolbar">
-            <span className="table-count">{settings.length} rule{settings.length !== 1 ? 's' : ''}</span>
+            <span className="table-count">{r.countRules(settings.length)}</span>
           </div>
           <table className="data-table">
             <thead>

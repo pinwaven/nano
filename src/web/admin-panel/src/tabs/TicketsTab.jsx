@@ -230,7 +230,7 @@ function TicketsTab({ tickets, onRefresh }) {
             <SortableTh label={tk.priority}                     sortKey="priority"   sort={sort} onSort={onSort} />
             <th>{tk.images}</th>
             <SortableTh label={tk.reporter}                     sortKey="reporter"   sort={sort} onSort={onSort} />
-            <SortableTh label="Created"                         sortKey="created_at" sort={sort} onSort={onSort} />
+            <SortableTh label={tk.created}                     sortKey="created_at" sort={sort} onSort={onSort} />
             <th></th>
           </tr></thead>
           <tbody>
@@ -397,7 +397,7 @@ function TicketDetailModal({ ticket, parent, subtickets = [], onClose, onEdit, o
                 <div style={{ fontSize: 13, color: '#475569' }}>#{ticket.id}</div>
               </div>
               <div>
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Created</div>
+                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{tk.created}</div>
                 <div style={{ fontSize: 13, color: '#475569' }}>{new Date(ticket.created_at).toLocaleString()}</div>
               </div>
             </div>

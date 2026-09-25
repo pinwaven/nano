@@ -1798,7 +1798,7 @@ function AcademyTab() {
       <div className="stat-row">
         <StatCard icon={GraduationCap} label={ta.totalCourses}    value={courses.length}        color="#6366f1" />
         <StatCard icon={Video}          label={ta.published}       value={publishedCount}        color="#10b981" />
-        <StatCard icon={Award}          label="Certifications"     value={certifications.length} color="#f59e0b" />
+        <StatCard icon={Award}          label={ta.certificationsStat}value={certifications.length} color="#f59e0b" />
         <StatCard icon={BookOpen}       label={ta.totalLessons}    value={totalLessons}          color="#3b82f6" />
       </div>
 
