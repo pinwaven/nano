@@ -99,6 +99,7 @@ Full details: `docs/architecture/database-migrations.md`
 
 - Use `.env` for local variables. Never hardcode the PolarDB endpoint.
 - **Command:** `npm test` runs every `tests/*.test.js` offline (`node --test`); a single file with `node --test tests/<name>.test.js`. Same shape in the GCN sibling repo. There is no CI — run it before every deploy.
+- **Reviewing the web apps from the EC2 box** (no display, no Chrome, no fonts, no sudo): use [`tools/web-review/`](tools/web-review/README.md) — headless Playwright with locally unpacked libs/fonts (`setup.sh`, once), `review.js <url> --viewport mobile,desktop [--user-token u.…]` for screenshots + console/network errors. Launch through its `browser.js`; a plain `chromium.launch()` fails or renders blank here.
 - **Git:** Never commit without the user explicitly asking for it in that session — not even to satisfy a "commit after every build" habit. When a commit is requested, split it into one commit per modular component rather than bundling everything together.
 
 ## 8. AI Interaction Rules
