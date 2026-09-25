@@ -1,9 +1,10 @@
+const { withResponseLanguage } = require('../response-language');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
-module.exports = ({ user_profile, last_weight, essential_knowledge, user_facts, now_iso }) => {
+module.exports = withResponseLanguage(({ user_profile, last_weight, essential_knowledge, user_facts, now_iso }) => {
   return `${getFactConstraintBlock(essential_knowledge)}
 
 ${getCurrentDateBlock(now_iso)}
@@ -24,5 +25,5 @@ ${last_weight != null ? `上次记录体重：${last_weight} kg` : '上次记录
 - 重要：这条 JSON 是系统用来实际写入数据库的隐藏信号，展示给用户前会被自动去除——所以你在对话历史里看到的、你自己之前记录体重时说过的确认语，是不会带这行 JSON 的（历史里那句话本身没问题，只是JSON已被隐去，不代表当时没有附加）。不要因为模仿自己上一轮的可见文字，就在这一次省略了 JSON——只要用户本轮明确报告了新的体重数值，无论历史记录长什么样，都必须重新附加这行 JSON，否则体重不会被真正记录，而用户会看到一句虚假的"已记录"确认。
 
 对于其他数据类型（睡眠、饮食等）：用 1–2 句温暖地回应，说明目前仅支持体重记录。
-全程用简体中文回复。`;
-};
+`;
+});

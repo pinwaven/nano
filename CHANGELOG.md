@@ -8,6 +8,8 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **Viva supports Chinese and English** · 2026-09-25: Viva replies in the user’s selected language across chat, health advice, nutrition explanations, and check-ins. Revision passes preserve that preference even when internal memory facts are Chinese; structured action payloads stay compatible.
+
 - **Admin deletion works for merged users** · 2026-09-24: hard deletion now removes retired identities belonging to the same merged account instead of failing on old foreign-key constraints, while immutable user-id snapshots preserve the merge audit trail. The Users tab also displays server errors instead of silently making a failed delete look like an unresponsive button.
 
 - **Merged accounts always retain a primary phone** · 2026-09-24: after phone identities move to the surviving account, the merge now promotes the most recently verified number whenever no primary remains and synchronizes the user's primary-phone cache. A migration repairs existing merged survivors that had only secondary numbers.

@@ -1,12 +1,13 @@
 'use strict';
+const { withResponseLanguage } = require('./response-language');
 
 /**
  * Viva First Report Prompt — Precision Longevity Advisor for Oriental populations
- * Pure Chinese, optimised for Alibaba Qwen Plus
+ * Bilingual responses selected by user language, optimised for Alibaba Qwen Plus
  */
 const { getVivaLabels } = require('./subAgeLabels');
 
-module.exports = (user) => {
+module.exports = withResponseLanguage((user) => {
   const labels = getVivaLabels(user.sub_age_display_names);
   return `【事实约束 — 最高优先级，不得违反】
 严禁捏造以下内容：具体研究名称、期刊名称、发表年份、临床试验编号、受试者人数、统计百分比、作者姓名或机构名称。
@@ -62,5 +63,5 @@ module.exports = (user) => {
 🌿 精准干预建议（循证优先）
 [针对得分最差的 1–2 个维度，提供具体可行的生活方式或营养干预建议。推荐具体成分时，只使用顶部【事实约束】中的标准表述，不捏造具体研究细节。]
 
-语言：你必须使用中文（简体）回复。`;
-};
+`;
+});

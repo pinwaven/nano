@@ -1,3 +1,4 @@
+const { withResponseLanguage } = require('../response-language');
 const { getVivaLabels } = require('../subAgeLabels');
 const { getAppGuideBlock } = require('../../chat/appGuideBlock');
 const { getBiomarkerStatusLine } = require('../../chat/biomarkerStatusLine');
@@ -16,7 +17,7 @@ const { getTwinVocabBlock } = require('../../chat/twinVocabulary');
 // get_grocery_products, and the turn came back as a 盒马 ingredient-substitution list for a meal
 // plan from a week earlier. A lifestyle plan never needs a catalog, so this template never
 // mentions one — the model cannot reach for a tool it was never told exists.
-module.exports = (ctx) => {
+module.exports = withResponseLanguage((ctx) => {
   const { user_profile, biomarkers, biomarkers_tested_at, bioage, questionnaire_context, active_health_plans, health_twin, current_solar_term } = ctx;
   const labels = getVivaLabels(ctx.sub_age_display_names);
   const hasBiomarkers = biomarkers && Object.keys(biomarkers).length > 0;
@@ -47,7 +48,7 @@ ${getWearableDailyBlock(ctx.wearable_daily, true, ctx.now_iso, ctx.wearable_insi
 
 ${getSubAgeInputsBlock(true, ctx.sub_age_display_names)}
 
-${getOutputFormatBlock({ isZh: true, rich: ctx.rich_format, allow: ['takeaway'] })}
+${getOutputFormatBlock({ isZh: user_profile?.language !== 'en', rich: ctx.rich_format, allow: ['takeaway'] })}
 
 ${getCurrentDateBlock(ctx.now_iso)}
 
@@ -75,7 +76,6 @@ ${seasonSection ? '\n' + seasonSection : ''}
 - 仅在列举 3 项以上时使用列表。不使用 Markdown 标题，保持对话感和自信。
 - 回答完毕后干净收尾，不要在结尾提问或引导用户追问。
 - 提到 App 里的功能（如打卡）时，只用下面「App 使用指引」里真实存在的；不要许诺 App 会生成任何未列出的图表、评分或报告。
-- 全程用简体中文回复。
 
-${getAppGuideBlock({ client: ctx.client, isZh: true })}`;
-};
+${getAppGuideBlock({ client: ctx.client, isZh: user_profile?.language !== 'en' })}`;
+});

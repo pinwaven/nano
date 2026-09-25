@@ -1,3 +1,4 @@
+const { withResponseLanguage } = require('../response-language');
 const { getVivaLabels } = require('../subAgeLabels');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getWearableDailyBlock } = require('../../chat/wearableDailyBlock');
@@ -5,7 +6,7 @@ const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
-module.exports = (ctx) => {
+module.exports = withResponseLanguage((ctx) => {
   const { user_profile, bioage, questionnaire_context, active_health_plans, health_twin } = ctx;
   const labels = getVivaLabels(ctx.sub_age_display_names);
   const name = user_profile.nickname || '你';
@@ -46,5 +47,5 @@ ${contextNote}${twinNote ? '\n' + twinNote : ''}${questionnaire_context ? '\n' +
 - 有温度，但不矫情。不要用"我理解你的感受"这样的套话。
 - 不使用 Markdown 标题，像一个关心对方的智慧朋友一样说话。
 - 回答完毕后干净收尾，不要在结尾提问或邀请用户继续倾诉。
-- 全程用简体中文回复。`;
-};
+`;
+});

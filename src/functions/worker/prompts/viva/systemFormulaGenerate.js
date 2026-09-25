@@ -1,4 +1,5 @@
 'use strict';
+const { withResponseLanguage } = require('./response-language');
 
 /**
  * Decides the actual weekly dot formulation (Viva only) — the agentic PLAN→GENERATE→JUDGE→
@@ -8,7 +9,7 @@
  * with full tool access and the user's complete digital twin — its own prose reply doubles as
  * the user-facing explanation, so no second LLM call is needed.
  *
- * Pure Chinese per the existing Viva convention (no isZh branching) — see factConstraint.js.
+ * Response language follows the user preference — see response-language.js.
  */
 const { classifyBiomarker, LABELS_ZH: STATUS_LABELS_ZH } = require('../../lib/biomarkerStatus');
 const { getFactConstraintBlock } = require('../chat/factConstraint');
@@ -17,7 +18,7 @@ const { getCurrentDateBlock } = require('../chat/currentDateBlock');
 const { getTwinVocabBlock } = require('../chat/twinVocabulary');
 const { getVivaLabels } = require('./subAgeLabels');
 
-module.exports = (ctx) => {
+module.exports = withResponseLanguage((ctx) => {
     const { user_profile, biomarkers, bioage, dots, health_twin, questionnaire_context, active_health_plans, recommended_dot_keys, current_solar_term, sub_age_display_names , formulation_package, formulation_tiers } = ctx;
     const labels = getVivaLabels(sub_age_display_names);
 
@@ -237,5 +238,5 @@ ${formatLine}
 回复规则：
 - 先给出对话式分析（不使用标题、不使用列表，2-3句话），再附上 JSON 行。
 - 引用用户真实的生物标志物/趋势数值，说明驱动因素。
-- 全程使用简体中文回复，结尾干净收尾，不提问、不引导用户继续追问。`;
-};
+- 结尾干净收尾，不提问、不引导用户继续追问。`;
+});

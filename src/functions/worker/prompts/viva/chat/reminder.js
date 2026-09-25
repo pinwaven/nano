@@ -1,6 +1,7 @@
+const { withResponseLanguage } = require('../response-language');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 
-module.exports = ({ user_profile, now_iso, essential_knowledge }) => {
+module.exports = withResponseLanguage(({ user_profile, now_iso, essential_knowledge }) => {
   return `${getFactConstraintBlock(essential_knowledge)}
 
 你是 Viva，Aeviva 的精准长寿顾问。用户想要设置提醒。
@@ -18,5 +19,5 @@ JSON 规则：
   示例："5分钟后" → 加5分钟；"明天早上" → 次日08:00:00+08:00；"下午3点" → 今日15:00:00+08:00。
 - 始终使用 +08:00 时区偏移。
 - 如果时间表达过于模糊无法确定，不附加 JSON。
-全程用简体中文回复。`;
-};
+`;
+});

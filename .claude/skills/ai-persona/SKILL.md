@@ -14,7 +14,7 @@ The platform supports multiple AI personas, routed at the **channel level** via 
 | Persona | Brand | LLM | Prompt language | Domain |
 |---|---|---|---|---|
 | `nano` | Waven Nano | DashScope (Qwen) | Bilingual (zh/en via `user.language`) | Kino biomarkers, BioAge, Dots nutrition |
-| `viva` | Aeviva | Alibaba Qwen Plus | Pure Chinese (simplified) | Developer-defined — prompts in `prompts/viva/` |
+| `viva` | Aeviva | Alibaba Qwen Plus | Bilingual (zh/en via user language) | Developer-defined — prompts in `prompts/viva/` |
 
 ### How routing works
 
@@ -37,7 +37,7 @@ src/functions/worker/prompts/
     chat/
       casual.js  biomarker.js  nutrition.js  science.js
       record.js  reminder.js   emotional.js
-  viva/                  ← Viva-specific prompts (pure Chinese)
+  viva/                  ← Viva-specific prompts (bilingual responses)
     systemChat.js
     systemHealthAdvice.js
     systemHealthReport.js
@@ -76,7 +76,7 @@ UPDATE channels SET config = config || '{"persona_type":"viva"}' WHERE id = <cha
 
 ### Adding or modifying Viva prompts
 
-Edit files under `src/functions/worker/prompts/viva/`. All Viva prompts are pure Chinese — do not add `isZh` branching. Deploy with `npm run deploy:worker`.
+Edit files under `src/functions/worker/prompts/viva/`. Live Viva response prompts use `withResponseLanguage` from `response-language.js`: choose Chinese or English from `user_profile.language`, flat `language`, or health-advice `isZh`; default to Chinese. Keep clinical instructions shared, localize user-facing output, and preserve machine-readable contracts. Deploy with `npm run deploy:worker`.
 
 ### DB migration
 
