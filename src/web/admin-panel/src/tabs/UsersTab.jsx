@@ -2319,8 +2319,9 @@ function UsersTab({ users, coaches, channels, session, isCmsAdmin, onRefresh }) 
         ]} />
         <RichStatCard icon={Calendar} label={t.stats.avgBioAge} value={avgBioAge} color="#f59e0b" subs={
           bioAgeDelta != null ? [{
-            label: parseFloat(bioAgeDelta) >= 0 ? t.stats.aboveChrono : t.stats.belowChrono,
-            value: `${Math.abs(parseFloat(bioAgeDelta)).toFixed(1)}${isZh ? '岁' : 'y'}`,
+            label: Math.round(parseFloat(bioAgeDelta) * 10) === 0 ? t.stats.sameChrono
+              : parseFloat(bioAgeDelta) > 0 ? t.stats.aboveChrono : t.stats.belowChrono,
+            value: Math.round(parseFloat(bioAgeDelta) * 10) === 0 ? '' : `${Math.abs(parseFloat(bioAgeDelta)).toFixed(1)}${isZh ? '岁' : 'y'}`,
             highlight: Math.abs(parseFloat(bioAgeDelta)) > 2,
           }] : []
         } />

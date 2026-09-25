@@ -79,7 +79,7 @@ function TicketStatusLabel({ status }) {
   const map = { open: tk.sOpen, in_progress: tk.sInProgress, resolved: tk.sResolved, closed: tk.sClosed };
   const color = TICKET_STATUS_COLORS[status] || '#94a3b8';
   return (
-    <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 10, background: `${color}22`, color, fontSize: 11, fontWeight: 600 }}>
+    <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 10, background: `${color}22`, color, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
       {map[status] || status}
     </span>
   );
