@@ -6,6 +6,14 @@
 
 - [ ] **Client auth & unauthenticated takeover paths** — see the detailed section at the end of this file. Two prefix-exempt endpoints (`/qr-login/confirm`, `/phone-otp/bind`) allow account takeover with no credential; the miniapp also ships the superadmin bearer token.
 
+- [ ] **`GET /invitations` leaks every invite code** _(high, code review 2026-09-25)_ — `src/functions/worker/lib/userAccess.js:122` allows it with no role and no owner check; the handler (`index.js:684`) only adds a channel filter when `adminCtx.channelId` is set, which a user session never has. Any logged-in user gets every channel's codes, notes and creator names — and those codes are what web signup accepts, so they can join any channel/coach. Require an admin/coach role and scope to the caller.
+
+- [ ] **`GET /questionnaire-responses` has no owner check** _(high, code review 2026-09-25)_ — `userAccess.js:132`. `?assignment_id=N` names no user, so the identity check has nothing to test and anyone's answers come back. Declare an `owner` query like the PATCH/POST routes: `SELECT user_id FROM questionnaire_assignments WHERE id::text = $1`.
+
+- [ ] **`DELETE /users/:user` lets a new coach/admin hard-delete other users** _(medium, code review 2026-09-25)_ — `userAccess.js:49` with `lib/auth.js:173`. `newAccountMinutes: 60` checks the caller's account age, not the target's; `:user` accepts the caller's clients (coach) or same-channel users (admin); `users:delete` is skipped for user sessions. The route exists for cancelling one's own fresh signup — restrict the target to the caller (`isSelf`).
+
+- [ ] **Multi-loser merge drops roles** _(low, code review 2026-09-25)_ — `src/schemas/migration_user_merge_preserve_access_context.sql:42`. `UPDATE users winner … FROM reconciled` applies one arbitrary row per winner, so a winner merged with 2+ losers can lose a role (e.g. `admin` vs `coach`) and gets an arbitrary channel. Aggregate per `winner_user_id` before the UPDATE — as a new migration if this one has already run on dev.
+
 ## Coach Academy _(not yet implemented)_
 
 Mandatory continuing education system for coaches, with a paid course model and title progression.
