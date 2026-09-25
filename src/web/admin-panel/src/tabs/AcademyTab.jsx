@@ -2288,12 +2288,12 @@ function AcademyTab() {
             <div className="table-toolbar"><span className="table-count">{ta.leaderboard}</span></div>
             {leaderboard.length === 0 && <p className="muted" style={{ padding: '12px 16px', fontSize: 13 }}>{ta.noData}</p>}
             {leaderboard.map((coach, i) => (
-              <div key={coach.coach_user_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderBottom: '1px solid #f1f5f9' }}>
+              <div key={coach.user_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderBottom: '1px solid #f1f5f9' }}>
                 <span style={{ fontWeight: 700, color: i < 3 ? ['#f59e0b', '#94a3b8', '#cd7f32'][i] : '#cbd5e1', minWidth: 20, fontSize: 13 }}>
                   {i + 1}
                 </span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{coach.name || coach.coach_user_id.slice(0, 12)}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{coach.name || coach.user_id.slice(0, 12)}</div>
                   <TierBadge credits={coach.total_credits} />
                 </div>
                 <div style={{ textAlign: 'right' }}>
@@ -2301,7 +2301,7 @@ function AcademyTab() {
                   <div style={{ fontSize: 11, color: '#94a3b8' }}>{coach.completed_lessons} lessons</div>
                 </div>
                 <button className="icon-btn" title={ta.grantCertBtn}
-                  onClick={() => setModal({ type: 'grant-cert', userId: coach.coach_user_id, userName: coach.name })}>
+                  onClick={() => setModal({ type: 'grant-cert', userId: coach.user_id, userName: coach.name })}>
                   <Award size={14} />
                 </button>
               </div>
