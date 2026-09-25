@@ -10,6 +10,12 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **Learn tab, desktop header and scan icon fixes (web app + miniapp)** · 2026-09-25: found by a logged-in web review.
+  - Academy tier and course-level badges showed raw English keys ("Foundation", "Advanced") in the Chinese UI on both clients; both now read `training.tierLabels` (基础/进阶/高级/专家), added to the miniapp's `T` table and mirrored into the web's generated `i18n/main.js`.
+  - The desktop phone frame's notch covered the header's username, and a desktop scrollbar squeezed "实际年龄" onto two lines; `web-overrides.css` adds notch clearance and `nowrap`.
+  - The 扫描包装激活方案 card's icon was the `⌗` (U+2317) glyph, which many system fonts lack (it rendered as an empty box); both clients now use `assets/icons/scan.svg`.
+  - Miniapp VERSION `0925-1`, web VERSION `0925-1`.
+
 - **Academy progress and leaderboard load again** · 2026-09-25: both web admin Academy endpoints failed on every request. `GET /academy/course-progress` still counted `academy_coach_progress.coach_user_id`, which `migration_academy_rename_coach_user_id.sql` renamed to `user_id`, and `GET /academy/leaderboard` selected a `users.name` column that doesn't exist (it now selects `nickname AS name`). The leaderboard UI also read `coach_user_id`, which the API never returned. Dev and prod both already have the renamed column, so this ships with a worker + admin-panel deploy and needs no migration.
 
 - **Web admin panel display fixes** · 2026-09-25: the login card fills the page instead of a 360px column (and fits a phone); dashboard KPI cards no longer truncate the value to "4…"; a bio-age delta that rounds to 0.0 reads "与实际持平" on both the dashboard and Users tab instead of "低于" on one and "高于" on the other; a failed Kino device list says "加载失败" rather than "保存失败"; ticket status badges no longer wrap; reward rate inputs match the panel's form style.
