@@ -446,6 +446,7 @@ const T = {
       delivered: '已送达', cancelled: '已取消',
     },
     training: {
+      tierLabels: { foundation: '基础', intermediate: '进阶', advanced: '高级', expert: '专家' },
       courses: '课程', library: '参考资料',
       noTraining: '暂无已发布的课程',
       noLibrary: '暂无参考资料',
@@ -803,6 +804,7 @@ const T = {
       delivered: 'Delivered', cancelled: 'Cancelled',
     },
     training: {
+      tierLabels: { foundation: 'Foundation', intermediate: 'Intermediate', advanced: 'Advanced', expert: 'Expert' },
       courses: 'Courses', library: 'Library',
       noTraining: 'No published courses yet',
       noLibrary: 'No reference materials yet',
@@ -5426,16 +5428,19 @@ Page({
       const courses = publishedCourses.map(c => ({
         ...c,
         _lessonCountLabel: tl.lessonCount(c.lesson_count || 0),
+        _levelLabel: tl.tierLabels[c.level] || c.level,
         _locked: c.prerequisite_course_id ? !completedCourseIds.has(c.prerequisite_course_id) : false,
       }))
 
-      const dashboard = (dashRes.status === 'fulfilled' && dashRes.value.data) ? dashRes.value.data : null
+      const rawDashboard = (dashRes.status === 'fulfilled' && dashRes.value.data) ? dashRes.value.data : null
+      const dashboard = rawDashboard && { ...rawDashboard, _tierLabel: tl.tierLabels[rawDashboard.tier] || rawDashboard.tier }
       const paths = (pathRes.status === 'fulfilled' && pathRes.value.data?.paths) ? pathRes.value.data.paths : []
-      const certifications = (certRes.status === 'fulfilled' && certRes.value.data?.certifications) ? certRes.value.data.certifications : []
+      const certifications = ((certRes.status === 'fulfilled' && certRes.value.data?.certifications) ? certRes.value.data.certifications : [])
+        .map(c => ({ ...c, _tierLabel: tl.tierLabels[c.tier] || c.tier }))
       const enrichedPaths = paths.map(p => {
         const total = (p.courses || []).length
         const done = (p.courses || []).filter(c => completedCourseIds.has(c.course_id)).length
-        return { ...p, _total: total, _done: done }
+        return { ...p, _total: total, _done: done, _tierLabel: tl.tierLabels[p.tier] || p.tier }
       })
       this.setData({ trainingCourses: courses, trainingLibrary: library, trainingCompletedIds: completedIds, trainingDashboard: dashboard, trainingPaths: enrichedPaths, trainingCertifications: certifications })
     } catch (e) {
