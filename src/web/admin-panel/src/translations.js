@@ -571,6 +571,7 @@ const T = {
       noResults: 'No tickets match your search/filters',
     },
     academy: {
+      tiers: { foundation: 'Foundation', intermediate: 'Intermediate', advanced: 'Advanced', expert: 'Expert' }, lessonsCount: (n) => `${n} lesson${n !== 1 ? 's' : ''}`,
       certificationsStat: 'Certifications',
       coursesTab: 'Courses', libraryTab: 'Library', certificationsTab: 'Certifications',
       pathsTab: 'Learning Paths', progressTab: 'Progress & Leaderboard',
@@ -1386,6 +1387,7 @@ const T = {
       tierManagedByGcnNote: '该合伙人的级别由 GCN 管理后台管理 — 请在 GCN 中设置。',
     },
     academy: {
+      tiers: { foundation: '基础', intermediate: '进阶', advanced: '高级', expert: '专家' }, lessonsCount: (n) => `${n} 节课`,
       certificationsStat: '证书',
       coursesTab: '课程', libraryTab: '文库', certificationsTab: '证书管理',
       pathsTab: '学习路径', progressTab: '进度与排行',

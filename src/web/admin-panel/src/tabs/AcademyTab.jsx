@@ -118,7 +118,7 @@ function CourseModal({ course, courses = [], onClose, onSave }) {
               <span>{ta.level}</span>
               <div className="select-wrap" style={{ width: '100%' }}>
                 <select value={form.level} onChange={e => set('level', e.target.value)} className="inline-select" style={{ width: '100%' }}>
-                  {LEVELS.map(lv => <option key={lv} value={lv}>{lv.charAt(0).toUpperCase() + lv.slice(1)}</option>)}
+                  {LEVELS.map(lv => <option key={lv} value={lv}>{ta.tiers[lv] || lv}</option>)}
                 </select>
                 <ChevronDown size={11} className="select-chevron" />
               </div>
@@ -1009,7 +1009,7 @@ function CertificationModal({ cert, courses = [], onClose, onSave }) {
                     <input type="checkbox" checked={selectedCourseIds.includes(c.id)}
                       onChange={() => toggleCourse(c.id)} style={{ accentColor: '#6366f1' }} />
                     <span>{c.title}</span>
-                    <Badge color="#94a3b8" style={{ fontSize: 10 }}>{c.level}</Badge>
+                    <Badge color="#94a3b8" style={{ fontSize: 10 }}><LevelLabel level={c.level} /></Badge>
                   </label>
                 ))}
               </div>
@@ -1640,7 +1640,7 @@ function LearningPathModal({ path, courses = [], onClose, onSave }) {
                     <div key={cid} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: i < orderedCourseIds.length - 1 ? '1px solid #f1f5f9' : 'none', background: 'white', fontSize: 13 }}>
                       <span style={{ color: '#94a3b8', minWidth: 20, fontSize: 11 }}>{i + 1}.</span>
                       <span style={{ flex: 1 }}>{c.title}</span>
-                      <Badge color="#94a3b8" style={{ fontSize: 10 }}>{c.level}</Badge>
+                      <Badge color="#94a3b8" style={{ fontSize: 10 }}><LevelLabel level={c.level} /></Badge>
                       <button type="button" className="icon-btn" onClick={() => moveUp(i)} disabled={i === 0}><ChevronUp size={12} /></button>
                       <button type="button" className="icon-btn" onClick={() => moveDown(i)} disabled={i === orderedCourseIds.length - 1}><ChevronDown size={12} /></button>
                       <button type="button" className="icon-btn danger" onClick={() => toggleCourse(cid)}><X size={11} /></button>
@@ -1658,7 +1658,7 @@ function LearningPathModal({ path, courses = [], onClose, onSave }) {
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <Plus size={11} style={{ color: '#6366f1' }} />
                   <span style={{ flex: 1 }}>{c.title}</span>
-                  <Badge color="#94a3b8" style={{ fontSize: 10 }}>{c.level}</Badge>
+                  <Badge color="#94a3b8" style={{ fontSize: 10 }}><LevelLabel level={c.level} /></Badge>
                 </button>
               ))}
               {courses.filter(c => !orderedCourseIds.includes(c.id)).length === 0 && (
@@ -1685,9 +1685,16 @@ function LearningPathModal({ path, courses = [], onClose, onSave }) {
 const TIER_COLORS_AC = { foundation: '#94a3b8', intermediate: '#3b82f6', advanced: '#8b5cf6', expert: '#f59e0b' };
 const CERT_TIER_COLORS = { bronze: '#cd7f32', silver: '#94a3b8', gold: '#f59e0b', platinum: '#8b5cf6' };
 
+// Course levels share the tier vocabulary (foundation … expert).
+function LevelLabel({ level }) {
+  const { t } = useLang();
+  return t.academy.tiers[level] || level;
+}
+
 function TierBadge({ credits }) {
+  const { t } = useLang();
   const tier = credits >= 700 ? 'expert' : credits >= 300 ? 'advanced' : credits >= 100 ? 'intermediate' : 'foundation';
-  return <Badge color={TIER_COLORS_AC[tier]}>{tier.charAt(0).toUpperCase() + tier.slice(1)}</Badge>;
+  return <Badge color={TIER_COLORS_AC[tier]}>{t.academy.tiers[tier]}</Badge>;
 }
 
 function AcademyTab() {
@@ -1859,7 +1866,7 @@ function AcademyTab() {
                       {c.description && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{c.description.slice(0, 80)}{c.description.length > 80 ? '…' : ''}</div>}
                       {c.prerequisite_title && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Prereq: {c.prerequisite_title}</div>}
                     </td>
-                    <td><Badge color={TIER_COLORS_AC[c.level] || '#94a3b8'}>{c.level}</Badge></td>
+                    <td><Badge color={TIER_COLORS_AC[c.level] || '#94a3b8'}><LevelLabel level={c.level} /></Badge></td>
                     <td className="muted">{c.credit_value} cr</td>
                     <td>
                       <Badge color={c.status === 'published' ? '#10b981' : '#94a3b8'}>
@@ -2273,7 +2280,7 @@ function AcademyTab() {
                 {progress.map(p => (
                   <tr key={p.course_id}>
                     <td className="bold">{p.title}</td>
-                    <td><Badge color={TIER_COLORS_AC[p.level] || '#94a3b8'}>{p.level}</Badge></td>
+                    <td><Badge color={TIER_COLORS_AC[p.level] || '#94a3b8'}><LevelLabel level={p.level} /></Badge></td>
                     <td className="muted">{p.total_lessons}</td>
                     <td className="muted">{p.coaches_started}</td>
                     <td className="muted">{p.avg_quiz_score ? `${p.avg_quiz_score}%` : '—'}</td>
@@ -2298,7 +2305,7 @@ function AcademyTab() {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: '#6366f1' }}>{coach.total_credits} cr</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>{coach.completed_lessons} lessons</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>{ta.lessonsCount(coach.completed_lessons)}</div>
                 </div>
                 <button className="icon-btn" title={ta.grantCertBtn}
                   onClick={() => setModal({ type: 'grant-cert', userId: coach.user_id, userName: coach.name })}>
