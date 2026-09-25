@@ -12,6 +12,8 @@ export default function LearnTab() {
   const app = useApp();
   const { user, lang, t, on } = app;
   const tl = t.training;
+  // Tiers and course levels are raw keys (foundation … expert); CSS only capitalized them.
+  const tierLabel = (k) => tl.tierLabels[k] || k;
   const userId = user?.user_id;
   const [subTab, setSubTab] = useState('academy');
 
@@ -170,7 +172,7 @@ export default function LearnTab() {
               {dashboard && (
                 <div className="academy-status-card">
                   <div className="academy-card-glow-tl" /><div className="academy-card-glow-br" />
-                  <div className="academy-card-header"><span className="academy-card-header-label">{lang === 'zh' ? '学院状态' : 'ACADEMY STATUS'}</span><div className="academy-card-tier-badge"><span className="academy-card-tier-text">{dashboard.tier}</span></div></div>
+                  <div className="academy-card-header"><span className="academy-card-header-label">{lang === 'zh' ? '学院状态' : 'ACADEMY STATUS'}</span><div className="academy-card-tier-badge"><span className="academy-card-tier-text">{tierLabel(dashboard.tier)}</span></div></div>
                   <div className="academy-card-hero"><span className="academy-card-credits-num">{dashboard.total_credits}</span><span className="academy-card-credits-label">{lang === 'zh' ? '学分' : 'CREDITS'}</span></div>
                   <div className="academy-card-divider" />
                   <div className="academy-card-stats"><div className="academy-card-stat"><span className="academy-card-stat-num">{dashboard.completed_lessons}</span><span className="academy-card-stat-label">{lang === 'zh' ? '完成课程' : 'LESSONS'}</span></div><div className="academy-card-stat-sep" /><div className="academy-card-stat"><span className="academy-card-stat-num">{dashboard.certifications_count}</span><span className="academy-card-stat-label">{lang === 'zh' ? '证书' : 'CERTS'}</span></div></div>
@@ -179,7 +181,7 @@ export default function LearnTab() {
               {paths.length > 0 && <div className="training-section-header" style={{ marginTop: 12 }}><span className="training-section-title">{lang === 'zh' ? '学习路径' : 'Learning Paths'}</span></div>}
               {paths.map(p => (
                 <div key={p.id} className="training-path-card" onClick={() => openCourse(p)}>
-                  <div className="training-path-header"><span className="training-path-title">{p.title}</span><span className="training-path-tier">{p.tier}</span></div>
+                  <div className="training-path-header"><span className="training-path-title">{p.title}</span><span className="training-path-tier">{tierLabel(p.tier)}</span></div>
                   {p.description && <div className="training-path-desc"><span>{p.description}</span></div>}
                   <div className="training-path-progress-bar"><div className="training-path-progress-fill" style={{ width: `${p._total > 0 ? (p._done / p._total * 100) : 0}%` }} /></div>
                   <span className="training-path-progress-label">{p._done}/{p._total} {lang === 'zh' ? '课程' : 'courses'}</span>
@@ -192,13 +194,13 @@ export default function LearnTab() {
                   <div className="training-course-cover"><span className="training-course-cover-text">{c.title}</span><div className="training-lesson-badge"><span className="training-lesson-badge-text">{c._lessonCountLabel}</span></div>{c._locked && <div className="training-course-lock-badge"><span className="training-course-lock-icon">🔒</span></div>}</div>
                   <div className="training-course-body"><div className="training-course-meta">
                     <span className="training-course-title">{c.title}</span>{c.description && <span className="training-course-desc">{c.description}</span>}
-                    <div className="training-course-meta-row"><span className="training-course-level">{c.level}</span><span className="training-course-credits">+{c.credit_value} {lang === 'zh' ? '学分' : 'cr'}</span></div>
+                    <div className="training-course-meta-row"><span className="training-course-level">{tierLabel(c.level)}</span><span className="training-course-credits">+{c.credit_value} {lang === 'zh' ? '学分' : 'cr'}</span></div>
                     {c._locked && c.prerequisite_title && <span className="training-course-prereq-hint">{lang === 'zh' ? '前置：' : 'Requires: '}{c.prerequisite_title}</span>}
                   </div></div>
                 </div>
               ))}
               {certs.length > 0 && <div className="training-section-header" style={{ marginTop: 14 }}><span className="training-section-title">{lang === 'zh' ? '我的证书' : 'My Certifications'}</span></div>}
-              {certs.map(c => <div key={c.id} className="training-cert-card" onClick={() => showCert(c)}><span className="training-cert-icon">🏅</span><div className="training-cert-info"><span className="training-cert-title">{c.title}</span>{c.tier && <span className="training-cert-tier">{c.tier}</span>}</div><span className="training-cert-chevron">›</span></div>)}
+              {certs.map(c => <div key={c.id} className="training-cert-card" onClick={() => showCert(c)}><span className="training-cert-icon">🏅</span><div className="training-cert-info"><span className="training-cert-title">{c.title}</span>{c.tier && <span className="training-cert-tier">{tierLabel(c.tier)}</span>}</div><span className="training-cert-chevron">›</span></div>)}
               <div className="training-section-header" style={{ marginTop: 14 }}><span className="training-section-title">{tl.library}</span></div>
               {library.length === 0 && <div className="empty-state"><span className="empty-text">{tl.noLibrary}</span></div>}
               {library.map(item => <div key={item.id} className="training-library-row" onClick={() => openLibrary(item)}><span className="training-library-icon">📄</span><span className="training-library-title">{item.title}</span><span className="training-library-chevron">›</span></div>)}
@@ -206,7 +208,7 @@ export default function LearnTab() {
           ) : view === 'lessons' ? (
             <>
               <div className="training-back-row" onClick={backToList}><span className="training-back-text">{tl.backToCourses}</span></div>
-              <div className="training-course-header"><span className="training-course-header-title">{course?.title}</span>{course?.description && <span className="training-course-header-desc">{course.description}</span>}<div className="training-course-meta-row" style={{ marginTop: 4 }}><span className="training-course-level">{course?.level}</span><span className="training-course-credits">+{course?.credit_value} {lang === 'zh' ? '学分' : 'cr'}</span></div></div>
+              <div className="training-course-header"><span className="training-course-header-title">{course?.title}</span>{course?.description && <span className="training-course-header-desc">{course.description}</span>}<div className="training-course-meta-row" style={{ marginTop: 4 }}><span className="training-course-level">{tierLabel(course?.level)}</span><span className="training-course-credits">+{course?.credit_value} {lang === 'zh' ? '学分' : 'cr'}</span></div></div>
               {lessons.length === 0 && <div className="empty-state" style={{ marginTop: 20 }}><span className="empty-text">{tl.noLessons}</span></div>}
               {lessons.map((l, i) => (
                 <div key={l.id} className="training-lesson-row" onClick={() => openLesson(l)}>

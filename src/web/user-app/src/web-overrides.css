@@ -42,3 +42,12 @@ a.menu-item { text-decoration: none; color: inherit; }
 .login-btn--ghost { background: transparent; border: 1px solid var(--navy-border); color: var(--text-sub); box-shadow: none; }
 
 button.menu-item { width: 100%; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+
+/* Desktop phone frame: the notch (style.css .phone-frame::before, 34px tall) sat over the
+   header's centre and hid the username; clear it the way coach.css's status-bar-spacer does.
+   A desktop scrollbar (~15px, not overlaid like a phone's) also narrowed the bio-age chips
+   enough to break "实际年龄" over two lines. */
+@media (min-width: 640px) {
+  .phone-frame .app-header { padding-top: 40px; }
+}
+.bio-chip .bio-unit { white-space: nowrap; }
