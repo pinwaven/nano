@@ -65,7 +65,7 @@ function KpiCard({ icon: Icon, label, value, sub, subHighlight, color, spark }) 
     <div className="kpi-card">
       <div className="kpi-card-top">
         <div className="stat-icon" style={{ background: color + '1a', color }}><Icon size={18} /></div>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="kpi-card-body">
           <div className="kpi-value">{value}</div>
           <div className="kpi-label">{label}</div>
         </div>
@@ -208,9 +208,11 @@ function DashboardTab({ users, coaches, devices, batches, orders, tickets, sessi
   const recentOrders = [...(orders || [])].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 6);
   const orderStatusColor = (s) => ORDER_STATUS_COLORS[s] || '#64748b';
 
-  const deltaStr = bioAgeDelta != null
-    ? `${bioAgeDelta > 0 ? '+' : ''}${Number(bioAgeDelta).toFixed(1)}y`
-    : null;
+  // Label from the rounded value, so a delta that displays as 0.0 never reads "below".
+  const deltaRounded = bioAgeDelta != null ? Math.round(Number(bioAgeDelta) * 10) / 10 : null;
+  const deltaSub = deltaRounded == null ? null
+    : deltaRounded === 0 ? t.stats.sameChrono
+    : `${deltaRounded > 0 ? t.stats.aboveChrono : t.stats.belowChrono} ${Math.abs(deltaRounded).toFixed(1)}${lang === 'zh' ? '岁' : 'y'}`;
 
   return (
     <>
@@ -226,8 +228,7 @@ function DashboardTab({ users, coaches, devices, batches, orders, tickets, sessi
           sub={`${t.stats.new7d} +${newCoaches7d}`} subHighlight={newCoaches7d > 0} />
         <KpiCard icon={Activity} label={t.stats.avgBioAge}
           value={avgBioAge != null ? Number(avgBioAge).toFixed(1) : '—'} color="#ec4899"
-          sub={deltaStr ? `${bioAgeDelta > 0 ? t.stats.aboveChrono : t.stats.belowChrono} ${deltaStr}` : null}
-          subHighlight={!!deltaStr} />
+          sub={deltaSub} subHighlight={deltaRounded != null && deltaRounded !== 0} />
       </div>
 
       {/* Row 2: 30-day trend + needs attention */}
@@ -297,7 +298,7 @@ function DashboardTab({ users, coaches, devices, batches, orders, tickets, sessi
               <BarChart data={histData} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#64748b' }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} width={26} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} width={34} />
                 <Tooltip contentStyle={{ fontSize: 12 }} />
                 <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                   {histData.map((e, i) => <Cell key={i} fill={e.fill} />)}

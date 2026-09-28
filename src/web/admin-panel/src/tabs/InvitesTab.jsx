@@ -168,7 +168,7 @@ function InvitesTab({ invitations, channels, coaches, session, onRefresh }) {
               <th>{t.table.creator}</th>
               <th>{t.table.maxUses}</th>
               <th>{t.table.useCount}</th>
-              <th>Status</th>
+              <th>{t.table.status}</th>
               <th>{t.table.joined}</th>
               <th></th>
             </tr>

@@ -1,11 +1,12 @@
 'use strict';
+const { withResponseLanguage } = require('./response-language');
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 
 // One short closing remark after a 打卡 program day's recap has been delivered (CLAUDE.md §42).
-// Pure Chinese — no isZh branching, like every Viva prompt. Deliberately a single lightweight
+// Language is selected by withResponseLanguage. Deliberately a single lightweight
 // completion: the recap itself is deterministic (lib/programs.js renderSummaryTemplate) and
 // has already landed in the chat before this runs, so this only has to react to it.
-module.exports = ({ user_profile, program_title, day_index, day_title, duration_days, summary, deltas, lesson_done, is_last_day, essential_knowledge }) => {
+module.exports = withResponseLanguage(({ user_profile, program_title, day_index, day_title, duration_days, summary, deltas, lesson_done, is_last_day, essential_knowledge }) => {
     const name = user_profile?.nickname || '你';
 
     const deltaLines = (deltas && deltas.length)
@@ -38,4 +39,4 @@ ${deltaLines}
 3. 如果用户写了自己的「十年生命能力」，用一句话真诚地呼应它。
 4. 不要标题、不要列表、不要 ::: 卡片、不要提原粒配方或任何产品。
 5. 这是一句收尾，不要以提问结尾。${lessonLine}${lastDayLine}`;
-};
+});

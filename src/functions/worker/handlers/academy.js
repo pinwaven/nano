@@ -539,7 +539,7 @@ async function handleGetAcademyLeaderboard() {
     try {
         const result = await pool.query(`
             SELECT e.user_id,
-                   u.name,
+                   u.nickname AS name,
                    e.cohort,
                    COALESCE(SUM(l.amount),0)::int AS total_credits,
                    COUNT(DISTINCT p.lesson_id)::int AS completed_lessons
@@ -548,7 +548,7 @@ async function handleGetAcademyLeaderboard() {
             LEFT JOIN academy_credit_ledger l ON l.user_id = e.user_id
             LEFT JOIN academy_coach_progress p ON p.user_id = e.user_id
             WHERE e.status = 'active'
-            GROUP BY e.user_id, u.name, e.cohort
+            GROUP BY e.user_id, u.nickname, e.cohort
             ORDER BY total_credits DESC
             LIMIT 50`);
         return { success: true, leaderboard: result.rows.map(r => ({ ...r, tier: _getTier(r.total_credits) })) };
@@ -1114,7 +1114,7 @@ async function handleGetAcademyCourseProgressAll() {
                 c.level,
                 c.credit_value AS course_credit_value,
                 COUNT(DISTINCT l.id)::int AS total_lessons,
-                COUNT(DISTINCT p.coach_user_id)::int AS coaches_started,
+                COUNT(DISTINCT p.user_id)::int AS coaches_started,
                 SUM(p.credits_earned)::int AS total_credits_awarded,
                 AVG(p.quiz_best_score)::numeric(5,1) AS avg_quiz_score
             FROM academy_courses c

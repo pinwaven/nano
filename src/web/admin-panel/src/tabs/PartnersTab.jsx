@@ -240,7 +240,7 @@ function PartnersTab({ users = [], session }) {
       {!loading && subTab === 'partners' && (
         <div className="card">
           <div className="table-toolbar">
-            <span className="table-count">{partners.length} partner{partners.length !== 1 ? 's' : ''}</span>
+            <span className="table-count">{p.countPartners(partners.length)}</span>
             <button className="btn-primary" onClick={openAdd}><Plus size={13} />{p.addPartner}</button>
           </div>
           <table className="data-table">
@@ -300,7 +300,7 @@ function PartnersTab({ users = [], session }) {
       {!loading && subTab === 'commissions' && (
         <div className="card">
           <div className="table-toolbar">
-            <span className="table-count">{commissions.length} commission{commissions.length !== 1 ? 's' : ''}</span>
+            <span className="table-count">{p.countCommissions(commissions.length)}</span>
             <button className="btn-primary" onClick={() => setShowCommForm(true)}><Plus size={13} />{p.addCommission}</button>
           </div>
           <table className="data-table">

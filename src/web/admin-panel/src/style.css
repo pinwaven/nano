@@ -1961,7 +1961,10 @@ body {
   min-width: 0;
 }
 
-.kpi-card-top { display: flex; align-items: center; gap: 12px; }
+.kpi-card-top { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; }
+/* The badge wraps under the value instead of squeezing it: five cards beside a 220px sidebar
+   leave ~120px of text width, which truncated the value to "4…" and broke labels over lines. */
+.kpi-card-body { flex: 1; min-width: 96px; }
 
 .kpi-value {
   font-size: 20px;
@@ -1972,7 +1975,7 @@ body {
   white-space: nowrap;
 }
 
-.kpi-label { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.kpi-label { font-size: 11.5px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .kpi-sub {
   font-size: 11px;

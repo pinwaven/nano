@@ -1,6 +1,7 @@
+const { withResponseLanguage } = require('./response-language');
 /**
  * Viva AI Nutrition Prompt — Precision Longevity Advisor for Oriental populations
- * Pure Chinese, optimised for Alibaba Qwen Plus
+ * Bilingual responses selected by user language, optimised for Alibaba Qwen Plus
  */
 const { getVivaLabels } = require('./subAgeLabels');
 const { classifyBiomarker, LABELS_ZH: STATUS_LABELS_ZH } = require('../../lib/biomarkerStatus');
@@ -8,7 +9,7 @@ const { MAX_DOTS_PER_CAPSULE } = require('../../lib/dotsProductModel');
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 
-module.exports = (context) => {
+module.exports = withResponseLanguage((context) => {
   const formularyLines = context.dots_formulary && context.dots_formulary.length > 0
     ? context.dots_formulary.map(d => {
         const ingrArr = d.ingredients_zh || d.ingredients;
@@ -102,4 +103,4 @@ D-N2:N
 - 若按上述相对位置分配后总量超出该上限，必须做取舍：把与用户异常指标无关的原粒压到其区间下限，将额度让给针对用户异常指标的原粒。不要为了凑总量而把所有原粒一起等比例下调。
 - 必须包含配方库中列出的所有 DXX 代码。
 ${seasonRule}`;
-};
+});

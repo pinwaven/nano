@@ -291,11 +291,11 @@ export function KinoTab({ devices, machinePagination, coaches, channels, release
       setListDevices(normalized.devices);
       setPagination(normalized.pagination);
     } catch (err) {
-      setListError(err.response?.data?.error || t.modal.saveFailed);
+      setListError(err.response?.data?.error || t.modal.loadFailed);
     } finally {
       setListLoading(false);
     }
-  }, [page, searchQuery, t.modal.saveFailed]);
+  }, [page, searchQuery, t.modal.loadFailed]);
 
   useEffect(() => {
     setListDevices((devices || []).map(normalizeKinoMachine));

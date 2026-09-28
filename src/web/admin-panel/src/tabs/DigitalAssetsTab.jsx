@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Upload, Trash2, Music2 } from 'lucide-react';
+import { Upload, Trash2, Music2, X } from 'lucide-react';
+import { useLang } from '../shared.jsx';
+
+const labelStyle = { fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 4 };
 
 function DigitalAssetUploadModal({ onClose, onSave, fixedChannelId, channels, isSuperadmin }) {
+  const { t } = useLang();
+  const tm = t.media;
   const [form, setForm] = useState({
     type: 'sleep_music', title: '', title_zh: '', duration_seconds: '', sort_order: '0',
     channel_id: fixedChannelId ?? '',
@@ -14,7 +19,7 @@ function DigitalAssetUploadModal({ onClose, onSave, fixedChannelId, channels, is
   const handleFile = (e) => setFile(e.target.files[0] || null);
 
   const handleSubmit = async () => {
-    if (!file || !form.title || !form.type) { setError('Type, title, and file are required'); return; }
+    if (!file || !form.title || !form.type) { setError(tm.required); return; }
     setError('');
     try {
       setPhase('uploading');
@@ -40,64 +45,59 @@ function DigitalAssetUploadModal({ onClose, onSave, fixedChannelId, channels, is
     }
   };
 
-  const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: 8, background: '#0e1f3a', border: '1px solid rgba(166,196,229,0.2)', color: '#E8F0F8', fontSize: 14, boxSizing: 'border-box' };
-  const labelStyle = { fontSize: 12, color: '#8ca9c5', display: 'block', marginBottom: 4 };
+  const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }));
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div style={{ background: '#1a2744', borderRadius: 14, padding: 28, width: 420, maxWidth: '95vw' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-          <span style={{ fontWeight: 700, fontSize: 17, color: '#E8F0F8' }}>Upload Media Asset</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#8ca9c5', cursor: 'pointer', fontSize: 20 }}>×</button>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{tm.uploadTitle}</span>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
-        {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', marginBottom: 14, color: '#ef4444', fontSize: 13 }}>{error}</div>}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', color: '#dc2626', fontSize: 13 }}>{error}</div>}
           <div>
-            <label style={labelStyle}>Type</label>
-            <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))} style={inputStyle}>
-              <option value="sleep_music">Sleep Music</option>
-              <option value="guide_video">Guide Video</option>
-              <option value="document">Document</option>
+            <label style={labelStyle}>{tm.type}</label>
+            <select value={form.type} onChange={set('type')} className="form-input" style={{ marginBottom: 0 }}>
+              {Object.entries(tm.types).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
           <div>
-            <label style={labelStyle}>Title (EN)</label>
-            <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Track title" style={inputStyle} />
+            <label style={labelStyle}>{tm.titleEn}</label>
+            <input value={form.title} onChange={set('title')} placeholder={tm.titleEnPh} className="form-input" style={{ marginBottom: 0 }} />
           </div>
           <div>
-            <label style={labelStyle}>Title (ZH)</label>
-            <input value={form.title_zh} onChange={e => setForm(p => ({ ...p, title_zh: e.target.value }))} placeholder="中文标题" style={inputStyle} />
+            <label style={labelStyle}>{tm.titleZh}</label>
+            <input value={form.title_zh} onChange={set('title_zh')} placeholder={tm.titleZhPh} className="form-input" style={{ marginBottom: 0 }} />
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Duration (seconds)</label>
-              <input type="number" value={form.duration_seconds} onChange={e => setForm(p => ({ ...p, duration_seconds: e.target.value }))} placeholder="e.g. 1800" style={inputStyle} />
+              <label style={labelStyle}>{tm.duration}</label>
+              <input type="number" value={form.duration_seconds} onChange={set('duration_seconds')} placeholder={tm.durationPh} className="form-input" style={{ marginBottom: 0 }} />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Sort Order</label>
-              <input type="number" value={form.sort_order} onChange={e => setForm(p => ({ ...p, sort_order: e.target.value }))} style={inputStyle} />
+              <label style={labelStyle}>{tm.sortOrder}</label>
+              <input type="number" value={form.sort_order} onChange={set('sort_order')} className="form-input" style={{ marginBottom: 0 }} />
             </div>
           </div>
           {isSuperadmin && (
             <div>
-              <label style={labelStyle}>Channel (leave blank for global)</label>
-              <select value={form.channel_id} onChange={e => setForm(p => ({ ...p, channel_id: e.target.value }))} style={inputStyle}>
-                <option value="">Global (all channels)</option>
+              <label style={labelStyle}>{tm.channelHint}</label>
+              <select value={form.channel_id} onChange={set('channel_id')} className="form-input" style={{ marginBottom: 0 }}>
+                <option value="">{tm.globalAll}</option>
                 {(channels || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
           )}
           <div>
-            <label style={labelStyle}>File</label>
-            <input type="file" accept="audio/*,video/*,application/*" onChange={handleFile}
-              style={{ ...inputStyle, fontSize: 13 }} />
+            <label style={labelStyle}>{tm.file}</label>
+            <input type="file" accept="audio/*,video/*,application/*" onChange={handleFile} className="form-input" style={{ marginBottom: 0 }} />
           </div>
         </div>
-        <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 8, background: 'transparent', border: '1px solid rgba(166,196,229,0.2)', color: '#8ca9c5', cursor: 'pointer' }}>Cancel</button>
-          <button onClick={handleSubmit} disabled={phase !== 'idle'}
-            style={{ padding: '9px 20px', borderRadius: 8, background: '#6375EC', border: 'none', color: '#fff', fontWeight: 600, cursor: phase !== 'idle' ? 'not-allowed' : 'pointer', opacity: phase !== 'idle' ? 0.7 : 1 }}>
-            {phase === 'uploading' ? 'Uploading…' : phase === 'saving' ? 'Saving…' : phase === 'done' ? 'Done ✓' : 'Upload'}
+        <div className="modal-footer">
+          <button className="btn-secondary" onClick={onClose}>{tm.cancel}</button>
+          <button className="btn-primary" onClick={handleSubmit} disabled={phase !== 'idle'}>
+            {phase === 'uploading' ? tm.uploading : phase === 'saving' ? tm.saving : phase === 'done' ? tm.done : tm.upload}
           </button>
         </div>
       </div>
@@ -106,6 +106,8 @@ function DigitalAssetUploadModal({ onClose, onSave, fixedChannelId, channels, is
 }
 
 function DigitalAssetsTab({ session, channels, isSuperadmin, onRefresh }) {
+  const { t } = useLang();
+  const tm = t.media;
   const channelAdminId = !isSuperadmin ? session?.channelId : null;
   const [filterChannelId, setFilterChannelId] = useState(channelAdminId ?? '');
   const [assets, setAssets] = useState([]);
@@ -132,71 +134,59 @@ function DigitalAssetsTab({ session, channels, isSuperadmin, onRefresh }) {
   };
 
   const deleteAsset = async (id) => {
-    if (!window.confirm('Delete this asset?')) return;
+    if (!window.confirm(tm.confirmDelete)) return;
     await axios.delete(`/api/digital-assets/${id}`);
     load();
   };
 
-  const TYPE_LABELS = { sleep_music: 'Sleep Music', guide_video: 'Guide Video', document: 'Document' };
   const channelName = (id) => (channels || []).find(c => c.id === id)?.name || `ch.${id}`;
 
   return (
-    <div style={{ padding: 28 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <div>
-          <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)' }}>Media / Digital Assets</span>
-          {!isSuperadmin && session?.channelName && (
-            <span style={{ marginLeft: 10, fontSize: 13, color: '#8ca9c5' }}>{session.channelName}</span>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+    <>
+      <div className="card">
+        <div className="table-toolbar">
+          <span className="table-count" style={{ flex: 1 }}>
+            {tm.title}
+            {!isSuperadmin && session?.channelName && <span style={{ marginLeft: 8 }}>· {session.channelName}</span>}
+          </span>
           {isSuperadmin && (
             <select value={filterChannelId} onChange={e => setFilterChannelId(e.target.value)}
-              style={{ padding: '7px 10px', borderRadius: 8, background: '#0e1f3a', border: '1px solid rgba(166,196,229,0.2)', color: '#E8F0F8', fontSize: 13 }}>
-              <option value="">Global</option>
+              className="form-input" style={{ width: 180, marginBottom: 0, marginRight: 8, padding: '6px 10px' }}>
+              <option value="">{tm.global}</option>
               {(channels || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           )}
-          <button onClick={() => setModal('upload')}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, background: '#6375EC', border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}>
-            <Upload size={15} /> Upload
+          <button className="btn-primary" onClick={() => setModal('upload')}>
+            <Upload size={14} />{tm.upload}
           </button>
         </div>
-      </div>
-      {loading ? (
-        <div style={{ color: '#8ca9c5', padding: 40, textAlign: 'center' }}>Loading…</div>
-      ) : assets.length === 0 ? (
-        <div style={{ color: '#8ca9c5', padding: 40, textAlign: 'center' }}>No assets yet. Upload one to get started.</div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {assets.map(a => (
-            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#1a2744', borderRadius: 10, padding: '14px 18px', border: '1px solid rgba(166,196,229,0.1)' }}>
-              <div style={{ width: 40, height: 40, borderRadius: 8, background: 'rgba(99,117,236,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Music2 size={18} color="#6375EC" />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, color: '#E8F0F8', fontSize: 14 }}>{a.title_zh ? `${a.title_zh} / ${a.title}` : a.title}</div>
-                <div style={{ fontSize: 12, color: '#8ca9c5', marginTop: 2 }}>
-                  {TYPE_LABELS[a.type] || a.type}
-                  {a.duration_seconds ? ` · ${Math.floor(a.duration_seconds / 60)}m ${a.duration_seconds % 60}s` : ''}
-                  {isSuperadmin && a.channel_id ? ` · ${channelName(a.channel_id)}` : ''}
-                  {isSuperadmin && !a.channel_id ? ' · Global' : ''}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                <button onClick={() => toggleActive(a)}
-                  style={{ padding: '5px 12px', borderRadius: 6, border: 'none', background: a.is_active ? 'rgba(16,185,129,0.15)' : 'rgba(166,196,229,0.1)', color: a.is_active ? '#10b981' : '#8ca9c5', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
-                  {a.is_active ? 'Active' : 'Inactive'}
-                </button>
-                <button onClick={() => deleteAsset(a.id)}
-                  style={{ padding: '5px 10px', borderRadius: 6, border: 'none', background: 'rgba(239,68,68,0.1)', color: '#ef4444', cursor: 'pointer', fontSize: 12 }}>
-                  <Trash2 size={13} />
-                </button>
+        {loading ? (
+          <div className="empty-row" style={{ padding: 40, textAlign: 'center' }}>{t.topbar.loading}</div>
+        ) : assets.length === 0 ? (
+          <div className="empty-row" style={{ padding: 40, textAlign: 'center' }}>{tm.noAssets}</div>
+        ) : assets.map(a => (
+          <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 8, background: 'rgba(99,117,236,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Music2 size={18} color="#6375EC" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>{a.title_zh ? `${a.title_zh} / ${a.title}` : a.title}</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                {tm.types[a.type] || a.type}
+                {a.duration_seconds ? ` · ${tm.duration_fmt(Math.floor(a.duration_seconds / 60), a.duration_seconds % 60)}` : ''}
+                {isSuperadmin && a.channel_id ? ` · ${channelName(a.channel_id)}` : ''}
+                {isSuperadmin && !a.channel_id ? ` · ${tm.global}` : ''}
               </div>
             </div>
-          ))}
-        </div>
-      )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <button onClick={() => toggleActive(a)} className={`subtab-btn${a.is_active ? ' active' : ''}`} style={{ fontSize: 11, padding: '2px 10px' }}>
+                {a.is_active ? tm.active : tm.inactive}
+              </button>
+              <button className="icon-btn danger" onClick={() => deleteAsset(a.id)}><Trash2 size={13} /></button>
+            </div>
+          </div>
+        ))}
+      </div>
       {modal === 'upload' && (
         <DigitalAssetUploadModal
           onClose={() => setModal(null)}
@@ -206,7 +196,7 @@ function DigitalAssetsTab({ session, channels, isSuperadmin, onRefresh }) {
           isSuperadmin={isSuperadmin}
         />
       )}
-    </div>
+    </>
   );
 }
 

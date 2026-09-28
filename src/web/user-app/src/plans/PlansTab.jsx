@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, q, clipboard } from '../api.js';
 import { useApp } from '../store/AppContext.jsx';
 import { ui } from '../components/ui/ui.js';
+import { asset } from '../assets.js';
 import { openGcnStoreGated } from '../gcn.js';
 import { fmtDate, getWeekRange, fmtWeekLabel } from '../lib/format.js';
 import { useDotsData, loadDots } from './dotsStore.js';
@@ -288,7 +289,7 @@ export default function PlansTab({ visible, onGuestTap }) {
           {!NEO_AVAILABLE && isAeviva && !isGuest && !dots.hasPackageInFlight && !dots.hasProposedFormula && (
             <div className="order-dots-card" onClick={goFormulate}><span className="order-dots-title">{t.formulateFirstTitle}</span><span className="order-dots-detail">{t.formulateFirstDetail}</span><div className="order-dots-btn"><span className="order-dots-btn-text">{t.formulateFirstBtn}</span></div></div>
           )}
-          {isAeviva && !isGuest && <div className="scan-box-card" onClick={scanBox}><div className="scan-box-main"><span className="scan-box-title">{t.scanBoxTitle}</span><span className="scan-box-detail">{t.scanBoxDetail}</span></div><span className="scan-box-icon">⌗</span></div>}
+          {isAeviva && !isGuest && <div className="scan-box-card" onClick={scanBox}><div className="scan-box-main"><span className="scan-box-title">{t.scanBoxTitle}</span><span className="scan-box-detail">{t.scanBoxDetail}</span></div><img className="scan-box-icon" src={asset('/assets/icons/scan.svg')} alt="" /></div>}
           <div className="dots-header">
             <span className="dots-title">{t.dotsTitle}</span>
             <div className="dots-week-nav">

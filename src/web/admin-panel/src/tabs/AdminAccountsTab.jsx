@@ -173,8 +173,8 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
           <button key={st} onClick={() => setSubTab(st)} style={{
             padding: '8px 16px', fontSize: 13, fontWeight: subTab === st ? 600 : 400,
             background: 'transparent', border: 'none', borderBottom: subTab === st ? '2px solid #6366f1' : '2px solid transparent',
-            color: subTab === st ? '#6366f1' : 'var(--muted)', cursor: 'pointer', textTransform: 'capitalize',
-          }}>{st}</button>
+            color: subTab === st ? '#6366f1' : 'var(--muted)', cursor: 'pointer',
+          }}>{st === 'accounts' ? ta.subAccounts : ta.subRoles}</button>
         ))}
       </div>
 
@@ -190,9 +190,9 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
             <thead>
               <tr>
                 <th>{ta.usernameLabel}</th>
-                <th>Email OTP</th>
-                <th>Channel</th>
-                <th>Role</th>
+                <th>{ta.colEmailOtp}</th>
+                <th>{ta.colChannel}</th>
+                <th>{ta.colRole}</th>
                 <th>{t.table.joined}</th>
                 <th></th>
               </tr>
@@ -204,17 +204,17 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
                 const isChAdmin = a.is_channel_admin;
                 return (
                   <tr key={a.id}>
-                    <td><strong>{a.username}</strong>{isChAdmin && <span style={{ marginLeft: 6, fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#312e81', color: '#a5b4fc' }}>Channel Admin</span>}</td>
+                    <td><strong>{a.username}</strong>{isChAdmin && <span style={{ marginLeft: 6, fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#312e81', color: '#a5b4fc' }}>{ta.channelAdmin}</span>}</td>
                     <td className="muted">{a.email || '—'}</td>
-                    <td className="muted">{a.channel_name || <span style={{ color: '#475569' }}>Superadmin</span>}</td>
+                    <td className="muted">{a.channel_name || <span style={{ color: '#475569' }}>{ta.superadmin}</span>}</td>
                     <td>
                       {a.channel_id ? (
                         isChAdmin
-                          ? <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#1e293b', color: '#94a3b8' }}>Full Access (hardcoded)</span>
+                          ? <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#1e293b', color: '#94a3b8' }}>{ta.fullAccess}</span>
                           : roleLabel
                             ? <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#1e3a5f', color: '#93c5fd' }}>{roleLabel}</span>
-                            : <span className="muted" style={{ fontSize: 11 }}>no role</span>
-                      ) : <span className="muted" style={{ fontSize: 11 }}>all</span>}
+                            : <span className="muted" style={{ fontSize: 11 }}>{ta.noRole}</span>
+                      ) : <span className="muted" style={{ fontSize: 11 }}>{ta.allAccess}</span>}
                     </td>
                     <td className="muted">{fmtDate(a.created_at)}</td>
                     <td style={{ display: 'flex', gap: 6 }}>
@@ -316,14 +316,14 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
                   </label>
                   {isChannelAdmin ? (
                     <label className="form-field">
-                      <span>Channel</span>
+                      <span>{ta.colChannel}</span>
                       <input value={(channels || []).find(c => String(c.id) === myChannelId)?.name || `Channel ${myChannelId}`} disabled />
                     </label>
                   ) : (
                     <label className="form-field">
-                      <span>Channel</span>
+                      <span>{ta.colChannel}</span>
                       <select value={form.channel_id} onChange={e => setForm(f => ({ ...f, channel_id: e.target.value, role_id: '', permissions_override: [], is_channel_admin: false }))}>
-                        <option value="">Superadmin (all channels)</option>
+                        <option value="">{ta.superadminAll}</option>
                         {(channels || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                     </label>
@@ -339,7 +339,7 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
                   {/* Role picker — hidden when creating a channel admin (role is auto-assigned) */}
                   {form.channel_id && !form.is_channel_admin && (
                     <label className="form-field">
-                      <span>Role</span>
+                      <span>{ta.colRole}</span>
                       <select value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value, permissions_override: [] }))}>
                         <option value="">— no role —</option>
                         {rolesForChannel(form.channel_id).filter(r => r.name !== 'channel_admin').map(r => <option key={r.id} value={r.id}>{r.label}{r.channel_id === null ? ' (global)' : ''}</option>)}
@@ -358,7 +358,7 @@ function AdminAccountsTab({ accounts, channels, session, onRefresh }) {
               {modal.type === 'role' && (
                 <>
                   <label className="form-field">
-                    <span>Role</span>
+                    <span>{ta.colRole}</span>
                     <select value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value, permissions_override: [] }))}>
                       <option value="">— no role —</option>
                       {rolesForChannel(modal.account.channel_id).filter(r => r.name !== 'channel_admin').map(r => <option key={r.id} value={r.id}>{r.label}{r.channel_id === null ? ' (global)' : ''}</option>)}

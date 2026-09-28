@@ -379,6 +379,7 @@ const T = {
       delivered: '已送达', cancelled: '已取消',
     },
     training: {
+      tierLabels: { foundation: '基础', intermediate: '进阶', advanced: '高级', expert: '专家' },
       courses: '课程', library: '参考资料',
       noTraining: '暂无已发布的课程',
       noLibrary: '暂无参考资料',
@@ -738,6 +739,7 @@ const T = {
       delivered: 'Delivered', cancelled: 'Cancelled',
     },
     training: {
+      tierLabels: { foundation: 'Foundation', intermediate: 'Intermediate', advanced: 'Advanced', expert: 'Expert' },
       courses: 'Courses', library: 'Library',
       noTraining: 'No published courses yet',
       noLibrary: 'No reference materials yet',

@@ -5319,7 +5319,9 @@ button.consent-row::after { border: none; }
 .scan-box-main { flex: 1; display: flex; flex-direction: column; gap: 6rpx; }
 .scan-box-title { font-size: var(--fs-26, 26rpx); font-weight: 600; color: var(--text); line-height: 1.5; }
 .scan-box-detail { font-size: var(--fs-22, 22rpx); color: var(--text-muted); line-height: 1.5; }
-.scan-box-icon { font-size: var(--fs-40, 40rpx); color: var(--wave); opacity: 0.9; }
+/* An SVG, not the ⌗ (U+2317) glyph it replaces: many phone system fonts lack that code point. */
+.scan-box-icon { width: 44rpx; height: 44rpx; flex-shrink: 0; opacity: 0.9; }
+.theme-light .scan-box-icon { filter: brightness(0); opacity: 0.55; }
 .theme-light .scan-box-card {
   background: rgba(var(--wave-rgb), 0.06);
   border-color: rgba(var(--wave-rgb), 0.22);

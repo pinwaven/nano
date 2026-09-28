@@ -48,7 +48,7 @@ function RewardsTab() {
       {!loading && (
         <div className="card">
           <div className="table-toolbar">
-            <span className="table-count">{settings.length} rule{settings.length !== 1 ? 's' : ''}</span>
+            <span className="table-count">{r.countRules(settings.length)}</span>
           </div>
           <table className="data-table">
             <thead>
@@ -67,14 +67,14 @@ function RewardsTab() {
                     {row.flat_rate_cny != null
                       ? <input type="number" step="0.01" defaultValue={row.flat_rate_cny}
                           onBlur={e => saveSetting(row.id, 'flat_rate_cny', e.target.value)}
-                          style={{ width: 90 }} />
+                          className="form-input" style={{ width: 100, marginBottom: 0, padding: '5px 8px' }} />
                       : <span className="muted">—</span>}
                   </td>
                   <td>
                     {row.percentage != null
                       ? <input type="number" step="0.1" defaultValue={row.percentage}
                           onBlur={e => saveSetting(row.id, 'percentage', e.target.value)}
-                          style={{ width: 90 }} />
+                          className="form-input" style={{ width: 100, marginBottom: 0, padding: '5px 8px' }} />
                       : <span className="muted">—</span>}
                   </td>
                 </tr>

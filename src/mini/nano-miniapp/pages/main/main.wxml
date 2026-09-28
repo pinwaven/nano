@@ -998,7 +998,7 @@
             <text class="scan-box-title">{{t.scanBoxTitle}}</text>
             <text class="scan-box-detail">{{t.scanBoxDetail}}</text>
           </view>
-          <text class="scan-box-icon">⌗</text>
+          <image class="scan-box-icon" src="/assets/icons/scan.svg" mode="aspectFit" />
         </view>
 
         <view class="dots-header">
@@ -1635,7 +1635,7 @@
             <view class="academy-card-header">
               <text class="academy-card-header-label">{{lang === 'zh' ? '学院状态' : 'ACADEMY STATUS'}}</text>
               <view class="academy-card-tier-badge">
-                <text class="academy-card-tier-text">{{trainingDashboard.tier}}</text>
+                <text class="academy-card-tier-text">{{trainingDashboard._tierLabel}}</text>
               </view>
             </view>
 
@@ -1665,7 +1665,7 @@
           <view wx:for="{{trainingPaths}}" wx:key="id" class="training-path-card" bindtap="trainingOpenCourse" data-course="{{item}}">
             <view class="training-path-header">
               <text class="training-path-title">{{item.title}}</text>
-              <text class="training-path-tier">{{item.tier}}</text>
+              <text class="training-path-tier">{{item._tierLabel}}</text>
             </view>
             <view wx:if="{{item.description}}" class="training-path-desc"><text>{{item.description}}</text></view>
             <view class="training-path-progress-bar">
@@ -1695,7 +1695,7 @@
                 <text class="training-course-title">{{item.title}}</text>
                 <text wx:if="{{item.description}}" class="training-course-desc">{{item.description}}</text>
                 <view class="training-course-meta-row">
-                  <text class="training-course-level">{{item.level}}</text>
+                  <text class="training-course-level">{{item._levelLabel}}</text>
                   <text class="training-course-credits">+{{item.credit_value}} {{lang === 'zh' ? '学分' : 'cr'}}</text>
                 </view>
                 <text wx:if="{{item._locked && item.prerequisite_title}}" class="training-course-prereq-hint">
@@ -1712,7 +1712,7 @@
             <text class="training-cert-icon">🏅</text>
             <view class="training-cert-info">
               <text class="training-cert-title">{{item.title}}</text>
-              <text wx:if="{{item.tier}}" class="training-cert-tier">{{item.tier}}</text>
+              <text wx:if="{{item.tier}}" class="training-cert-tier">{{item._tierLabel}}</text>
             </view>
             <text class="training-cert-chevron">›</text>
           </view>
@@ -1810,7 +1810,7 @@
             <text class="training-course-header-title">{{trainingCurrentCourse.title}}</text>
             <text wx:if="{{trainingCurrentCourse.description}}" class="training-course-header-desc">{{trainingCurrentCourse.description}}</text>
             <view class="training-course-meta-row" style="margin-top: 8rpx;">
-              <text class="training-course-level">{{trainingCurrentCourse.level}}</text>
+              <text class="training-course-level">{{trainingCurrentCourse._levelLabel}}</text>
               <text class="training-course-credits">+{{trainingCurrentCourse.credit_value}} {{lang === 'zh' ? '学分' : 'cr'}}</text>
             </view>
           </view>

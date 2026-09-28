@@ -619,9 +619,9 @@ async function runAgenticTurn({ client, model, message, intent, llmContext, syst
         // reply on dev 2026-09-15 ("Given your GA is 13.2%…, clinical consensus suggests…"),
         // because the model patched the flagged clauses in the language of this prompt. Say it
         // as a hard rule, and say what to do with a whole flagged sentence.
-        const languagePin = /[\u4e00-\u9fff]/.test(rawReply)
+        const languagePin = (language || llmContext.user_profile?.language || 'zh') !== 'en'
             ? '\n\nLANGUAGE: the reply is in Simplified Chinese. Every sentence of your rewrite must be in Simplified Chinese too — never leave an English sentence, clause or parenthetical in it, and never translate a flagged sentence into English while fixing it. The correction hints above are written in English FOR YOU: never paste a hint\'s wording into the reply (「classified as normal (elevated threshold: >15%)」 reached a user this way) — restate what it means in Simplified Chinese. If a flagged claim cannot be supported, delete that sentence rather than hedging it in English.'
-            : '';
+            : '\n\nLANGUAGE: Write every user-facing sentence in English, including headings and card text. Chinese source data or internal action facts do not change the response language. Preserve machine-readable keys, action identifiers, and fields explicitly required in Chinese.';
         // An off_topic verdict (judgeTemplate.js) cannot be fixed by patching clauses: the whole
         // reply is about the wrong subject, so "rewrite the SAME reply" would keep it wrong.
         // Prod 2026-09-22: 「根据我的情况定制运动方案」 got a 盒马 substitution list; a clause-level

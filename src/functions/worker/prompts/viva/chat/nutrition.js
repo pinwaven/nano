@@ -1,3 +1,4 @@
+const { withResponseLanguage } = require('../response-language');
 const { getVivaLabels } = require('../subAgeLabels');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getWearableDailyBlock } = require('../../chat/wearableDailyBlock');
@@ -11,7 +12,7 @@ const { getGroceryBlock } = require('../../chat/groceryBlock');
 const { getFormulationPackageBlock } = require('../../chat/formulationPackageBlock');
 const { getFoodSensitivityBlock } = require('../../chat/foodSensitivityBlock');
 
-module.exports = (ctx) => {
+module.exports = withResponseLanguage((ctx) => {
   const { user_profile, bioage, dots, plan, questionnaire_context, active_health_plans, health_twin, current_solar_term } = ctx;
   const labels = getVivaLabels(ctx.sub_age_display_names);
   const hasBioAge = bioage && bioage.BioAge;
@@ -67,7 +68,7 @@ ${getWearableDailyBlock(ctx.wearable_daily, true, ctx.now_iso, ctx.wearable_insi
 
 ${getSubAgeInputsBlock(true, ctx.sub_age_display_names)}
 
-${getOutputFormatBlock({ isZh: true, rich: ctx.rich_format, allow: ['takeaway', 'dots'] })}
+${getOutputFormatBlock({ isZh: user_profile?.language !== 'en', rich: ctx.rich_format, allow: ['takeaway', 'dots'] })}
 
 ${getCurrentDateBlock(ctx.now_iso)}
 
@@ -109,5 +110,5 @@ ${planSection}
 - 不使用标题，保持对话感和自信。
 - 如果有健康方案目标，将营养建议与该目标对齐。
 - 回答完毕后干净收尾，不要在结尾提问或引导用户追问。
-- 全程用简体中文回复。`;
-};
+`;
+});

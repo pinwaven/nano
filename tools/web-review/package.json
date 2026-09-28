@@ -1,0 +1,13 @@
+{
+  "name": "web-review",
+  "version": "0.1.0",
+  "description": "Headless Playwright helper for reviewing the nano web user-app and admin panel from a server without a display",
+  "main": "review.js",
+  "bin": { "web-review": "review.js" },
+  "dependencies": {
+    "playwright": "^1.55.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

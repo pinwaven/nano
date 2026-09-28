@@ -13,7 +13,7 @@ require.cache[kbPath] = { id: kbPath, filename: kbPath, loaded: true,
 const { runAgenticTurn } = require(path.join(WORKER, 'lib', 'agenticChat'));
 
 function scriptedClient(judgeVerdicts) {
-  const calls = { judge: 0, revise: 0 };
+  const calls = { judge: 0, revise: 0, revisionPrompts: [] };
   const reply = (content) => ({ choices: [{ message: { content, tool_calls: [] }, finish_reason: 'stop' }] });
   const client = { chat: { completions: { create: async (req) => {
     const first = String(req.messages[0]?.content || '');
@@ -22,6 +22,7 @@ function scriptedClient(judgeVerdicts) {
     const last = req.messages[req.messages.length - 1];
     if (last && last.role === 'user' && /fact-checker|answered the wrong question/.test(last.content)) {
       calls.revise++;
+      calls.revisionPrompts.push(last.content);
       return reply(/answered the wrong question/.test(last.content) ? 'Kino 六项指标分别代表……' : '七天运动计划（修订）：周一骑行 30 分钟……');
     }
     return reply(JSON.stringify({ intended_claims: [], tools_needed: [] })); // PLAN
@@ -55,4 +56,15 @@ test('an off_topic the first JUDGE raised still gets the new-reply rewrite', asy
   const out = await runAgenticTurn({ ...base, client });
   assert.equal(calls.revise, 1);
   assert.match(out.reply, /Kino 六项指标/, 'the scripted off-topic framing was used');
+});
+
+ test('English revisions stay English even when the draft contains Chinese', async () => {
+  const { client, calls } = scriptedClient([
+    { verdict: 'REJECT', violations: [nit] },
+    { verdict: 'PASS', violations: [] },
+  ]);
+  await runAgenticTurn({ ...base, language: 'en', client });
+  assert.equal(calls.revise, 1);
+  assert.match(calls.revisionPrompts[0], /Write every user-facing sentence in English/);
+  assert.doesNotMatch(calls.revisionPrompts[0], /the reply is in Simplified Chinese/);
 });

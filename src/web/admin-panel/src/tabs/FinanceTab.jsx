@@ -151,7 +151,7 @@ function FinanceTab() {
         </button>
       </div>
 
-      {loading && <div className="card" style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>Loading…</div>}
+      {loading && <div className="card" style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>{t.topbar.loading}</div>}
 
       {!loading && subTab === 'overview' && (
         <div className="card" style={{ padding: '24px 28px' }}>

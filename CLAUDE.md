@@ -99,6 +99,7 @@ Full details: `docs/architecture/database-migrations.md`
 
 - Use `.env` for local variables. Never hardcode the PolarDB endpoint.
 - **Command:** `npm test` runs every `tests/*.test.js` offline (`node --test`); a single file with `node --test tests/<name>.test.js`. Same shape in the GCN sibling repo. There is no CI — run it before every deploy.
+- **Reviewing the web apps from the EC2 box** (no display, no Chrome, no fonts, no sudo): use [`tools/web-review/`](tools/web-review/README.md) — headless Playwright with locally unpacked libs/fonts (`setup.sh`, once), `review.js <url> --viewport mobile,desktop [--user-token u.…]` for screenshots + console/network errors. Launch through its `browser.js`; a plain `chromium.launch()` fails or renders blank here.
 - **Git:** Never commit without the user explicitly asking for it in that session — not even to satisfy a "commit after every build" habit. When a commit is requested, split it into one commit per modular component rather than bundling everything together.
 
 ## 8. AI Interaction Rules
@@ -728,9 +729,9 @@ are real prod chat text.
   worker at deploy (`scripts/sync-twin-shared.js`, also `npm pretest`). Edit the worker, deploy both from one
   commit — two builds of `buildTwinBundle` give one twin two `twin_version`s.
 - **Migrate before deploying the worker**: `lib/twinMirror.js` reads `twin_touch` (`migration_twin_sync.sql`).
-- **Prod order matters**: twin deployed and Curia switched *before* a worker without the queue routes ships.
-  As of 2026-09-23 prod twin is deployed (FC `twin`) and the migration applied; Curia prod is **not** switched,
-  so the prod worker must keep its queue routes — do not deploy the jp1 worker to prod yet.
+- **Prod cutover is done** (2026-09-23, `5b165f4`): prod twin is deployed (FC `twin`), Curia prod is switched
+  to `/api/twin`, and the prod worker already runs without the queue routes or their two tokens. The old
+  "keep the queue routes on the prod worker" hold no longer applies; a normal worker deploy is safe.
 - **Every write from Curia is a contribution** with a sender-minted uid and a required `origin` (`report` today).
 - **Every user has a subject_ref on dev** (decided 2026-09-23, `scripts/twin-all-users.js`); new users are
   minted at signup by trigger.

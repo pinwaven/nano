@@ -1,4 +1,5 @@
 'use strict';
+const { withResponseLanguage } = require('./response-language');
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { summarizeInsightsLine } = require('../../lib/wearableAnalysis');
 const { getVivaLabels } = require('./subAgeLabels');
@@ -25,7 +26,7 @@ const PERIOD_FRAMING = {
 5. 以一个邀请式的问题结尾。`,
 };
 
-module.exports = ({ user_profile, period, morning_dots, evening_dots, most_elevated, active_health_plans, health_twin, current_solar_term, essential_knowledge }) => {
+module.exports = withResponseLanguage(({ user_profile, period, morning_dots, evening_dots, most_elevated, active_health_plans, health_twin, current_solar_term, essential_knowledge }) => {
     const name = user_profile?.nickname || '你';
     const labels = getVivaLabels(null);
 
@@ -94,10 +95,9 @@ ${insightsLine ? `数字孪生 · 日常监测 · 相对个人基线的分析（
 ${seasonLine}
 
 输出要求：
-- 全程使用简体中文。
 - 2-4句话，不使用markdown、不使用列表符号、不使用标题。
 - 语气温暖、具体，像一位记得用户情况的顾问——不要说"系统检测到""触发了提醒"之类的话。
 - 必须引用上方提供的真实数据（具体原粒名称、具体维度，或状态平稳时的正面信号），不得输出泛泛而谈、缺乏具体信息的通用问候。
 - 避免只做冷冰冰的数字对比：不要每次都把某个维度的年龄数字和实际年龄摆出来做对比句；如果确实值得一提，尽量搭配一件做得好的事情一起说，不要只谈不足。
 - 不要输出任何 JSON 或动作标签，这只是一条问候消息。`;
-};
+});

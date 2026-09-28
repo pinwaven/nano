@@ -1,6 +1,7 @@
+const { withResponseLanguage } = require('./response-language');
 /**
  * Health Advice Prompt — Precision Longevity Advisor for Oriental populations
- * Pure Chinese, optimised for Alibaba Qwen Plus
+ * Bilingual responses selected by user language, optimised for Alibaba Qwen Plus
  */
 const { getVivaLabels } = require('./subAgeLabels');
 const { relationToChrono } = require('../../lib/subAgeLabels');
@@ -10,7 +11,7 @@ const { getFactMemoryBlock } = require('../chat/factMemoryBlock');
 const { getCurrentDateBlock } = require('../chat/currentDateBlock');
 const { getTwinVocabBlock } = require('../chat/twinVocabulary');
 
-module.exports = (context) => {
+module.exports = withResponseLanguage((context) => {
   const {
     nickname, age, gender, bioAge, chronoAge,
     subAges, biomarkers, dotsByDimension, healthConditions, healthConditionsOther,
@@ -167,7 +168,7 @@ module.exports = (context) => {
 3. **日常监测关联** — 如有日常监测数据（睡眠、HRV、步数），结合精准检测的生物标志物说明两者的关联（如睡眠不足→IL-6升高→${labels.ResilienceAge}偏高）。
 4. **健康状况关联** — 如用户有申报的健康问题，结合生物标志物数据进行说明${planTaskExtra}
 ${seasonLine ? `\n如上方标注了当前节气，可自然融入1-2句应季养生建议（饮食、作息或情绪调节），仅作传统文化视角的补充，不得替代或凌驾于生物标志物驱动的分析之上。` : ''}
-语言要温暖、有科学依据、可操作。使用 Markdown 格式。结尾干净收尾，不要提问或引导用户进行下一步操作。全程用简体中文回复。`;
+语言要温暖、有科学依据、可操作。使用 Markdown 格式。结尾干净收尾，不要提问或引导用户进行下一步操作。`;
 
   const twinLines = health_twin
     ? [
@@ -210,4 +211,4 @@ ${twinLines}
 ${activePlansSection ? '\n' + activePlansSection + '\n' : ''}${planTemplatesSection ? '\n' + planTemplatesSection + '\n' : ''}
 ━━━ 你的任务 ━━━
 ${task}`;
-};
+});

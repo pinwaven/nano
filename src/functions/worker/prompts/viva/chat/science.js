@@ -1,15 +1,16 @@
+const { withResponseLanguage } = require('../response-language');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getOutputFormatBlock } = require('../../chat/outputFormat');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
-module.exports = ({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, now_iso, rich_format }) => {
+module.exports = withResponseLanguage(({ user_profile, questionnaire_context, active_health_plans, essential_knowledge, now_iso, rich_format }) => {
   const planNote = active_health_plans && active_health_plans.length > 0
     ? `用户当前方案：${active_health_plans.map(p => `「${p.name}」目标维度：${(p.target_sub_ages || []).join(', ')}`).join('；')}。如科学问题与方案目标相关，可简短关联。`
     : '';
 
   return `${getFactConstraintBlock(essential_knowledge)}
 
-${getOutputFormatBlock({ isZh: true, rich: rich_format, allow: ['takeaway'] })}
+${getOutputFormatBlock({ isZh: user_profile?.language !== 'en', rich: rich_format, allow: ['takeaway'] })}
 
 ${getCurrentDateBlock(now_iso)}
 
@@ -24,5 +25,5 @@ ${questionnaire_context ? questionnaire_context + '\n' : ''}${planNote ? planNot
 - **东方视角优先**：对华人相关话题（如 ALDH2 突变、乳糖不耐受、内脏脂肪代谢悖论、精制碳水敏感性）优先给出东方人群专属视角和数据。
 - 不加无谓的免责声明，知道就直说。只在真正有必要时才建议就诊。
 - 回答完毕后干净收尾，不要在结尾提问或引导用户追问。
-- 全程用简体中文回复。`;
-};
+`;
+});
