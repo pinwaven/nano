@@ -59,6 +59,13 @@ test('a steady 60 s pulse wave is accepted, at the right rate, without counting 
     assert.ok(Math.abs(fast.summary.bpm - 110) <= 1, `bpm ${fast.summary.bpm}`);
 });
 
+test('a clean pulse wave still meets the quality gate after its first five seconds are clipped', () => {
+    const result = analyzePpg(syntheticFrames({ seconds: 35 }).slice(5));
+    assert.strictEqual(result.ok, true, JSON.stringify(result.summary));
+    assert.ok(result.summary.accepted_beats >= PPG_MIN_ACCEPTED_BEATS);
+    assert.ok(result.summary.duration_seconds >= 28 && result.summary.duration_seconds <= 30);
+});
+
 test('a loose or moving sensor is refused, never repaired', () => {
     const flat = analyzePpg(syntheticFrames({ flat: true }));
     assert.strictEqual(flat.ok, false);

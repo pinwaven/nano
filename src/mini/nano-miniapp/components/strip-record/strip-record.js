@@ -1,9 +1,10 @@
 // 心电节律 / 脉搏波 记录 — one overlay that records a raw strip from a bound wearable, uploads it
 // for analysis and shows the result, and that reads a stored strip back. `kind` picks which:
-//   kind="ecg"  single-lead ECG from the V8 band (CLAUDE.md §18/§45; V8 only), 30 s, ≈255 Hz,
+//   kind="ecg"  single-lead ECG from the V8 band (CLAUDE.md §18/§45; V8 only), 35 s capture
+//               with the first 5 s discarded, leaving a 30 s strip at ≈255 Hz,
 //               needs a finger from the other hand on the electrode — POST /api/ecg;
-//   kind="ppg"  the raw optical pulse wave from the V8 band or the Halo ring, 60 s, 50 Hz, no
-//               finger, hand still — POST /api/ppg.
+//   kind="ppg"  the raw optical pulse wave from the V8 band or the Halo ring, 35 s capture
+//               with the first 5 s discarded, leaving a 30 s strip at 50 Hz — POST /api/ppg.
 // Both are twin layer 2 data (§34). Self view only for recording; the host (user-health)
 // renders it only when the bound wearable supports the kind. Everything about the devices'
 // behaviour here was established live (2026-09-19 ECG, 2026-09-20 PPG) — see tools/halo/README.md
@@ -23,12 +24,13 @@ const CONNECT_TIMEOUT_MS = 15000
 const LIVE_WINDOW_SEC = 4
 const STRIP_ROW_SEC = 5   // a printed strip: 5 s per row
 const STRIP_ROW_PX = 64
+const STRIP_SETTLE_MS = 5000
 
 // Per-kind facts: capture length, the adapter method, the endpoint, the nominal sample rate the
 // live drawing assumes, and the live beat detector's threshold (sd multiples) / refractory (s).
 const KINDS = {
-  ecg: { durationSec: 30, method: 'recordEcg', path: 'ecg', brands: ['v8'], rateHz: 256, liveSd: 3, liveRefractoryS: 0.3, liveHighPassS: 0.5 },
-  ppg: { durationSec: 60, method: 'recordPpg', path: 'ppg', brands: ['v8', 'halo'], rateHz: 50, liveSd: 0.5, liveRefractoryS: 0.4, liveHighPassS: 0.5 },
+  ecg: { durationSec: 35, method: 'recordEcg', path: 'ecg', brands: ['v8'], rateHz: 256, liveSd: 3, liveRefractoryS: 0.3, liveHighPassS: 0.5 },
+  ppg: { durationSec: 35, method: 'recordPpg', path: 'ppg', brands: ['v8', 'halo'], rateHz: 50, liveSd: 0.5, liveRefractoryS: 0.4, liveHighPassS: 0.5 },
 }
 
 // Shared copy first, then each kind's own. Every t.* the WXML uses must exist in both languages
@@ -93,7 +95,7 @@ const T = {
       title: '心电节律记录',
       guideGlyph: '☝︎',
       guide1: '戴好手环，用另一只手的指尖轻按手环上的金属电极。',
-      guide2: '保持手臂放松不动，记录 30 秒。',
+      guide2: '保持手臂放松不动 35 秒；前 5 秒用于稳定信号，只保存后 30 秒。',
       guide3: '如果记录没有开始，抬起手指再重新按上去。',
       start: '开始记录',
       measuring: '记录中，请保持不动',
@@ -109,7 +111,7 @@ const T = {
       title: 'ECG rhythm strip',
       guideGlyph: '☝︎',
       guide1: 'Wear the band, then rest a fingertip of your other hand on its metal electrode.',
-      guide2: 'Keep your arm still for 30 seconds.',
+      guide2: 'Keep your arm still for 35 seconds. The first 5 seconds let the signal settle; only the final 30 are saved.',
       guide3: 'If nothing starts, lift the finger and place it again.',
       start: 'Start recording',
       measuring: 'Recording — hold still',
@@ -127,7 +129,7 @@ const T = {
       title: '脉搏波记录',
       guideGlyph: '✋',
       guide1: '戴好设备，确保传感器贴紧皮肤（手环请系紧一格）。',
-      guide2: '把手平放在桌面上，保持不动，记录 60 秒。',
+      guide2: '把手平放在桌面上，保持不动 35 秒；前 5 秒用于稳定信号，只保存后 30 秒。',
       guide3: '不需要用手指触碰电极。',
       start: '开始记录',
       measuring: '记录中，请保持手不动',
@@ -143,7 +145,7 @@ const T = {
       title: 'Pulse wave strip',
       guideGlyph: '✋',
       guide1: 'Wear the device with the sensor snug against the skin (tighten a band one notch).',
-      guide2: 'Rest your hand flat on a table and keep it still for 60 seconds.',
+      guide2: 'Rest your hand flat on a table for 35 seconds. The first 5 seconds let the signal settle; only the final 30 are saved.',
       guide3: 'No need to touch the electrode.',
       start: 'Start recording',
       measuring: 'Recording — keep the hand still',
@@ -179,7 +181,7 @@ Component({
     stage: 'idle',        // idle | connecting | measuring | saving | result | failed | loading | view
     stripHeightPx: 160,   // the stacked full-strip canvas grows with the recording length
     viewWhen: '',
-    remaining: 30,
+    remaining: 35,
     packetCount: 0,
     liveBeats: 0,
     noSignal: false,
@@ -278,12 +280,19 @@ Component({
       ring.disconnect().catch(() => {})
       this._ring = null
 
-      if (!capture.packets.length) {
+      // Keep the live preview, but exclude the first five seconds from the saved waveform and
+      // the server's analysis for both ECG and PPG.
+      const savedPackets = _trimSettlingPackets(capture.packets, capture.startedAt || startedAt, K.rateHz)
+      if (!savedPackets.length) {
         this.setData({ stage: 'failed', failTitle: t.failTooShortTitle, failBody: t.failTooShortBody })
         return
       }
       this.setData({ stage: 'saving' })
-      await this._upload(capture, startedAt, brand)
+      await this._upload(
+        { ...capture, packets: savedPackets },
+        (capture.startedAt || startedAt) + STRIP_SETTLE_MS,
+        brand,
+      )
     },
 
     _onPacket(p) {
@@ -443,7 +452,7 @@ Component({
         openid: this.data.userId,
         brand,
         device_name: this.data.deviceName || null,
-        duration_seconds: K.durationSec,
+        duration_seconds: K.durationSec - STRIP_SETTLE_MS / 1000,
         started_at: startedAt,
         packets: capture.packets.map((p) => ({ packetId: p.packetId, samples: p.samples, receivedAt: p.receivedAt })),
       }
@@ -511,6 +520,20 @@ function _stripHeight(nSamples, rateHz) {
   return Math.max(1, Math.ceil(nSamples / Math.round((rateHz || 256) * STRIP_ROW_SEC))) * STRIP_ROW_PX
 }
 
+// Each notification is timestamped on arrival, after its samples were collected. Trim the
+// packet that crosses the five-second boundary too, so none of its settling samples are saved.
+function _trimSettlingPackets(packets, startedAt, rateHz) {
+  const cutoff = startedAt + STRIP_SETTLE_MS
+  const sampleMs = 1000 / rateHz
+  const kept = []
+  for (const p of packets) {
+    const packetStart = p.receivedAt - p.samples.length * sampleMs
+    const drop = Math.max(0, Math.min(p.samples.length, Math.ceil((cutoff - packetStart) / sampleMs)))
+    if (drop < p.samples.length) kept.push(drop ? { ...p, samples: p.samples.slice(drop) } : p)
+  }
+  return kept
+}
+
 function _whenLabel(iso) {
   const d = new Date(iso); if (isNaN(d)) return ''
   const p = (n) => String(n).padStart(2, '0')
@@ -528,4 +551,3 @@ function _highPass(a, w) {
   }
   return out
 }
-

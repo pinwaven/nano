@@ -77,6 +77,50 @@ test('the miniapp adapter ports the CLI\'s ECG protocol and asks for the capture
     assert.match(haloIndex, /ppgControlPacket\(3, 0\)[\s\S]{0,200}ppgControlPacket\(5, 0\)/, 'stop then quit');
 });
 
+test('ECG and pulse wave measure for 35 seconds but upload only the final 30 seconds', async () => {
+    for (const { kind, brand, rate } of [
+        { kind: 'ecg', brand: 'v8', rate: 256 },
+        { kind: 'ppg', brand: 'halo', rate: 50 },
+    ]) {
+        let definition;
+        let requestedSeconds;
+        const captureStart = Date.now();
+        const packets = [
+            { packetId: 1, samples: [1], receivedAt: captureStart + 4999 },
+            { packetId: 2, samples: Array.from({ length: rate }, (_, i) => i), receivedAt: captureStart + 5500 },
+            { packetId: 3, samples: [3], receivedAt: captureStart + 34900 },
+        ];
+        const record = async ({ durationSec }) => {
+            requestedSeconds = durationSec;
+            return { startedAt: captureStart, packets };
+        };
+        const ring = { connect: async () => {}, disconnect: async () => {}, recordEcg: record, recordPpg: record };
+        vm.runInNewContext(recJs, {
+            Component: (value) => { definition = value; },
+            getApp: () => ({}),
+            require: (name) => name.includes('wearable/index.js')
+                ? { createWearable: () => ring }
+                : { BASE: 'https://example.test' },
+            Date, console, setInterval, clearInterval, setTimeout: () => 0,
+        });
+        const component = {
+            ...definition.methods,
+            data: { kind, brand, deviceId: 'test-device', t: {} },
+            setData(patch) { Object.assign(this.data, patch); },
+            async _req(url, method, body) { this.uploaded = { url, body }; return { success: false, reason: 'too_short' }; },
+        };
+        await component.handleStart();
+        const { url, body } = component.uploaded;
+        assert.strictEqual(requestedSeconds, 35, kind);
+        assert.match(url, new RegExp(`/api/${kind}$`));
+        assert.deepStrictEqual(Array.from(body.packets, (p) => p.packetId), [2, 3], kind);
+        assert.strictEqual(body.packets[0].samples.length, rate / 2, kind);
+        assert.strictEqual(body.packets[0].samples[0], rate / 2, kind);
+        assert.strictEqual(body.duration_seconds, 30, kind);
+        assert.strictEqual(body.started_at, captureStart + 5000, kind);
+    }
+});
+
 test('every t.* key the strip WXML uses exists in both languages, for both kinds', () => {
     const recT = loadT(recJs);
     const uhT = loadT(uhJs);
@@ -114,8 +158,8 @@ test('recording is self-only; a stored strip opens read-only for a coach; the ov
     assert.match(uhJs, /const ecg = bound && brand === 'v8'/, 'ecgSupported is V8-only');
     assert.match(uhJs, /const ppg = bound && \(brand === 'v8' \|\| brand === 'halo'\)/, 'ppgSupported is V8 + Halo');
     // The component itself refuses a kind its brand cannot record, with the same brand table.
-    assert.match(recJs, /ecg: \{ durationSec: 30, method: 'recordEcg', path: 'ecg', brands: \['v8'\]/);
-    assert.match(recJs, /ppg: \{ durationSec: 60, method: 'recordPpg', path: 'ppg', brands: \['v8', 'halo'\]/);
+    assert.match(recJs, /ecg: \{ durationSec: 35, method: 'recordEcg', path: 'ecg', brands: \['v8'\]/);
+    assert.match(recJs, /ppg: \{ durationSec: 35, method: 'recordPpg', path: 'ppg', brands: \['v8', 'halo'\]/);
     assert.match(uhJs, /wearableId !== '__server__'/, 'a server-only binding has no BLE id to record with');
     // user-health's _req resolves with the whole wx.request response (found live: the card never
     // rendered because the list was read off the response instead of its body).

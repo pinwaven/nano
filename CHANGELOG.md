@@ -10,6 +10,12 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **Pulse-wave strips exclude the first five seconds** · 2026-09-28: V8 and Halo still measure for 35 seconds, but only the final 30 seconds are sent for analysis and saved in the waveform, matching ECG. Miniapp VERSION `0928-4`.
+
+- **Pulse-wave recording takes 35 seconds** · 2026-09-28: V8 and Halo pulse-wave captures in the miniapp now run for 35 seconds instead of 60. The existing server quality checks and two-second analysis settling period still apply. Miniapp VERSION `0928-3`.
+
+- **ECG strips use a settled 30-second window** · 2026-09-28: the V8 band measures for 35 seconds; the miniapp excludes the first five seconds of electrode contact from upload, analysis and the saved waveform. The preview remains live throughout. Miniapp VERSION `0928-2`.
+
 - **Learn tab, desktop header and scan icon fixes (web app + miniapp)** · 2026-09-25: found by a logged-in web review.
   - Academy tier and course-level badges showed raw English keys ("Foundation", "Advanced") in the Chinese UI on both clients; both now read `training.tierLabels` (基础/进阶/高级/专家), added to the miniapp's `T` table and mirrored into the web's generated `i18n/main.js`.
   - The desktop phone frame's notch covered the header's username, and a desktop scrollbar squeezed "实际年龄" onto two lines; `web-overrides.css` adds notch clearance and `nowrap`.
