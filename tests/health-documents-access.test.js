@@ -133,6 +133,20 @@ test('the twin subtab hosts the section, and a coach gets no upload button', () 
         'another section was added below 健康文档; it is meant to be last');
 });
 
+test('Digital Twin can collapse the manager without changing Viva AG', () => {
+    assert.match(hdJs, /collapsible: \{ type: Boolean, value: false \}/,
+        'collapsing must remain opt-in for existing hosts');
+    assert.match(hdJs, /expanded: !this\.properties\.collapsible/,
+        'an opted-in manager must start compact while existing hosts stay expanded');
+    assert.match(hdWxml, /wx:if="\{\{collapsible && !expanded\}\}"/,
+        'the compact document summary is missing');
+    assert.match(hdWxml, /wx:if="\{\{!collapsible \|\| expanded\}\}"/,
+        'the full manager is not gated by expansion state');
+    assert.ok(!/collapsible=/.test(agWxml), 'Viva AG should keep the existing always-expanded manager');
+    assert.match(hdWxml, /class="hd-upload-compact[^\"]*" catchtap="chooseDocument"/,
+        'the compact owner view must retain a direct upload action without toggling the header');
+});
+
 test('canUpload gates the destructive controls, not just the button', () => {
     assert.match(hdWxml, /class="hd-upload-btn[^"]*"/);
     assert.ok(/wx:if="\{\{canUpload\}\}"[^>]*class="hd-upload-btn/.test(hdWxml.replace(/\s+/g, ' ')),
