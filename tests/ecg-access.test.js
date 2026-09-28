@@ -19,6 +19,7 @@ const recJs = read(MINI, 'components', 'strip-record', 'strip-record.js');
 const recWxml = read(MINI, 'components', 'strip-record', 'strip-record.wxml');
 const uhJs = read(MINI, 'components', 'user-health', 'user-health.js');
 const uhWxml = read(MINI, 'components', 'user-health', 'user-health.wxml');
+const uhWxss = read(MINI, 'components', 'user-health', 'user-health.wxss');
 const uhJson = JSON.parse(read(MINI, 'components', 'user-health', 'user-health.json'));
 const v8Index = read(MINI, 'utils', 'wearable', 'v8', 'index.js');
 const v8Proto = read(MINI, 'utils', 'wearable', 'v8', 'protocol.js');
@@ -153,8 +154,10 @@ test('recording is self-only; a stored strip opens read-only for a coach; the ov
     assert.match(uhWxml, /read-only="\{\{mode !== 'self'\}\}"/);
     assert.match(uhWxml, /coach-id="\{\{mode === 'coach' \? coachId : ''\}\}"/);
     assert.match(recJs, /if \(!id \|\| this\.data\.readOnly\) return/, 'delete re-checks readOnly in code, not only in WXML');
-    assert.match(uhWxml, /wx:if="\{\{mode === 'self' && ecgSupported\}\}" class="wd-sync-btn" catchtap="openEcgRecord" data-kind="ecg"/);
-    assert.match(uhWxml, /wx:if="\{\{mode === 'self' && ppgSupported\}\}" class="wd-sync-btn" catchtap="openEcgRecord" data-kind="ppg"/);
+    assert.match(uhWxml, /wx:if="\{\{mode === 'self' && \(ecgSupported \|\| ppgSupported\)\}\}" class="wd-measure-actions"/);
+    assert.match(uhWxml, /wx:if="\{\{ecgSupported\}\}" class="wd-measure-btn" catchtap="openEcgRecord" data-kind="ecg"/);
+    assert.match(uhWxml, /wx:if="\{\{ppgSupported\}\}" class="wd-measure-btn" catchtap="openEcgRecord" data-kind="ppg"/);
+    assert.match(uhWxss, /\.wd-measure-btn\s*\{[\s\S]*?min-height:\s*88rpx/, 'record actions need a 44px touch target');
     assert.match(uhJs, /const ecg = bound && brand === 'v8'/, 'ecgSupported is V8-only');
     assert.match(uhJs, /const ppg = bound && \(brand === 'v8' \|\| brand === 'halo'\)/, 'ppgSupported is V8 + Halo');
     // The component itself refuses a kind its brand cannot record, with the same brand table.

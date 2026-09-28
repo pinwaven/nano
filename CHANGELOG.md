@@ -16,6 +16,8 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 - **ECG strips use a settled 30-second window** · 2026-09-28: the V8 band measures for 35 seconds; the miniapp excludes the first five seconds of electrode contact from upload, analysis and the saved waveform. The preview remains live throughout. Miniapp VERSION `0928-2`.
 
+- **Digital Twin prioritizes frequent wearable actions** · 2026-09-28: V8 ECG and pulse-wave recording, and Halo pulse-wave recording, now have large quick-action buttons directly below the bound wearable instead of requiring several screens of scrolling. The lower ECG/PPG cards remain as result history; Comprehensive Reports moved to the bottom; and Health Documents is compact by default in Digital Twin with its count, latest record, upload action and an expandable full manager. Viva AG keeps its always-expanded document manager. Miniapp VERSION `0928-1`.
+
 - **Learn tab, desktop header and scan icon fixes (web app + miniapp)** · 2026-09-25: found by a logged-in web review.
   - Academy tier and course-level badges showed raw English keys ("Foundation", "Advanced") in the Chinese UI on both clients; both now read `training.tierLabels` (基础/进阶/高级/专家), added to the miniapp's `T` table and mirrored into the web's generated `i18n/main.js`.
   - The desktop phone frame's notch covered the header's username, and a desktop scrollbar squeezed "实际年龄" onto two lines; `web-overrides.css` adds notch clearance and `nowrap`.

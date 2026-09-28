@@ -2516,6 +2516,38 @@
 
 .wd-sync-btn:active { opacity: 0.6; }
 
+/* On-demand V8/Halo recordings are primary device actions. A dedicated row keeps them near the
+ * device and gives each one a real finger-sized target instead of inheriting the compact sync
+ * pill used inside cards. */
+.wd-measure-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 16rpx;
+}
+
+.wd-measure-btn {
+  flex: 1;
+  min-width: 0;
+  min-height: 88rpx;
+  padding: 0 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18rpx;
+  border: 1rpx solid rgba(var(--blue-rgb), 0.42);
+  background: rgba(var(--blue-rgb), 0.2);
+  box-sizing: border-box;
+}
+
+.wd-measure-btn:active { opacity: 0.65; }
+
+.wd-measure-btn-text {
+  font-size: var(--fs-24, 24rpx);
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+}
+
 .wd-gear-btn {
   width: 56rpx;
   height: 56rpx;

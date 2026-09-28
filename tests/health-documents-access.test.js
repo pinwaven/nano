@@ -125,12 +125,15 @@ test('the twin subtab hosts the section, and a coach gets no upload button', () 
         'can-upload is not bound to the self view — a coach would get an upload button');
     assert.match(tag[0], /coach-id="\{\{coachId\}\}"/, 'coach-id is not forwarded');
     assert.match(tag[0], /wx:if="\{\{!isGuest\}\}"/, 'a guest, who has no server-side account, would mount it');
+    assert.match(tag[0], /collapsible="\{\{true\}\}"/, 'the Digital Twin document manager is no longer compact by default');
 
-    // Bottom of the twin body, as asked: nothing but the trailing spacer may follow it.
-    const after = userHealthWxml.slice(userHealthWxml.indexOf(tag[0]) + tag[0].length,
-        userHealthWxml.indexOf('</block>'));
-    assert.ok(!/<view class="health-section"/.test(after),
-        'another section was added below 健康文档; it is meant to be last');
+    // Only the deliberately low-priority Comprehensive Reports card may follow it before the
+    // trailing spacer; all frequently used twin layers must stay above the compact manager.
+    const afterStart = userHealthWxml.indexOf(tag[0]) + tag[0].length;
+    const after = userHealthWxml.slice(afterStart,
+        userHealthWxml.indexOf('<view style="height: 32px;"', afterStart));
+    assert.equal((after.match(/<view wx:if="\{\{twinReportLatest\}\}" class="health-section">/g) || []).length, 1,
+        'Health Documents should be followed only by the low-priority Comprehensive Reports card');
 });
 
 test('Digital Twin can collapse the manager without changing Viva AG', () => {
