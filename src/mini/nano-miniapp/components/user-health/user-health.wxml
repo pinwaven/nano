@@ -341,29 +341,6 @@ module.exports.c = function (hex, theme) {
         </view>
       </view>
 
-      <!-- 综合报告: the interpretation OF the twin, so it sits between the hero (the number) and
-           the four layers (the data) rather than inside any layer — see CLAUDE.md §34's rule that
-           a surface must declare a layer or question itself; a derived report is neither. Backed by
-           completed viva_ag_jobs artifacts via /api/twin-reports (ownership-gated, not
-           entitlement-gated, so a report stays openable after the add-on lapses). The PDF opens
-           with wx.openDocument exactly as the AG panel does; .md/.txt fall back to the AG panel. -->
-      <view wx:if="{{twinReportLatest}}" class="health-section">
-        <view class="section-title-row">
-          <text class="section-title">{{t.reportsTitle}}</text>
-          <text wx:if="{{twinReports.length > 1}}" class="tr-count" bindtap="onTwinReportListTap">{{t.reportsCount}} {{twinReports.length}} ›</text>
-        </view>
-        <view class="tr-card" bindtap="onTwinReportTap" data-uid="{{twinReportLatest.job_uid}}" data-index="{{twinReportLatest.primary_index}}">
-          <view class="tr-icon"><text>📄</text></view>
-          <view class="tr-body">
-            <text class="tr-title">{{twinReportLatest.title}}</text>
-            <text wx:if="{{twinReportLatest.attribution}}" class="tr-origin">{{twinReportLatest.attribution.text}}</text>
-            <text class="tr-meta">{{twinReportLatest.metaLine}}</text>
-            <text wx:if="{{twinReportLatest.summary}}" class="tr-summary">{{twinReportLatest.summary}}</text>
-          </view>
-          <view class="tr-open"><text>{{twinReportOpening ? t.reportsOpening : t.reportsOpen}}</text></view>
-        </view>
-      </view>
-
       <!-- Twin layer: Daily Monitoring -->
       <view class="health-section">
         <text class="section-title">{{t.layerDaily}}</text>
@@ -460,6 +437,18 @@ module.exports.c = function (hex, theme) {
               <view class="wd-measuring-dot"></view>
               <text class="wd-measuring-txt">{{t.wearableMeasuringBg}}</text>
             </view>
+          </view>
+        </view>
+
+        <!-- On-demand recordings are frequent device actions, so keep them beside the device
+             instead of making the user cross the whole Daily Monitoring history first. V8 has
+             ECG + PPG; Halo has PPG only. The existing strip overlay remains the single recorder. -->
+        <view wx:if="{{mode === 'self' && (ecgSupported || ppgSupported)}}" class="wd-measure-actions">
+          <view wx:if="{{ecgSupported}}" class="wd-measure-btn" catchtap="openEcgRecord" data-kind="ecg">
+            <text class="wd-measure-btn-text">{{t.ecgRecord}}</text>
+          </view>
+          <view wx:if="{{ppgSupported}}" class="wd-measure-btn" catchtap="openEcgRecord" data-kind="ppg">
+            <text class="wd-measure-btn-text">{{t.ppgRecord}}</text>
           </view>
         </view>
 
@@ -864,9 +853,6 @@ module.exports.c = function (hex, theme) {
               </block>
               <text wx:else class="ecg-card-empty">{{mode === 'self' ? t.ecgEmptySelf : t.ecgEmptyOther}}</text>
             </view>
-            <view wx:if="{{mode === 'self' && ecgSupported}}" class="wd-sync-btn" catchtap="openEcgRecord" data-kind="ecg">
-              <text class="wd-sync-btn-text">{{t.ecgRecord}}</text>
-            </view>
           </view>
           <view wx:if="{{ecgList.length > 1}}" class="ecg-card-list">
             <view wx:for="{{ecgList}}" wx:key="id" wx:if="{{index > 0 && index < 5}}" class="ecg-card-list-row" catchtap="openEcgView" data-kind="ecg" data-id="{{item.id}}">
@@ -888,9 +874,6 @@ module.exports.c = function (hex, theme) {
                 </view>
               </block>
               <text wx:else class="ecg-card-empty">{{mode === 'self' ? t.ppgEmptySelf : t.ppgEmptyOther}}</text>
-            </view>
-            <view wx:if="{{mode === 'self' && ppgSupported}}" class="wd-sync-btn" catchtap="openEcgRecord" data-kind="ppg">
-              <text class="wd-sync-btn-text">{{t.ppgRecord}}</text>
             </view>
           </view>
           <view wx:if="{{ppgList.length > 1}}" class="ecg-card-list">
@@ -1039,8 +1022,28 @@ module.exports.c = function (hex, theme) {
            since the guest lock already replaces this whole body. -->
       <health-documents wx:if="{{!isGuest}}"
                         user-id="{{userId}}" lang="{{lang}}" theme="{{theme}}"
-                        can-upload="{{mode === 'self'}}" coach-id="{{coachId}}"
+                        can-upload="{{mode === 'self'}}" coach-id="{{coachId}}" collapsible="{{true}}"
                         bindloaded="_onDocsLoaded" />
+
+      <!-- 综合报告 is a derived, infrequently checked artifact. Keep it available after the
+           source layers and document manager instead of spending prime space near the top.
+           Ownership, entitlement and file-opening behavior are unchanged. -->
+      <view wx:if="{{twinReportLatest}}" class="health-section">
+        <view class="section-title-row">
+          <text class="section-title">{{t.reportsTitle}}</text>
+          <text wx:if="{{twinReports.length > 1}}" class="tr-count" bindtap="onTwinReportListTap">{{t.reportsCount}} {{twinReports.length}} ›</text>
+        </view>
+        <view class="tr-card" bindtap="onTwinReportTap" data-uid="{{twinReportLatest.job_uid}}" data-index="{{twinReportLatest.primary_index}}">
+          <view class="tr-icon"><text>📄</text></view>
+          <view class="tr-body">
+            <text class="tr-title">{{twinReportLatest.title}}</text>
+            <text wx:if="{{twinReportLatest.attribution}}" class="tr-origin">{{twinReportLatest.attribution.text}}</text>
+            <text class="tr-meta">{{twinReportLatest.metaLine}}</text>
+            <text wx:if="{{twinReportLatest.summary}}" class="tr-summary">{{twinReportLatest.summary}}</text>
+          </view>
+          <view class="tr-open"><text>{{twinReportOpening ? t.reportsOpening : t.reportsOpen}}</text></view>
+        </view>
+      </view>
 
       <view style="height: 32px;"></view>
     </block>

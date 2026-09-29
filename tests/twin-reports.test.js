@@ -114,13 +114,13 @@ function loadT(src) {
     return ctx.T;
 }
 
-test('the card sits between the hero and the first twin layer, and every t.* key it uses exists in both languages', () => {
+test('the card sits after health documents at the bottom, and every t.* key it uses exists in both languages', () => {
     const card = uhWxml.indexOf('twinReportLatest');
-    const daily = uhWxml.indexOf('{{t.layerDaily}}');
-    const hero = uhWxml.indexOf('class="health-hero"');
-    assert.ok(hero > 0 && card > hero && card < daily, 'the 综合报告 card must render after the hero and before 日常监测');
+    const docs = uhWxml.indexOf('<health-documents');
+    const spacer = uhWxml.indexOf('<view style="height: 32px;"', card);
+    assert.ok(docs > 0 && card > docs && spacer > card, 'the 综合报告 card must render after Health Documents and before the trailing spacer');
     const T = loadT(uhJs);
-    const keys = [...uhWxml.slice(card - 400, daily).matchAll(/\{\{t\.(\w+)\}\}/g)].map(m => m[1]);
+    const keys = [...uhWxml.slice(card - 400, spacer).matchAll(/\{\{t\.(\w+)\}\}/g)].map(m => m[1]);
     assert.ok(keys.includes('reportsTitle'));
     for (const k of new Set(keys)) {
         assert.ok(k in T.zh, `T.zh.${k} missing`); assert.ok(k in T.en, `T.en.${k} missing`);

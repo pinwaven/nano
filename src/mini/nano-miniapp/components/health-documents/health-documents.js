@@ -13,6 +13,8 @@ const app = getApp()
 const T = {
   zh: {
     documents: '健康文档',
+    expand: '展开',
+    collapse: '收起',
     uploadBtn: '＋ 上传文档',
     sourcePdf: '从聊天记录选择文件',
     sourcePhoto: '拍照 / 从相册选择',
@@ -70,6 +72,8 @@ const T = {
   },
   en: {
     documents: 'Health Records',
+    expand: 'Expand',
+    collapse: 'Collapse',
     uploadBtn: '＋ Upload record',
     sourcePdf: 'Choose a file from a chat',
     sourcePhoto: 'Take a photo / choose from album',
@@ -236,6 +240,9 @@ Component({
     userId: { type: String, value: '' },
     lang:   { type: String, value: 'zh' },
     theme:  { type: String, value: 'dark' },
+    // Digital Twin uses a compact-by-default summary; Viva AG and existing consumers retain the
+    // full always-open document manager unless they opt in explicitly.
+    collapsible: { type: Boolean, value: false },
     // False hides the upload button AND the per-row delete — a coach reads a client's records,
     // it never adds to or removes from them.
     canUpload: { type: Boolean, value: true },
@@ -250,11 +257,15 @@ Component({
     docsLoading: true,
     uploading: false,
     uploadStatus: '',
+    expanded: true,
   },
 
   lifetimes: {
     attached() {
-      this.setData({ t: T[this.properties.lang] || T.zh })
+      this.setData({
+        t: T[this.properties.lang] || T.zh,
+        expanded: !this.properties.collapsible,
+      })
       this._loadDocuments()
     },
   },
@@ -271,6 +282,9 @@ Component({
     },
     userId(id) {
       if (id) this._loadDocuments()
+    },
+    collapsible(enabled) {
+      if (!enabled && !this.data.expanded) this.setData({ expanded: true })
     },
   },
 
@@ -289,6 +303,11 @@ Component({
     },
 
     _toast(title, icon = 'none') { wx.showToast({ title, icon }) },
+
+    toggleExpanded() {
+      if (!this.properties.collapsible) return
+      this.setData({ expanded: !this.data.expanded })
+    },
 
     _scope() {
       const { coachId } = this.properties
@@ -472,6 +491,7 @@ Component({
     // uses: a PDF already sitting in a WeChat chat, or a photo of a paper record.
     chooseDocument() {
       if (this.data.uploading) return
+      if (this.properties.collapsible && !this.data.expanded) this.setData({ expanded: true })
       const t = this.data.t
       wx.showActionSheet({
         itemList: [t.sourcePdf, t.sourcePhoto],
@@ -571,7 +591,7 @@ Component({
       // raw body plus Content-Type). A real percentage needs an OSS POST-policy upload and a
       // different presign shape server-side. Until then this says "still working" rather than
       // inventing a number nothing can measure.
-      this.setData({ uploading: true, uploadStatus: t.preparing })
+      this.setData({ uploading: true, uploadStatus: t.preparing, expanded: true })
       try {
         const pre = await this._req(
           `${BASE}/api/health-documents/presign?openid=${encodeURIComponent(userId)}`
