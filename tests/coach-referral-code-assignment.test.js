@@ -39,12 +39,27 @@ const ORPHAN_REFERRER = { user_id: 'orphanref', channel_id: 2, referral_code: '3
 
 let scenario;
 const queries = [];
+let identities = new Map();
 
 const pool = {
     query: async (sql, params) => {
         queries.push({ sql, params });
-        // Existing-account lookup by openid.
-        if (/WHERE u\.external_id = \$1 OR u\.user_id = \$1/.test(sql)) return { rows: scenario.existing ? [scenario.existing] : [] };
+        // Login now resolves the AppID/OpenID mapping before loading the user.
+        if (sql.includes('SELECT user_id FROM wechat_miniapp_identities')) {
+            const user_id = identities.get(`${params[0]}:${params[1]}`);
+            return { rows: user_id ? [{ user_id }] : [] };
+        }
+        if (sql.includes('INSERT INTO wechat_miniapp_identities')) {
+            identities.set(`${params[0]}:${params[1]}`, params[2]);
+            return { rows: [] };
+        }
+        if (sql.includes('SELECT DISTINCT u.user_id')) return { rows: [] };
+        if (sql.includes('SELECT user_id FROM users WHERE external_id = $1')) return { rows: scenario.existing ? [{ user_id: scenario.existing.user_id }] : [] };
+        if (sql.includes('SELECT user_id, merged_into_user_id, created_at')) {
+            const row = scenario.existing?.user_id === params[0] ? scenario.existing : (params[0] === 'newuser1' ? { user_id: 'newuser1' } : null);
+            return { rows: row ? [row] : [] };
+        }
+        if (sql.includes('WHERE u.user_id = $1 LIMIT 1')) return { rows: scenario.existing ? [scenario.existing] : [] };
         // The shared code is never a coach invitation in any of these scenarios.
         if (/FROM invitations/.test(sql)) return { rows: [] };
         // ...so it falls through to the referral-code lookup.
@@ -96,6 +111,7 @@ const updatedCoachId = () => {
 
 const run = async (name, fn) => {
     queries.length = 0;
+    identities = new Map();
     await fn();
     console.log(`  ok  ${name}`);
 };

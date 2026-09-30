@@ -15,7 +15,6 @@ const LEGACY_APP_BEARER = 'tokenData-gh9bc7917115bid72c68c8c4693g'
 
 const TOKEN_KEY = 'nano_session'
 const SAVED_AT_KEY = 'nano_session_at'
-const REFRESH_AFTER_MS = 24 * 3600 * 1000
 
 function saveSession(app, token) {
   if (!token) return
@@ -52,17 +51,17 @@ function _post(path, token, data) {
 // any network exchange happens in the background.
 function restoreSession(app) {
   let token = ''
-  let savedAt = 0
   try {
     token = wx.getStorageSync(TOKEN_KEY) || ''
-    savedAt = Number(wx.getStorageSync(SAVED_AT_KEY)) || 0
   } catch (e) {}
   const user = app.globalData.user
   const signedIn = !!(user && !user.guest && user.user_id)
 
   if (token) {
     app.globalData.apiToken = token
-    if (signedIn && Date.now() - savedAt > REFRESH_AFTER_MS) refreshSession(app)
+    // Also confirm the canonical user_id: another mini program may have merged this
+    // install's cached account since it last opened.
+    if (signedIn) refreshSession(app)
     return
   }
   if (signedIn) {
@@ -74,9 +73,23 @@ function restoreSession(app) {
 }
 
 async function refreshSession(app) {
-  const res = await _post('/session/refresh', app.globalData.apiToken)
+  const token = app.globalData.apiToken
+  const res = await _post('/session/refresh', token)
   if (!res) return
-  if (res.statusCode === 200 && res.data && res.data.session_token) saveSession(app, res.data.session_token)
+  // A logout or a different login may have happened while the request was in flight.
+  if (app.globalData.apiToken !== token || !app.globalData.user?.user_id) return
+  if (res.statusCode === 200 && res.data && res.data.session_token) {
+    if (app.globalData.user?.user_id && res.data.user_id && res.data.user_id !== app.globalData.user.user_id) {
+      clearSession(app)
+      try {
+        for (const key of ['nano_user', 'nano_channel', 'nano_coach', 'nano_last_session']) wx.removeStorageSync(key)
+      } catch (e) {}
+      app.globalData.user = null
+      wx.reLaunch({ url: '/pages/login/login' })
+      return
+    }
+    saveSession(app, res.data.session_token)
+  }
   else if (res.statusCode === 401) handleAuthFailure(app)
 }
 
@@ -105,6 +118,12 @@ function handleAuthFailure(app) {
 // For the pages' own request helpers: call with each response's statusCode.
 function checkAuthStatus(app, statusCode) {
   if (statusCode === 401 && app.globalData.apiToken) handleAuthFailure(app)
+  if (statusCode === 403 && app.globalData.user?.user_id && !_canonicalRefreshPending) {
+    _canonicalRefreshPending = true
+    refreshSession(app).finally(() => { _canonicalRefreshPending = false })
+  }
 }
+
+let _canonicalRefreshPending = false
 
 module.exports = { saveSession, clearSession, restoreSession, checkAuthStatus, handleAuthFailure }

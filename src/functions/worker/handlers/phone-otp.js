@@ -10,6 +10,7 @@ const { syncPartnerPhoneFromUser } = require('./partners');
 const { resolveCoachSession } = require('./login');
 const { resolveRootChannelKey } = require('../lib/channels');
 const { resolveSignupInvite, recordInvitationUse } = require('../lib/signup-invite');
+const { linkVerifiedMiniappLogin } = require('../lib/wechatIdentity');
 
 const PHONE_RE = /^1\d{10}$/;
 
@@ -143,7 +144,7 @@ async function handlePhoneOtpSend(body, clientIp = null) {
 
 async function handlePhoneOtpVerify(body) {
     try {
-        const { phone, code, invite_code, signup_proof, require_invite } = body || {};
+        const { phone, code, invite_code, signup_proof, require_invite, existing_only, miniapp_code, app_id } = body || {};
         if (!phone || !PHONE_RE.test(phone)) return { success: false, error: 'Invalid phone number' };
 
         // phone stays bare for sendOTP/verifyOTP (matches phone_otp_codes and PNVS's
@@ -166,9 +167,16 @@ async function handlePhoneOtpVerify(body) {
             if (proof) return { success: false, error: 'invalid_signup_proof' };
             if (isSuperOtp) await logSuperOtpUse(fullPhone, existing.user_id);
             console.log(JSON.stringify({ level: 'INFO', msg: 'phone-otp-login-existing', data: { phone: fullPhone, user_id: existing.user_id } }));
-            const { user, channel, coach } = await shapeUserRow(existing);
+            const linkedUserId = miniapp_code
+                ? await linkVerifiedMiniappLogin(existing.user_id, miniapp_code, app_id)
+                : existing.user_id;
+            const linked = linkedUserId === existing.user_id ? existing
+                : (await pool.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [linkedUserId])).rows[0];
+            const { user, channel, coach } = await shapeUserRow(linked);
             return { success: true, user, channel, coach };
         }
+
+        if (existing_only === true) return { success: false, error: 'account_not_found', statusCode: 404 };
 
         // OTP ownership has been established, but account creation waits for the coach code.
         // The signed proof lets the browser submit that code without replaying a consumed OTP.
