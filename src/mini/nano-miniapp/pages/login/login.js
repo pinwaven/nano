@@ -434,7 +434,11 @@ Page({
     if (!code || phoneLoading) return
     this.setData({ phoneLoading: true, phoneError: '' })
     try {
-      const { code: miniappCode } = await this._getCode()
+      // wx.login fails in a standalone Donut shell (no mini-program runtime). The
+      // server treats miniapp_code as optional (phone-otp.js linkVerifiedMiniappLogin),
+      // so a native phone+OTP login proceeds without linking a WeChat identity.
+      let miniappCode = ''
+      try { miniappCode = (await this._getCode()).code } catch (e) { miniappCode = '' }
       const { appId } = wx.getAccountInfoSync().miniProgram
       const res = await this._phoneReq(`${BASE}/api/phone-otp/verify`, {
         phone, code, miniapp_code: miniappCode, app_id: appId,

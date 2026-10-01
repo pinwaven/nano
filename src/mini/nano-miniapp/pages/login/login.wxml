@@ -36,6 +36,9 @@
     <view wx:if="{{canRecoverByPhone}}" class="retry-btn" bindtap="useOtherNumber">
       <text>验证手机号</text>
     </view>
+    <view wx:else class="login-link" bindtap="useOtherNumber">
+      <text>使用手机号登录</text>
+    </view>
     <view class="retry-btn" bindtap="retry">
       <text>重试</text>
     </view>
