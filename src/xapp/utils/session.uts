@@ -9,10 +9,6 @@ import { state } from './state.uts'
 const TOKEN_KEY = 'nano_session'
 const SAVED_AT_KEY = 'nano_session_at'
 
-// Legacy shared bearer, kept ONLY for upgradeLegacySession() so an install migrated from the
-// miniapp's storage doesn't need to re-login. Dies with LEGACY_APP_BEARER=reject server-side.
-const LEGACY_APP_BEARER = 'tokenData-gh9bc7917115bid72c68c8c4693g'
-
 export function saveSession(token : string) {
   if (token.length == 0) return
   state.apiToken = token
@@ -64,10 +60,16 @@ export function restoreSession() {
     if (signedIn) refreshSession()
     return
   }
+  // A stored identity without a `u.` session cannot be upgraded here: the miniapp's legacy
+  // shared-bearer upgrade path is deliberately not ported (a native install never inherits
+  // miniapp storage, and the bearer must not ship in an APK). Drop the identity → login page.
   if (signedIn) {
-    state.apiToken = LEGACY_APP_BEARER
-    upgradeLegacySession(userId!)
-    return
+    for (const k of ['nano_user', 'nano_channel', 'nano_coach']) {
+      uni.removeStorageSync(k)
+    }
+    state.user = null
+    state.channel = null
+    state.coach = null
   }
   state.apiToken = ''
 }
@@ -96,18 +98,6 @@ export async function refreshSession() {
       }
       saveSession(newToken)
     }
-  } else if (res.statusCode == 401) {
-    handleAuthFailure()
-  }
-}
-
-async function upgradeLegacySession(userId : string) {
-  const res = await _post('/session/upgrade', LEGACY_APP_BEARER, { user_id: userId } as UTSJSONObject)
-  if (res == null) return
-  const body = res.data
-  if (res.statusCode == 200 && body != null) {
-    const t = body.getString('session_token')
-    if (t != null) saveSession(t)
   } else if (res.statusCode == 401) {
     handleAuthFailure()
   }

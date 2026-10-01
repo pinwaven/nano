@@ -74,7 +74,7 @@
 
 import { BASE, VERSION, IS_DEV, EMAIL_LOGIN_AVAILABLE } from '../../utils/config.uts'
 import { state } from '../../utils/state.uts'
-import { saveSession, clearSession, restoreSession } from '../../utils/session.uts'
+import { saveSession, clearSession } from '../../utils/session.uts'
 import { maskPhone, maskEmail } from '../../utils/phone.uts'
 
 const LOGIN_PHONE_RE = /^1\d{10}$/
@@ -194,15 +194,16 @@ export default {
       const lastSession = raw as UTSJSONObject
       const user = lastSession.getJSON('user')
       if (user == null) { this.step = 'phoneEntry'; return }
+      // No stored `u.` session → no way to resume (the legacy-bearer upgrade is not ported).
+      const token = lastSession.getString('session_token')
+      if (token == null) { this.step = 'phoneEntry'; return }
       state.user = user
       state.channel = lastSession.getJSON('channel')
       state.coach = lastSession.getJSON('coach')
       const lang = user.getString('language')
       state.lang = lang == 'en' ? 'en' : 'zh'
       clearSession()
-      const token = lastSession.getString('session_token')
-      if (token != null) saveSession(token!)
-      else restoreSession()
+      saveSession(token!)
       uni.setStorageSync('nano_user', user)
       const chn2 = lastSession.getJSON('channel')
       if (chn2 != null) uni.setStorageSync('nano_channel', chn2)
