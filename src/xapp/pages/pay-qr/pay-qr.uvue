@@ -1,0 +1,202 @@
+<template>
+  <view class="pq-screen">
+    <view class="pq-header" :style="'padding-top:' + statusBarHeight + 'px'">
+      <view class="pq-back" v-on:click="goBack"><text class="pq-back-text">‹ {{ t('back') }}</text></view>
+      <text class="pq-title">{{ t('title') }}</text>
+    </view>
+
+    <scroll-view direction="vertical" class="pq-body">
+      <view class="pq-row">
+        <text class="pq-label">{{ t('payee') }}</text>
+        <text class="pq-value">{{ payee }}</text>
+      </view>
+      <view v-if="amount.length > 0" class="pq-row">
+        <text class="pq-label">{{ t('amount') }}</text>
+        <text class="pq-value pq-amount">{{ amount }}</text>
+      </view>
+      <view class="pq-row">
+        <text class="pq-label">{{ t('method') }}</text>
+        <text class="pq-value">{{ methodLabel }}</text>
+      </view>
+
+      <view class="pq-qr-box">
+        <image v-if="!loadError" class="pq-qr-img" :src="qr" mode="aspectFit" v-on:error="onQrError" />
+        <text v-if="loadError" class="pq-hint">{{ t('loadFailed') }}</text>
+      </view>
+
+      <text class="pq-hint">{{ isAlipay ? t('hintAlipay') : t('hintWechat') }}</text>
+      <text class="pq-hint">{{ t('hintAfter') }}</text>
+
+      <view class="pq-btn" v-on:click="handleSave">
+        <text class="btn-text">{{ saving ? '保存中…' : t('save') }}</text>
+      </view>
+    </scroll-view>
+  </view>
+</template>
+
+<script>
+// Ported from miniapp pages/pay-qr/pay-qr.js. The GCN storefront (inside appview's web-view)
+// hands the signed OSS 收款码 URL here; the page's whole job is save-to-album (a web-view
+// cannot save images). Ceiling note kept from the original: recognising a payment code from
+// a native app's gallery is the buyer's step — a real requestPayment integration is a
+// business change, not a page.
+// Deviations: wx.getSetting/authorize/openSetting scope dance → the OS permission dialog
+// fires from the save call itself on Android; previewImage kept via uni.previewImage.
+
+import { state } from '../../utils/state.uts'
+import { BASE } from '../../utils/config.uts'
+
+const T_ZH : UTSJSONObject = {
+  title: '扫码支付', back: '返回商城', amount: '订单金额', payee: '收款方',
+  method: '支付方式', method_wechat_pay: '微信支付', method_alipay: '支付宝', method_aggregated_pay: '聚合支付',
+  save: '保存二维码到相册',
+  hintWechat: '保存二维码后，打开微信「扫一扫」→ 相册选择该图片即可付款。',
+  hintAlipay: '保存二维码后，打开支付宝「扫一扫」→ 相册选择该图片付款。',
+  hintAfter: '付款完成后返回商城，可上传付款截图由系统自动核对。',
+  saved: '已保存到相册', saveFailed: '保存失败，请长按图片手动保存', loadFailed: '二维码加载失败，请返回商城重试',
+} as UTSJSONObject
+const T_EN : UTSJSONObject = {
+  title: 'Scan to Pay', back: 'Back to store', amount: 'Order total', payee: 'Pay to',
+  method: 'Method', method_wechat_pay: 'WeChat Pay', method_alipay: 'Alipay', method_aggregated_pay: 'Aggregated Pay',
+  save: 'Save QR to album',
+  hintWechat: 'Save the QR code, then open WeChat → Scan → Album and pick this image.',
+  hintAlipay: 'Save the QR code, then open Alipay → Scan → Album and pick this image.',
+  hintAfter: 'Once paid, return to the store and upload your payment screenshot for automatic verification.',
+  saved: 'Saved to album', saveFailed: 'Save failed — long-press the image to save it manually', loadFailed: 'Could not load the QR code. Please go back and try again.',
+} as UTSJSONObject
+
+export default {
+  name: 'PayQrPage',
+  data() {
+    return {
+      lang: 'zh',
+      statusBarHeight: 44,
+      qr: '',
+      method: 'wechat_pay',
+      methodLabel: '',
+      isAlipay: false,
+      amount: '',
+      payee: '',
+      saving: false,
+      loadError: false,
+    }
+  },
+  onLoad(options : OnLoadOptions) {
+    const user = state.user
+    const langParam = options['lang']
+    var lang = state.lang
+    if (langParam != null && (`${langParam}` == 'en' || `${langParam}` == 'zh')) lang = `${langParam}`
+    else if (user != null && user!.getString('language') == 'en') lang = 'en'
+    this.lang = lang
+
+    const info = uni.getWindowInfo()
+    this.statusBarHeight = info.statusBarHeight
+
+    const qr = this._decodeOnce(options['qr'] != null ? `${options['qr']}` : '')
+    const mRaw = options['method'] != null ? `${options['method']}` : ''
+    const method = this._knownMethod(mRaw) ? mRaw : 'wechat_pay'
+    var payee = ''
+    const payeeParam = options['payee']
+    if (payeeParam != null) {
+      try { const d1 = decodeURIComponent(`${payeeParam}`); if (d1 != null) payee = d1 } catch (e : any) { payee = `${payeeParam}` }
+    }
+    const amountRaw = options['amount'] != null ? `${options['amount']}` : ''
+    const amount = /^\d+(\.\d+)?$/.test(amountRaw) ? amountRaw : ''
+
+    const ok = /^https:\/\//i.test(qr)
+    this.qr = ok ? qr : ''
+    this.method = method
+    this.methodLabel = this.t('method_' + method)
+    this.isAlipay = method == 'alipay'
+    this.amount = amount
+    this.payee = payee
+    this.loadError = !ok
+  },
+  methods: {
+    t(key : string) : string {
+      const dict = this.lang == 'en' ? T_EN : T_ZH
+      const v = dict.getString(key)
+      return v != null ? v : key
+    },
+    // Double-decoding corrupts signed OSS URLs (%2B/%3D in the Signature) — decode only
+    // when the value still carries its outer encoding (same rule as the miniapp).
+    _decodeOnce(v : string) : string {
+      if (v.length == 0) return ''
+      if (/^https?:\/\//i.test(v)) return v
+      try { const d2 = decodeURIComponent(v); if (d2 != null) return d2 } catch (e : any) {}
+      return v
+    },
+    _knownMethod(m : string) : boolean {
+      return m == 'wechat_pay' || m == 'alipay' || m == 'aggregated_pay'
+    },
+    handlePreview() {
+      if (this.qr.length == 0) return
+      uni.previewImage({ urls: [this.qr] })
+    },
+    onQrError() {
+      this.loadError = true
+    },
+    handleSave() {
+      if (this.qr.length == 0 || this.saving) return
+      this.saving = true
+      uni.downloadFile({
+        url: this.qr,
+        success: (dl) => {
+          uni.saveImageToPhotosAlbum({
+            filePath: dl.statusCode == 200 ? dl.tempFilePath : '',
+            success: () => {
+              this.saving = false
+              uni.showToast({ title: this.t('saved'), icon: 'success' })
+            },
+            fail: (_) => {
+              this.saving = false
+              uni.showToast({ title: this.t('saveFailed'), icon: 'none', duration: 2500 })
+            }
+          })
+        },
+        fail: (_) => {
+          this.saving = false
+          uni.showToast({ title: this.t('saveFailed'), icon: 'none', duration: 2500 })
+        }
+      })
+    },
+    goBack() {
+      uni.navigateBack()
+    }
+  }
+}
+</script>
+
+<style>
+.pq-screen { flex: 1; background-color: #0B1C2E; }
+.pq-header { flex-direction: row; align-items: center; padding: 12px 16px; }
+.pq-back { margin-right: 8px; }
+.pq-back-text { color: #A6C4E5; font-size: 15px; }
+.pq-title { color: #EAF2FB; font-size: 17px; font-weight: bold; }
+.pq-body { flex: 1; padding: 0 16px; }
+.pq-row { flex-direction: row; justify-content: space-between; margin-bottom: 8px; }
+.pq-label { color: #A6C4E5; font-size: 13px; }
+.pq-value { color: #EAF2FB; font-size: 14px; }
+.pq-amount { font-weight: bold; }
+.pq-qr-box {
+  align-items: center;
+  justify-content: center;
+  background-color: #FFFFFF;
+  border-radius: 16px;
+  padding: 16px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+.pq-qr-img { width: 260px; height: 260px; }
+.pq-hint { color: rgba(166, 196, 229, 0.7); font-size: 12px; margin-bottom: 6px; }
+.pq-btn {
+  height: 46px;
+  background-color: #2E7CF6;
+  border-radius: 12px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8px;
+  margin-bottom: 24px;
+}
+.btn-text { color: #FFFFFF; font-size: 15px; font-weight: bold; }
+</style>

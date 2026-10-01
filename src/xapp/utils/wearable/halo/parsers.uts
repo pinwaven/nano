@@ -1,0 +1,781 @@
+// Pure 0xNN frame parsers for the Halo protocol — ported line-for-line from miniapp
+// halo/index.js's private helpers (the same set exposed there as HaloRing.parsers for
+// tools/halo reuse). Byte buffers are number[] (0..255).
+//
+// Port adaptations:
+// - Timestamps stay 'YYYY-MM-DD HH:MM:SS' (CST, from BCD) strings instead of JS Dates —
+//   UTS Date string-parsing is unreliable; sync.uts formats these directly for upload.
+// - padStart/Date.UTC replaced by _pad2 and Howard Hinnant's civil-calendar arithmetic,
+//   keeping the same timezone-safe pure-string semantics as the miniapp helpers.
+
+import { parseBcdDate, bcdToString, readLEInt, readFloat32LE } from './protocol.uts'
+
+export function _cmpStr(a : string, b : string) : number {
+  const n = Math.min(a.length, b.length)
+  for (let i = 0; i < n; i++) {
+    const ca = a.charCodeAt(i) ?? 0
+    const cb = b.charCodeAt(i) ?? 0
+    if (ca != cb) return ca < cb ? -1 : 1
+  }
+  if (a.length == b.length) return 0
+  return a.length < b.length ? -1 : 1
+}
+
+function _pad2(n : number) : string {
+  return n < 10 ? `0${n}` : `${n}`
+}
+
+// days ← civil date (Hinnant), and back. Integer-exact.
+function _daysFromCivil(y : number, m : number, d : number) : number {
+  const yy = m <= 2 ? y - 1 : y
+  const era = Math.floor((yy >= 0 ? yy : yy - 399) / 400)
+  const yoe = yy - era * 400
+  const mp = m + (m > 2 ? -3 : 9)
+  const doy = Math.floor((153 * mp + 2) / 5) + d - 1
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy
+  return era * 146097 + doe - 719468
+}
+
+function _civilFromDays(z0 : number) : number[] {
+  const z = z0 + 719468
+  const era = Math.floor((z >= 0 ? z : z - 146096) / 146097)
+  const doe = z - era * 146097
+  const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365)
+  const y = yoe + era * 400
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100))
+  const mp = Math.floor((5 * doy + 2) / 153)
+  const d = doy - Math.floor((153 * mp + 2) / 5) + 1
+  const m = mp < 10 ? mp + 3 : mp - 9
+  return [m <= 2 ? y + 1 : y, m, d]
+}
+
+// 'YYYY-MM-DD' for the date's CST calendar day (miniapp _isoDateStr).
+export function isoDateStr(date : Date | null) : string {
+  const ms = (date != null ? date!.getTime() : Date.now()) + 8 * 60 * 60 * 1000
+  const days = Math.floor(ms / 86400000)
+  const ymd = _civilFromDays(days)
+  return `${ymd[0]}-${_pad2(ymd[1])}-${_pad2(ymd[2])}`
+}
+
+// 'YYYY-MM-DD HH:MM:SS' → absolute minutes (timezone-safe, mirrors _dateStrToAbsMins).
+export function dateStrToAbsMins(dateStr : string) : number {
+  const sp = dateStr.split(' ')
+  const dp = sp[0]
+  const tp = sp.length > 1 ? sp[1] : '00:00:00'
+  const ymd = dp.split('-')
+  const hms = tp.split(':')
+  return _daysFromCivil(parseInt(ymd[0]), parseInt(ymd[1]), parseInt(ymd[2])) * 1440 +
+    parseInt(hms[0]) * 60 + parseInt(hms[1])
+}
+
+// 'YYYY-MM-DD HH:MM:SS' (CST, as parsed from BCD) → epoch millis.
+export function cstDateStrToMillis(dateStr : string) : number {
+  const sp = dateStr.split(' ')
+  const tp = sp.length > 1 ? sp[1] : '00:00:00'
+  const hms = tp.split(':')
+  return dateStrToAbsMins(dateStr) * 60000 + parseInt(hms[2]) * 1000 - 8 * 60 * 60 * 1000
+}
+
+// --- Record shapes ---
+
+export class HrLogItem {
+  value : number
+  timestamp : string
+  constructor(value : number, timestamp : string) { this.value = value; this.timestamp = timestamp }
+}
+
+export class HrHistoryItem {
+  date : string
+  hrSamples : number[]
+  constructor(date : string, hrSamples : number[]) { this.date = date; this.hrSamples = hrSamples }
+}
+
+export class HrvRecord {
+  timestamp : string
+  hrv : number | null
+  breath : number | null
+  heartRate : number | null
+  stress : number | null
+  highBP : number | null
+  lowBP : number | null
+  constructor(timestamp : string, hrv : number | null, breath : number | null, heartRate : number | null, stress : number | null, highBP : number | null, lowBP : number | null) {
+    this.timestamp = timestamp
+    this.hrv = hrv
+    this.breath = breath
+    this.heartRate = heartRate
+    this.stress = stress
+    this.highBP = highBP
+    this.lowBP = lowBP
+  }
+}
+
+export class Spo2Record {
+  timestamp : string
+  spo2 : number
+  constructor(timestamp : string, spo2 : number) { this.timestamp = timestamp; this.spo2 = spo2 }
+}
+
+export class SampleList {
+  date : string
+  samples : number[]
+  constructor(date : string, samples : number[]) { this.date = date; this.samples = samples }
+}
+
+// 0x60 returns {date, rmssd} — field name kept verbatim from the miniapp (its consumers read
+// .rmssd), which is why it is not a SampleList.
+export class RmssdList {
+  date : string
+  rmssd : number[]
+  constructor(date : string, rmssd : number[]) { this.date = date; this.rmssd = rmssd }
+}
+
+// Nested per-sample shape inside a 0x69 record — no date field (miniapp pushes bare objects).
+export class TempSample {
+  skinTemp : number
+  ambientTemp : number
+  shellTemp : number
+  estimatedBodyTemp : number
+  status : number
+  constructor(skinTemp : number, ambientTemp : number, shellTemp : number, est : TempEstimate) {
+    this.skinTemp = skinTemp
+    this.ambientTemp = ambientTemp
+    this.shellTemp = shellTemp
+    this.estimatedBodyTemp = est.estimatedBodyTemp
+    this.status = est.status
+  }
+}
+
+export class TempEstimate {
+  estimatedBodyTemp : number
+  status : number
+  constructor(estimatedBodyTemp : number, status : number) { this.estimatedBodyTemp = estimatedBodyTemp; this.status = status }
+}
+
+export class TempLogItem {
+  date : string
+  skinTemp : number
+  ambientTemp : number
+  shellTemp : number
+  estimatedBodyTemp : number
+  status : number
+  constructor(date : string, skinTemp : number, ambientTemp : number, shellTemp : number, est : TempEstimate) {
+    this.date = date
+    this.skinTemp = skinTemp
+    this.ambientTemp = ambientTemp
+    this.shellTemp = shellTemp
+    this.estimatedBodyTemp = est.estimatedBodyTemp
+    this.status = est.status
+  }
+}
+
+export class SleepTempItem {
+  date : string
+  samples : TempSample[]
+  constructor(date : string, samples : TempSample[]) { this.date = date; this.samples = samples }
+}
+
+export class ExerciseItem {
+  date : string
+  sportMode : number
+  avgHeartRate : number
+  durationSec : number
+  steps : number
+  paceMin : number
+  paceSec : number
+  calories : number
+  distanceKm : number
+  constructor(date : string, sportMode : number, avgHeartRate : number, durationSec : number, steps : number, paceMin : number, paceSec : number, calories : number, distanceKm : number) {
+    this.date = date
+    this.sportMode = sportMode
+    this.avgHeartRate = avgHeartRate
+    this.durationSec = durationSec
+    this.steps = steps
+    this.paceMin = paceMin
+    this.paceSec = paceSec
+    this.calories = calories
+    this.distanceKm = distanceKm
+  }
+}
+
+export class SleepApneaItem {
+  date : string
+  riskLevel : number
+  constructor(date : string, riskLevel : number) { this.date = date; this.riskLevel = riskLevel }
+}
+
+export class OxygenVariationItem {
+  date : string
+  riskCount : number
+  variationList : number[]
+  constructor(date : string, riskCount : number, variationList : number[]) { this.date = date; this.riskCount = riskCount; this.variationList = variationList }
+}
+
+export class StepSlot {
+  t : string
+  steps : number
+  cal : number
+  dist : number
+  constructor(t : string, steps : number, cal : number, dist : number) { this.t = t; this.steps = steps; this.cal = cal; this.dist = dist }
+}
+
+export class StepsSummary {
+  steps : number
+  calories : number
+  distance : number
+  slots : StepSlot[]
+  constructor(steps : number, calories : number, distance : number, slots : StepSlot[]) { this.steps = steps; this.calories = calories; this.distance = distance; this.slots = slots }
+}
+
+export class SleepBlock {
+  dateStr : string
+  unitMin : number
+  stages : number[]
+  constructor(dateStr : string, unitMin : number, stages : number[]) { this.dateStr = dateStr; this.unitMin = unitMin; this.stages = stages }
+}
+
+export class SleepPeriod {
+  type : number
+  typeName : string
+  minutes : number
+  constructor(type : number, typeName : string, minutes : number) { this.type = type; this.typeName = typeName; this.minutes = minutes }
+}
+
+export class SleepNight {
+  date : string
+  onset : string
+  totalMinutes : number
+  deep : number
+  light : number
+  rem : number
+  awake : number
+  sleepStart : number
+  sleepEnd : number
+  periods : SleepPeriod[]
+  constructor(date : string, onset : string, totalMinutes : number, deep : number, light : number, rem : number, awake : number, sleepStart : number, sleepEnd : number, periods : SleepPeriod[]) {
+    this.date = date
+    this.onset = onset
+    this.totalMinutes = totalMinutes
+    this.deep = deep
+    this.light = light
+    this.rem = rem
+    this.awake = awake
+    this.sleepStart = sleepStart
+    this.sleepEnd = sleepEnd
+    this.periods = periods
+  }
+}
+
+export class RealtimeSnapshot {
+  steps : number
+  calories : number
+  distanceKm : number
+  exerciseMinutes : number
+  activeSeconds : number
+  heartRate : number
+  tempC : number
+  spo2 : number
+  constructor(steps : number, calories : number, distanceKm : number, exerciseMinutes : number, activeSeconds : number, heartRate : number, tempC : number, spo2 : number) {
+    this.steps = steps
+    this.calories = calories
+    this.distanceKm = distanceKm
+    this.exerciseMinutes = exerciseMinutes
+    this.activeSeconds = activeSeconds
+    this.heartRate = heartRate
+    this.tempC = tempC
+    this.spo2 = spo2
+  }
+}
+
+// --- Parsers ---
+
+function _v(b : number) : number | null {
+  return (b > 0 && b != 255) ? b : null
+}
+
+// 0x55 — static HR: 10-byte records [cmd][?][?][y][mo][d][h][mi][s][bpm]
+export function parseHrLog55(buf : number[] | null, todayStr : string | null) : HrLogItem[] {
+  if (buf == null || buf!.length < 10) return [] as HrLogItem[]
+  const size = Math.floor(buf!.length / 10)
+  const results : HrLogItem[] = []
+  for (let i = 0; i < size; i++) {
+    const off = i * 10
+    if (buf![off] != 0x55) continue
+    const dateStr = parseBcdDate(buf!, 3 + off, true)
+    const hr = buf![9 + off]
+    if (hr == 0 || hr == 255) continue
+    if (todayStr != null && !dateStr.startsWith(todayStr!)) continue
+    results.push(new HrLogItem(hr, dateStr))
+  }
+  return results
+}
+
+// 0x54 — continuous HR: 24-byte records [cmd][?][?][y][mo][d][h][mi][s][bpm×15]
+export function parseHrHistory54(buf : number[] | null, todayStr : string | null) : HrHistoryItem[] {
+  if (buf == null || buf!.length < 24) return [] as HrHistoryItem[]
+  const size = Math.floor(buf!.length / 24)
+  const results : HrHistoryItem[] = []
+  for (let i = 0; i < size; i++) {
+    const off = i * 24
+    if (buf![off] != 0x54) continue
+    const dateStr = parseBcdDate(buf!, 3 + off, true)
+    if (todayStr != null && !dateStr.startsWith(todayStr!)) continue
+    const hrSamples : number[] = []
+    for (let s = 0; s < 15; s++) {
+      const bpm = buf![9 + off + s]
+      if (bpm > 0 && bpm != 255) hrSamples.push(bpm)
+    }
+    if (hrSamples.length > 0) results.push(new HrHistoryItem(dateStr, hrSamples))
+  }
+  return results
+}
+
+// 0x56 — HRV: 15-byte records, deduped by timestamp (the ring sends the same batch twice).
+// The raw stress byte tracks HRV upward, opposite of the documented label — confirmed live
+// 2026-08-02 on a real device; keep the inversion.
+export function parseHrvRecords56(buf : number[] | null) : HrvRecord[] {
+  if (buf == null || buf!.length < 15) return [] as HrvRecord[]
+  const size = Math.floor(buf!.length / 15)
+  const seen = new Set<string>()
+  const records : HrvRecord[] = []
+  for (let i = 0; i < size; i++) {
+    const off = i * 15
+    if (buf![off] != 0x56) continue
+    const timestamp = parseBcdDate(buf!, 3 + off, true)
+    if (seen.has(timestamp)) continue
+    seen.add(timestamp)
+    const stressRaw = _v(buf![12 + off])
+    records.push(new HrvRecord(
+      timestamp,
+      _v(buf![9 + off]),
+      _v(buf![10 + off]),
+      _v(buf![11 + off]),
+      stressRaw != null ? 100 - stressRaw! : null,
+      _v(buf![13 + off]),
+      _v(buf![14 + off]),
+    ))
+  }
+  records.sort((a, b) : number => _cmpStr(a.timestamp, b.timestamp))
+  return records
+}
+
+// 0x66 — auto SpO2: 10-byte records, deduped by timestamp.
+export function parseSpo2Records66(buf : number[] | null) : Spo2Record[] {
+  if (buf == null || buf!.length < 10) return [] as Spo2Record[]
+  const size = Math.floor(buf!.length / 10)
+  const seen = new Set<string>()
+  const records : Spo2Record[] = []
+  for (let i = 0; i < size; i++) {
+    const off = i * 10
+    if (buf![off] != 0x66) continue
+    const timestamp = parseBcdDate(buf!, 3 + off, true)
+    if (seen.has(timestamp)) continue
+    seen.add(timestamp)
+    const val = buf![9 + off]
+    if (val != 0 && val != 255) records.push(new Spo2Record(timestamp, val))
+  }
+  records.sort((a, b) : number => _cmpStr(a.timestamp, b.timestamp))
+  return records
+}
+
+// 0x57 — detailed SpO2: 30-byte records, 20 samples × 30 s
+export function parseSpo2History57(buf : number[] | null, todayStr : string | null) : SampleList[] {
+  if (buf == null || buf!.length < 30) return [] as SampleList[]
+  const size = Math.floor(buf!.length / 30)
+  const results : SampleList[] = []
+  for (let i = 0; i < size; i++) {
+    const off = i * 30
+    if (buf![off] != 0x57) continue
+    const dateStr = parseBcdDate(buf!, 3 + off, true)
+    if (todayStr != null && !dateStr.startsWith(todayStr!)) continue
+    const samples : number[] = []
+    for (let s = 0; s < 20; s++) {
+      const v = buf![10 + off + s]
+      if (v > 0 && v != 255) samples.push(v)
+    }
+    if (samples.length > 0) results.push(new SampleList(dateStr, samples))
+  }
+  return results
+}
+
+// 0x60 — sleep HRV/RMSSD: 69-byte records, 30 × 2-byte LE samples
+export function parseSleepHrv60(buf : number[] | null, todayStr : string | null) : RmssdList[] {
+  if (buf == null || buf!.length < 69) return [] as RmssdList[]
+  const size = Math.floor(buf!.length / 69)
+  const results : RmssdList[] = []
+  for (let i = 0; i < size; i++) {
+    const off = i * 69
+    if (buf![off] != 0x60) continue
+    const dateStr = parseBcdDate(buf!, 3 + off, true)
+    if (todayStr != null && !dateStr.startsWith(todayStr!)) continue
+    const rmssd : number[] = []
+    for (let s = 0; s < 30; s++) {
+      const val = readLEInt(buf!, 9 + off + s * 2, 2)
+      if (val > 0) rmssd.push(val)
+    }
+    if (rmssd.length > 0) results.push(new RmssdList(dateStr, rmssd))
+  }
+  return results
+}
+
+// Body temperature estimation from 3 NTC sensors (SDK algorithm).
+// status: 1=Cold, 2=Normal, 3=SlightlyElevated, 4=Fever, 5=HighFever, 6=Error
+export function estimateBodyTemp(ntc1 : number, ntc2 : number, ntc3 : number) : TempEstimate {
+  const maxVal = Math.max(ntc1, ntc2, ntc3)
+  const diff = maxVal - Math.min(ntc1, ntc2, ntc3)
+  let est = 0.0
+  let status = 0
+
+  if (maxVal > 41.25) {
+    est = Math.floor(maxVal + 0.2)
+    status = 5
+  } else if (maxVal > 37.05) {
+    if (diff < 0.25) { est = maxVal + 0.2; status = 4 }
+    else if (diff < 0.85) { est = maxVal + (diff + 0.2) / 2; status = est > 41.4 ? 5 : 4 }
+    else if (diff < 1.85) { est = maxVal + 0.5 + (diff - 0.8) / 4; status = est > 41.4 ? 5 : 4 }
+    else { est = maxVal + 0.5; status = 6 }
+  } else if (maxVal > 35.95) {
+    if (diff < 0.45) { est = maxVal + 0.2; status = 2 }
+    else if (diff < 0.85) { est = maxVal + diff / 2; status = est > 37.25 ? 4 : 3 }
+    else if (diff < 2.05) { est = maxVal + 0.3 + (diff - 0.8) / 4; status = est > 37.25 ? 4 : 3 }
+    else { est = maxVal + 0.5; status = 1 }
+  } else {
+    est = maxVal
+    status = 1
+  }
+
+  return new TempEstimate(Math.round(est * 10) / 10, status)
+}
+
+// 0x62 — temperature: 15-byte records, 3 NTC sensors (×0.1 °C each), deduped by timestamp.
+export function parseTempLog62(buf : number[] | null, todayStr : string | null) : TempLogItem[] {
+  if (buf == null || buf!.length < 15) return [] as TempLogItem[]
+  const size = Math.floor(buf!.length / 15)
+  const seen = new Set<string>()
+  const results : TempLogItem[] = []
+  for (let i = 0; i < size; i++) {
+    const off = i * 15
+    if (buf![off] != 0x62) continue
+    const dateStr = parseBcdDate(buf!, 3 + off, true)
+    if (todayStr != null && !dateStr.startsWith(todayStr!)) continue
+    if (seen.has(dateStr)) continue
+    seen.add(dateStr)
+    const skinTemp = readLEInt(buf!, 9 + off, 2) * 0.1
+    const ambientTemp = readLEInt(buf!, 11 + off, 2) * 0.1
+    const shellTemp = readLEInt(buf!, 13 + off, 2) * 0.1
+    const est = estimateBodyTemp(skinTemp, ambientTemp, shellTemp)
+    results.push(new TempLogItem(dateStr, skinTemp, ambientTemp, shellTemp, est))
+  }
+  return results
+}
+
+// 0x69 — sleep body temperature: 69-byte records, 10 × 6-byte NTC samples per record
+export function parseSleepTempLog69(buf : number[] | null, todayStr : string | null) : SleepTempItem[] {
+  if (buf == null || buf!.length < 69) return [] as SleepTempItem[]
+  const size = Math.floor(buf!.length / 69)
+  const results : SleepTempItem[] = []
+  for (let i = 0; i < size; i++) {
+    const off = i * 69
+    if (buf![off] != 0x69) continue
+    const dateStr = parseBcdDate(buf!, 3 + off, true)
+    if (todayStr != null && !dateStr.startsWith(todayStr!)) continue
+    const samples : TempSample[] = []
+    for (let s = 0; s < 10; s++) {
+      const base = 9 + off + s * 6
+      const skinTemp = readLEInt(buf!, base, 2) * 0.1
+      const ambientTemp = readLEInt(buf!, base + 2, 2) * 0.1
+      const shellTemp = readLEInt(buf!, base + 4, 2) * 0.1
+      const est = estimateBodyTemp(skinTemp, ambientTemp, shellTemp)
+      samples.push(new TempSample(skinTemp, ambientTemp, shellTemp, est))
+    }
+    if (samples.length > 0) results.push(new SleepTempItem(dateStr, samples))
+  }
+  return results
+}
+
+// 0x5C — exercise sessions: 25-byte records
+export function parseExercise5C(buf : number[] | null, todayStr : string | null) : ExerciseItem[] {
+  if (buf == null || buf!.length < 25) return [] as ExerciseItem[]
+  const size = Math.floor(buf!.length / 25)
+  const results : ExerciseItem[] = []
+  for (let i = 0; i < size; i++) {
+    const off = i * 25
+    if (buf![off] != 0x5C) continue
+    const dateStr = parseBcdDate(buf!, 3 + off, true)
+    if (todayStr != null && !dateStr.startsWith(todayStr!)) continue
+    results.push(new ExerciseItem(
+      dateStr,
+      buf![9 + off],
+      buf![10 + off],
+      readLEInt(buf!, 11 + off, 2),
+      readLEInt(buf!, 13 + off, 2),
+      buf![15 + off],
+      buf![16 + off],
+      Math.round(readFloat32LE(buf!, 17 + off) * 10) / 10,
+      Math.round(readFloat32LE(buf!, 21 + off) * 100) / 100,
+    ))
+  }
+  return results
+}
+
+// 0x5F — sleep apnea risk: 10-byte records. risk: 16=no result, 0/1=low, 2=mild, 3=severe
+export function parseSleepApnea5F(buf : number[] | null, todayStr : string | null) : SleepApneaItem[] {
+  if (buf == null || buf!.length < 10) return [] as SleepApneaItem[]
+  const size = Math.floor(buf!.length / 10)
+  const results : SleepApneaItem[] = []
+  for (let i = 0; i < size; i++) {
+    const off = i * 10
+    if (buf![off] != 0x5F) continue
+    const dateStr = parseBcdDate(buf!, 3 + off, true)
+    if (todayStr != null && !dateStr.startsWith(todayStr!)) continue
+    const riskLevel = buf![9 + off]
+    if (riskLevel != 255) results.push(new SleepApneaItem(dateStr, riskLevel))
+  }
+  return results
+}
+
+// 0x5D — elevated oxygen variation: variable-length records
+export function parseOxygenVariation5D(buf : number[] | null, todayStr : string | null) : OxygenVariationItem[] {
+  if (buf == null || buf!.length < 11) return [] as OxygenVariationItem[]
+  const results : OxygenVariationItem[] = []
+  let i = 0
+  while (i < buf!.length) {
+    if (buf![i] != 0x5D) { i++; continue }
+    if (i + 11 > buf!.length) break
+    const dateStr = parseBcdDate(buf!, i + 3, true)
+    const n = buf![i + 10]
+    if (i + 11 + n > buf!.length) break
+    if (todayStr == null || dateStr.startsWith(todayStr!)) {
+      const riskCount = buf![i + 9]
+      const variationList : number[] = []
+      for (let k = 0; k < n; k++) variationList.push(buf![i + 11 + k])
+      results.push(new OxygenVariationItem(dateStr, riskCount, variationList))
+    }
+    i += 11 + n
+  }
+  return results
+}
+
+// 0x51 + 0x52 — step summary and detail slots
+export function parseSteps(buf51 : number[] | null, buf52 : number[] | null, todayStr : string) : StepsSummary {
+  if (buf51 == null || buf51!.length < 26) return new StepsSummary(0, 0, 0, [] as StepSlot[])
+
+  let recordLen = 27
+  if (buf51!.length != 2 && (buf51!.length % 26 == 0 || (buf51!.length - 2) % 26 == 0)) recordLen = 26
+
+  const size = Math.floor(buf51!.length / recordLen)
+  let steps = 0, calories = 0.0, distanceM = 0
+  for (let i = 0; i < size; i++) {
+    const off = i * recordLen
+    const dateStr = `20${bcdToString(buf51![2 + off])}-${bcdToString(buf51![3 + off])}-${bcdToString(buf51![4 + off])}`
+    if (dateStr != todayStr) continue
+    steps = readLEInt(buf51!, 5 + off, 4)
+    calories = readLEInt(buf51!, 17 + off, 4) / 100
+    distanceM = readLEInt(buf51!, 13 + off, 4) * 10
+    break
+  }
+
+  const slots : StepSlot[] = []
+  if (buf52 != null && buf52!.length >= 25) {
+    const detailSize = Math.floor(buf52!.length / 25)
+    for (let i = 0; i < detailSize; i++) {
+      const off = i * 25
+      if (buf52![off] != 0x52) continue
+      const dateStr = parseBcdDate(buf52!, 3 + off, true)
+      if (!dateStr.startsWith(todayStr)) continue
+      const slotSteps = readLEInt(buf52!, 9 + off, 2)
+      if (slotSteps == 0) continue
+      const slotCal = readLEInt(buf52!, 11 + off, 2) / 100
+      const slotDistM = readLEInt(buf52!, 13 + off, 2) * 10
+      slots.push(new StepSlot(dateStr.split(' ').join('T') + '+08:00', slotSteps, slotCal, slotDistM))
+    }
+  }
+
+  return new StepsSummary(steps, calories, distanceM, slots)
+}
+
+// Maps a block timestamp to its night label: blocks starting before noon belong to the
+// previous calendar day (overnight tail). Pure string arithmetic, no timezone surprises.
+const _DAYS_IN_MONTH : number[] = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+export function nightKey(dateStr : string) : string {
+  const sp = dateStr.split(' ')
+  const dp = sp[0]
+  const tp = sp.length > 1 ? sp[1] : '00:00:00'
+  if (parseInt(tp) >= 12) return dp
+  const p = dp.split('-')
+  let y = parseInt(p[0])
+  let mm = parseInt(p[1])
+  let dd = parseInt(p[2]) - 1
+  if (dd < 1) {
+    mm = mm - 1
+    if (mm < 1) { mm = 12; y = y - 1 }
+    dd = (mm == 2 && (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0))) ? 29 : _DAYS_IN_MONTH[mm]
+  }
+  return `${y}-${_pad2(mm)}-${_pad2(dd)}`
+}
+
+// 0x53 — raw buffer → flat block records, oldest-first. Handles N × 130-byte 1-min blocks
+// (sent newest-first, seq byte at [1]) and N × 34-byte 5-min blocks.
+export function parseSleepBlocks(buf : number[] | null) : SleepBlock[] {
+  if (buf == null || buf!.length < 12) return [] as SleepBlock[]
+  const hasTerminator = buf!.length >= 2 && buf![buf!.length - 2] == 0x53 && buf![buf!.length - 1] == 255
+  const dataLen = hasTerminator ? buf!.length - 2 : buf!.length
+  const records : SleepBlock[] = []
+
+  if (dataLen > 0 && dataLen % 130 == 0) {
+    const count = Math.floor(dataLen / 130)
+    for (let i = 0; i < count; i++) {
+      const off = i * 130
+      if (buf![off] != 0x53) continue
+      const dateStr = parseBcdDate(buf!, off + 3, true)
+      const sleepLength = buf![off + 9]
+      const stages : number[] = []
+      for (let s = 0; s < sleepLength && off + 10 + s < buf!.length; s++) stages.push(buf![off + 10 + s])
+      if (stages.length > 0) records.push(new SleepBlock(dateStr, 1, stages))
+    }
+  } else {
+    const count = Math.floor(buf!.length / 34)
+    for (let i = 0; i < count; i++) {
+      const off = i * 34
+      if (buf![off] != 0x53) continue
+      const dateStr = parseBcdDate(buf!, 3 + off, true)
+      const sleepLength = buf![9 + off]
+      const stages : number[] = []
+      for (let s = 0; s < sleepLength && 10 + off + s < buf!.length; s++) stages.push(buf![10 + off + s])
+      if (stages.length > 0) records.push(new SleepBlock(dateStr, 5, stages))
+    }
+  }
+
+  records.sort((a, b) : number => _cmpStr(a.dateStr, b.dateStr))
+  return records
+}
+
+// Stage values: 0=Awake, 1=Deep, 2=Light, 3=REM
+function _stagesToPeriods(stages : number[], unitMin : number) : SleepPeriod[] {
+  const periods : SleepPeriod[] = []
+  let i = 0
+  while (i < stages.length) {
+    const s = stages[i]
+    let run = 1
+    while (i + run < stages.length && stages[i + run] == s) run++
+    let typeName = 'unknown'
+    if (s == 0) typeName = 'awake'
+    else if (s == 1) typeName = 'deep'
+    else if (s == 2) typeName = 'light'
+    else if (s == 3) typeName = 'rem'
+    periods.push(new SleepPeriod(s, typeName, run * unitMin))
+    i += run
+  }
+  return periods
+}
+
+function _summariseNight(date : string, records : SleepBlock[]) : SleepNight {
+  const unitMin = records[0].unitMin
+  const allStages : number[] = []
+  for (const r of records) {
+    for (const s of r.stages) allStages.push(s)
+  }
+  const periods = _stagesToPeriods(allStages, unitMin)
+  const totalMinutes = allStages.length * unitMin
+  let deep = 0, light = 0, rem = 0, awake = 0
+  for (const p of periods) {
+    if (p.type == 1) deep += p.minutes
+    else if (p.type == 2) light += p.minutes
+    else if (p.type == 3) rem += p.minutes
+    else if (p.type == 0) awake += p.minutes
+  }
+  const dateStr = records[0].dateStr
+  const timePart = dateStr.substring(dateStr.indexOf(' ') + 1)
+  const colonIdx = timePart.indexOf(':')
+  const hh = parseInt(timePart.substring(0, colonIdx))
+  const mm = parseInt(timePart.substring(colonIdx + 1, colonIdx + 3))
+  const sleepStart = hh * 60 + mm
+  const sleepEnd = sleepStart + totalMinutes
+  return new SleepNight(date, dateStr, totalMinutes, deep, light, rem, awake, sleepStart, sleepEnd, periods)
+}
+
+// Blocks separated by more than this are treated as separate sleep sessions.
+const SPLIT_GAP_MINS = 90
+
+// Groups raw blocks into per-session night summaries (split out so incremental sync can
+// merge newly-fetched blocks with stored ones before re-deriving — halo-smart-ring.md §9).
+// Multiple sessions on the same night (nap + night) stay distinct, sorted by onset.
+export function summariseSleepBlocks(records : SleepBlock[]) : SleepNight[] {
+  if (records.length == 0) return [] as SleepNight[]
+  const nights : SleepNight[] = []
+  const nightMap = new Map<string, SleepBlock[]>()
+  for (const rec of records) {
+    const key = nightKey(rec.dateStr)
+    const list = nightMap.get(key)
+    if (list == null) nightMap.set(key, [rec])
+    else list!.push(rec)
+  }
+  const keys : string[] = []
+  nightMap.forEach((v : SleepBlock[], k : string) => { keys.push(k) })
+  keys.sort((a, b) : number => _cmpStr(a, b))
+
+  for (const date of keys) {
+    const recs = nightMap.get(date)!
+    recs.sort((a, b) : number => _cmpStr(a.dateStr, b.dateStr))
+    const sessions : SleepBlock[][] = [[recs[0]]]
+    for (let i = 1; i < recs.length; i++) {
+      const prev = recs[i - 1]
+      const curr = recs[i]
+      const prevEnd = dateStrToAbsMins(prev.dateStr) + prev.stages.length * prev.unitMin
+      const gap = dateStrToAbsMins(curr.dateStr) - prevEnd
+      if (gap > SPLIT_GAP_MINS) {
+        sessions.push([curr])
+      } else {
+        sessions[sessions.length - 1].push(curr)
+      }
+    }
+    for (const session of sessions) {
+      nights.push(_summariseNight(date, session))
+    }
+  }
+  nights.sort((a, b) : number => _cmpStr(a.onset, b.onset))
+  return nights
+}
+
+export function parseSleepHistory(buf : number[] | null) : SleepNight[] {
+  return summariseSleepBlocks(parseSleepBlocks(buf))
+}
+
+// 0x09 — real-time activity broadcast (25 bytes)
+export function parseRealtimeActivity9(data : number[]) : RealtimeSnapshot {
+  return new RealtimeSnapshot(
+    readLEInt(data, 1, 4),
+    readLEInt(data, 5, 4) / 100,
+    readLEInt(data, 9, 4) / 100,
+    readLEInt(data, 13, 4) / 60,
+    readLEInt(data, 17, 4),
+    data[21],
+    readLEInt(data, 22, 2) * 0.1,
+    data[24],
+  )
+}
+
+// 0x3A — blood glucose PPG data packets (153 or 203 bytes)
+export function parsePpgPacket3A(data : number[]) : number[] {
+  const samples : number[] = []
+  if (data.length == 153) {
+    for (let i = 0; i < 50; i++) {
+      const off = 3 + i * 3
+      samples.push(data[off] * 65536 + data[off + 1] * 256 + data[off + 2])
+    }
+  } else if (data.length == 203) {
+    for (let i = 0; i < 50; i++) {
+      const off = 3 + i * 4
+      samples.push(data[off] * 16777216 + data[off + 1] * 65536 + data[off + 2] * 256 + data[off + 3])
+    }
+  }
+  return samples
+}
+
+// 0x11 — raw PPG waveform: 8-byte blocks, 32-bit BE intensity at bytes 4–7 of each block
+export function parsePpgStream11(data : number[]) : number[] {
+  const points : number[] = []
+  for (let off = 2; off + 8 <= data.length; off += 8) {
+    points.push(data[off + 4] * 16777216 + data[off + 5] * 65536 + data[off + 6] * 256 + data[off + 7])
+  }
+  return points
+}

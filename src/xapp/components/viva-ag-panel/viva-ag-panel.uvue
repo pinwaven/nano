@@ -1,0 +1,869 @@
+<template>
+  <view class="ag-root" :class="theme == 'light' ? 'theme-light' : ''">
+    <scroll-view direction="vertical" class="ag-scroll">
+
+      <!-- Entitlement header -->
+      <view class="ag-hero">
+        <view class="ag-hero-badge"><text class="ag-hero-badge-txt">VIVA AG</text></view>
+        <text class="ag-hero-desc">{{ tr('heroDesc') }}</text>
+        <text v-if="expiryDisplay.length > 0" class="ag-hero-expiry">{{ tr('validUntil') }} {{ expiryDisplay }}</text>
+      </view>
+
+      <!-- ── Needs your input ──
+           The agent parked its job to ask a clarifying question. Placed above everything else
+           because nothing on this panel will move until the user answers. The form itself lives
+           in the chat tab (the existing questionnaire renderer); this only hands off to it. -->
+      <view v-if="awaitingJob != null" class="ag-section">
+        <view class="ag-ask">
+          <text class="ag-ask-title">{{ tr('askTitle') }}</text>
+          <text class="ag-ask-body">{{ tr('askBody') }}</text>
+          <text v-if="askDeadlineText.length > 0" class="ag-ask-deadline">{{ askDeadlineText }}</text>
+          <view class="ag-ask-cta" v-on:click="goAnswer"><text class="ag-ask-cta-txt">{{ tr('askCta') }}</text></view>
+        </view>
+      </view>
+
+      <!-- ── Documents ── the same component the 数字孪生 subtab hosts, so the two surfaces
+           can never drift apart against one backend. -->
+      <health-documents :user-id="userId" :lang="lang" :theme="theme" />
+
+      <!-- ── Formulation progress ──
+           A dots_formulation result keeps moving after the job says "completed": expert review,
+           compounding, delivery, then the box scan that actually starts the plan. Without this the
+           panel would go quiet for days. -->
+      <view v-if="formulation != null" class="ag-section">
+        <text class="ag-section-title">{{ tr('fmTitle') }}</text>
+        <view class="ag-fm" :class="'ag-fm-' + fmStatus">
+          <view class="ag-fm-head">
+            <text class="ag-fm-status">{{ fmStatusLabel }}</text>
+            <text v-if="fmDotsText.length > 0" class="ag-fm-dots">{{ fmDotsText }}</text>
+          </view>
+          <text class="ag-fm-hint">{{ fmHint }}</text>
+          <text v-if="fmRationale.length > 0" class="ag-fm-rationale">{{ fmRationale }}</text>
+        </view>
+      </view>
+
+      <!-- ── Command ── -->
+      <view class="ag-section">
+        <text class="ag-section-title">{{ tr('newAnalysis') }}</text>
+
+        <view class="ag-chips">
+          <view v-for="(p, i) in presets" :key="i" class="ag-chip" :class="commandKey == p.getString('key') ? 'ag-chip-on' : ''" v-on:click="selectPreset(`${p.getString('key')}`)">
+            <text class="ag-chip-txt" :class="commandKey == p.getString('key') ? 'ag-chip-txt-on' : ''">{{ p.getString('label') }}</text>
+          </view>
+        </view>
+
+        <!-- miniapp: bindinput on a textarea; v-model + a watch on commandText is the same contract. -->
+        <textarea class="ag-input" v-model="commandText" :placeholder="tr('commandPlaceholder')" :maxlength="2000" auto-height />
+
+        <view class="ag-submit" :class="canSubmit ? '' : 'ag-submit-off'" v-on:click="submitJob">
+          <text class="ag-submit-txt">{{ submitting ? tr('submitting') : tr('submit') }}</text>
+        </view>
+        <text v-if="hasActive" class="ag-note">{{ tr('oneAtATime') }}</text>
+        <text v-else-if="dailyLimitReached" class="ag-note">{{ tr('quotaUsedUp') }}</text>
+        <text v-else-if="commandKey.length == 0 && commandText.length == 0" class="ag-note">{{ tr('pickSomething') }}</text>
+        <text v-else class="ag-note">{{ quotaLeftText }}</text>
+      </view>
+
+      <!-- ── Jobs ── -->
+      <view class="ag-section">
+        <text class="ag-section-title">{{ tr('history') }}</text>
+
+        <text v-if="jobsLoading" class="ag-muted">{{ tr('loading') }}</text>
+        <text v-else-if="jobs.length == 0" class="ag-muted">{{ tr('noJobs') }}</text>
+
+        <view v-else>
+          <view v-for="(job, ji) in jobs" :key="ji" class="ag-job" v-on:click="openJob(jobUidOf(job))">
+            <view class="ag-job-head">
+              <text :class="'ag-pill ag-pill-' + statusOf(job)">{{ job.getString('statusLabel') }}</text>
+              <text class="ag-job-date">{{ job.getString('created_at') }}</text>
+            </view>
+            <text class="ag-job-cmd">{{ job.getString('command') }}</text>
+            <text v-if="attributionOf(job).length > 0" class="ag-job-origin">{{ attributionOf(job) }}</text>
+            <text v-if="progressNoteOf(job).length > 0" class="ag-job-note">{{ progressNoteOf(job) }}</text>
+            <text v-else-if="summaryOf(job).length > 0" class="ag-job-note">{{ job.getString('summaryPreview') }}</text>
+
+            <view v-if="filesOf(job).length > 0" class="ag-file-chips">
+              <!-- Report artifacts the external agent attached. Surfaced on the card itself, not
+                   only inside the detail sheet, so a finished report is one tap away. -->
+              <view v-for="(f, fi) in filesOf(job)" :key="fi" class="ag-file-chip" v-on:click.stop="openResultFile(jobUidOf(job), indexOfFile(f))">
+                <text class="ag-file-ext">{{ f.getString('extLabel') }}</text>
+                <text class="ag-file-name">{{ f.getString('filename') }}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view style="height: 100px;"></view>
+    </scroll-view>
+
+    <!-- Job detail sheet.
+         miniapp: mask bindtap="closeJob" + sheet catchtap="noop". uni-app x taps bubble, so the
+         sheet records a one-shot flag the mask handler consumes — same net behaviour without
+         relying on the .stop modifier across the boundary. -->
+    <view v-if="detailJob != null" class="ag-sheet-mask" v-on:click="onMaskTap">
+      <view class="ag-sheet" v-on:click="onSheetTap">
+        <view class="ag-sheet-head">
+          <text :class="'ag-pill ag-pill-' + dj('status')">{{ dj('statusLabel') }}</text>
+          <text class="ag-sheet-close" v-on:click="closeJob">✕</text>
+        </view>
+        <text class="ag-sheet-date">{{ dj('created_at') }}</text>
+        <text class="ag-sheet-cmd">{{ dj('command') }}</text>
+
+        <text v-if="djAttribution().length > 0" class="ag-job-origin">{{ djAttribution() }}</text>
+        <text v-if="dj('result_summary').length > 0" class="ag-sheet-body">{{ dj('result_summary') }}</text>
+        <text v-else-if="dj('error_reason').length > 0" class="ag-sheet-body ag-sheet-err">{{ tr('failed') }}</text>
+        <text v-else-if="dj('progress_note').length > 0" class="ag-sheet-body">{{ dj('progress_note') }}</text>
+        <text v-else class="ag-sheet-body ag-muted">{{ tr('inProgress') }}</text>
+
+        <view v-if="djFiles().length > 0" class="ag-filelist">
+          <text class="ag-filelist-title">{{ tr('reports') }}</text>
+          <view v-for="(f, fi) in djFiles()" :key="fi" class="ag-file-row" v-on:click="openResultFile(dj('job_uid'), indexOfFile(f))">
+            <text class="ag-file-ext">{{ f.getString('extLabel') }}</text>
+            <view class="ag-file-row-main">
+              <text class="ag-file-row-name">{{ f.getString('filename') }}</text>
+              <text v-if="(f.getString('sizeLabel') ?? '').length > 0" class="ag-file-row-size">{{ f.getString('sizeLabel') }}</text>
+            </view>
+            <text class="ag-file-row-go">{{ downloadingResult ? tr('opening') : tr('openReport') }}</text>
+          </view>
+        </view>
+        <view v-if="dj('status') == 'queued'" class="ag-sheet-btn ag-sheet-btn-ghost" v-on:click="cancelJob">
+          <text class="ag-sheet-btn-txt ag-sheet-btn-txt-ghost">{{ tr('cancel') }}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- In-app viewer for .md/.txt artifacts — wx.openDocument supported neither, and there is no
+         system document viewer on uni-app x either, so this stays the only path for a report. -->
+    <view v-if="reportHtml.length > 0" class="ag-viewer">
+      <view class="ag-viewer-head">
+        <text class="ag-viewer-title">{{ reportTitle }}</text>
+        <text class="ag-viewer-close" v-on:click="closeReport">✕</text>
+      </view>
+      <scroll-view direction="vertical" class="ag-viewer-body">
+        <!-- TODO(port): mp-html → <rich-text>. rich-text renders a TAG WHITELIST only and takes no
+             tag-style map (the miniapp bound MD_TAG_STYLE to mp-html), so headings/lists/pre/code
+             spacing degrade and <a> is inert — which is fine here because _neutralizeLinks already
+             strips every href. Revisit with a UTS markdown renderer if the reports look wrong. -->
+        <rich-text :nodes="_sh(reportHtml)" class="ag-md"></rich-text>
+        <text v-if="reportTruncated" class="ag-viewer-trunc">{{ tr('reportTruncated') }}</text>
+        <view style="height: 60px;"></view>
+      </scroll-view>
+    </view>
+  </view>
+</template>
+
+<script>
+// Viva AG panel — the second subtab of the health tab, shown only to a user holding an active
+// Viva AG add-on. Issues long-running analysis jobs to the external agent; results arrive in the
+// chat tab, and are archived here. (Health-record upload moved to components/health-documents/,
+// which this panel hosts — see AGENTS §38/§39.)
+//
+// Self-contained on purpose (own i18n table, own request helpers): keeping it out of user-health
+// is what stops that already-1000-line component from growing another feature's worth of state.
+//
+// Endpoints are mirrored verbatim from the miniapp: they are the worker's /api/viva-ag/* routes
+// (AGENTS §48 — the twin function answers Curia's /api/twin/viva-ag/*, never this client).
+//
+// Port notes (uni-app x):
+//  - properties → props, lifetimes.attached/detached → mounted/beforeUnmount+unmounted,
+//    pageLifetimes show/hide → public pausePolling()/resumePolling() the host page must call
+//    (components have no page lifecycle here).
+//  - setInterval(15s) → a setTimeout chain (port convention), timer id kept as a number field.
+//  - wx.request → utils/request.uts getBody/postBody (null body == the miniapp's rejected promise).
+
+import { BASE } from '../../utils/config.uts'
+import { getBody, postBody } from '../../utils/request.uts'
+import { mdToHtml, inlineTagStyles } from '../../utils/markdown.uts'
+import HealthDocuments from '../health-documents/health-documents.uvue'
+
+const T_ZH : UTSJSONObject = {
+  heroDesc: '深度分析您的完整数字孪生，包括上传的体检与就医记录。分析需要较长时间，完成后会在对话中通知您。',
+  validUntil: '有效期至',
+  errOpen: '无法打开该文件，请重试',
+  loading: '加载中…',
+  newAnalysis: '发起分析',
+  commandPlaceholder: '想让 Viva AG 重点看什么？（可选）',
+  submit: '开始深度分析',
+  submitting: '提交中…',
+  oneAtATime: '已有一个分析在进行中，完成后可再次发起。',
+  pickSomething: '请选择一个分析类型，或输入您的问题。',
+  history: '分析记录',
+  noJobs: '还没有分析记录。',
+  inProgress: '正在分析中，完成后会在对话中通知您。',
+  failed: '这次分析没能完成，您可以重新发起。',
+  openReport: '查看完整报告',
+  opening: '打开中…',
+  reports: '分析报告',
+  reportTruncated: '（报告较长，此处仅显示前一部分，可下载完整文件查看）',
+  errReportEmpty: '报告内容为空',
+  cancel: '取消这次分析',
+  presetFull: '全面分析',
+  presetDocs: '解读档案',
+  presetRisk: '风险筛查',
+  // ── Formulation progress (dots_formulation → expert review → compounding → scan) ──
+  fmTitle: '原粒配方进度',
+  fmValid: '待专家审核', fmValidHint: '配方已通过配比校验，营养专家审核中',
+  fmInvalid: '配比未通过', fmInvalidHint: '配方不符合胶囊规格，可重新生成一次',
+  fmApproved: '已审核 · 定制加工中', fmApprovedHint: '收到包装后扫描盒身二维码即可开始 28 天周期',
+  fmRejected: '专家未通过', fmRejectedHint: '营养专家暂未通过该配方，客服将与您联系',
+  fmCommitted: '已激活', fmCommittedHint: '方案已生效，可在「原粒」中查看每日配比',
+  fmDots: '共 {n} 粒 / 28 天',
+  presetDots: '原粒定制',
+  stQueued: '排队中', stClaimed: '已受理', stProcessing: '分析中',
+  stCompleted: '已完成', stFailed: '未完成', stCancelled: '已取消',
+  stAwaitingInput: '待补充信息',
+  // ── Clarifying questionnaire (the agent parked the job to ask something) ──
+  askTitle: '需要补充信息',
+  askBody: 'Viva AG 还需要向你确认几个问题，回答后会继续分析。',
+  askCta: '去回答',
+  askDeadline: '请在 {n} 前回答',
+  errGeneric: '操作失败，请重试',
+  errNetwork: '网络异常，请稍后重试',
+  errDailyLimit: '今天的深度分析次数已用完（每天最多 {n} 次），明天再来吧。',
+  errNoAccess: 'Viva AG 权限已过期，请联系客服',
+  quotaLeft: '今日还可发起 {n} 次',
+  quotaUsedUp: '今日次数已用完，明天恢复',
+  okSubmitted: '已提交，完成后会通知您',
+} as UTSJSONObject
+
+const T_EN : UTSJSONObject = {
+  heroDesc: 'A deep analysis of your full digital twin, including uploaded medical records. It takes a while — you will be notified in chat when it is ready.',
+  validUntil: 'Valid until',
+  errOpen: "Couldn't open that file, please try again",
+  loading: 'Loading…',
+  newAnalysis: 'New Analysis',
+  commandPlaceholder: 'Anything specific you want Viva AG to focus on? (optional)',
+  submit: 'Start deep analysis',
+  submitting: 'Submitting…',
+  oneAtATime: 'An analysis is already running. You can start another once it finishes.',
+  pickSomething: 'Pick an analysis type, or type your question.',
+  history: 'Past Analyses',
+  noJobs: 'No analyses yet.',
+  inProgress: 'Analysis in progress — you will be notified in chat when it is ready.',
+  failed: "This analysis didn't finish. You can start a new one.",
+  openReport: 'Open full report',
+  opening: 'Opening…',
+  reports: 'Reports',
+  reportTruncated: '(This report is long — only the first part is shown here. Download the file for the full text.)',
+  errReportEmpty: 'This report is empty',
+  cancel: 'Cancel this analysis',
+  presetFull: 'Full analysis',
+  presetDocs: 'Review records',
+  presetRisk: 'Risk screen',
+  // ── Formulation progress (dots_formulation → expert review → compounding → scan) ──
+  fmTitle: 'Formulation progress',
+  fmValid: 'Awaiting expert review', fmValidHint: 'Passed the capsule-spec check; a nutrition expert is reviewing it',
+  fmInvalid: 'Spec check failed', fmInvalidHint: "This formula doesn't meet the capsule spec — you can run it again",
+  fmApproved: 'Approved · being compounded', fmApprovedHint: 'Scan the QR on your box when it arrives to start the 28-day cycle',
+  fmRejected: 'Not approved', fmRejectedHint: "The nutrition expert didn't approve this formula; support will be in touch",
+  fmCommitted: 'Active', fmCommittedHint: 'Your plan is live — see the daily mix under Dots',
+  fmDots: '{n} dots / 28 days',
+  presetDots: 'Dot formulation',
+  stQueued: 'Queued', stClaimed: 'Accepted', stProcessing: 'Analyzing',
+  stCompleted: 'Done', stFailed: 'Failed', stCancelled: 'Cancelled',
+  stAwaitingInput: 'Needs your input',
+  // ── Clarifying questionnaire (the agent parked the job to ask something) ──
+  askTitle: 'A few more questions',
+  askBody: 'Viva AG needs to check a few things with you before it can finish this analysis.',
+  askCta: 'Answer now',
+  askDeadline: 'Please answer before {n}',
+  errGeneric: 'Something went wrong, please try again',
+  errNetwork: 'Network problem, please try again shortly',
+  errDailyLimit: "You've used today's deep analyses ({n} per day). Try again tomorrow.",
+  errNoAccess: 'Your Viva AG access has expired',
+  quotaLeft: '{n} left today',
+  quotaUsedUp: 'None left today — resets tomorrow',
+  okSubmitted: 'Submitted — we will notify you when it is ready',
+} as UTSJSONObject
+
+function _tr(t : UTSJSONObject, key : string) : string {
+  const v = t.getString(key)
+  return v != null ? v! : key
+}
+
+// The file types a document viewer can actually render — the miniapp's wx.openDocument fileType
+// list, nothing more. Health-record upload lives in components/health-documents/, which carries
+// its own, wider list mirroring CONTENT_TYPE_BY_EXT in worker/handlers/health_documents.js.
+const DOC_EXTENSIONS : string[] = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
+
+// Result artifacts the agent can attach, mirroring RESULT_CONTENT_TYPES in
+// worker/handlers/viva_ag.js. Two presentation paths, because the miniapp's document viewer
+// supported NEITHER .md nor .txt — so a PDF went to the system viewer and text rendered in-app.
+const RESULT_TEXT_EXTENSIONS : string[] = ['md', 'txt']
+
+// A report is prose, not a dataset: past this the in-app viewer is the wrong tool, and the user
+// is told to download the file instead of being handed a page that janks.
+const MAX_REPORT_CHARS : number = 120000
+
+const POLL_MS : number = 15000
+
+// untyped-JSON accessors (same idiom as the coach page / health-documents port)
+function _objOf(v : any | null) : UTSJSONObject | null { return v != null && v instanceof UTSJSONObject ? (v as UTSJSONObject) : null }
+
+// TODO(port): reading a downloaded file's text has no uni-app x equivalent of
+// wx.getFileSystemManager().readFile — same stub convention as utils/tool-actions.uts. Returning
+// null routes the caller through the honest 无法打开该文件 toast instead of an empty viewer.
+function readFileText(path : string) : string | null {
+  return null
+}
+
+export default {
+  name: 'VivaAgPanel',
+  components: { 'health-documents': HealthDocuments },
+  props: {
+    userId: { type: String, default: '' },
+    lang: { type: String, default: 'zh' },
+    theme: { type: String, default: 'dark' },
+  },
+  data() {
+    return {
+      t: T_ZH as UTSJSONObject,
+      presets: [] as UTSJSONObject[],
+      jobs: [] as UTSJSONObject[],
+      jobsLoading: true,
+      submitting: false,
+      commandKey: '',
+      commandText: '',
+      canSubmit: false,
+      hasActive: false,
+      dailyLimit: 3,
+      dailyUsed: 0,
+      dailyLimitReached: false,
+      quotaLeftText: '',
+      expiryDisplay: '',
+      detailJob: null as UTSJSONObject | null,
+      // The most recent dots_formulation and where it is on its way to becoming a real plan.
+      formulation: null as UTSJSONObject | null,
+      // The parked job waiting on a questionnaire, if any — drives the "needs your input" card.
+      awaitingJob: null as UTSJSONObject | null,
+      downloadingResult: false,
+      // In-app viewer for .md/.txt artifacts (see RESULT_TEXT_EXTENSIONS).
+      reportTitle: '',
+      reportHtml: '',
+      reportTruncated: false,
+      _pollTimer: 0 as number,
+      // replaces the sheet's catchtap="noop" — see onMaskTap/onSheetTap.
+      _sheetGuard: false,
+    }
+  },
+  computed: {
+    fmStatus() : string {
+      const f = this.formulation
+      return f != null ? (f!.getString('status') ?? '') : ''
+    },
+    fmStatusLabel() : string {
+      const f = this.formulation
+      return f != null ? (f!.getString('statusLabel') ?? '') : ''
+    },
+    fmHint() : string {
+      const f = this.formulation
+      return f != null ? (f!.getString('statusHint') ?? '') : ''
+    },
+    fmDotsText() : string {
+      const f = this.formulation
+      return f != null ? (f!.getString('total_dots') ?? '') : ''
+    },
+    fmRationale() : string {
+      const f = this.formulation
+      return f != null ? (f!.getString('rationale') ?? '') : ''
+    },
+    askDeadlineText() : string {
+      const j = this.awaitingJob
+      return j != null ? (j!.getString('deadlineText') ?? '') : ''
+    },
+  },
+  watch: {
+    // miniapp: bindinput → onCommandInput → _recomputeSubmit. v-model + this watch is the same
+    // contract (the source also recomputed on preset select and on every state change it cared
+    // about, which those call sites still do explicitly).
+    commandText(_v : string) { this._recomputeSubmit() },
+  },
+  mounted() {
+    const t = this.lang == 'en' ? T_EN : T_ZH
+    this.t = t
+    this.presets = [
+      { 'key': 'full_analysis', 'label': _tr(t, 'presetFull') } as UTSJSONObject,
+      { 'key': 'document_review', 'label': _tr(t, 'presetDocs') } as UTSJSONObject,
+      { 'key': 'risk_screen', 'label': _tr(t, 'presetRisk') } as UTSJSONObject,
+      { 'key': 'dots_formulation', 'label': _tr(t, 'presetDots') } as UTSJSONObject,
+    ]
+    this._loadJobs()
+    this._loadFormulation()
+  },
+  // detached() in the miniapp → uni-app x's Vue3 component hooks. Both are declared (beforeUnmount
+  // is where a timer should die, unmounted is the belt-and-braces); _stopPoll() is idempotent.
+  beforeUnmount() { this._stopPoll() },
+  unmounted() { this._stopPoll() },
+  methods: {
+    tr(path : string) : string { return _tr(this.t, path) },
+    _toast(title : string, success : boolean = false) {
+      if (success) uni.showToast({ title: title, icon: 'success' })
+      else uni.showToast({ title: title, icon: 'none' })
+    },
+    _sizeLabel(bytes : number | null) : string {
+      if (bytes == null || bytes! == 0) return ''
+      const mb = (bytes!) / (1024 * 1024)
+      return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round((bytes!) / 1024))} KB`
+    },
+
+    // ── Jobs ─────────────────────────────────────────────────────────────────
+
+    _statusLabel(status : string | null) : string {
+      const t = this.t
+      if (status == 'queued') return _tr(t, 'stQueued')
+      if (status == 'claimed') return _tr(t, 'stClaimed')
+      if (status == 'processing') return _tr(t, 'stProcessing')
+      if (status == 'awaiting_input') return _tr(t, 'stAwaitingInput')
+      if (status == 'completed') return _tr(t, 'stCompleted')
+      if (status == 'failed') return _tr(t, 'stFailed')
+      if (status == 'cancelled') return _tr(t, 'stCancelled')
+      return status != null ? status! : ''
+    },
+
+    _decorate(job : UTSJSONObject) : UTSJSONObject {
+      const row = new UTSJSONObject()
+      job.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+      const files : UTSJSONObject[] = []
+      const raw = job['result_files']
+      if (raw != null && raw instanceof Array) {
+        for (const item of (raw as Array<any>)) {
+          const f = _objOf(item)
+          if (f == null) continue
+          const fr = new UTSJSONObject()
+          f!.toMap().forEach((v : any | null, k : string) => { fr[k] = v })
+          fr['extLabel'] = (f!.getString('ext') ?? '').toUpperCase()
+          fr['sizeLabel'] = this._sizeLabel(f!.getNumber('size_bytes'))
+          files.push(fr)
+        }
+      }
+      row['files'] = files
+      row['statusLabel'] = this._statusLabel(job.getString('status'))
+      const summary = job.getString('result_summary') ?? ''
+      row['summaryPreview'] = summary.length > 60 ? `${summary.slice(0, 60)}…` : summary
+      return row
+    },
+
+    // A dots_formulation job's result is not the end of the story the way an analysis report is:
+    // it goes to a nutrition expert, then to compounding, then ships, and only becomes the user's
+    // actual plan when they scan the box. Without this the panel would show "completed" and go
+    // quiet for days while all of that happened.
+    async _loadFormulation() {
+      if (this.userId.length == 0) return
+      const res = await getBody(`${BASE}/api/viva-ag/formulation?openid=${encodeURIComponent(this.userId)}`)
+      if (res == null) { this.formulation = null; return }
+      const list = res!.getArray<UTSJSONObject>('formulations') ?? ([] as UTSJSONObject[])
+      const f = list.length > 0 ? list[0] : null
+      // A missing status line is not worth an error banner over the rest of the panel.
+      this.formulation = f != null ? this._decorateFormulation(f!) : null
+    },
+
+    _decorateFormulation(f : UTSJSONObject) : UTSJSONObject {
+      const t = this.t
+      const status = f.getString('status') ?? ''
+      var label = status
+      var hint = ''
+      if (status == 'valid') { label = _tr(t, 'fmValid'); hint = _tr(t, 'fmValidHint') }
+      else if (status == 'invalid') { label = _tr(t, 'fmInvalid'); hint = _tr(t, 'fmInvalidHint') }
+      else if (status == 'approved') { label = _tr(t, 'fmApproved'); hint = _tr(t, 'fmApprovedHint') }
+      else if (status == 'rejected') { label = _tr(t, 'fmRejected'); hint = _tr(t, 'fmRejectedHint') }
+      else if (status == 'committed') { label = _tr(t, 'fmCommitted'); hint = _tr(t, 'fmCommittedHint') }
+      const row = new UTSJSONObject()
+      f.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+      row['statusLabel'] = label
+      row['statusHint'] = hint
+      // Rendered as-is by the template, so format it here rather than leaving a bare number
+      // that reads as an error code.
+      const total = f.getNumber('total_dots')
+      row['total_dots'] = total != null ? _tr(t, 'fmDots').split('{n}').join(`${total}`) : ''
+      return row
+    },
+
+    async _loadJobs() {
+      if (this.userId.length == 0) return
+      const res = await getBody(`${BASE}/api/viva-ag/jobs?openid=${encodeURIComponent(this.userId)}`)
+      if (res == null) { this.jobsLoading = false; return }
+      const rawJobs = res!.getArray<UTSJSONObject>('jobs') ?? ([] as UTSJSONObject[])
+      const jobs : UTSJSONObject[] = []
+      for (const j of rawJobs) jobs.push(this._decorate(j))
+      this._loadFormulation()
+      const hasActive = res!.getBoolean('has_active') == true
+      this.jobs = jobs
+      this.jobsLoading = false
+      this.hasActive = hasActive
+      // At most one, because uniq_viva_ag_jobs_active counts 'awaiting_input' as active.
+      var awaiting : UTSJSONObject | null = null
+      for (const j of jobs) {
+        if (j.getString('status') == 'awaiting_input') { awaiting = j; break }
+      }
+      if (awaiting != null) {
+        const row = new UTSJSONObject()
+        awaiting!.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+        const expires = awaiting!.getString('awaiting_input_expires_at') ?? ''
+        row['deadlineText'] = expires.length > 0
+          ? _tr(this.t, 'askDeadline').split('{n}').join(expires.slice(0, 10))
+          : ''
+        this.awaitingJob = row
+      } else {
+        this.awaitingJob = null
+      }
+      const limit = res!.getNumber('daily_limit')
+      const used = res!.getNumber('daily_used')
+      this.dailyLimit = limit != null ? limit! : this.dailyLimit
+      this.dailyUsed = used != null ? used! : 0
+      this.dailyLimitReached = res!.getBoolean('daily_limit_reached') == true
+      // The template cannot interpolate, so build the label here.
+      const left = Math.max(0, (limit != null ? limit! : 0) - (used != null ? used! : 0))
+      this.quotaLeftText = _tr(this.t, 'quotaLeft').split('{n}').join(`${left}`)
+      const expiry = res!.getString('viva_ag_expires_at') ?? ''
+      this.expiryDisplay = expiry.slice(0, 10)
+      this._recomputeSubmit()
+      if (hasActive) this._startPoll(); else this._stopPoll()
+    },
+
+    // Deliberately NOT hooked into main.js's 3s notification poll: that loop is tuned around
+    // chat delivery, and putting an AG query on every user's 3s tick for a feature almost
+    // nobody has would be wasteful. Runs only while a job is actually in flight.
+    // miniapp used setInterval(POLL_MS); the port uses a setTimeout chain re-armed by _loadJobs.
+    _startPoll() {
+      if (this._pollTimer != 0) return
+      this._pollTimer = setTimeout(() => {
+        this._pollTimer = 0
+        this._loadJobs()
+      }, POLL_MS)
+    },
+
+    _stopPoll() {
+      if (this._pollTimer != 0) clearTimeout(this._pollTimer)
+      this._pollTimer = 0
+    },
+
+    // TODO(port): uni-app x has no pageLifetimes on a component. The miniapp stopped the 15s
+    // timer while the page was hidden and restarted it on show; the host page (user-health inside
+    // the health tab) must call pausePolling() from onHide and resumePolling() from onShow.
+    pausePolling() { this._stopPoll() },
+    resumePolling() { if (this.hasActive) this._startPoll() },
+
+    selectPreset(key : string) {
+      this.commandKey = this.commandKey == key ? '' : key
+      this._recomputeSubmit()
+    },
+
+    _recomputeSubmit() {
+      const hasInput = this.commandKey.length > 0 || this.commandText.trim().length > 0
+      this.canSubmit = !this.hasActive && !this.submitting && !this.dailyLimitReached && hasInput
+    },
+
+    async submitJob() {
+      if (!this.canSubmit) return
+      const t = this.t
+      this.submitting = true
+      this.canSubmit = false
+      const body = new UTSJSONObject()
+      body['openid'] = this.userId
+      // The miniapp sent command_key/command as `undefined`, which JSON.stringify drops — omitting
+      // the key here is the same body on the wire.
+      if (this.commandKey.length > 0) body['command_key'] = this.commandKey
+      const trimmed = this.commandText.trim()
+      if (trimmed.length > 0) body['command'] = trimmed
+      const res = await postBody(`${BASE}/api/viva-ag/jobs`, body)
+      if (res == null) {
+        // Network/transport failure only — a refused request is handled below.
+        this.submitting = false
+        this._recomputeSubmit()
+        this._toast(_tr(t, 'errNetwork'))
+        return
+      }
+      if (res!.getBoolean('success') != true) {
+        // The server distinguishes expected, actionable refusals from real faults. Showing
+        // "operation failed, please retry" for all of them is actively misleading — retrying a
+        // daily-limit refusal never works, and the user is given no idea why. Map the known
+        // reasons; only a genuine fault falls through to the generic message.
+        this.submitting = false
+        this._recomputeSubmit()
+        const reason = res!.getString('reason') ?? ''
+        if (reason == 'daily_limit_reached') {
+          const limit = res!.getNumber('limit')
+          this._toast(_tr(t, 'errDailyLimit').split('{n}').join(`${limit != null ? limit! : this.dailyLimit}`))
+          return
+        }
+        if (reason == 'job_already_active') { this._toast(_tr(t, 'oneAtATime')); return }
+        if (reason == 'viva_ag_inactive' || reason == 'viva_inactive') { this._toast(_tr(t, 'errNoAccess')); return }
+        this._toast(_tr(t, 'errGeneric'))
+        return
+      }
+      this.submitting = false
+      this.commandText = ''
+      this.commandKey = ''
+      this._toast(_tr(t, 'okSubmitted'), true)
+      this._loadJobs()
+    },
+
+    // The questionnaire itself renders in the CHAT tab — that renderer already exists, handles
+    // all five widget types, and is what onboarding and coach-assigned forms already use.
+    // Duplicating it here would be a second place to maintain every input type for no
+    // user-visible gain, so the panel hands off instead: the host switches tabs and calls
+    // _checkForPendingQuestionnaire().
+    goAnswer() {
+      this.$emit('gotochat', { 'reason': 'viva_ag_questionnaire' } as UTSJSONObject)
+    },
+
+    // ── template accessors ──
+    jobUidOf(job : UTSJSONObject) : string { return job.getString('job_uid') ?? '' },
+    statusOf(job : UTSJSONObject) : string { return job.getString('status') ?? '' },
+    filesOf(job : UTSJSONObject) : UTSJSONObject[] { return job.getArray<UTSJSONObject>('files') ?? ([] as UTSJSONObject[]) },
+    progressNoteOf(job : UTSJSONObject) : string { return job.getString('progress_note') ?? '' },
+    summaryOf(job : UTSJSONObject) : string { return job.getString('result_summary') ?? '' },
+    indexOfFile(f : UTSJSONObject) : number { return f.getNumber('index') ?? 0 },
+    attributionOf(job : UTSJSONObject) : string {
+      const a = job.getJSON('attribution')
+      return a != null ? (a!.getString('text') ?? '') : ''
+    },
+    dj(key : string) : string {
+      const j = this.detailJob
+      if (j == null) return ''
+      const v = j![key]
+      return v == null ? '' : `${v}`
+    },
+    djFiles() : UTSJSONObject[] {
+      const j = this.detailJob
+      if (j == null) return [] as UTSJSONObject[]
+      return j!.getArray<UTSJSONObject>('files') ?? ([] as UTSJSONObject[])
+    },
+    djAttribution() : string {
+      const j = this.detailJob
+      if (j == null) return ''
+      const a = j!.getJSON('attribution')
+      return a != null ? (a!.getString('text') ?? '') : ''
+    },
+
+    openJob(uid : string) {
+      for (const j of this.jobs) {
+        if (j.getString('job_uid') == uid) { this.detailJob = j; return }
+      }
+    },
+
+    closeJob() { this.detailJob = null },
+
+    // miniapp: mask bindtap="closeJob" + inner catchtap="noop". uni-app x taps bubble, so the
+    // sheet marks a one-shot guard the mask handler consumes right after (child then parent).
+    onSheetTap() { this._sheetGuard = true },
+    onMaskTap() {
+      if (this._sheetGuard) { this._sheetGuard = false; return }
+      this.closeJob()
+    },
+
+    // One handler for both surfaces (the chips on a job card and the rows in its detail sheet),
+    // and for both artifact shapes. Files are addressed by INDEX — the server never hands the
+    // client an oss_key — and the URL is minted fresh per tap because it lives for 300s.
+    async openResultFile(uid : string, index : number) {
+      if (this.downloadingResult) return
+      var job : UTSJSONObject | null = null
+      for (const j of this.jobs) {
+        if (j.getString('job_uid') == uid) { job = j; break }
+      }
+      if (job == null) job = this.detailJob
+      if (job == null) return
+      const t = this.t
+      this.downloadingResult = true
+      // The miniapp addressed the resolved job (`job.job_uid`), not the tapped data-uid — the two
+      // differ when the card list has refetched out from under an open detail sheet.
+      const jobUid = job!.getString('job_uid') ?? uid
+      const res = await getBody(
+        `${BASE}/api/viva-ag/jobs/result-url?openid=${encodeURIComponent(this.userId)}` +
+        `&job_uid=${encodeURIComponent(jobUid)}&index=${index}`)
+      if (res == null || res!.getBoolean('success') != true) {
+        this.downloadingResult = false
+        this._toast(_tr(t, 'errGeneric'))
+        return
+      }
+      const url = res!.getString('url') ?? ''
+      const ft = res!.getString('file_type') ?? ''
+      const filename = res!.getString('filename') ?? ''
+      uni.downloadFile({
+        url: url,
+        // downloadFile resolves for any HTTP status; a 403 from an expired signature would
+        // otherwise be handed to the viewer as a "file".
+        success: (dl) => {
+          this.downloadingResult = false
+          if (dl.statusCode != 200) { this._toast(_tr(t, 'errGeneric')); return }
+          if (RESULT_TEXT_EXTENSIONS.indexOf(ft) != -1) { this._showTextReport(`${dl.tempFilePath}`, ft, filename); return }
+          // TODO(port): no uni.openDocument on uni-app x — a PDF/Word artifact has to wait for a
+          // UTS document-viewer plugin; the miniapp sent it to the system viewer with
+          // fileType = DOC_EXTENSIONS.includes(ft) ? ft : 'pdf'.
+          const viewerType = DOC_EXTENSIONS.indexOf(ft) != -1 ? ft : 'pdf'
+          console.log(JSON.stringify({ level: 'WARN', msg: 'document viewer not available on uni-app x yet', data: { fileType: viewerType } }))
+          this._toast(_tr(t, 'errOpen'))
+        },
+        fail: (_) => {
+          this.downloadingResult = false
+          this._toast(_tr(t, 'errGeneric'))
+        },
+      })
+    },
+
+    // .md / .txt render in-app: the document viewer could open neither (its fileType list is
+    // doc/docx/xls/xlsx/ppt/pptx/pdf), so handing it a markdown file just fails.
+    _showTextReport(filePath : string, ext : string, filename : string) {
+      const t = this.t
+      const text = readFileText(filePath)
+      if (text == null) { this._toast(_tr(t, 'errOpen')); return }
+      let body = `${text}`
+      if (body.trim().length == 0) { this._toast(_tr(t, 'errReportEmpty')); return }
+      const truncated = body.length > MAX_REPORT_CHARS
+      if (truncated) body = body.slice(0, MAX_REPORT_CHARS)
+      this.reportTitle = filename
+      this.reportHtml = ext == 'md' ? mdToHtml(this._neutralizeLinks(body)) : this._plainToHtml(body)
+      this.reportTruncated = truncated
+    },
+
+    // This file was written by an EXTERNAL system. mp-html's link handler navigated in-app for
+    // any href without a scheme, so a markdown link in a report could have sent the user to an
+    // arbitrary page. The target is kept visible as plain text — nothing is hidden, it just isn't
+    // tappable. (rich-text renders <a> inert anyway; the rule is kept regardless.)
+    _neutralizeLinks(md : string) : string {
+      return md.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_m : string, text : string, href : string, _off : number, _src : string) : string => `${text} (${href})`)
+    },
+
+    _plainToHtml(text : string) : string {
+      return '<pre>' + text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>'
+    },
+
+    // mp-html's tag-style has no uni-app x equivalent — merge MD_TAG_STYLE into the node html.
+    _sh(h : string) : string { return inlineTagStyles(h) },
+    closeReport() {
+      this.reportHtml = ''
+      this.reportTitle = ''
+      this.reportTruncated = false
+    },
+
+    async cancelJob() {
+      const job = this.detailJob
+      if (job == null) return
+      const res = await postBody(`${BASE}/api/viva-ag/jobs/cancel`, {
+        'openid': this.userId, 'job_uid': job!.getString('job_uid') ?? '',
+      } as UTSJSONObject)
+      if (res == null) { this._toast(_tr(this.t, 'errGeneric')); return }
+      this.detailJob = null
+      this._loadJobs()
+    },
+  }
+}
+</script>
+
+<style>
+/* Structural pass of viva-ag-panel.wxss — rpx halved to px, the CSS custom properties
+   (--fs-*, --wave-rgb, --blue-rgb, --wave, --steel, --gold, --text, --text-muted, --text-sub,
+   --success, --danger) resolved to their dark-theme literals the way the rest of src/xapp does it
+   (blue rgba(46,124,246,α), wave #A6C4E5, steel #7A9ABF, gold #F5C56A, text #EEF2FF).
+   // TODO(port): the .theme-light descendant rules in the source cannot be expressed as flat
+   classes in uni-app x, so the light theme is not carried over in this pass. */
+.ag-root { flex: 1; flex-direction: column; }
+.ag-scroll { flex: 1; }
+
+/* ── Hero ── */
+.ag-hero { padding: 18px; border-bottom-width: 1px; border-bottom-color: rgba(46, 124, 246, 0.08); border-bottom-style: solid; flex-direction: column; }
+.ag-hero-badge { align-self: flex-start; padding: 3px 9px; border-radius: 4px; background-color: rgba(46, 124, 246, 0.16); margin-bottom: 9px; }
+.ag-hero-badge-txt { font-size: 10px; font-weight: bold; letter-spacing: 2px; color: #A0B4FF; }
+.ag-hero-desc { font-size: 13px; line-height: 21px; color: #7A9ABF; }
+.ag-hero-expiry { font-size: 11px; color: rgba(166, 196, 229, 0.5); margin-top: 7px; }
+
+/* ── Sections ── */
+.ag-section { padding: 16px 18px; border-bottom-width: 1px; border-bottom-color: rgba(46, 124, 246, 0.08); border-bottom-style: solid; flex-direction: column; }
+.ag-section-title { font-size: 10px; font-weight: bold; letter-spacing: 2px; color: rgba(166, 196, 229, 0.4); margin-bottom: 12px; }
+.ag-muted { font-size: 12px; color: rgba(166, 196, 229, 0.45); padding-top: 6px; padding-bottom: 6px; }
+
+/* ── Needs your input ──
+   Amber, matching .ag-fm-valid: both mean "stalled until a human acts". This one is the only card
+   on the panel with a call to action, so it also carries a filled button. */
+.ag-ask { flex-direction: column; margin-top: 8px; padding: 12px 14px; border-radius: 9px; background-color: rgba(166, 196, 229, 0.10); border-left-width: 3px; border-left-color: #F5C56A; border-left-style: solid; }
+.ag-ask-title { font-size: 14px; font-weight: bold; color: #EEF2FF; }
+.ag-ask-body { font-size: 12px; color: rgba(166, 196, 229, 0.4); line-height: 19px; margin-top: 5px; }
+.ag-ask-deadline { font-size: 11px; color: rgba(166, 196, 229, 0.4); margin-top: 4px; }
+.ag-ask-cta { padding-top: 9px; padding-bottom: 9px; border-radius: 7px; background-color: rgba(46, 124, 246, 0.85); align-items: center; margin-top: 10px; }
+.ag-ask-cta-txt { font-size: 13px; font-weight: bold; color: #FFFFFF; }
+
+/* ── Formulation progress ─────────────────────────────────────────────────────────────
+   Colour-coded by where the formula is, so a glance answers "is anything happening?":
+   amber while a human still has to act, green once it is approved or live, red if the
+   capsule-spec check or the expert rejected it. */
+.ag-fm { flex-direction: column; margin-top: 8px; padding: 12px 14px; border-radius: 9px; background-color: rgba(255, 255, 255, 0.04); border-left-width: 3px; border-left-color: rgba(255, 255, 255, 0.2); border-left-style: solid; }
+.ag-fm-head { flex-direction: row; align-items: flex-end; justify-content: space-between; }
+.ag-fm-status { font-size: 14px; font-weight: bold; color: #EEF2FF; }
+.ag-fm-dots { font-size: 11px; color: rgba(166, 196, 229, 0.4); }
+.ag-fm-hint { font-size: 12px; color: rgba(166, 196, 229, 0.4); line-height: 19px; margin-top: 5px; }
+.ag-fm-rationale { font-size: 12px; color: #A6C4E5; line-height: 19px; margin-top: 7px; padding-top: 7px; border-top-width: 1px; border-top-color: rgba(255, 255, 255, 0.08); border-top-style: solid; }
+.ag-fm-valid { border-left-color: #F5C56A; }
+.ag-fm-approved { border-left-color: #34d399; }
+.ag-fm-committed { border-left-color: #34d399; }
+.ag-fm-invalid { border-left-color: #ef4444; }
+.ag-fm-rejected { border-left-color: #ef4444; }
+
+/* ── Command ── */
+.ag-chips { flex-direction: row; flex-wrap: wrap; margin-bottom: 10px; }
+.ag-chip { padding: 6px 12px; border-radius: 15px; border-width: 1px; border-style: solid; border-color: rgba(46, 124, 246, 0.22); margin-right: 7px; margin-bottom: 7px; }
+.ag-chip-txt { font-size: 12px; color: #7A9ABF; }
+.ag-chip-on { background-color: rgba(46, 124, 246, 0.18); border-color: rgba(46, 124, 246, 0.5); }
+.ag-chip-txt-on { color: #A0B4FF; font-weight: bold; }
+.ag-input { width: 100%; min-height: 60px; padding: 10px; border-radius: 7px; background-color: rgba(46, 124, 246, 0.07); font-size: 13px; line-height: 21px; color: #A6C4E5; margin-bottom: 10px; }
+.ag-submit { padding-top: 12px; padding-bottom: 12px; border-radius: 7px; background-color: rgba(46, 124, 246, 0.85); align-items: center; }
+.ag-submit-txt { font-size: 14px; font-weight: bold; color: #FFFFFF; }
+.ag-submit-off { opacity: 0.35; }
+.ag-note { font-size: 11px; color: rgba(166, 196, 229, 0.42); margin-top: 7px; }
+
+/* ── Jobs ── */
+.ag-job { flex-direction: column; padding-top: 11px; padding-bottom: 11px; border-bottom-width: 1px; border-bottom-color: rgba(46, 124, 246, 0.06); border-bottom-style: solid; }
+.ag-job-head { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.ag-pill { font-size: 10px; font-weight: bold; padding: 2px 7px; border-radius: 10px; background-color: rgba(46, 124, 246, 0.14); color: #A0B4FF; }
+.ag-pill-processing { background-color: rgba(245, 158, 11, 0.16); color: #F59E0B; }
+.ag-pill-claimed { background-color: rgba(245, 158, 11, 0.16); color: #F59E0B; }
+.ag-pill-completed { background-color: rgba(16, 185, 129, 0.16); color: #10B981; }
+.ag-pill-failed { background-color: rgba(224, 92, 92, 0.16); color: #E05C5C; }
+.ag-pill-cancelled { background-color: rgba(166, 196, 229, 0.12); color: rgba(166, 196, 229, 0.5); }
+/* Parked on the user — gold, and unlike its siblings above it needed no light-theme override. */
+.ag-pill-awaiting_input { background-color: rgba(166, 196, 229, 0.18); color: #F5C56A; }
+.ag-job-date { font-size: 11px; color: rgba(166, 196, 229, 0.4); }
+.ag-job-cmd { font-size: 13px; color: #A6C4E5; margin-bottom: 4px; }
+.ag-job-note { font-size: 11px; line-height: 17px; color: rgba(166, 196, 229, 0.45); }
+/* Who produced a finished job's result (lib/reportAttribution.js, AGENTS §48). */
+.ag-job-origin { font-size: 11px; color: rgba(166, 196, 229, 0.7); margin-top: 2px; }
+
+/* ── Detail sheet ── */
+.ag-sheet-mask { position: fixed; left: 0; top: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.55); flex-direction: column; justify-content: flex-end; z-index: 60; }
+.ag-sheet { width: 100%; max-height: 420px; padding: 17px 18px 30px; border-top-left-radius: 13px; border-top-right-radius: 13px; background-color: #0A1F36; flex-direction: column; }
+.ag-sheet-head { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+.ag-sheet-close { font-size: 15px; color: rgba(166, 196, 229, 0.5); padding-left: 3px; padding-right: 3px; }
+.ag-sheet-date { font-size: 11px; color: rgba(166, 196, 229, 0.4); margin-bottom: 8px; }
+.ag-sheet-cmd { font-size: 13px; font-weight: bold; color: #A6C4E5; margin-bottom: 10px; }
+.ag-sheet-body { font-size: 13px; line-height: 23px; color: #7A9ABF; margin-bottom: 13px; }
+.ag-sheet-err { color: #E05C5C; }
+.ag-sheet-btn { padding-top: 11px; padding-bottom: 11px; border-radius: 7px; background-color: rgba(46, 124, 246, 0.85); align-items: center; margin-bottom: 8px; }
+.ag-sheet-btn-txt { font-size: 13px; color: #FFFFFF; }
+.ag-sheet-btn-ghost { background-color: rgba(0, 0, 0, 0); border-width: 1px; border-style: solid; border-color: rgba(166, 196, 229, 0.2); }
+/* flat-class stand-in for the source's `.ag-sheet-btn-ghost .ag-sheet-btn-txt` */
+.ag-sheet-btn-txt-ghost { color: rgba(166, 196, 229, 0.6); }
+
+/* ── Result artifacts ── */
+.ag-file-chips { flex-direction: row; flex-wrap: wrap; margin-top: 7px; }
+.ag-file-chip { flex-direction: row; align-items: center; padding: 4px 8px; border-radius: 5px; background-color: rgba(46, 124, 246, 0.14); margin-right: 6px; margin-bottom: 6px; }
+.ag-file-ext { font-size: 9px; font-weight: bold; letter-spacing: 1px; color: #A0B4FF; margin-right: 5px; }
+.ag-file-name { font-size: 11px; color: rgba(166, 196, 229, 0.7); lines: 1; text-overflow: ellipsis; }
+.ag-filelist { flex-direction: column; margin-bottom: 11px; }
+.ag-filelist-title { font-size: 11px; letter-spacing: 1px; color: rgba(166, 196, 229, 0.45); margin-bottom: 6px; }
+.ag-file-row { flex-direction: row; align-items: center; padding: 10px 11px; border-radius: 7px; background-color: rgba(46, 124, 246, 0.1); margin-bottom: 6px; }
+.ag-file-row-main { flex: 1; flex-direction: column; }
+.ag-file-row-name { font-size: 13px; color: #A6C4E5; lines: 1; text-overflow: ellipsis; }
+.ag-file-row-size { font-size: 10px; color: rgba(166, 196, 229, 0.4); }
+.ag-file-row-go { font-size: 11px; color: #A0B4FF; }
+
+/* ── In-app report viewer (.md/.txt) ── */
+.ag-viewer { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 70; flex-direction: column; background-color: #061426; }
+.ag-viewer-head { flex-direction: row; align-items: center; justify-content: space-between; padding: 14px 16px 10px; border-bottom-width: 1px; border-bottom-color: rgba(46, 124, 246, 0.12); border-bottom-style: solid; }
+.ag-viewer-title { flex: 1; font-size: 13px; font-weight: bold; color: #A6C4E5; lines: 1; text-overflow: ellipsis; }
+.ag-viewer-close { font-size: 15px; color: rgba(166, 196, 229, 0.5); padding-left: 3px; padding-right: 3px; }
+.ag-viewer-body { flex: 1; padding: 14px 16px; font-size: 13px; line-height: 23px; color: #7A9ABF; }
+/* mp-html was style-isolated and took MD_TAG_STYLE; rich-text inherits this container's chrome
+   and nothing else — the em-based sizes in MD_TAG_STYLE are not applied. */
+.ag-md { font-size: 13px; color: #7A9ABF; }
+.ag-viewer-trunc { font-size: 11px; line-height: 18px; color: rgba(166, 196, 229, 0.4); margin-top: 12px; }
+</style>

@@ -1,0 +1,26 @@
+// i18n lookup helper for the xapp port.
+//
+// Dedup note (2026-10-01): this file briefly carried a full port of main.js's T dictionary;
+// the main-page port landed its own canonical copy in utils/main-t.uts (nested UTSJSONObject +
+// lang-dispatched fmt functions), so the duplicate lives there and this file keeps ONLY the
+// shared lookup helper. The miniapp has no shared i18n module — src/mini/nano-miniapp/i18n/
+// holds just base.json, the Donut app-name table (native build config, not a page concern).
+//
+// tr() mirrors coach.uvue's _tr helper exactly: dot-path lookup through nested UTSJSONObjects,
+// returning the LAST path segment when a leaf/branch is missing (WXML-era convention: an
+// unknown key shows its own name rather than rendering empty).
+
+export function tr(t : UTSJSONObject, path : string) : string {
+  const parts = path.split('.')
+  var cur : UTSJSONObject = t
+  for (let i = 0; i < parts.length; i++) {
+    if (i == parts.length - 1) {
+      const v = cur.getString(parts[i])
+      return v != null ? v : parts[i]
+    }
+    const nxt = cur.getJSON(parts[i])
+    if (nxt == null) return parts[parts.length - 1]
+    cur = nxt!
+  }
+  return path
+}

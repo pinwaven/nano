@@ -1,0 +1,128 @@
+<template>
+  <view class="toolbox-panel">
+    <view class="toolbox-grid">
+      <view
+        v-for="(item, i) in toolItems"
+        :key="i"
+        :class="disabled ? 'tool-item tool-item-disabled' : 'tool-item'"
+        v-on:click="onTap(item.action)"
+      >
+        <text class="tool-item-icon">{{ item.icon + '\uFE0E' }}</text>
+        <text class="tool-item-label">{{ item.label }}</text>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+// Ported from miniapp components/toolbox/toolbox.js — the chat toolbox popup (AGENTS §28
+// "配置原粒" entry, §37 image upload). Contract kept exact:
+//   props:  tools: Array of {action, icon, label} (host main.js builds e.g.
+//           {action:'formulate_dots'|'test_chip'|'health_advice'|'upload_image', icon, label}),
+//           disabled: Boolean
+//   events: 'toolaction' with detail {action} — or {action, tempFilePath} for 'upload_image'
+//           after a successful media pick.
+// The miniapp read data-action off the tap target; uvue passes the action explicitly.
+import { ToolItem } from '../../utils/tool-actions.uts'
+
+export default {
+  name: 'Toolbox',
+  props: {
+    tools: {
+      type: Array,
+      default() : any[] { return [] as any[] }
+    },
+    disabled: {
+      type: Boolean,
+      default: false
+    }
+  },
+  computed: {
+    toolItems() : ToolItem[] {
+      const out : ToolItem[] = []
+      const list = this.tools
+      if (list == null) return out
+      for (const raw of list!) {
+        // main passes tool-actions' ToolItem[] (a class, not UTSJSONObject — casting rows to
+        // UTSJSONObject throws ClassCastException at runtime).
+        out.push(raw as ToolItem)
+      }
+      return out
+    }
+  },
+  methods: {
+    onTap(action : string) {
+      const disabled = this.disabled
+      console.log('[toolbox] onTap', JSON.stringify({ action: action, disabled: disabled } as UTSJSONObject))
+      if (disabled) {
+        console.log('[toolbox] blocked — disabled=true')
+        return
+      }
+      if (action == 'upload_image') {
+        console.log('[toolbox] calling chooseImage')
+        // TODO(port): wx.chooseMedia({count:1, mediaType:['image'], sourceType:['album','camera'],
+        // sizeType:['original']}) → uni.chooseImage on uni-app x. Verify the app-side picker
+        // covers album+camera in one call and that tempFilePath is a local readable path the
+        // upload flow accepts like the miniapp's.
+        uni.chooseImage({
+          count: 1,
+          success: (res : ChooseImageSuccess) => {
+            console.log('[toolbox] chooseImage success', JSON.stringify({ tempFilePaths: res.tempFilePaths } as UTSJSONObject))
+            const paths = res.tempFilePaths
+            if (paths.length > 0) {
+              const tempFilePath = paths[0]
+              this.$emit('toolaction', { action: action, tempFilePath: tempFilePath } as UTSJSONObject)
+            }
+          },
+          fail: (err : any) => {
+            console.log('[toolbox] chooseImage fail', JSON.stringify(err))
+          },
+        })
+      } else {
+        this.$emit('toolaction', { action: action } as UTSJSONObject)
+      }
+    }
+  }
+}
+</script>
+
+<style>
+/* Structural port of toolbox.wxss (the source used page-level CSS vars — var(--bg-input),
+   var(--blue), var(--navy-border) — which do not cross the component boundary here).
+   Palette: #0B1C2E panel, #12283F card, #2E7CF6 accent, #EAF2FB text. */
+.toolbox-panel {
+  background-color: rgba(11, 28, 46, 0.92);
+  border-top: 1px solid rgba(99, 117, 236, 0.18);
+  padding: 10px 12px 8px 12px;
+}
+.toolbox-grid {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.tool-item {
+  flex-direction: column;
+  align-items: center;
+  background-color: rgba(99, 117, 236, 0.12);
+  border: 1px solid rgba(99, 117, 236, 0.18);
+  border-radius: 10px;
+  padding: 9px 10px;
+  min-width: 42px;
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+.tool-item-icon {
+  font-size: 15px;
+  color: #6375EC;
+  line-height: 1;
+}
+.tool-item-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #EEF2FF;
+  text-align: center;
+  margin-top: 5px;
+}
+.tool-item-disabled {
+  opacity: 0.35;
+}
+</style>

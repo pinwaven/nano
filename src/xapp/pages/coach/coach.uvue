@@ -1,0 +1,2051 @@
+<template>
+  <view class="co-screen">
+    <view class="co-header" :style="'padding-top:' + statusBarHeight + 'px'">
+      <view class="co-back" v-on:click="handleBack"><text class="co-back-text">‹ {{ tr('back') }}</text></view>
+      <text class="co-title">{{ tr('title') }}</text>
+      <view class="co-menu-btn" v-on:click="toggleMenu"><text class="co-menu-text">☰</text></view>
+    </view>
+
+    <view v-if="menuOpen" class="co-menu">
+      <text class="co-menu-item" v-on:click="toggleLang">{{ lang == 'zh' ? 'English' : '中文' }}</text>
+      <text class="co-menu-item" v-on:click="toggleTheme">{{ tr(theme == 'dark' ? 'lightMode' : 'darkMode') }}</text>
+      <text class="co-menu-item" v-on:click="openUserPanel">{{ tr('userPanelMenu') }}</text>
+      <text v-if="sandboxMode" class="co-menu-item" v-on:click="exitSandbox">{{ tr('exitSandbox') }}</text>
+      <text class="co-menu-item co-menu-danger" v-on:click="handleLogout">{{ tr('logout') }}</text>
+    </view>
+
+    <view v-if="sandboxMode" class="co-sandbox-banner">
+      <text class="co-sandbox-text">{{ sandboxBannerText }}</text>
+    </view>
+
+    <view class="co-tabs">
+      <text v-for="(tk, i) in tabKeys" :key="i" class="co-tab" :class="tab == tk ? 'co-tab-on' : ''" v-on:click="switchTab(tk)">{{ tr('tabs.' + tk) }}</text>
+    </view>
+
+    <scroll-view direction="vertical" class="co-body" :refresher-enabled="tab == 'clients'" v-on:refresherrefresh="onClientsRefresh">
+      <view v-if="tab == 'clients'">
+        <view class="co-search-row">
+          <input class="co-search" v-model="clientSearch" :placeholder="tr('searchPlaceholder')" />
+        </view>
+        <view class="co-chips">
+          <text class="co-chip" :class="clientStageFilter.length == 0 ? 'co-chip-on' : ''" v-on:click="setStageFilter('')">{{ tr('filterAll') }}</text>
+          <text v-for="(s, i) in clientFilterStages" :key="i" class="co-chip" :class="clientStageFilter == s.getString('stage') ? 'co-chip-on' : ''" v-on:click="setStageFilter(`${s.getString('stage')}`)">{{ s.getString('label') }} ({{ s.getNumber('count') }})</text>
+        </view>
+        <text v-if="mcEnabled" class="co-mc-add" v-on:click="openManagedForm('')">{{ tr('mc.add') }}</text>
+
+        <text v-if="clientsLoadState == 'no_coach'" class="co-empty">{{ tr('noCoachSession') }} {{ diagText }}</text>
+        <text v-else-if="clientsLoadState == 'failed'" class="co-empty">{{ tr('clientsLoadFailed') }} {{ diagText }}</text>
+        <text v-else-if="filteredClients.length == 0" class="co-empty">{{ clients.length == 0 ? tr('noClients') : tr('noMatchClients') }}</text>
+
+        <view v-for="(c, i) in filteredClients" :key="i" class="co-client" v-on:click="openClientDetail(i, 'health')">
+          <view class="co-client-top">
+            <text class="co-client-name">{{ c.getString('nickname') }}</text>
+            <text v-if="c.getString('account_type') == 'managed'" class="co-badge">{{ tr('mc.badge') }}</text>
+            <text v-if="c.getJSON('_crmStagePill') != null" class="co-badge" :style="'color:' + c.getJSON('_crmStagePill')!.getString('color')">{{ c.getJSON('_crmStagePill')!.getString('label') }}</text>
+          </view>
+          <view class="co-client-row">
+            <text class="co-kv">{{ tr('bioAge') }}: </text><text class="co-v" :style="'color:' + c.getString('_bioAgeColor')">{{ c.getString('_bioAgeStr') }}</text>
+            <text class="co-kv">  {{ tr('chronoAge') }}: </text><text class="co-v">{{ c.getNumber('_cAge') }}</text>
+          </view>
+          <view class="co-subages">
+            <text v-for="(sa, j) in c.getArray<UTSJSONObject>('_subAges')" :key="j" class="co-subage" :style="'color:' + sa.getString('color')">{{ sa.getString('label') }} {{ sa.getString('value') }}</text>
+          </view>
+          <view class="co-client-foot">
+            <text class="co-kv">{{ tr('lastScan') }}: </text><text class="co-v">{{ c.getString('_lastScanFmt') }}</text>
+          </view>
+          <text v-if="c.getString('_lastUserMsg') != null" class="co-msgprev">{{ c.getString('_lastUserMsg') }}</text>
+        </view>
+      </view>
+
+      <view v-else-if="tab == 'invites'">
+        <view class="co-btn" v-on:click="generateInvite"><text class="btn-text">{{ tr('invite.generate') }}</text></view>
+        <text v-if="invites.length == 0" class="co-empty">{{ tr('invite.noInvites') }}</text>
+        <view v-for="(v, i) in invites" :key="i" class="co-invite">
+          <view class="co-client-top">
+            <text class="co-code">{{ v.getString('code') }}</text>
+            <text class="co-badge">{{ v.getString('status') == 'active' ? tr('invite.active') : tr('invite.inactive') }}</text>
+          </view>
+          <text class="co-kv">{{ tr('invite.uses') }}: {{ v.getNumber('used_count') }}</text>
+          <text class="co-note" v-on:click="editInviteNote(i)">{{ v.getString('note') != null && v.getString('note')!.length > 0 ? v.getString('note') : tr('invite.noNote') }}</text>
+          <view class="co-row-actions">
+            <text class="co-act" v-on:click="copyInvite(i)">{{ tr('invite.copy') }}</text>
+            <text v-if="v.getString('status') == 'active'" class="co-act co-act-danger" v-on:click="deactivateInvite(i)">{{ tr('invite.deactivate') }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view v-else-if="tab == 'earnings'">
+        <view class="co-kpi-row">
+          <view class="co-kpi"><text class="co-kpi-label">{{ tr('earnings.thisMonth') }}</text><text class="co-kpi-val">{{ earningsThisMonth }}</text></view>
+          <view class="co-kpi"><text class="co-kpi-label">{{ tr('earnings.available') }}</text><text class="co-kpi-val">{{ earningsAvailable }}</text></view>
+        </view>
+        <text class="co-section">{{ tr('earnings.payoutHistory') }}</text>
+        <text v-if="earningsPayouts.length == 0" class="co-empty">{{ tr('earnings.noPayouts') }}</text>
+        <view v-for="(p, i) in earningsPayouts" :key="i" class="co-payout">
+          <text class="co-v">{{ p.getString('period_start') }}</text>
+          <text class="co-v">{{ p.getString('_amountFmt') }}</text>
+          <text class="co-v">{{ p.getString('_statusFmt') }}</text>
+        </view>
+      </view>
+
+      <view v-else-if="tab == 'questionnaires'">
+        <text v-if="questionnaires.length == 0" class="co-empty">{{ tr('questionnaires.noQuestionnaires') }}</text>
+        <view v-for="(q, i) in questionnaires" :key="i" class="co-q">
+          <text class="co-client-name">{{ q.getString('name_zh') }}</text>
+          <view class="co-row-actions">
+            <text class="co-act" v-on:click="openQAssign(i)">{{ tr('questionnaires.assign') }}</text>
+            <text class="co-act" v-on:click="openQResponses(i)">{{ tr('questionnaires.responsesTitle') }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view v-else>
+        <text class="co-section">{{ tr('kpiTitle') }}</text>
+        <view class="co-kpi-row">
+          <view class="co-kpi"><text class="co-kpi-label">{{ tr('kpiClients') }}</text><text class="co-kpi-val">{{ kpiField('total_clients') }}</text></view>
+          <view class="co-kpi"><text class="co-kpi-label">{{ tr('kpiActive') }}</text><text class="co-kpi-val">{{ kpiField('active') }}</text></view>
+          <view class="co-kpi"><text class="co-kpi-label">{{ tr('kpiAtRisk') }}</text><text class="co-kpi-val">{{ kpiField('at_risk') }}</text></view>
+        </view>
+        <text class="co-section">{{ tr('crmPipeline') }}</text>
+        <scroll-view direction="horizontal" class="co-kanban">
+          <view v-for="(col, i) in crmPipelineColumns" :key="i" class="co-kanban-col">
+            <text class="co-kanban-head" :style="'color:' + col.getString('color')">{{ col.getString('label') }}</text>
+            <view v-for="(cc, j) in col.getArray<UTSJSONObject>('clients')" :key="j" class="co-kanban-card" v-on:longpress="openStagePicker(cc)" v-on:click="openApptForm(cc)">
+              <text class="co-client-name">{{ cc.getString('nickname') }}</text>
+            </view>
+          </view>
+        </scroll-view>
+        <view class="co-btn" v-on:click="openApptForm(null)"><text class="btn-text">{{ tr('newAppt') }}</text></view>
+        <text class="co-section">{{ tr('crmAppointments') }}</text>
+        <text v-if="crmUpcomingAppts.length == 0" class="co-empty">{{ tr('noAppointments') }}</text>
+        <view v-for="(a, i) in crmUpcomingAppts" :key="i" class="co-payout"><text class="co-v">{{ a.getString('title') }}</text><text class="co-v">{{ a.getString('_timeFmt') }}</text></view>
+        <text class="co-section">{{ tr('crmActivity') }}</text>
+        <text v-if="crmActivityFeed.length == 0" class="co-empty">{{ tr('noActivity') }}</text>
+        <view v-for="(f, i) in crmActivityFeed" :key="i" class="co-payout">
+          <text class="co-v">{{ f.getString('_label') }} · {{ f.getString('client_name') }}</text>
+          <text class="co-v co-muted">{{ f.getString('_timeFmt') }}</text>
+        </view>
+      </view>
+    </scroll-view>
+
+    <view v-if="detailOpen" class="co-overlay">
+      <view class="co-sheet">
+        <view class="co-sheet-head">
+          <text class="co-client-name">{{ detailClient != null ? detailClient!.getString('nickname') : '' }}</text>
+          <text v-if="detailClient != null && detailClient!.getString('account_type') == 'managed'" class="co-badge">{{ tr('mc.badge') }}</text>
+          <view class="co-row-actions">
+            <text v-if="detailClient != null && detailClient!.getString('account_type') == 'managed'" class="co-act" v-on:click="openManagedFormEdit">{{ tr('mc.edit') }}</text>
+            <text v-if="detailClient != null && detailClient!.getString('account_type') == 'managed'" class="co-act" v-on:click="scanBoxForCustomer">{{ tr('mc.boxScan') }}</text>
+          </view>
+          <text class="co-close" v-on:click="closeClientDetail">✕</text>
+        </view>
+        <view class="co-subtabs">
+          <text v-for="(dt, i) in detailTabs" :key="i" class="co-chip" :class="detailTab == dt ? 'co-chip-on' : ''" v-on:click="switchDetailTab(dt)">{{ detailTabLabel(dt) }}</text>
+        </view>
+
+        <scroll-view direction="vertical" class="co-detail-body">
+          <view v-if="detailTab == 'health'">
+            <user-health :userId="detailClient != null ? detailClient!.getString('user_id') ?? '' : ''"
+              :user="detailClient" :lang="lang" mode="coach" :coachId="coachId" :theme="theme"
+              :textScale="textScale" v-on:profileUpdated="onClientProfileUpdated" />
+          </view>
+
+          <view v-else-if="detailTab == 'chat'">
+            <scroll-view direction="vertical" class="co-chatlist" :scroll-top="chatScrollTop" :scroll-with-animation="true">
+              <view v-for="(m, i) in chatMessages" :key="i" class="co-cmsg" :class="m.getBoolean('_isCoach') == true ? 'co-cmsg-coach' : (m.getBoolean('_isAi') == true ? 'co-cmsg-ai' : 'co-cmsg-user')">
+                <text class="co-cmsg-who">{{ m.getString('role') }} {{ m.getString('_time') }}</text>
+                <text v-if="m.getString('content') != null && m.getString('content')!.length > 0" class="co-cmsg-text">{{ m.getString('content') }}</text>
+                <image v-if="m.getString('imageUrl') != null && m.getString('imageUrl')!.length > 0" class="co-cmsg-img" :src="m.getString('imageUrl')" mode="widthFix" />
+              </view>
+            </scroll-view>
+            <view v-if="vivaThinking" class="co-typing"><text class="co-muted">{{ tr('mc.thinking') }}</text></view>
+            <view class="co-tools">
+              <text class="co-act" v-on:click="runTool('test_chip')">{{ tr('toolTestChip') }}</text>
+              <text class="co-act" v-on:click="runTool('formula_dots')">{{ tr('toolFormulaDots') }}</text>
+              <text class="co-act" v-on:click="runTool('health_advice')">{{ tr('toolHealthAdvice') }}</text>
+              <text class="co-act" v-on:click="runTool('upload_image')">{{ tr('toolUploadImage') }}</text>
+            </view>
+            <view class="co-compose">
+              <input class="co-msg-input" v-model="msgText" :placeholder="detailIsManaged ? tr('mc.askPh') : tr('msgPh')" />
+              <view class="co-send" v-on:click="sendMessage"><text class="btn-text">{{ msgBusy ? tr('sending') : tr('send') }}</text></view>
+              <view class="co-send co-send-ghost" v-on:click="openReminderComposer"><text class="btn-text-sm">{{ tr('setReminder') }}</text></view>
+              <view v-if="detailIsManaged" class="co-send co-send-ghost" v-on:click="openRedeemForm"><text class="btn-text-sm">{{ tr('mc.redeem') }}</text></view>
+            </view>
+          </view>
+
+          <view v-else-if="detailTab == 'plans'">
+            <text class="co-section">{{ tr('clientPlans') }}</text>
+            <text v-if="detailPlans.length == 0" class="co-empty">{{ tr('noClientPlans') }}</text>
+            <view v-for="(p, i) in detailPlans" :key="i" class="co-plan">
+              <text class="co-client-name">{{ p.getString('name_zh') }}</text>
+              <text class="co-kv">{{ p.getString('plan_type') == 'primary' ? tr('planPrimary') : tr('planSecondary') }} · {{ p.getNumber('duration_weeks') }} {{ tr('planWeeks') }}</text>
+            </view>
+            <view class="co-row-actions">
+              <text class="co-act" v-on:click="openPlanRecommend">{{ tr('recommendPlan') }}</text>
+              <text class="co-act" v-on:click="openPlanCustom">{{ tr('createCustomPlan') }}</text>
+            </view>
+            <text class="co-section">{{ tr('clientPrograms') }}</text>
+            <text v-if="detailPrograms.length == 0" class="co-empty">{{ tr('noClientPrograms') }}</text>
+            <view v-for="(p, i) in detailPrograms" :key="i" class="co-plan">
+              <text class="co-client-name">{{ p.getString('title_zh') }}</text>
+              <text class="co-kv">{{ p.getString('statusLabel') }} · {{ p.getString('progressLabel') }}</text>
+              <text v-if="p.getString('action') != null && p.getString('action')!.length > 0" class="co-act" v-on:click="handleProgramAction(p.getNumber('id'), `${p.getString('action')}`)">{{ p.getString('actionLabel') }}</text>
+            </view>
+          </view>
+
+          <view v-else-if="detailTab == 'notes'">
+            <view class="co-compose">
+              <input class="co-msg-input" v-model="noteText" :placeholder="tr('addNotePh')" />
+              <view class="co-send" v-on:click="saveNote"><text class="btn-text">{{ tr('saveNote') }}</text></view>
+            </view>
+            <text v-if="clientNotes.length == 0" class="co-empty">{{ tr('noNotes') }}</text>
+            <view v-for="(n, i) in clientNotes" :key="i" class="co-note-card">
+              <text class="co-v">{{ n.getString('content') }}</text>
+              <view class="co-row-actions">
+                <text class="co-act" v-on:click="toggleNotePin(i)">{{ n.getBoolean('is_pinned') == true ? tr('noteUnpin') : tr('notePin') }}</text>
+                <text class="co-act co-act-danger" v-on:click="deleteNote(i)">{{ tr('noteDelete') }}</text>
+              </view>
+            </view>
+          </view>
+
+          <view v-else-if="detailTab == 'goals'">
+            <view class="co-row-actions"><text class="co-act" v-on:click="openGoalForm">{{ tr('setGoal') }}</text></view>
+            <text v-if="clientGoals.length == 0" class="co-empty">{{ tr('noGoals') }}</text>
+            <view v-for="(g, i) in clientGoals" :key="i" class="co-note-card">
+              <text class="co-v">{{ g.getString('title_zh') }} · {{ g.getString('_pctLabel') }}</text>
+              <text class="co-kv">{{ g.getString('_statusLabel') }}</text>
+            </view>
+          </view>
+
+          <view v-else>
+            <view class="co-compose">
+              <input class="co-msg-input" v-model="factText" :placeholder="tr('addFactPh')" />
+              <view class="co-send" v-on:click="saveFact"><text class="btn-text">{{ tr('saveFact') }}</text></view>
+            </view>
+            <text v-if="clientFacts.length == 0" class="co-empty">{{ tr('noFacts') }}</text>
+            <view v-for="(f, i) in clientFacts" :key="i" class="co-note-card">
+              <text class="co-v">{{ factCatLabel(f.getString('category')) }}: {{ f.getString('fact_zh') }}</text>
+              <text class="co-act co-act-danger" v-on:click="deleteFact(i)">{{ tr('factDelete') }}</text>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+    </view>
+
+    <view v-if="planRecommendOpen" class="co-overlay" v-on:click="closePlanRecommend">
+      <view class="co-sheet co-sheet-mid">
+        <text class="co-client-name">{{ tr('recommendPlan') }}</text>
+        <view v-for="(tpl, i) in planTemplates" :key="i" class="co-tpl" v-on:click="handleRecommendPlan(tpl.getNumber('id'))">
+          <text class="co-v">{{ tpl.getString('name_zh') }}</text>
+          <text class="co-kv">{{ tpl.getString('sub_ages_display') }}</text>
+        </view>
+      </view>
+    </view>
+
+    <view v-if="planCustomOpen" class="co-overlay">
+      <view class="co-sheet co-sheet-mid">
+        <text class="co-client-name">{{ tr('createCustomPlan') }}</text>
+        <input class="co-msg-input co-field" v-model="planCustomName" :placeholder="tr('customPlanName')" />
+        <input class="co-msg-input co-field" v-model="planCustomGoal" :placeholder="tr('customPlanGoal')" />
+        <input class="co-msg-input co-field" v-model="planCustomDurationStr" :placeholder="tr('customPlanDuration')" />
+        <view class="co-btn" v-on:click="handleCreateCustomPlan"><text class="btn-text">{{ tr('saveNote') }}</text></view>
+        <text class="co-act" v-on:click="closePlanCustom">{{ tr('mc.cancel') }}</text>
+      </view>
+    </view>
+
+    <view v-if="reminderOpen" class="co-overlay">
+      <view class="co-sheet co-sheet-mid">
+        <text class="co-client-name">{{ tr('reminderTitle') }}</text>
+        <textarea class="co-msg-input co-field" v-model="reminderText" :placeholder="tr('reminderContentPh')" />
+        <view class="co-compose-row">
+          <view class="co-send co-send-ghost"><picker mode="date" v-on:change="onReminderDateChange"><text class="btn-text-sm">{{ reminderDate }}</text></picker></view>
+          <view class="co-send co-send-ghost"><picker mode="time" v-on:change="onReminderTimeChange"><text class="btn-text-sm">{{ reminderTime }}</text></picker></view>
+        </view>
+        <view class="co-row-actions">
+          <text class="co-act" :class="reminderRecurrence == 'none' ? 'co-act-on' : ''" v-on:click="setRecurrence('none')">{{ tr('recurrenceNone') }}</text>
+          <text class="co-act" :class="reminderRecurrence == 'daily' ? 'co-act-on' : ''" v-on:click="setRecurrence('daily')">{{ tr('recurrenceDaily') }}</text>
+          <text class="co-act" :class="reminderRecurrence == 'weekly' ? 'co-act-on' : ''" v-on:click="setRecurrence('weekly')">{{ tr('recurrenceWeekly') }}</text>
+        </view>
+        <view class="co-btn" v-on:click="submitReminder"><text class="btn-text">{{ tr('send') }}</text></view>
+        <text class="co-act" v-on:click="closeReminderComposer">{{ tr('mc.cancel') }}</text>
+      </view>
+    </view>
+
+    <view v-if="qAssignOpen" class="co-overlay">
+      <view class="co-sheet co-sheet-mid">
+        <text class="co-client-name">{{ tr('questionnaires.assignTitle') }}</text>
+        <view class="co-detail-body">
+          <view v-for="(c, i) in clients" :key="i" class="co-qrow" v-on:click="toggleQUser(c.getString('user_id'))">
+            <text class="co-v">{{ c.getString('nickname') }}</text>
+            <text class="co-v">{{ qAssignSelectedIds.indexOf(c.getString('user_id')) >= 0 ? '✓' : '' }}</text>
+          </view>
+        </view>
+        <view class="co-btn" v-on:click="submitQAssign"><text class="btn-text">{{ tr('questionnaires.assign') }}</text></view>
+        <text class="co-act" v-on:click="closeQAssign">{{ tr('mc.cancel') }}</text>
+      </view>
+    </view>
+
+    <view v-if="qResponsesOpen" class="co-overlay">
+      <view class="co-sheet co-sheet-mid">
+        <text class="co-client-name">{{ tr('questionnaires.responsesTitle') }}</text>
+        <view class="co-detail-body">
+          <text v-if="qResponsesList.length == 0" class="co-empty">{{ tr('questionnaires.noResponses') }}</text>
+          <view v-for="(grp, i) in qResponsesList" :key="i">
+            <text class="co-section">{{ grp.getString('name') }}</text>
+            <view v-for="(item, j) in grp.getArray<UTSJSONObject>('items')" :key="j" class="co-note-card">
+              <text class="co-v">{{ item.getString('prompt') }} → {{ item.getString('answer_fmt') }}</text>
+              <text class="co-kv">{{ item.getString('answered_at') }}</text>
+            </view>
+          </view>
+        </view>
+        <text class="co-act" v-on:click="closeQResponses">{{ tr('apptCancel') }}</text>
+      </view>
+    </view>
+
+    <view v-if="mcFormOpen" class="co-overlay">
+      <view class="co-sheet co-sheet-mid">
+        <text class="co-client-name">{{ mcEditId.length > 0 ? tr('mc.titleEdit') : tr('mc.titleNew') }}</text>
+        <text class="co-kv">{{ tr('mc.note') }}</text>
+        <input class="co-msg-input co-field" v-model="mcLast" :placeholder="tr('mc.lastName')" />
+        <input class="co-msg-input co-field" v-model="mcFirst" :placeholder="tr('mc.firstName')" />
+        <input class="co-msg-input co-field" v-model="mcNickname" :placeholder="tr('mc.nickname')" />
+        <view class="co-send co-send-ghost co-field"><picker mode="date" v-on:change="onMcBirthDateChange"><text class="btn-text-sm">{{ mcBirthDate.length > 0 ? mcBirthDate : tr('mc.selectDate') }}</text></picker></view>
+        <view class="co-row-actions">
+          <text class="co-act" :class="mcGender == 'male' ? 'co-act-on' : ''" v-on:click="mcGender = 'male'">{{ tr('mc.genders0') }}</text>
+          <text class="co-act" :class="mcGender == 'female' ? 'co-act-on' : ''" v-on:click="mcGender = 'female'">{{ tr('mc.genders1') }}</text>
+        </view>
+        <input class="co-msg-input co-field" v-model="mcPhone" :placeholder="tr('mc.phone')" />
+        <input class="co-msg-input co-field" v-model="mcRef" :placeholder="tr('mc.ref')" />
+        <view class="co-btn" v-on:click="submitManagedForm"><text class="btn-text">{{ tr('mc.save') }}</text></view>
+        <text class="co-act" v-on:click="closeManagedForm">{{ tr('mc.cancel') }}</text>
+      </view>
+    </view>
+
+    <view v-if="redeemOpen" class="co-overlay">
+      <view class="co-sheet co-sheet-mid">
+        <text class="co-client-name">{{ tr('mc.redeemTitle') }}</text>
+        <text class="co-kv">{{ tr('mc.redeemHint') }}</text>
+        <input class="co-msg-input co-field" v-model="redeemCode" :placeholder="tr('mc.redeemCode')" />
+        <input class="co-msg-input co-field" v-model="redeemName" :placeholder="tr('mc.redeemName')" />
+        <input class="co-msg-input co-field" v-model="redeemPhone" :placeholder="tr('mc.redeemPhone')" />
+        <textarea class="co-msg-input co-field" v-model="redeemAddress" :placeholder="tr('mc.redeemAddress')" />
+        <view class="co-btn" v-on:click="submitRedeem"><text class="btn-text">{{ tr('mc.redeemSubmit') }}</text></view>
+        <text class="co-act" v-on:click="closeRedeemForm">{{ tr('mc.cancel') }}</text>
+      </view>
+    </view>
+
+    <view v-if="apptFormOpen" class="co-overlay">
+      <view class="co-sheet co-sheet-mid">
+        <text class="co-client-name">{{ tr('apptCreate') }}{{ apptClientName.length > 0 ? ' · ' + apptClientName : '' }}</text>
+        <input class="co-msg-input co-field" v-model="apptTitleText" :placeholder="tr('apptTitle')" />
+        <view class="co-compose-row">
+          <view class="co-send co-send-ghost"><picker mode="date" v-on:change="onApptDateChange"><text class="btn-text-sm">{{ apptDate }}</text></picker></view>
+          <view class="co-send co-send-ghost"><picker mode="time" v-on:change="onApptTimeChange"><text class="btn-text-sm">{{ apptTime }}</text></picker></view>
+        </view>
+        <view class="co-row-actions">
+          <text v-for="(fm, i) in apptFormats" :key="i" class="co-act" :class="apptFormat == fm ? 'co-act-on' : ''" v-on:click="apptFormat = fm">{{ tr('apptFormats.' + fm) }}</text>
+        </view>
+        <input class="co-msg-input co-field" v-model="apptLink" placeholder="https://…" />
+        <view class="co-btn" v-on:click="submitAppt"><text class="btn-text">{{ tr('apptCreate') }}</text></view>
+        <text class="co-act" v-on:click="closeApptForm">{{ tr('apptCancel') }}</text>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+// Ported from miniapp pages/coach/coach.js (full logic). Deviations, deliberate:
+//  - privacy-modal hooks / capsule geometry / edge-swipe handlers dropped (WeChat-only or
+//    covered by Android system back).
+//  - <user-health> detail sub-tab is a placeholder until the component port lands.
+//  - toolbox component → inline tool chips; upload goes through uni.chooseImage.
+// Kept verbatim: the three distinct empty-list states + diagText (2026-08-30 incident),
+// _repairCoachSession, sandbox request injection, coach-speaker managed-customer chat (§49)
+// with the 285s thread poll, coach-instruction newline flattening, redeem/box-claim flows,
+// the assignable-questionnaires allowlist (dynamic/viva_ag never assignable), and every
+// endpoint/payload shape.
+
+import { BASE, VERSION } from '../../utils/config.uts'
+import { state } from '../../utils/state.uts'
+import { saveSession, clearSession, checkAuthStatus } from '../../utils/session.uts'
+import { maskPhone } from '../../utils/phone.uts'
+import { RespEnvelope, ToolCtx, ToolOpts, runTestChip, runFormulaDs, runHealthAdvice, doUpload } from '../../utils/tool-actions.uts'
+import UserHealth from '../../components/user-health/user-health.uvue'
+
+const ASSIGNABLE_TYPES : string[] = ['onboarding', 'custom']
+
+const T_ZH : UTSJSONObject = {
+  title: '教练面板', back: '返回', loading: '加载中…',
+  tabs: { clients: '我的客户', invites: '邀请码', earnings: '我的收益', questionnaires: '问卷', crm: '客户管理' } as UTSJSONObject,
+  lightMode: '浅色模式', darkMode: '深色模式', userPanelMenu: '我的健康', logout: '退出', exitSandbox: '退出沙盒',
+  sandboxBanner: '沙盒模式：正在以「{name}」的身份查看，任何操作都不会保存',
+  noClients: '暂无分配的客户', searchPlaceholder: '搜索客户姓名…', filterAll: '全部', noMatchClients: '无匹配客户',
+  clientsLoadFailed: '客户列表加载失败，请下拉刷新', noCoachSession: '未能识别你的教练身份，请重新登录',
+  bioAge: '生理年龄', chronoAge: '实际年龄', lastScan: '上次检测', older: '岁↑', younger: '岁↓',
+  tabHealth: '健康', tabPlans: '方案', tabChat: '聊天', tabNotes: '笔记', tabGoals: '目标', tabFacts: '个人信息',
+  clientPlans: '客户方案', recommendPlan: '推荐方案', createCustomPlan: '创建定制方案', noClientPlans: '暂无进行中的方案',
+  planRecommended: '方案已推荐！', planPrimary: '主方案', planSecondary: '辅方案', planWeeks: '周',
+  clientPrograms: '打卡计划', noClientPrograms: '当前渠道暂无可激活的打卡计划',
+  programActivate: '激活', programPause: '暂停', programResume: '继续',
+  programActivated: '已激活，Day 1 已发送', programResumed: '已继续', programPaused: '已暂停',
+  programStatusActive: '进行中', programStatusPaused: '已暂停', programStatusCompleted: '已完成', programStatusNotStarted: '未开始',
+  customPlanName: '方案名称', customPlanGoal: '方案目标', customPlanDuration: '计划周期（周）',
+  msgPh: '输入消息给客户…', send: '发送', sending: '发送中…', sent: '已发送！', sendError: '发送失败，请重试',
+  setReminder: '+ 定时提醒', reminderTitle: '设置提醒', reminderContentPh: '提醒内容…',
+  recurrenceNone: '不重复', recurrenceDaily: '每天', recurrenceWeekly: '每周',
+  reminderSent: '提醒已设置', reminderError: '设置失败', networkError: '网络错误', noPermission: '无权限',
+  invite: { generate: '生成邀请码', deactivate: '停用', copy: '复制链接', uses: '已使用', active: '有效', inactive: '已停用',
+    noInvites: '暂无邀请码', deactivateWarning: '停用此邀请码？已复制的链接将失效。', copied: '链接已复制',
+    notePlaceholder: '例如：微信A群、春季活动', editNote: '备注', noNote: '点击添加备注', noteSaved: '备注已保存' } as UTSJSONObject,
+  earnings: { thisMonth: '本月待结算', available: '可提现余额', noPayouts: '暂无结算记录', payoutHistory: '结算记录',
+    draft: '待审批', approved: '已审批', transferred: '已转账' } as UTSJSONObject,
+  questionnaires: { noQuestionnaires: '暂无可用问卷', assign: '指派', assignTitle: '指派问卷给客户', noUsers: '请选择至少一名客户',
+    assigned: '指派成功', assignError: '指派失败，请重试', responsesTitle: '问卷回答', noResponses: '暂无回答记录' } as UTSJSONObject,
+  noNotes: '暂无笔记', addNotePh: '添加笔记…', saveNote: '保存', notePin: '置顶', noteUnpin: '取消置顶', noteDelete: '删除',
+  noFacts: '暂无记录的个人信息', addFactPh: '记录饮食限制、过敏、偏好或目标…', saveFact: '保存', factDelete: '删除', confirmDeleteFact: '确认删除此条记录？',
+  factCategories: { dietary_restriction: '饮食限制', allergy: '过敏', preference: '偏好', goal: '目标', other: '其他' } as UTSJSONObject,
+  noGoals: '暂无目标', setGoal: '+ 设定目标', goalAchieved: '✓ 已达成', goalActive: '进行中', goalMissed: '未完成',
+  goalTypes: { bio_age: '生理年龄', sub_age: '生理维度', weight: '体重', steps: '步数', sleep_score: '睡眠分', hrv: 'HRV', custom: '自定义' } as UTSJSONObject,
+  crmPipeline: '客户管道', crmStages: { lead: '待跟进', onboarding: '接入中', active: '活跃', at_risk: '需关注', churned: '已流失', graduated: '已毕业' } as UTSJSONObject,
+  crmMoveSuccess: '已更新阶段', crmMoveError: '更新失败，请重试',
+  crmAppointments: '近期预约', crmActivity: '动态', noActivity: '暂无动态', noAppointments: '暂无预约',
+  newAppt: '+ 新增预约', apptTitle: '预约标题', apptFormats: { video: '视频通话', phone: '电话', in_person: '面诊', wechat: '微信' } as UTSJSONObject,
+  apptCreate: '创建预约', apptCancel: '取消',
+  kpiTitle: '我的指标', kpiClients: '总客户', kpiActive: '活跃', kpiAtRisk: '需关注',
+  activityTypes: { message_sent: '发送消息', reminder_set: '设置提醒', plan_assigned: '指派方案', kino_scan: 'Kino 检测', stage_changed: '阶段变更', note_added: '添加笔记', appointment_scheduled: '创建预约', appointment_completed: '完成预约', goal_set: '设定目标', goal_achieved: '达成目标', bulk_message_sent: '群发消息' } as UTSJSONObject,
+  toolFormulaDots: '营养定制', toolTestChip: '检测服务', toolHealthAdvice: '健康管理', toolUploadImage: '上传图片',
+  toolFormulaDotMsg: '请帮我配制我的原粒方案', toolHealthAdviceMsg: '请分析我目前的健康状态，并给我专业的健康建议。',
+  formulaGenerating: '正在为你定制营养方案…', formulaComplete: '该客户的 28 天定制方案已生成，详见对话中的配比卡片。',
+  formulaProcessing: '正在深度分析并定制 28 天方案，完成后会显示在对话中…', formulaError: '方案生成失败，请重试。',
+  healthAdviceError: '健康分析请求失败，请重试。',
+  imageUploading: '正在上传图片…', imageAnalyzing: '正在分析图片，请稍候…', imageError: '图片分析失败，请重试。',
+  kinoScanSuccess: '客户的 Kino 芯片已成功登记！', kinoScanInstruction: '请将芯片插入 Kino 分析仪，开始检测。',
+  kinoScanAlreadyLinked: '此芯片已绑定到该客户账户，正在等待检测结果。', kinoScanUsed: '此芯片已完成检测，无法重复登记。',
+  kinoScanClaimedByOther: '此芯片已被其他账户登记，正在等待检测结果。如需重新使用，请联系管理员重置该芯片。',
+  kinoScanInvalidChip: '此二维码不是有效的 Kino 芯片，请扫描芯片上的二维码。', kinoScanError: '登记失败，请重试。',
+  mc: { add: '+ 新建托管客户', edit: '编辑资料', badge: '托管', titleNew: '新建托管客户', titleEdit: '编辑客户资料',
+    lastName: '姓', firstName: '名', nickname: '显示名称', selectDate: '请选择出生日期', genders0: '男', genders1: '女',
+    phone: '联系电话', ref: '客户编号', save: '保存', cancel: '取消', created: '已创建', saved: '已保存',
+    note: '托管客户不会登录小程序，由您代为检测、配方与咨询。',
+    askPh: '问 Viva 关于该客户的问题…', thinking: 'Viva 正在思考…', noReply: 'Viva 暂未回复，请稍后刷新查看',
+    redeem: '兑换码下单', redeemTitle: '用兑换码为客户下单', redeemCode: '兑换码', redeemName: '收件人', redeemPhone: '收件电话',
+    redeemAddress: '收件地址', redeemSubmit: '确认下单',
+    redeemHint: '使用渠道购买的原粒兑换码，为该客户最新的配方下单，无需付款。请先为客户完成营养定制。',
+    redeemDone: '已下单', redeemPending: '已兑换，订单确认中',
+    boxScan: '扫码激活盒子', boxOk: '已激活，客户的 28 天周期从今天开始', boxAlready: '这盒已经激活过了', boxFail: '无法激活' } as UTSJSONObject,
+} as UTSJSONObject
+
+const T_EN : UTSJSONObject = {
+  title: 'Coach Panel', back: 'Back', loading: 'Loading…',
+  tabs: { clients: 'My Clients', invites: 'Invite Codes', earnings: 'My Earnings', questionnaires: 'Forms', crm: 'CRM' } as UTSJSONObject,
+  lightMode: 'Light Mode', darkMode: 'Dark Mode', userPanelMenu: 'My Health', logout: 'Logout', exitSandbox: 'Exit Sandbox',
+  sandboxBanner: 'Sandbox: viewing as "{name}" — nothing is saved',
+  noClients: 'No clients assigned yet', searchPlaceholder: 'Search by name…', filterAll: 'All', noMatchClients: 'No matching clients',
+  clientsLoadFailed: 'Could not load clients — pull down to retry', noCoachSession: 'Your coach identity could not be resolved — please sign in again',
+  bioAge: 'Bio Age', chronoAge: 'Chrono Age', lastScan: 'Last scan', older: 'yrs↑', younger: 'yrs↓',
+  tabHealth: 'Health', tabPlans: 'Plans', tabChat: 'Chat', tabNotes: 'Notes', tabGoals: 'Goals', tabFacts: 'Facts',
+  clientPlans: 'Client Plans', recommendPlan: 'Recommend Plan', createCustomPlan: 'Create Custom Plan', noClientPlans: 'No active plans',
+  planRecommended: 'Plan recommended!', planPrimary: 'Primary', planSecondary: 'Secondary', planWeeks: 'wks',
+  clientPrograms: 'Check-in Programs', noClientPrograms: 'No programs available for this channel',
+  programActivate: 'Activate', programPause: 'Pause', programResume: 'Resume',
+  programActivated: 'Activated — Day 1 sent', programResumed: 'Resumed', programPaused: 'Paused',
+  programStatusActive: 'In progress', programStatusPaused: 'Paused', programStatusCompleted: 'Completed', programStatusNotStarted: 'Not started',
+  customPlanName: 'Plan Name', customPlanGoal: 'Plan Goal', customPlanDuration: 'Duration (weeks)',
+  msgPh: 'Type a message to your client…', send: 'Send', sending: 'Sending…', sent: 'Sent!', sendError: 'Send failed, please retry',
+  setReminder: '+ Set Reminder', reminderTitle: 'New Reminder', reminderContentPh: 'Reminder message…',
+  recurrenceNone: 'Once', recurrenceDaily: 'Daily', recurrenceWeekly: 'Weekly',
+  reminderSent: 'Reminder set', reminderError: 'Failed to set reminder', networkError: 'Network error', noPermission: 'No permission',
+  invite: { generate: 'Generate Code', deactivate: 'Deactivate', copy: 'Copy Link', uses: 'Uses', active: 'Active', inactive: 'Inactive',
+    noInvites: 'No invite codes yet', deactivateWarning: 'Deactivate this invite code? Shared links will stop working.', copied: 'Link copied',
+    notePlaceholder: 'e.g. WeChat group A, Spring promo', editNote: 'Note', noNote: 'Tap to add a note', noteSaved: 'Note saved' } as UTSJSONObject,
+  earnings: { thisMonth: 'This Month (Pending)', available: 'Available Balance', noPayouts: 'No payout history', payoutHistory: 'Payout History',
+    draft: 'Pending Approval', approved: 'Approved', transferred: 'Transferred' } as UTSJSONObject,
+  questionnaires: { noQuestionnaires: 'No questionnaires available', assign: 'Assign', assignTitle: 'Assign to Clients', noUsers: 'Please select at least one client',
+    assigned: 'Assigned successfully', assignError: 'Assignment failed, please retry', responsesTitle: 'Questionnaire Responses', noResponses: 'No responses yet' } as UTSJSONObject,
+  noNotes: 'No notes yet', addNotePh: 'Add a note…', saveNote: 'Save', notePin: 'Pin', noteUnpin: 'Unpin', noteDelete: 'Delete',
+  noFacts: 'No personal facts recorded yet', addFactPh: 'Record a dietary restriction, allergy, preference, or goal…', saveFact: 'Save', factDelete: 'Delete', confirmDeleteFact: 'Delete this fact?',
+  factCategories: { dietary_restriction: 'Diet', allergy: 'Allergy', preference: 'Preference', goal: 'Goal', other: 'Other' } as UTSJSONObject,
+  noGoals: 'No goals yet', setGoal: '+ Set Goal', goalAchieved: '✓ Achieved', goalActive: 'Active', goalMissed: 'Missed',
+  goalTypes: { bio_age: 'Bio Age', sub_age: 'Sub Age', weight: 'Weight', steps: 'Steps', sleep_score: 'Sleep Score', hrv: 'HRV', custom: 'Custom' } as UTSJSONObject,
+  crmPipeline: 'Pipeline', crmStages: { lead: 'Lead', onboarding: 'Onboarding', active: 'Active', at_risk: 'At Risk', churned: 'Churned', graduated: 'Graduated' } as UTSJSONObject,
+  crmMoveSuccess: 'Stage updated', crmMoveError: 'Update failed, please retry',
+  crmAppointments: 'Upcoming', crmActivity: 'Activity', noActivity: 'No activity yet', noAppointments: 'No upcoming appointments',
+  newAppt: '+ New Appointment', apptTitle: 'Title', apptFormats: { video: 'Video Call', phone: 'Phone', in_person: 'In Person', wechat: 'WeChat' } as UTSJSONObject,
+  apptCreate: 'Create', apptCancel: 'Cancel',
+  kpiTitle: 'My KPIs', kpiClients: 'Total Clients', kpiActive: 'Active', kpiAtRisk: 'At Risk',
+  activityTypes: { message_sent: 'Message sent', reminder_set: 'Reminder set', plan_assigned: 'Plan assigned', kino_scan: 'Kino scan', stage_changed: 'Stage changed', note_added: 'Note added', appointment_scheduled: 'Appointment scheduled', appointment_completed: 'Appointment completed', goal_set: 'Goal set', goal_achieved: 'Goal achieved', bulk_message_sent: 'Bulk message sent' } as UTSJSONObject,
+  toolFormulaDots: 'Formulate Dots', toolTestChip: 'Use Kino Chip', toolHealthAdvice: 'Health Advice', toolUploadImage: 'Upload Image',
+  toolFormulaDotMsg: 'Please formulate my Dots plan', toolHealthAdviceMsg: 'Please analyze my current health status and give me personalized health advice.',
+  formulaGenerating: 'Generating your 28-day nutrition plan from your biomarkers…', formulaComplete: "This client's 28-day formulation is ready — see the allocation card in the conversation.",
+  formulaProcessing: 'Deeply analyzing and building the 28-day formulation — it will appear in the conversation…', formulaError: 'Plan generation failed. Please try again.',
+  healthAdviceError: 'Health analysis request failed. Please try again.',
+  imageUploading: 'Uploading image…', imageAnalyzing: 'Analyzing your image, please wait…', imageError: 'Image analysis failed. Please try again.',
+  kinoScanSuccess: "Client's Kino chip has been registered!", kinoScanInstruction: 'Now insert the chip into the Kino Analyzer to begin the test.',
+  kinoScanAlreadyLinked: 'This chip is already linked to the client account and is awaiting analysis.',
+  kinoScanUsed: 'This chip has already been analyzed and cannot be registered again.',
+  kinoScanClaimedByOther: 'This chip is already registered to another account and is awaiting analysis. Ask an admin to reset it if you need to reuse it.',
+  kinoScanInvalidChip: 'This QR code is not a valid Kino chip. Please scan the QR code on the chip.',
+  kinoScanError: 'Registration failed. Please try again.',
+  mc: { add: '+ New managed customer', edit: 'Edit profile', badge: 'Managed', titleNew: 'New managed customer', titleEdit: 'Edit customer',
+    lastName: 'Last name', firstName: 'First name', nickname: 'Display name', selectDate: 'Select date of birth', genders0: 'Male', genders1: 'Female',
+    phone: 'Contact phone', ref: 'Customer ID', save: 'Save', cancel: 'Cancel', created: 'Created', saved: 'Saved',
+    note: 'Managed customers never sign in; you scan, formulate and consult for them.',
+    askPh: 'Ask Viva about this customer…', thinking: 'Viva is thinking…', noReply: 'No reply from Viva yet — refresh in a moment',
+    redeem: 'Order with code', redeemTitle: 'Order for this customer with a code', redeemCode: 'Redeem code', redeemName: 'Recipient', redeemPhone: 'Recipient phone',
+    redeemAddress: 'Shipping address', redeemSubmit: 'Place order',
+    redeemHint: "Spend a Dots code your channel bought to order this customer's latest formula — no payment. Run Formulate Dots for them first.",
+    redeemDone: 'Ordered', redeemPending: 'Code redeemed — order being confirmed',
+    boxScan: 'Scan box to activate', boxOk: "Activated — the customer's 28-day cycle starts today", boxAlready: 'This box was already activated', boxFail: "Couldn't activate" } as UTSJSONObject,
+} as UTSJSONObject
+
+function _tr(t : UTSJSONObject, path : string) : string {
+  const parts = path.split('.')
+  var cur : UTSJSONObject = t
+  for (let i = 0; i < parts.length; i++) {
+    if (i == parts.length - 1) {
+      const v = cur.getString(parts[i])
+      return v != null ? v : parts[i]
+    }
+    const nxt = cur.getJSON(parts[i])
+    if (nxt == null) return parts[parts.length - 1]
+    cur = nxt!
+  }
+  return path
+}
+
+const SUB_AGE_KEYS : string[] = ['CellularAge', 'MetabolicAge', 'MicroVascularAge', 'ResilienceAge']
+const SUB_AGE_SHORT_ZH : string[] = ['细胞', '代谢', '微血管', '抗压']
+const SUB_AGE_SHORT_EN : string[] = ['Cell', 'Meta', 'Vasc', 'Resi']
+const SUB_AGE_COLORS : string[] = ['#f97316', '#6375EC', '#0ea5e9', '#10b981']
+const STAGE_ORDER : string[] = ['lead', 'onboarding', 'active', 'at_risk', 'churned', 'graduated']
+const STAGE_COLORS = new Map<string, string>()
+STAGE_COLORS.set('lead', '#f59e0b')
+STAGE_COLORS.set('onboarding', '#6375EC')
+STAGE_COLORS.set('active', '#10b981')
+STAGE_COLORS.set('at_risk', '#ef4444')
+STAGE_COLORS.set('churned', '#6b7280')
+STAGE_COLORS.set('graduated', '#0ea5e9')
+
+const REDEEM_ERROR_ZH = new Map<string, string>()
+REDEEM_ERROR_ZH.set('code_required', '请输入兑换码')
+REDEEM_ERROR_ZH.set('shipping_required', '请填写完整收件信息')
+REDEEM_ERROR_ZH.set('code_not_found', '兑换码不存在')
+REDEEM_ERROR_ZH.set('code_already_redeemed', '该兑换码已被使用')
+REDEEM_ERROR_ZH.set('formulation_in_flight', '该客户已有进行中的订单')
+REDEEM_ERROR_ZH.set('redeem_for_managed_only', '仅可为托管客户兑换')
+REDEEM_ERROR_ZH.set('redeemer_not_linked', '请先在商城完成一次账户关联')
+const REDEEM_ERROR_EN = new Map<string, string>()
+REDEEM_ERROR_EN.set('code_required', 'Enter a code')
+REDEEM_ERROR_EN.set('shipping_required', 'Fill in the shipping details')
+REDEEM_ERROR_EN.set('code_not_found', 'Code not found')
+REDEEM_ERROR_EN.set('code_already_redeemed', 'That code has been used')
+REDEEM_ERROR_EN.set('formulation_in_flight', 'This customer already has an order in progress')
+REDEEM_ERROR_EN.set('redeem_for_managed_only', 'Only for managed customers')
+REDEEM_ERROR_EN.set('redeemer_not_linked', 'Open the store once to link your store account')
+const BOX_ERROR_ZH = new Map<string, string>()
+BOX_ERROR_ZH.set('invalid_box_code', '这不是原粒包装上的二维码。')
+BOX_ERROR_ZH.set('box_not_found', '未找到该包装，请确认扫描的是原粒盒身的二维码。')
+BOX_ERROR_ZH.set('not_your_box', '这盒原粒是为其他人定制的，请勿给该客户服用。')
+BOX_ERROR_ZH.set('claimed_by_other', '这盒已被其他账号激活。')
+BOX_ERROR_ZH.set('batch_recalled', '该批次已被召回，请勿服用。')
+BOX_ERROR_ZH.set('formulation_not_approved', '该配方尚未通过专家审核，请稍后再试。')
+const MC_ERROR_ZH = new Map<string, string>()
+MC_ERROR_ZH.set('birth_date_required', '请填写出生日期')
+MC_ERROR_ZH.set('gender_required', '请选择性别')
+MC_ERROR_ZH.set('name_required', '请填写姓名或客户编号')
+MC_ERROR_ZH.set('external_ref_in_use', '该客户编号已存在')
+MC_ERROR_ZH.set('managed_customers_not_enabled', '当前渠道未开通托管客户')
+
+function _pad2(n : number) : string { return n < 10 ? `0${n}` : `${n}` }
+
+function _parseMs(v : any | null) : number {
+  if (v == null) return NaN
+  try {
+    const s = `${v}`
+    const ms = parseFloat(s)
+    if (!isNaN(ms) && s.indexOf('-') == -1 && s.indexOf(':') == -1) return ms
+    return new Date(s).getTime()
+  } catch (e : any) {
+    return NaN
+  }
+}
+
+function fmtTime(v : any | null) : string {
+  const ms = _parseMs(v)
+  if (isNaN(ms)) return ''
+  const d = new Date(ms)
+  return `${d.getMonth() + 1}/${d.getDate()} ${_pad2(d.getHours())}:${_pad2(d.getMinutes())}`
+}
+
+function fmtDate(v : any | null) : string {
+  if (v == null) return '—'
+  const ms = _parseMs(v)
+  if (isNaN(ms)) return `${v}`
+  const d = new Date(ms)
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
+}
+
+function fmtAnswer(v : any | null) : string {
+  if (v == null) return '—'
+  if (v instanceof Array) {
+    const parts : string[] = []
+    for (const item of (v as Array<any>)) parts.push(`${item}`)
+    return parts.join(', ')
+  }
+  if (v instanceof UTSJSONObject) {
+    const parts : string[] = []
+    ;(v as UTSJSONObject).toMap().forEach((val : any | null, k : string) => { parts.push(`${k}: ${val}`) })
+    return parts.join('  ')
+  }
+  return `${v}`
+}
+
+function todayStr() : string {
+  const d = new Date()
+  return `${d.getFullYear()}-${_pad2(d.getMonth() + 1)}-${_pad2(d.getDate())}`
+}
+
+function chronoAge(birthDate : string | null) : number | null {
+  if (birthDate == null || birthDate!.length == 0) return null
+  const ms = _parseMs(birthDate)
+  if (isNaN(ms)) return null
+  return Math.floor((Date.now() - ms) / (1000 * 60 * 60 * 24 * 365.25))
+}
+
+// uni.request's awaitable overload only resolves in module scope with a RequestMethod-TYPED
+// parameter (mirrors utils/request.uts's _run); inside component methods the same call shape
+// silently selects the RequestTask overload (full-build Kotlin error).
+async function _envelopeRun(url : string, method : RequestMethod, data : UTSJSONObject | null, timeoutMs : number) : Promise<RespEnvelope> {
+  const header = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.apiToken}` } as UTSJSONObject
+  let res : RequestSuccess<UTSJSONObject> | null = null
+  await new Promise<boolean>((resolve : (v : boolean) => void, _reject : (e : any | null) => void) => {
+    uni.request<UTSJSONObject>({
+      url: url, method: method, header: header, data: data, timeout: timeoutMs,
+      success: (r) => { res = r; resolve(true) },
+      fail: (err) => { resolve(false) },
+    })
+  })
+  if (res == null) return new RespEnvelope(0, null)
+  checkAuthStatus(res!.statusCode)
+  return new RespEnvelope(res!.statusCode, res!.data)
+}
+
+
+export default {
+  name: 'CoachPage',
+  components: { UserHealth },
+  data() {
+    return {
+      lang: 'zh',
+      t: T_ZH as UTSJSONObject,
+      // Mirror of _coachId (data is unreachable from... templates can't read underscore
+      // fields) — kept in step at both assignment sites, same as the miniapp.
+      coachId: '' as string,
+      textScale: 0 as number,
+      tab: 'clients',
+      tabKeys: ['clients', 'invites', 'earnings', 'questionnaires', 'crm'] as string[],
+      detailTabs: ['health', 'chat', 'plans', 'notes', 'goals', 'facts'] as string[],
+      statusBarHeight: 0,
+      theme: 'dark',
+      sandboxMode: false,
+      sandboxBannerText: '',
+      menuOpen: false,
+      nickname: '',
+      clients: [] as UTSJSONObject[],
+      filteredClients: [] as UTSJSONObject[],
+      clientsLoadState: '',
+      diagText: '',
+      clientSearch: '',
+      clientStageFilter: '',
+      clientFilterStages: [] as UTSJSONObject[],
+      invites: [] as UTSJSONObject[],
+      mcEnabled: false,
+      detailOpen: false,
+      detailClient: null as UTSJSONObject | null,
+      detailTab: 'health',
+      chatMessages: [] as UTSJSONObject[],
+      chatScrollTop: 0,
+      msgText: '',
+      msgBusy: false,
+      chatToolBusy: false,
+      vivaThinking: false,
+      _coachId: '' as string,
+      _coachChannelId: 0 as number,
+      _coachUserId: '' as string,
+      _repairAttempted: false,
+      _vivaPollTimer: 0 as number,
+      earningsThisMonth: '—' as string,
+      earningsAvailable: '—' as string,
+      earningsPayouts: [] as UTSJSONObject[],
+      reminderOpen: false,
+      reminderDate: todayStr() as string,
+      reminderTime: '08:00',
+      reminderText: '',
+      reminderRecurrence: 'none',
+      reminderBusy: false,
+      questionnaires: [] as UTSJSONObject[],
+      qAssignOpen: false,
+      qAssignQuestionnaire: null as UTSJSONObject | null,
+      qAssignSelectedIds: [] as string[],
+      qAssignBusy: false,
+      qResponsesOpen: false,
+      qResponsesList: [] as UTSJSONObject[],
+      clientNotes: [] as UTSJSONObject[],
+      noteText: '',
+      notesBusy: false,
+      clientGoals: [] as UTSJSONObject[],
+      clientFacts: [] as UTSJSONObject[],
+      factText: '',
+      factsBusy: false,
+      detailPlans: [] as UTSJSONObject[],
+      detailPrograms: [] as UTSJSONObject[],
+      planTemplates: [] as UTSJSONObject[],
+      planRecommendOpen: false,
+      planCustomOpen: false,
+      planCustomName: '',
+      planCustomGoal: '',
+      planCustomDurationStr: '4',
+      programActionBusy: false,
+      planActionBusy: false,
+      crmPipelineColumns: [] as UTSJSONObject[],
+      crmActivityFeed: [] as UTSJSONObject[],
+      crmUpcomingAppts: [] as UTSJSONObject[],
+      kpiData: null as UTSJSONObject | null,
+      apptFormOpen: false,
+      apptClientId: '',
+      apptClientName: '',
+      apptTitleText: '',
+      apptDate: todayStr() as string,
+      apptTime: '10:00',
+      apptFormat: 'video',
+      apptFormats: ['video', 'phone', 'in_person', 'wechat'] as string[],
+      apptLink: '',
+      apptBusy: false,
+      mcFormOpen: false,
+      mcEditId: '',
+      mcLast: '',
+      mcFirst: '',
+      mcNickname: '',
+      mcBirthDate: '',
+      mcGender: '',
+      mcPhone: '',
+      mcRef: '',
+      mcBusy: false,
+      redeemOpen: false,
+      redeemCode: '',
+      redeemName: '',
+      redeemPhone: '',
+      redeemAddress: '',
+      redeemBusy: false,
+    }
+  },
+  computed: {
+    detailIsManaged() : boolean {
+      const c = this.detailClient
+      return c != null && c!.getString('account_type') == 'managed'
+    }
+  },
+  onLoad(_options : OnLoadOptions) {
+    const user = state.user
+    if (user == null) { uni.reLaunch({ url: '/pages/login/login' }); return }
+    const roles = user!.getArray<string>('roles') ?? ([] as string[])
+    let isCoach = false
+    let isAdmin = false
+    let isSuperadmin = false
+    for (const r of roles) {
+      if (r == 'coach') isCoach = true
+      if (r == 'admin') isAdmin = true
+      if (r == 'superadmin') isSuperadmin = true
+    }
+    if (!isCoach && !isAdmin && !isSuperadmin) {
+      uni.showToast({ title: _tr(T_ZH, 'noPermission'), icon: 'none' })
+      uni.reLaunch({ url: '/pages/main/main' })
+      return
+    }
+    const coach = state.coach
+    this._coachId = coach != null ? (coach!.getString('id') ?? '') : ''
+    this.coachId = this._coachId
+    this._coachChannelId = coach != null ? (coach!.getNumber('channel_id') ?? 0) : 0
+    this._coachUserId = user!.getString('user_id') ?? ''
+    this.textScale = state.textScale
+    const info = uni.getWindowInfo()
+    this.statusBarHeight = info.statusBarHeight
+    this.nickname = user!.getString('nickname') ?? ''
+    this.theme = user!.getString('theme') ?? state.theme
+    this.lang = state.lang
+    this.t = this.lang == 'en' ? T_EN : T_ZH
+    this.sandboxMode = state.sandboxMode
+    if (this.sandboxMode) {
+      this.sandboxBannerText = _tr(this.t, 'sandboxBanner').split('{name}').join(this.nickname.length > 0 ? this.nickname : '—')
+    }
+    this._loadAll()
+  },
+  // A backgrounded coach must not keep a stale client list indefinitely (2026-08-30):
+  // onShow refetches. onLoad already ran once, so guard on the resolved user id.
+  onShow() {
+    if (this._coachUserId.length > 0 && this.clients.length > 0) this._loadAll()
+  },
+  onUnload() { this._stopVivaPoll() },
+  methods: {
+    tr(path : string) : string { return _tr(this.t, path) },
+    detailTabLabel(dt : string) : string {
+      if (dt == 'health') return this.tr('tabHealth')
+      if (dt == 'plans') return this.tr('tabPlans')
+      if (dt == 'chat') return this.tr('tabChat')
+      if (dt == 'notes') return this.tr('tabNotes')
+      if (dt == 'goals') return this.tr('tabGoals')
+      return this.tr('tabFacts')
+    },
+    kpiField(key : string) : string {
+      const k = this.kpiData
+      if (k == null) return '—'
+      const v = k!.getNumber(key)
+      return v != null ? `${v}` : '—'
+    },
+    factCatLabel(cat : string | null) : string {
+      if (cat == null) return ''
+      return _tr(this.t, 'factCategories.' + cat!)
+    },
+
+    async _loadAll() {
+      if (this._coachId.length == 0) {
+        const repaired = await this._repairCoachSession()
+        if (repaired) { this._loadAll(); return }
+        // Invites key on the user id, not the coach id — they still load (§2026-08-30).
+        let invites : UTSJSONObject[] = []
+        const listRes = await this._req(`${BASE}/api/invitations?created_by=${encodeURIComponent(this._coachUserId)}`, 'GET', null, 0)
+        if (listRes.data != null) {
+          const arr = listRes.data!.getArray<UTSJSONObject>('invitations')
+          if (arr != null) invites = arr!
+        }
+        this.invites = invites
+        this.clients = [] as UTSJSONObject[]
+        this.filteredClients = [] as UTSJSONObject[]
+        this.clientFilterStages = [] as UTSJSONObject[]
+        this.clientsLoadState = 'no_coach'
+        this.diagText = this._diagText(0, null)
+        return
+      }
+      const clientsRes = await this._req(`${BASE}/api/coach-users/${this._coachId}`, 'GET', null, 0)
+      const invitesRes = await this._req(`${BASE}/api/invitations?created_by=${encodeURIComponent(this._coachUserId)}`, 'GET', null, 0)
+      const payload = clientsRes.data
+      const usersArr = payload != null ? payload!.getArray<UTSJSONObject>('users') : null
+      if (payload == null || usersArr == null) {
+        this.clientsLoadState = 'failed'
+        this.diagText = this._diagText(clientsRes.statusCode, null)
+        uni.showToast({ title: this.tr('clientsLoadFailed'), icon: 'none' })
+        return
+      }
+      const built : UTSJSONObject[] = []
+      for (const u of usersArr!) {
+        const cAge = chronoAge(u.getString('birth_date'))
+        const bioAge = u.getNumber('bio_age')
+        let deltaStr = '—'
+        let deltaColor = '#A6C4E5'
+        if (bioAge != null) {
+          deltaColor = (cAge != null && bioAge! <= cAge!) ? '#10b981' : '#ef4444'
+          if (cAge != null) {
+            const d = (bioAge! - cAge!).toFixed(1)
+            deltaStr = `${bioAge!.toFixed(1)} (${d} ${parseFloat(d) > 0 ? this.tr('older') : this.tr('younger')})`
+          } else {
+            deltaStr = bioAge!.toFixed(1)
+          }
+        }
+        const row = new UTSJSONObject()
+        u.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+        row['_cAge'] = cAge
+        row['_bioAgeStr'] = deltaStr
+        row['_bioAgeColor'] = deltaColor
+        row['_lastScanFmt'] = u.getString('last_scan_at') != null ? fmtDate(u['last_scan_at']) : '—'
+        const nick = u.getString('nickname') ?? 'U'
+        row['_avatar'] = nick!.length > 0 ? nick!.substring(0, 1).toUpperCase() : 'U'
+        const subs : UTSJSONObject[] = []
+        const bioData = u.getJSON('bio_data')
+        const profile = bioData != null ? bioData!.getJSON('bioage_profile') : null
+        const subRaw = profile != null ? profile!.getJSON('SubAges') : null
+        if (subRaw != null) {
+          for (let s = 0; s < SUB_AGE_KEYS.length; s++) {
+            const v = subRaw!.getNumber(SUB_AGE_KEYS[s])
+            subs.push({
+              key: SUB_AGE_KEYS[s],
+              label: this.lang == 'zh' ? SUB_AGE_SHORT_ZH[s] : SUB_AGE_SHORT_EN[s],
+              color: SUB_AGE_COLORS[s],
+              value: v != null ? v!.toFixed(1) : null,
+            } as UTSJSONObject)
+          }
+        }
+        row['_subAges'] = subs
+        const lm = u.getString('last_user_msg')
+        row['_lastUserMsg'] = lm != null ? lm!.substring(0, Math.min(100, lm!.length)) : null
+        const crmStage = u.getString('crm_stage')
+        row['_crmStagePill'] = (crmStage != null && crmStage!.length > 0)
+          ? { label: _tr(this.t, 'crmStages.' + crmStage!), color: STAGE_COLORS.get(crmStage!) ?? '#6b7280' } as UTSJSONObject
+          : null
+        built.push(row)
+      }
+      this.clients = built
+      this.clientFilterStages = this._buildFilterStages(built)
+      const inv : UTSJSONObject[] = []
+      if (invitesRes.data != null) {
+        const arr = invitesRes.data!.getArray<UTSJSONObject>('invitations')
+        if (arr != null) { for (const v of arr!) inv.push(v) }
+      }
+      this.invites = inv
+      this.clientsLoadState = ''
+      this.diagText = ''
+      this.mcEnabled = payload!.getBoolean('managed_customers_enabled') == true
+      this._filterClients()
+    },
+
+    // Re-resolve the coach identity from the server and repair the stored session — a login
+    // that captured globalData.coach=null keeps it across relaunches while roles DO refresh.
+    async _repairCoachSession() : Promise<boolean> {
+      if (this._repairAttempted) return false
+      this._repairAttempted = true
+      const res = await this._req(`${BASE}/api/my-coach?user_id=${encodeURIComponent(this._coachUserId)}`, 'GET', null, 0)
+      if (res.data == null || res.data!.getBoolean('success') != true) return false
+      const coach = res.data!.getJSON('coach')
+      if (coach == null || coach!.getString('id') == null) return false
+      state.coach = coach
+      uni.setStorageSync('nano_coach', coach)
+      this._coachId = coach!.getString('id') ?? ''
+      this.coachId = this._coachId
+      this._coachChannelId = coach!.getNumber('channel_id') ?? 0
+      return true
+    },
+
+    _diagText(statusCode : number, err : string | null) : string {
+      const host = BASE.replace('https://', '').replace('http://', '')
+      const parts : string[] = [`${host} · coach=${this._coachId.length == 0 ? 'null' : this._coachId}`, `v${VERSION}`]
+      if (statusCode > 0) parts.push(`HTTP ${statusCode}`)
+      if (err != null) parts.push(err!.substring(0, Math.min(40, err!.length)))
+      return parts.join(' · ')
+    },
+
+    onClientsRefresh() { this._loadAll() },
+    switchTab(tk : string) {
+      this.tab = tk
+      if (tk == 'earnings' && this.earningsThisMonth == '—') this._loadEarnings()
+      if (tk == 'questionnaires' && this.questionnaires.length == 0) this._loadQuestionnaires()
+      if (tk == 'crm') this._loadCRM()
+    },
+    handleBack() { uni.navigateBack() },
+    toggleMenu() { this.menuOpen = !this.menuOpen },
+    toggleLang() {
+      this.lang = this.lang == 'zh' ? 'en' : 'zh'
+      state.lang = this.lang
+      this.t = this.lang == 'zh' ? T_ZH : T_EN
+      this.menuOpen = false
+      this.clientFilterStages = this._buildFilterStages(this.clients)
+    },
+    async toggleTheme() {
+      this.theme = this.theme == 'dark' ? 'light' : 'dark'
+      state.theme = this.theme
+      const user = state.user
+      if (user != null) user!['theme'] = this.theme
+      const su1 = state.user
+      if (su1 != null) uni.setStorageSync('nano_user', su1)
+      this.menuOpen = false
+      await this._req(`${BASE}/api/users/${this._coachUserId}`, 'PUT', { theme: this.theme } as UTSJSONObject, 0)
+    },
+    openUserPanel() {
+      this.menuOpen = false
+      uni.navigateBack()
+    },
+    exitSandbox() {
+      const originRaw = uni.getStorageSync('nano_sandbox_origin')
+      uni.removeStorageSync('nano_sandbox_origin')
+      uni.removeStorageSync('nano_sandbox_active')
+      state.sandboxMode = false
+      if (originRaw != null && originRaw instanceof UTSJSONObject) {
+        const origin = originRaw as UTSJSONObject
+        const u = origin.getJSON('user')
+        if (u != null) {
+          state.user = u
+          state.channel = origin.getJSON('channel')
+          state.coach = origin.getJSON('coach')
+          uni.setStorageSync('nano_user', u)
+          const chn = origin.getJSON('channel')
+          if (chn != null) uni.setStorageSync('nano_channel', chn)
+          const co1 = origin.getJSON('coach')
+          if (co1 != null) uni.setStorageSync('nano_coach', co1)
+          uni.reLaunch({ url: '/pages/main/main' })
+          return
+        }
+      }
+      uni.removeStorageSync('nano_user')
+      state.user = null
+      uni.reLaunch({ url: '/pages/login/login' })
+    },
+    handleLogout() {
+      this.menuOpen = false
+      if (state.sandboxMode) { this.exitSandbox(); return }
+      const user = state.user
+      if (user != null && user!.getBoolean('guest') != true) {
+        const snap = new UTSJSONObject()
+        user!.toMap().forEach((v : any | null, k : string) => {
+          if (k == 'phone' || k == 'email') return
+          snap[k] = v
+        })
+        const storedMasked = user!.getString('maskedPhone')
+        const m = storedMasked != null && storedMasked!.length > 0 ? storedMasked : maskPhone(user!.getString('phone'))
+        uni.setStorageSync('nano_last_session', {
+          user: snap, channel: state.channel, coach: state.coach, maskedPhone: m, session_token: state.apiToken,
+        } as UTSJSONObject)
+      }
+      uni.removeStorageSync('nano_user')
+      clearSession()
+      state.user = null
+      uni.reLaunch({ url: '/pages/login/login?loggedOut=1' })
+    },
+
+    _buildFilterStages(clients : UTSJSONObject[]) : UTSJSONObject[] {
+      const counts = new Map<string, number>()
+      for (const c of clients) {
+        const s = c.getString('crm_stage') ?? 'lead'
+        counts.set(s, (counts.get(s) ?? 0) + 1)
+      }
+      const out : UTSJSONObject[] = []
+      for (const s of STAGE_ORDER) {
+        const n = counts.get(s)
+        if (n == null || n! <= 0) continue
+        out.push({ stage: s, label: _tr(this.t, 'crmStages.' + s), color: STAGE_COLORS.get(s) ?? '#6b7280', count: n } as UTSJSONObject)
+      }
+      return out
+    },
+    _filterClients() {
+      const q = this.clientSearch.trim().toLowerCase()
+      const stage = this.clientStageFilter
+      const out : UTSJSONObject[] = []
+      for (const c of this.clients) {
+        const cs = c.getString('crm_stage') ?? 'lead'
+        if (stage.length > 0 && cs != stage) continue
+        if (q.length > 0) {
+          const nick = c.getString('nickname') ?? ''
+          if (nick!.toLowerCase().indexOf(q) == -1) continue
+        }
+        out.push(c)
+      }
+      this.filteredClients = out
+    },
+    setStageFilter(stage : string) {
+      this.clientStageFilter = stage
+      this._filterClients()
+    },
+
+    openClientDetail(index : number, tabKey : string) {
+      const c = this.filteredClients[index]
+      if (c == null) return
+      this.detailOpen = true
+      this.detailClient = c
+      this.detailTab = tabKey == 'messages' ? 'chat' : tabKey
+      this.chatMessages = [] as UTSJSONObject[]
+      this.msgText = ''
+      if (this.detailTab == 'chat') this._loadClientChat()
+    },
+    onClientProfileUpdated(updated : UTSJSONObject) {
+      this.detailClient = updated
+      const uid = updated.getString('user_id') ?? ''
+      for (let i = 0; i < this.clients.length; i++) {
+        if (`${this.clients[i]['user_id']}` == uid) this.clients[i] = updated
+      }
+      this._filterClients()
+    },
+    closeClientDetail() {
+      this._stopVivaPoll()
+      this.vivaThinking = false
+      this.detailOpen = false
+      this.detailClient = null
+      this.chatMessages = [] as UTSJSONObject[]
+      this.msgText = ''
+    },
+    switchDetailTab(tab : string) {
+      this.detailTab = tab
+      if (tab == 'chat' && this.chatMessages.length == 0) this._loadClientChat()
+      if (tab == 'plans') this._loadClientPlans()
+      if (tab == 'notes') this._loadClientNotes()
+      if (tab == 'goals') this._loadClientGoals()
+      if (tab == 'facts') this._loadClientFacts()
+    },
+    _scrollChatBottom() {
+      setTimeout(() => { this.chatScrollTop = (this.chatMessages.length + 1) * 100000 }, 60)
+    },
+
+    async _loadClientChat() {
+      const client = this.detailClient
+      if (client == null) return
+      const params = `user_id=${encodeURIComponent(client!.getString('user_id') ?? '')}${this._coachId.length > 0 ? '&coach_id=' + this._coachId : ''}`
+      const res = await this._req(`${BASE}/api/coach-user-chat?${params}`, 'GET', null, 0)
+      const msgs = res.data != null ? res.data!.getArray<UTSJSONObject>('messages') : null
+      const out : UTSJSONObject[] = []
+      if (msgs != null) {
+        for (const m of msgs!) {
+          const row = new UTSJSONObject()
+          m.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+          const role = m.getString('role')
+          if (role == 'coach') {
+            const content = m.getString('content') ?? ''
+            row['content'] = content!.split('\n').join(' ') // coach messages are single-line bubbles (miniapp rule)
+          }
+          row['_time'] = fmtTime(m['created_at'])
+          out.push(row)
+        }
+      }
+      this.chatMessages = out
+      if (out.length > 0) this._scrollChatBottom()
+    },
+
+    runTool(action : string) {
+      const client = this.detailClient
+      if (client == null || this.chatToolBusy) return
+      if (action == 'upload_image') {
+        uni.chooseImage({
+          count: 1,
+          success: (res) => {
+            const paths = res.tempFilePaths
+            if (paths.length > 0) doUpload(`${paths[0]}`, client!.getString('user_id') ?? '', this.t, this._makeCtx())
+          }
+        })
+        return
+      }
+      const uid = client!.getString('user_id') ?? ''
+      const ctx = this._makeCtx()
+      if (action == 'test_chip') runTestChip(uid, this.t, ctx)
+      else if (action == 'formula_dots') runFormulaDs(uid, this.t, ctx, new ToolOpts())
+      else if (action == 'health_advice') runHealthAdvice(uid, this.t, ctx, new ToolOpts())
+    },
+    _makeCtx() : ToolCtx {
+      const ctx = new ToolCtx(
+        (role : string, content : string, persist : boolean) : void => { this._addChatMsg(role, content, persist) },
+        (url : string, method : string, body : UTSJSONObject | null, timeoutMs : number) : Promise<RespEnvelope> => this._req(url, method, body, timeoutMs),
+        (v : boolean) : void => { this.chatToolBusy = v }
+      )
+      ctx.addImageMsg = (tempPath : string) : string => this._addChatImageMsg(tempPath)
+      ctx.updateImageMsg = (msgId : string, permanentUrl : string | null) : void => { this._updateChatImageMsg(msgId, permanentUrl) }
+      return ctx
+    },
+
+    _addChatMsg(role : string, content : string, persist : boolean) {
+      const persistRole = role == 'user' ? 'coach' : role
+      const msg = {
+        id: `${role}-${Date.now()}`, role: persistRole, content: content,
+        imageUrl: null as string | null, _time: '',
+      } as UTSJSONObject
+      this.chatMessages.push(msg)
+      this._scrollChatBottom()
+      const client = this.detailClient
+      if (persist && client != null) {
+        this._req(`${BASE}/api/chat-messages`, 'POST', {
+          openid: client!.getString('user_id'), role: persistRole, content: content,
+        } as UTSJSONObject, 0)
+      }
+    },
+    _addChatImageMsg(tempPath : string) : string {
+      const id = `img-${Date.now()}`
+      this.chatMessages.push({ id: id, role: 'coach', content: '', imageUrl: tempPath, _time: '' } as UTSJSONObject)
+      this._scrollChatBottom()
+      return id
+    },
+    _updateChatImageMsg(id : string, permanentUrl : string | null) {
+      const out : UTSJSONObject[] = []
+      for (const m of this.chatMessages) {
+        if (m.getString('id') == id) m['imageUrl'] = permanentUrl
+        out.push(m)
+      }
+      this.chatMessages = out
+    },
+
+    async sendMessage() {
+      const client = this.detailClient
+      const text = this.msgText.trim()
+      if (text.length == 0 || client == null) return
+      if (this.detailIsManaged) { this._askVivaAboutCustomer(); return }
+      this.msgBusy = true
+      const res = await this._req(`${BASE}/api/coach-instruction`, 'POST', {
+        openid: client!.getString('user_id'),
+        instruction: text.split('\n').join(' '),
+      } as UTSJSONObject, 0)
+      this.msgBusy = false
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        uni.showToast({ title: this.tr('sent'), icon: 'success' })
+        this.msgText = ''
+        this._loadClientChat()
+      } else {
+        uni.showToast({ title: this.tr('sendError'), icon: 'none' })
+      }
+    },
+
+    // §49: managed customer never reads chat — coach asks Viva ABOUT them (speaker:'coach').
+    // Agentic turns land async; no notification poll on this page → 285s thread poll.
+    async _askVivaAboutCustomer() {
+      const client = this.detailClient
+      const text = this.msgText.trim()
+      if (client == null) return
+      this.msgBusy = true
+      const res = await this._req(`${BASE}/api/chat`, 'POST', {
+        openid: client!.getString('user_id'), message: text, speaker: 'coach', client: 'coach',
+      } as UTSJSONObject, 90000)
+      this.msgBusy = false
+      const d = res.data
+      if (d == null || d.getBoolean('success') != true) {
+        uni.showToast({ title: this.tr('sendError'), icon: 'none' })
+        return
+      }
+      this.msgText = ''
+      if (d.getBoolean('processing') == true) {
+        this.vivaThinking = true
+        this._loadClientChat()
+        this._startVivaPoll(d.getString('user_message_id'))
+      } else {
+        this._loadClientChat()
+      }
+    },
+    _startVivaPoll(afterId : string | null) {
+      this._stopVivaPoll()
+      const deadline = Date.now() + 285000
+      const client = this.detailClient
+      const userId = client != null ? (client!.getString('user_id') ?? '') : ''
+      var tick : (() => Promise<void>) | null = null
+      tick = async () : Promise<void> => {
+        const cur = this.detailClient
+        if (cur == null || cur!.getString('user_id') != userId) { this._stopVivaPoll(); return }
+        const params = `user_id=${encodeURIComponent(userId)}${this._coachId.length > 0 ? '&coach_id=' + this._coachId : ''}`
+        const res = await this._req(`${BASE}/api/coach-user-chat?${params}`, 'GET', null, 0)
+        const msgs = res.data != null ? res.data!.getArray<UTSJSONObject>('messages') : null
+        if (msgs != null) {
+          for (const m of msgs!) {
+            if (m.getString('role') != 'ai') continue
+            const idn = m.getNumber('id')
+            if (afterId == null || idn == null || idn! > parseFloat(afterId!)) {
+              this._stopVivaPoll()
+              this.vivaThinking = false
+              this._loadClientChat()
+              return
+            }
+          }
+        }
+        if (Date.now() > deadline) {
+          this._stopVivaPoll()
+          this.vivaThinking = false
+          uni.showToast({ title: this.tr('mc.noReply'), icon: 'none' })
+          return
+        }
+        this._vivaPollTimer = setTimeout(() => { if (tick != null) tick!() }, 3000)
+      }
+      this._vivaPollTimer = setTimeout(() => { if (tick != null) tick!() }, 3000)
+    },
+    _stopVivaPoll() {
+      if (this._vivaPollTimer != 0) clearTimeout(this._vivaPollTimer)
+      this._vivaPollTimer = 0
+    },
+
+    openReminderComposer() {
+      this.reminderOpen = true
+      this.reminderText = ''
+      this.reminderDate = todayStr()
+      this.reminderTime = '08:00'
+      this.reminderRecurrence = 'none'
+      this.reminderBusy = false
+    },
+    closeReminderComposer() {
+      if (this.reminderBusy) return
+      this.reminderOpen = false
+    },
+    onReminderDateChange(e : UniPickerChangeEvent) { this.reminderDate = e.detail.value as string },
+    onReminderTimeChange(e : UniPickerChangeEvent) { this.reminderTime = e.detail.value as string },
+    setRecurrence(val : string) { this.reminderRecurrence = val },
+    async submitReminder() {
+      const client = this.detailClient
+      if (client == null) return
+      const text = this.reminderText.trim()
+      if (text.length == 0 || this.reminderDate.length == 0 || this.reminderTime.length == 0) return
+      this.reminderBusy = true
+      const res = await this._req(`${BASE}/api/reminders`, 'POST', {
+        user_id: client!.getString('user_id'),
+        coach_id: this._coachId,
+        content: text,
+        scheduled_for: `${this.reminderDate}T${this.reminderTime}:00+08:00`,
+        recurrence: this.reminderRecurrence == 'none' ? null : this.reminderRecurrence,
+      } as UTSJSONObject, 0)
+      this.reminderBusy = false
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        uni.showToast({ title: this.tr('reminderSent'), icon: 'success' })
+        this.reminderOpen = false
+      } else {
+        uni.showToast({ title: this.tr('reminderError'), icon: 'none' })
+      }
+    },
+
+    generateInvite() {
+      if (this._coachChannelId == 0) { uni.showToast({ title: this.tr('networkError'), icon: 'none' }); return }
+      uni.showModal({
+        title: this.tr('invite.generate'), editable: true, placeholderText: this.tr('invite.notePlaceholder'),
+        success: (res) => { (async () : Promise<void> => {
+          if (!res.confirm) return
+          const note = res.content != null ? res.content!.trim() : ''
+          await this._req(`${BASE}/api/invitations`, 'POST', {
+            created_by: this._coachUserId, channel_id: this._coachChannelId, type: 'coach', note: note,
+          } as UTSJSONObject, 0)
+          this._loadAll()
+        })() }
+      })
+    },
+    editInviteNote(i : number) {
+      const invite = this.invites[i]
+      if (invite == null) return
+      uni.showModal({
+        title: this.tr('invite.editNote'), editable: true,
+        content: invite.getString('note') ?? '', placeholderText: this.tr('invite.notePlaceholder'),
+        success: (res) => { (async () : Promise<void> => {
+          if (!res.confirm) return
+          const note = res.content != null ? res.content!.trim() : ''
+          await this._req(`${BASE}/api/invitations/${invite.getNumber('id')}`, 'PUT', { note: note } as UTSJSONObject, 0)
+          uni.showToast({ title: this.tr('invite.noteSaved'), icon: 'success' })
+          this._loadAll()
+        })() }
+      })
+    },
+    copyInvite(i : number) {
+      const invite = this.invites[i]
+      if (invite == null) return
+      uni.setClipboardData({
+        data: `pages/login/login?invite=${invite.getString('code')}`,
+        success: () => { uni.showToast({ title: this.tr('invite.copied'), icon: 'success' }) }
+      })
+    },
+    deactivateInvite(i : number) {
+      const invite = this.invites[i]
+      if (invite == null) return
+      uni.showModal({
+        title: this.tr('invite.deactivate'), content: this.tr('invite.deactivateWarning'),
+        success: (res) => { (async () : Promise<void> => {
+          if (!res.confirm) return
+          await this._req(`${BASE}/api/invitations/${invite.getNumber('id')}`, 'DELETE', null, 0)
+          this._loadAll()
+        })() }
+      })
+    },
+
+    async _loadEarnings() {
+      if (this._coachUserId.length == 0) return
+      const res = await this._req(`${BASE}/api/coach-earnings?coach_user_id=${encodeURIComponent(this._coachUserId)}`, 'GET', null, 0)
+      const d = res.data
+      if (d == null) return
+      const payouts : UTSJSONObject[] = []
+      const arr = d!.getArray<UTSJSONObject>('payouts')
+      if (arr != null) {
+        for (const p of arr!) {
+          const row = new UTSJSONObject()
+          p.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+          const amt = p.getNumber('total_cny')
+          row['_amountFmt'] = `¥${(amt != null ? amt! : 0).toFixed(2)}`
+          const st = p.getString('status') ?? ''
+          row['_statusFmt'] = _tr(this.t, 'earnings.' + st)
+          payouts.push(row)
+        }
+      }
+      const pending = d!.getNumber('this_month_pending')
+      const avail = d!.getNumber('available_cny')
+      this.earningsThisMonth = `¥${(pending != null ? pending! : 0).toFixed(2)}`
+      this.earningsAvailable = `¥${(avail != null ? avail! : 0).toFixed(2)}`
+      this.earningsPayouts = payouts
+    },
+
+    async _loadQuestionnaires() {
+      const params = this._coachChannelId != 0 ? `channel_id=${this._coachChannelId}` : ''
+      const res = await this._req(`${BASE}/api/questionnaires?${params}`, 'GET', null, 0)
+      const arr = res.data != null ? res.data!.getArray<UTSJSONObject>('questionnaires') : null
+      const out : UTSJSONObject[] = []
+      if (arr != null) {
+        for (const q of arr!) {
+          const type = q.getString('type') ?? ''
+          // Allowlist, never a denylist: 'dynamic' and 'viva_ag' are person-scoped one-offs —
+          // assigning either hands a client questions written about someone else.
+          if (q.getBoolean('is_active') == true && ASSIGNABLE_TYPES.indexOf(type) >= 0) out.push(q)
+        }
+      }
+      this.questionnaires = out
+    },
+    openQAssign(i : number) {
+      const q = this.questionnaires[i]
+      if (q == null) return
+      this.qAssignOpen = true
+      this.qAssignQuestionnaire = q
+      this.qAssignSelectedIds = [] as string[]
+    },
+    closeQAssign() {
+      if (this.qAssignBusy) return
+      this.qAssignOpen = false
+      this.qAssignQuestionnaire = null
+    },
+    toggleQUser(uid : string | null) {
+      if (uid == null) return
+      const idx = this.qAssignSelectedIds.indexOf(uid!)
+      if (idx >= 0) this.qAssignSelectedIds.splice(idx, 1)
+      else this.qAssignSelectedIds.push(uid!)
+    },
+    async submitQAssign() {
+      if (this.qAssignSelectedIds.length == 0) {
+        uni.showToast({ title: this.tr('questionnaires.noUsers'), icon: 'none' })
+        return
+      }
+      const q = this.qAssignQuestionnaire
+      if (q == null) return
+      this.qAssignBusy = true
+      const res = await this._req(`${BASE}/api/questionnaire-assignments`, 'POST', {
+        questionnaire_id: q!.getString('id'), user_ids: this.qAssignSelectedIds, assigned_by: this._coachUserId,
+      } as UTSJSONObject, 0)
+      this.qAssignBusy = false
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        uni.showToast({ title: this.tr('questionnaires.assigned'), icon: 'success' })
+        this.qAssignOpen = false
+      } else {
+        uni.showToast({ title: this.tr('questionnaires.assignError'), icon: 'none' })
+      }
+    },
+    openQResponses(i : number) {
+      const q = this.questionnaires[i]
+      if (q == null) return
+      this.qResponsesOpen = true
+      this.qResponsesList = [] as UTSJSONObject[]
+      this._loadResponsesFor(q.getString('id') ?? '')
+    },
+    async _loadResponsesFor(qid : string) {
+      const res = await this._req(`${BASE}/api/questionnaire-responses?questionnaire_id=${encodeURIComponent(qid)}`, 'GET', null, 0)
+      const arr = res.data != null ? res.data!.getArray<UTSJSONObject>('responses') : null
+      const grouped = new Map<string, UTSJSONObject[]>()
+      const names : string[] = []
+      if (arr != null) {
+        for (const r of arr!) {
+          const qName = this.lang == 'zh' ? (r.getString('name_zh') ?? r.getString('name') ?? '') : (r.getString('name') ?? '')
+          if (!grouped.has(qName)) { names.push(qName); grouped.set(qName, [] as UTSJSONObject[]) }
+          grouped.get(qName)!.push({
+            prompt: this.lang == 'zh' ? r.getString('prompt_zh') : r.getString('prompt_en'),
+            answer_fmt: fmtAnswer(r['answer']),
+            answered_at: fmtDate(r['answered_at']),
+          } as UTSJSONObject)
+        }
+      }
+      const out : UTSJSONObject[] = []
+      for (const n of names) out.push({ name: n, items: grouped.get(n) } as UTSJSONObject)
+      this.qResponsesList = out
+    },
+    closeQResponses() {
+      this.qResponsesOpen = false
+      this.qResponsesList = [] as UTSJSONObject[]
+    },
+
+    async _loadClientPlans() {
+      const client = this.detailClient
+      if (client == null) return
+      const plansRes = await this._req(`${BASE}/api/health-plans?openid=${encodeURIComponent(client!.getString('user_id') ?? '')}`, 'GET', null, 0)
+      const tplRes = await this._req(`${BASE}/api/health-plan-templates`, 'GET', null, 0)
+      const plans = plansRes.data != null ? plansRes.data!.getArray<UTSJSONObject>('plans') : null
+      this.detailPlans = plans != null ? plans! : ([] as UTSJSONObject[])
+      const tpls = tplRes.data != null ? tplRes.data!.getArray<UTSJSONObject>('templates') : null
+      const out : UTSJSONObject[] = []
+      if (tpls != null) {
+        for (const t of tpls!) {
+          const row = new UTSJSONObject()
+          t.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+          const targets = t.getArray<string>('target_sub_ages') ?? ([] as string[])
+          row['sub_ages_display'] = targets!.join(', ')
+          out.push(row)
+        }
+      }
+      this.planTemplates = out
+      this._loadClientPrograms()
+    },
+    async _loadClientPrograms() {
+      const client = this.detailClient
+      if (client == null || this._coachId.length == 0) return
+      const res = await this._req(`${BASE}/api/programs/coach?coach_id=${this._coachId}&openid=${encodeURIComponent(client!.getString('user_id') ?? '')}`, 'GET', null, 0)
+      const arr = res.data != null ? res.data!.getArray<UTSJSONObject>('programs') : null
+      const out : UTSJSONObject[] = []
+      if (arr != null) {
+        for (const p of arr!) {
+          const e = p.getJSON('enrollment')
+          const status = e != null ? (e!.getString('status') ?? 'not_started') : 'not_started'
+          let statusLabel = this.tr('programStatusNotStarted')
+          if (status == 'active') statusLabel = this.tr('programStatusActive')
+          else if (status == 'paused') statusLabel = this.tr('programStatusPaused')
+          else if (status == 'completed') statusLabel = this.tr('programStatusCompleted')
+          let progressLabel = ''
+          if (e != null) {
+            const done = e!.getNumber('days_completed') ?? 0
+            const total = p.getNumber('duration_days') ?? 0
+            const openDay = e!.getNumber('open_day')
+            const stalled = e!.getNumber('stalled_days') ?? 0
+            progressLabel = `${done}/${total} ${this.tr('programDays').length > 1 ? '' : ''}days`
+            if (openDay != null && openDay! > 0) {
+              progressLabel += stalled > 0 ? ` · Day ${openDay} stalled ${stalled}d` : ` · Day ${openDay} open`
+            }
+          }
+          let action = ''
+          let actionLabel = ''
+          if (status == 'not_started') { action = 'activate'; actionLabel = this.tr('programActivate') }
+          else if (status == 'active') { action = 'pause'; actionLabel = this.tr('programPause') }
+          else if (status == 'paused') { action = 'resume'; actionLabel = this.tr('programResume') }
+          const row = new UTSJSONObject()
+          p.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+          row['status'] = status
+          row['statusLabel'] = statusLabel
+          row['progressLabel'] = progressLabel
+          row['action'] = action
+          row['actionLabel'] = actionLabel
+          out.push(row)
+        }
+      }
+      this.detailPrograms = out
+    },
+    async handleProgramAction(programId : number | null, action : string) {
+      const client = this.detailClient
+      if (client == null || programId == null || action.length == 0 || this.programActionBusy) return
+      this.programActionBusy = true
+      let res : RespEnvelope
+      if (action == 'activate' || action == 'resume') {
+        res = await this._req(`${BASE}/api/programs/enroll`, 'POST', {
+          coach_id: this._coachId, openid: client!.getString('user_id'), program_id: programId,
+        } as UTSJSONObject, 0)
+      } else {
+        res = await this._req(`${BASE}/api/programs/enrollment`, 'PUT', {
+          coach_id: this._coachId, openid: client!.getString('user_id'), program_id: programId, status: 'paused',
+        } as UTSJSONObject, 0)
+      }
+      const d = res.data
+      const ok = d != null && (d.getBoolean('success') == true || d.getBoolean('sandbox') == true)
+      if (!ok) {
+        uni.showToast({ title: d != null ? (d.getString('error') ?? 'Error') : 'Error', icon: 'none' })
+      } else {
+        uni.showToast({ title: action == 'activate' ? this.tr('programActivated') : (action == 'resume' ? this.tr('programResumed') : this.tr('programPaused')), icon: 'success' })
+        this._loadClientPrograms()
+      }
+      this.programActionBusy = false
+    },
+    openPlanRecommend() { this.planRecommendOpen = true },
+    closePlanRecommend() { this.planRecommendOpen = false },
+    openPlanCustom() {
+      this.planCustomOpen = true
+      this.planCustomName = ''
+      this.planCustomGoal = ''
+      this.planCustomDurationStr = '4'
+    },
+    closePlanCustom() { this.planCustomOpen = false },
+    async handleRecommendPlan(templateId : number | null) {
+      const client = this.detailClient
+      if (client == null || templateId == null || this.planActionBusy) return
+      this.planActionBusy = true
+      await this._req(`${BASE}/api/health-plans`, 'POST', {
+        openid: client!.getString('user_id'), template_id: templateId, plan_type: 'secondary', source: 'coach', coach_id: this._coachId,
+      } as UTSJSONObject, 0)
+      uni.showToast({ title: this.tr('planRecommended'), icon: 'success' })
+      this.planRecommendOpen = false
+      this.planActionBusy = false
+      this._loadClientPlans()
+    },
+    async handleCreateCustomPlan() {
+      const client = this.detailClient
+      const name = this.planCustomName.trim()
+      if (client == null || name.length == 0 || this.planActionBusy) return
+      this.planActionBusy = true
+      const dur = parseInt(this.planCustomDurationStr)
+      await this._req(`${BASE}/api/health-plans`, 'POST', {
+        openid: client!.getString('user_id'), plan_type: 'secondary', source: 'coach', coach_id: this._coachId,
+        custom_name_zh: name, custom_name_en: name,
+        custom_goal_zh: this.planCustomGoal.trim(), custom_goal_en: this.planCustomGoal.trim(),
+        duration_weeks: isNaN(dur) || dur <= 0 ? 4 : dur,
+      } as UTSJSONObject, 0)
+      uni.showToast({ title: this.tr('planRecommended'), icon: 'success' })
+      this.planCustomOpen = false
+      this.planActionBusy = false
+      this._loadClientPlans()
+    },
+
+    async _loadClientNotes() {
+      const client = this.detailClient
+      if (client == null || this._coachId.length == 0) return
+      const res = await this._req(`${BASE}/api/coach-notes?coach_id=${this._coachId}&user_id=${encodeURIComponent(client!.getString('user_id') ?? '')}`, 'GET', null, 0)
+      const arr = res.data != null ? res.data!.getArray<UTSJSONObject>('notes') : null
+      this.clientNotes = arr != null ? arr! : ([] as UTSJSONObject[])
+    },
+    async saveNote() {
+      const client = this.detailClient
+      const text = this.noteText.trim()
+      if (client == null || text.length == 0 || this._coachId.length == 0 || this.notesBusy) return
+      this.notesBusy = true
+      await this._req(`${BASE}/api/coach-notes`, 'POST', {
+        coach_id: this._coachId, user_id: client!.getString('user_id'), content: text,
+      } as UTSJSONObject, 0)
+      this.noteText = ''
+      this.notesBusy = false
+      this._loadClientNotes()
+    },
+    async toggleNotePin(i : number) {
+      const note = this.clientNotes[i]
+      if (note == null) return
+      await this._req(`${BASE}/api/coach-notes/${note.getNumber('id')}`, 'PUT', { is_pinned: note.getBoolean('is_pinned') != true } as UTSJSONObject, 0)
+      this._loadClientNotes()
+    },
+    deleteNote(i : number) {
+      const note = this.clientNotes[i]
+      if (note == null) return
+      uni.showModal({
+        title: this.tr('noteDelete'), content: this.tr('confirmDeleteFact'),
+        success: (res) => { (async () : Promise<void> => {
+          if (!res.confirm) return
+          await this._req(`${BASE}/api/coach-notes/${note.getNumber('id')}`, 'DELETE', null, 0)
+          this._loadClientNotes()
+        })() }
+      })
+    },
+    async _loadClientGoals() {
+      const client = this.detailClient
+      if (client == null || this._coachId.length == 0) return
+      const res = await this._req(`${BASE}/api/client-goals?coach_id=${this._coachId}&user_id=${encodeURIComponent(client!.getString('user_id') ?? '')}`, 'GET', null, 0)
+      const arr = res.data != null ? res.data!.getArray<UTSJSONObject>('goals') : null
+      const out : UTSJSONObject[] = []
+      if (arr != null) {
+        for (const g of arr!) {
+          const row = new UTSJSONObject()
+          g.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+          const baseline = g.getNumber('baseline_value')
+          const target = g.getNumber('target_value')
+          const current = g.getNumber('current_value')
+          let pct = 0
+          if (baseline != null && target != null && current != null && (baseline! - target!) != 0 && (target! - baseline!) != 0) {
+            const gt = g.getString('goal_type')
+            pct = (gt == 'bio_age' || gt == 'sub_age')
+              ? Math.round((baseline! - current!) / (baseline! - target!) * 100)
+              : Math.round((current! - baseline!) / (target! - baseline!) * 100)
+            pct = Math.min(100, Math.max(0, pct))
+          }
+          row['_pctLabel'] = `${pct}%`
+          const status = g.getString('status')
+          row['_statusLabel'] = status == 'achieved' ? this.tr('goalAchieved') : (status == 'missed' ? this.tr('goalMissed') : this.tr('goalActive'))
+          out.push(row)
+        }
+      }
+      this.clientGoals = out
+    },
+    openGoalForm() {
+      uni.showModal({
+        title: this.tr('setGoal'), editable: true, placeholderText: this.tr('goalTargetLabel'),
+        success: (res) => { (async () : Promise<void> => {
+          const client = this.detailClient
+          if (!res.confirm || client == null || this._coachId.length == 0) return
+          const val = res.content != null ? parseFloat(res.content!.trim()) : NaN
+          if (isNaN(val)) return
+          const baselineRaw = client!.getNumber('bio_age')
+          await this._req(`${BASE}/api/client-goals`, 'POST', {
+            coach_id: this._coachId, user_id: client!.getString('user_id'), goal_type: 'bio_age',
+            title_zh: _tr(this.t, 'goalTypes.bio_age'), baseline_value: baselineRaw,
+            target_value: val, target_date: null,
+          } as UTSJSONObject, 0)
+          this._loadClientGoals()
+        })() }
+      })
+    },
+    async _loadClientFacts() {
+      const client = this.detailClient
+      if (client == null) return
+      const qs = `openid=${encodeURIComponent(client!.getString('user_id') ?? '')}${this._coachId.length > 0 ? '&coach_id=' + this._coachId : ''}`
+      const res = await this._req(`${BASE}/api/user-facts?${qs}`, 'GET', null, 0)
+      const arr = res.data != null ? res.data!.getArray<UTSJSONObject>('facts') : null
+      this.clientFacts = arr != null ? arr! : ([] as UTSJSONObject[])
+    },
+    async saveFact() {
+      const client = this.detailClient
+      const text = this.factText.trim()
+      if (client == null || text.length == 0 || this.factsBusy) return
+      this.factsBusy = true
+      await this._req(`${BASE}/api/user-facts`, 'POST', {
+        openid: client!.getString('user_id'), category: 'preference', fact_zh: text,
+      } as UTSJSONObject, 0)
+      this.factText = ''
+      this.factsBusy = false
+      this._loadClientFacts()
+    },
+    deleteFact(i : number) {
+      const f = this.clientFacts[i]
+      if (f == null) return
+      uni.showModal({
+        title: this.tr('factDelete'), content: this.tr('confirmDeleteFact'),
+        success: (res) => { (async () : Promise<void> => {
+          if (!res.confirm) return
+          await this._req(`${BASE}/api/user-facts/${f.getNumber('id')}`, 'DELETE', null, 0)
+          this._loadClientFacts()
+        })() }
+      })
+    },
+
+    async _loadCRM() {
+      if (this._coachId.length == 0) return
+      this._loadKPIs()
+      const actRes = await this._req(`${BASE}/api/coach-activity-feed?coach_id=${this._coachId}&limit=20`, 'GET', null, 0)
+      const apptRes = await this._req(`${BASE}/api/appointments/upcoming?coach_id=${this._coachId}`, 'GET', null, 0)
+      const acts = actRes.data != null ? actRes.data!.getArray<UTSJSONObject>('activities') : null
+      const feed : UTSJSONObject[] = []
+      if (acts != null) {
+        for (const a of acts!) {
+          const row = new UTSJSONObject()
+          a.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+          const at = a.getString('activity_type') ?? ''
+          row['_label'] = _tr(this.t, 'activityTypes.' + at)
+          row['_timeFmt'] = fmtTime(a['occurred_at'])
+          feed.push(row)
+        }
+      }
+      const appts = apptRes.data != null ? apptRes.data!.getArray<UTSJSONObject>('appointments') : null
+      const upcoming : UTSJSONObject[] = []
+      if (appts != null) {
+        for (const a of appts!) {
+          const row = new UTSJSONObject()
+          a.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+          row['_timeFmt'] = fmtTime(a['scheduled_at'])
+          upcoming.push(row)
+        }
+      }
+      this.crmPipelineColumns = this._buildPipelineColumns()
+      this.crmActivityFeed = feed
+      this.crmUpcomingAppts = upcoming
+    },
+    _buildPipelineColumns() : UTSJSONObject[] {
+      const byStage = new Map<string, UTSJSONObject[]>()
+      for (const s of STAGE_ORDER) byStage.set(s, [] as UTSJSONObject[])
+      for (const c of this.clients) {
+        const s = c.getString('crm_stage') ?? 'lead'
+        const list = byStage.get(s)
+        if (list != null) list!.push(c)
+      }
+      const out : UTSJSONObject[] = []
+      for (const s of STAGE_ORDER) {
+        out.push({ stage: s, label: _tr(this.t, 'crmStages.' + s), color: STAGE_COLORS.get(s), clients: byStage.get(s) ?? ([] as UTSJSONObject[]) } as UTSJSONObject)
+      }
+      return out
+    },
+    openStagePicker(client : UTSJSONObject) {
+      if (this._coachId.length == 0) return
+      const current = client.getString('crm_stage') ?? 'lead'
+      const targets : string[] = []
+      const labels : string[] = []
+      for (const s of STAGE_ORDER) {
+        if (s == current) continue
+        targets.push(s)
+        labels.push(_tr(this.t, 'crmStages.' + s))
+      }
+      uni.showActionSheet({
+        itemList: labels,
+        success: (res) => { (async () : Promise<void> => {
+          const stage = targets[res.tapIndex]
+          const r = await this._req(`${BASE}/api/client-pipeline`, 'POST', {
+            coach_id: this._coachId, user_id: client.getString('user_id'), stage: stage,
+          } as UTSJSONObject, 0)
+          if (r.data == null || r.data!.getBoolean('success') != true) {
+            uni.showToast({ title: this.tr('crmMoveError'), icon: 'none' })
+            return
+          }
+          const clients : UTSJSONObject[] = []
+          for (const c of this.clients) {
+            if (c.getString('user_id') == client.getString('user_id')) {
+              c['crm_stage'] = stage
+              c['_crmStagePill'] = { label: _tr(this.t, 'crmStages.' + stage), color: STAGE_COLORS.get(stage) ?? '#6b7280' } as UTSJSONObject
+            }
+            clients.push(c)
+          }
+          this.clients = clients
+          this._filterClients()
+          this.crmPipelineColumns = this._buildPipelineColumns()
+          uni.showToast({ title: this.tr('crmMoveSuccess'), icon: 'success' })
+        })() }
+      })
+    },
+    async _loadKPIs() {
+      if (this._coachId.length == 0) return
+      const res = await this._req(`${BASE}/api/coach-kpis?coach_id=${this._coachId}`, 'GET', null, 0)
+      this.kpiData = res.data != null ? res.data!.getJSON('kpis') : null
+    },
+
+    openApptForm(client : UTSJSONObject | null) {
+      this.apptFormOpen = true
+      this.apptClientId = client != null ? (client!.getString('user_id') ?? '') : ''
+      this.apptClientName = client != null ? (client!.getString('nickname') ?? '') : ''
+      this.apptTitleText = ''
+      this.apptDate = todayStr()
+      this.apptTime = '10:00'
+      this.apptFormat = 'video'
+      this.apptLink = ''
+    },
+    closeApptForm() { this.apptFormOpen = false },
+    onApptDateChange(e : UniPickerChangeEvent) { this.apptDate = e.detail.value as string },
+    onApptTimeChange(e : UniPickerChangeEvent) { this.apptTime = e.detail.value as string },
+    async submitAppt() {
+      if (this.apptTitleText.length == 0 || this.apptDate.length == 0 || this._coachId.length == 0 || this.apptBusy) return
+      this.apptBusy = true
+      await this._req(`${BASE}/api/appointments`, 'POST', {
+        coach_id: this._coachId, user_id: this.apptClientId, title: this.apptTitleText,
+        scheduled_at: `${this.apptDate}T${this.apptTime}:00`, format: this.apptFormat,
+        meeting_link: this.apptLink.length > 0 ? this.apptLink : null,
+      } as UTSJSONObject, 0)
+      this.apptFormOpen = false
+      this.apptBusy = false
+      this._loadCRM()
+    },
+
+    openManagedForm(_from : string) {
+      this.mcFormOpen = true
+      this.mcEditId = ''
+      this.mcLast = ''
+      this.mcFirst = ''
+      this.mcNickname = ''
+      this.mcBirthDate = ''
+      this.mcGender = ''
+      this.mcPhone = ''
+      this.mcRef = ''
+      this.mcBusy = false
+    },
+    openManagedFormEdit() {
+      const c = this.detailClient
+      if (c == null) return
+      this.openManagedForm('')
+      this.mcEditId = c!.getString('user_id') ?? ''
+      this.mcLast = c!.getString('last_name') ?? ''
+      this.mcFirst = c!.getString('first_name') ?? ''
+      this.mcNickname = c!.getString('nickname') ?? ''
+      const bd = c!.getString('birth_date')
+      this.mcBirthDate = bd != null ? bd!.substring(0, Math.min(10, bd!.length)) : ''
+      if (this.mcBirthDate == '—') this.mcBirthDate = ''
+      this.mcGender = c!.getString('gender') ?? ''
+      const cp = c!.getString('contact_phone') ?? ''
+      this.mcPhone = cp.startsWith('+86') ? cp.substring(3) : cp
+      this.mcRef = c!.getString('external_ref') ?? ''
+    },
+    closeManagedForm() { this.mcFormOpen = false },
+    onMcBirthDateChange(e : UniPickerChangeEvent) { this.mcBirthDate = e.detail.value as string },
+    async submitManagedForm() {
+      if (this.mcBusy) return
+      const errCode = this.mcBirthDate.length == 0 ? 'birth_date_required'
+        : this.mcGender.length == 0 ? 'gender_required'
+        : (this.mcNickname.trim().length == 0 && this.mcLast.trim().length == 0 && this.mcFirst.trim().length == 0 && this.mcRef.trim().length == 0) ? 'name_required'
+        : null
+      if (errCode != null) {
+        const msg = MC_ERROR_ZH.get(errCode!)
+        uni.showToast({ title: msg != null ? msg : errCode!, icon: 'none' })
+        return
+      }
+      this.mcBusy = true
+      const body = {
+        last_name: this.mcLast.trim(), first_name: this.mcFirst.trim(), nickname: this.mcNickname.trim(),
+        birth_date: this.mcBirthDate, gender: this.mcGender,
+        contact_phone: this.mcPhone.trim(), external_ref: this.mcRef.trim(),
+      } as UTSJSONObject
+      let res : RespEnvelope
+      if (this.mcEditId.length > 0) {
+        res = await this._req(`${BASE}/api/managed-customers/${encodeURIComponent(this.mcEditId)}`, 'PUT', body, 0)
+      } else {
+        body['coach_id'] = this._coachId
+        res = await this._req(`${BASE}/api/managed-customers`, 'POST', body, 0)
+      }
+      const d = res.data
+      if (d == null || d.getBoolean('success') != true) {
+        const code = d != null ? (d.getString('error') ?? '') : ''
+        const msg = MC_ERROR_ZH.get(code)
+        uni.showToast({ title: msg != null && msg!.length > 0 ? msg! : (code.length > 0 ? code : this.tr('mc.fallback')), icon: 'none' })
+        this.mcBusy = false
+        return
+      }
+      uni.showToast({ title: this.mcEditId.length > 0 ? this.tr('mc.saved') : this.tr('mc.created'), icon: 'success' })
+      this.mcFormOpen = false
+      this.mcBusy = false
+      if (this.mcEditId.length > 0 && this.detailClient != null && this.detailClient!.getString('user_id') == this.mcEditId) {
+        const updated = d!.getJSON('customer')
+        if (updated != null) this.detailClient = updated
+      }
+      this._loadAll()
+    },
+
+    openRedeemForm() {
+      const c = this.detailClient
+      if (c == null) return
+      const lastRaw = uni.getStorageSync('nano_mc_last_address')
+      this.redeemOpen = true
+      this.redeemBusy = false
+      this.redeemCode = ''
+      const nick = c!.getString('nickname') ?? ''
+      if (nick != null && nick!.length > 0) {
+        this.redeemName = nick!
+      } else {
+        this.redeemName = `${c!.getString('last_name') ?? ''}${c!.getString('first_name') ?? ''}`
+      }
+      const cp = c!.getString('contact_phone') ?? ''
+      this.redeemPhone = cp.startsWith('+86') ? cp.substring(3) : cp
+      this.redeemAddress = lastRaw != null ? `${lastRaw}` : ''
+    },
+    closeRedeemForm() {
+      if (this.redeemBusy) return
+      this.redeemOpen = false
+    },
+    async submitRedeem() {
+      const client = this.detailClient
+      if (client == null || this.redeemBusy) return
+      const code = this.redeemCode.trim()
+      const name = this.redeemName.trim()
+      const phone = this.redeemPhone.trim()
+      const address = this.redeemAddress.trim()
+      const table = this.lang == 'zh' ? REDEEM_ERROR_ZH : REDEEM_ERROR_EN
+      if (code.length == 0) { uni.showToast({ title: table.get('code_required') ?? '', icon: 'none' }); return }
+      if (name.length == 0 || phone.length == 0 || address.length == 0) { uni.showToast({ title: table.get('shipping_required') ?? '', icon: 'none' }); return }
+      this.redeemBusy = true
+      const res = await this._req(`${BASE}/api/formulation-redeem`, 'POST', {
+        openid: client!.getString('user_id'), code: code,
+        shipping_name: name, shipping_phone: phone, shipping_address: address,
+      } as UTSJSONObject, 30000)
+      const d = res.data
+      if (d == null || d.getBoolean('success') != true) {
+        const reason = d != null ? (d.getString('reason') ?? '') : ''
+        const msg = table.get(reason)
+        uni.showToast({ title: msg != null && msg!.length > 0 ? msg! : reason, icon: 'none', duration: 3000 })
+        this.redeemBusy = false
+        return
+      }
+      uni.setStorageSync('nano_mc_last_address', address)
+      uni.showToast({ title: d!.getBoolean('pending_confirmation') == true ? this.tr('mc.redeemPending') : this.tr('mc.redeemDone'), icon: 'success' })
+      this.redeemOpen = false
+      this.redeemBusy = false
+      this._loadClientChat()
+    },
+
+    // Box activation for the managed customer — same /box-claim the customer's own app makes
+    // (§28); not_your_box is the check that matters here.
+    scanBoxForCustomer() {
+      const client = this.detailClient
+      if (client == null) return
+      uni.scanCode({
+        onlyFromCamera: false,
+        success: (res) => { (async () : Promise<void> => {
+          uni.showLoading({ title: '…', mask: true })
+          const r = await this._req(`${BASE}/api/box-claim`, 'POST', {
+            openid: client!.getString('user_id'), box_code: res.result,
+          } as UTSJSONObject, 0)
+          uni.hideLoading()
+          const d = r.data
+          if (d != null && d.getBoolean('success') == true) {
+            uni.showToast({ title: d!.getBoolean('already_claimed') == true ? this.tr('mc.boxAlready') : this.tr('mc.boxOk'), icon: 'none', duration: 2500 })
+            this._loadClientChat()
+          } else {
+            const reason = d != null ? (d.getString('reason') ?? '') : ''
+            const msg = BOX_ERROR_ZH.get(reason)
+            uni.showModal({
+              title: this.tr('mc.boxFail'),
+              content: msg != null && msg!.length > 0 ? msg! : this.tr('mc.boxFail'),
+              showCancel: false,
+            })
+          }
+        })() },
+        fail: (_) => {}
+      })
+    },
+
+    async _req(url : string, method : string, data : UTSJSONObject | null, timeoutMs : number) : Promise<RespEnvelope> {
+      let body = data
+      if (state.sandboxMode && method != 'GET') {
+        const injected = new UTSJSONObject()
+        if (data != null) data!.toMap().forEach((v : any | null, k : string) => { injected[k] = v })
+        injected['sandbox'] = true
+        body = injected
+      }
+      const to = timeoutMs > 0 ? timeoutMs : 60000
+      if (method == 'POST') return _envelopeRun(url, 'POST', body, to)
+      if (method == 'PUT') return _envelopeRun(url, 'PUT', body, to)
+      if (method == 'DELETE') return _envelopeRun(url, 'DELETE', body, to)
+      if (method == 'PATCH') return _envelopeRun(url, 'PATCH', body, to)
+      return _envelopeRun(url, 'GET', body, to)
+    },
+  }
+}
+</script>
+
+<style>
+.co-screen { flex: 1; background-color: #0B1C2E; }
+.co-header { flex-direction: row; align-items: center; padding: 10px 16px; }
+.co-back { margin-right: 8px; }
+.co-back-text { color: #A6C4E5; font-size: 15px; }
+.co-title { flex: 1; color: #EAF2FB; font-size: 17px; font-weight: bold; }
+.co-menu-btn { padding: 6px; }
+.co-menu-text { color: #EAF2FB; font-size: 18px; }
+.co-menu { position: absolute; right: 16px; top: 60px; background-color: #12283F; border-radius: 12px; padding: 8px; z-index: 60; }
+.co-menu-item { color: #EAF2FB; font-size: 14px; padding: 8px 14px; }
+.co-menu-danger { color: #FF6B6B; }
+.co-sandbox-banner { background-color: rgba(245, 158, 11, 0.15); padding: 6px 16px; }
+.co-sandbox-text { color: #f59e0b; font-size: 12px; }
+.co-tabs { flex-direction: row; padding: 4px 8px; }
+.co-tab { color: #A6C4E5; font-size: 13px; padding: 8px 10px; }
+.co-tab-on { color: #EAF2FB; font-weight: bold; }
+.co-body { flex: 1; padding-left: 16px; padding-right: 16px; }
+.co-search { height: 40px; background-color: #12283F; color: #EAF2FB; border-radius: 10px; padding-left: 12px; margin-top: 8px; margin-bottom: 8px; }
+.co-chips { flex-direction: row; flex-wrap: wrap; }
+.co-chip { color: #A6C4E5; font-size: 12px; background-color: #12283F; border-radius: 14px; padding: 5px 10px; margin-right: 8px; margin-bottom: 6px; }
+.co-chip-on { color: #FFFFFF; background-color: #2E7CF6; }
+.co-mc-add { color: #2E7CF6; font-size: 13px; margin-top: 6px; margin-bottom: 6px; }
+.co-empty { color: rgba(166, 196, 229, 0.6); font-size: 12px; margin-top: 16px; margin-bottom: 16px; }
+.co-client { background-color: #12283F; border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+.co-client-top { flex-direction: row; align-items: center; }
+.co-client-name { color: #EAF2FB; font-size: 15px; font-weight: bold; }
+.co-badge { margin-left: 8px; color: #2E7CF6; font-size: 11px; background-color: rgba(46, 124, 246, 0.12); border-radius: 6px; padding: 2px 6px; }
+.co-client-row { flex-direction: row; margin-top: 6px; }
+.co-kv { color: #A6C4E5; font-size: 12px; }
+.co-v { color: #EAF2FB; font-size: 12px; }
+.co-muted { color: rgba(166, 196, 229, 0.5); }
+.co-subages { flex-direction: row; flex-wrap: wrap; margin-top: 4px; }
+.co-subage { font-size: 11px; margin-right: 10px; }
+.co-client-foot { flex-direction: row; margin-top: 6px; }
+.co-msgprev { color: rgba(166, 196, 229, 0.7); font-size: 11px; margin-top: 4px; }
+.co-invite { background-color: #12283F; border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+.co-q { background-color: #12283F; border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+.co-plan { background-color: #12283F; border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+.co-payout { background-color: #12283F; border-radius: 12px; padding: 12px; margin-bottom: 10px; flex-direction: row; justify-content: space-between; }
+.co-activity { background-color: #12283F; border-radius: 12px; padding: 12px; margin-bottom: 10px; flex-direction: row; justify-content: space-between; }
+.co-note-card { background-color: #12283F; border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+.co-tpl { background-color: #12283F; border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+.co-qrow { background-color: #12283F; border-radius: 12px; padding: 12px; margin-bottom: 8px; flex-direction: row; justify-content: space-between; }
+.co-code { color: #EAF2FB; font-size: 16px; font-weight: bold; letter-spacing: 2px; }
+.co-note { color: #A6C4E5; font-size: 12px; margin-top: 4px; }
+.co-row-actions { flex-direction: row; margin-top: 8px; }
+.co-act { color: #2E7CF6; font-size: 13px; margin-right: 16px; }
+.co-act-on { font-weight: bold; }
+.co-act-danger { color: #FF6B6B; }
+.co-kpi-row { flex-direction: row; margin-top: 8px; }
+.co-kpi { flex: 1; background-color: #12283F; border-radius: 12px; padding: 12px; margin-right: 8px; align-items: center; }
+.co-kpi-label { color: #A6C4E5; font-size: 11px; }
+.co-kpi-val { color: #EAF2FB; font-size: 18px; font-weight: bold; margin-top: 4px; }
+.co-section { color: #EAF2FB; font-size: 14px; font-weight: bold; margin-top: 14px; margin-bottom: 6px; }
+.co-kanban { height: 240px; }
+.co-kanban-col { width: 150px; margin-right: 10px; }
+.co-kanban-head { font-size: 13px; font-weight: bold; margin-bottom: 6px; }
+.co-kanban-card { background-color: #12283F; border-radius: 10px; padding: 8px; margin-bottom: 6px; }
+.co-overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; background-color: rgba(4, 10, 18, 0.72); justify-content: flex-end; z-index: 60; }
+.co-sheet { background-color: #0F2235; border-top-left-radius: 18px; border-top-right-radius: 18px; width: 100%; padding: 14px; }
+.co-sheet-mid { justify-content: center; padding: 20px; border-radius: 18px; margin-left: 20px; margin-right: 20px; width: auto; }
+.co-sheet-head { flex-direction: row; align-items: center; justify-content: space-between; }
+.co-close { color: #A6C4E5; font-size: 16px; padding: 6px; }
+.co-subtabs { flex-direction: row; flex-wrap: wrap; margin-top: 6px; }
+.co-detail-body { max-height: 420px; margin-top: 8px; }
+.co-chatlist { max-height: 240px; margin-top: 8px; }
+.co-cmsg { margin-bottom: 8px; border-radius: 10px; padding: 8px; max-width: 320px; }
+.co-cmsg-user { background-color: #12283F; }
+.co-cmsg-ai { background-color: rgba(46, 124, 246, 0.15); }
+.co-cmsg-coach { background-color: rgba(16, 185, 129, 0.15); align-self: flex-end; }
+.co-cmsg-who { color: rgba(166, 196, 229, 0.55); font-size: 10px; }
+.co-cmsg-text { color: #EAF2FB; font-size: 13px; }
+.co-cmsg-img { width: 140px; margin-top: 4px; }
+.co-typing { margin-top: 4px; }
+.co-tools { flex-direction: row; flex-wrap: wrap; margin-top: 8px; }
+.co-compose { flex-direction: row; align-items: center; margin-top: 8px; }
+.co-msg-input { flex: 1; height: 42px; background-color: #12283F; color: #EAF2FB; border-radius: 10px; padding-left: 10px; }
+.co-field { margin-bottom: 8px; }
+.co-send { background-color: #2E7CF6; border-radius: 10px; padding: 10px 12px; margin-left: 8px; }
+.co-send-ghost { background-color: rgba(46, 124, 246, 0.18); }
+.co-compose-row { flex-direction: row; margin-top: 6px; }
+.btn-text { color: #FFFFFF; font-size: 14px; }
+.btn-text-sm { color: #EAF2FB; font-size: 12px; }
+.co-btn { height: 44px; background-color: #2E7CF6; border-radius: 12px; align-items: center; justify-content: center; margin-top: 8px; }
+</style>

@@ -1,0 +1,21 @@
+// Ported from miniapp utils/phone.js — display masks only, never the real number.
+
+export function maskPhone(phone : string | null) : string {
+  if (phone == null || phone.length == 0) return ''
+  let digits = phone
+  if (digits.startsWith('+86')) {
+    digits = digits.substring(3)
+  }
+  if (digits.length < 7) return digits
+  return `${digits.substring(0, 3)}****${digits.substring(digits.length - 4)}`
+}
+
+export function maskEmail(email : string | null) : string {
+  if (email == null || email.length == 0) return ''
+  const at = email.indexOf('@')
+  if (at <= 0) return email
+  const local = email.substring(0, at)
+  const domain = email.substring(at)
+  const keep = Math.min(2, local.length)
+  return `${local.substring(0, keep)}***${domain}`
+}

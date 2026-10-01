@@ -1,0 +1,19 @@
+// Build-time backend selection. The miniapp derives BASE from
+// wx.getAccountInfoSync().miniProgram.envVersion (develop → nano-dev, trial/release →
+// nano — see AGENTS.md §2). uni-app x has no envVersion, so flip BUILD_ENV to 'release'
+// before shipping a store build; 'develop' points at the dev backend, never prod data.
+export const BUILD_ENV : string = 'develop'
+
+export const BASE : string = BUILD_ENV == 'develop' ? 'https://nano-dev.gcn.net' : 'https://nano.gcn.net'
+
+// Same marker rule as the miniapp (AGENTS.md "Miniapp VERSION Marker"): bump on every
+// change under src/xapp/. Format MMDD-N.
+export const VERSION : string = '1001-6'
+
+export const IS_DEV : boolean = BUILD_ENV != 'release'
+
+// The miniapp maps WeChat appid → channel (aeviva-branded build disables email login).
+// A native app has no appid; it is always the root Waven identity.
+export const CHANNEL_SLUG : string | null = null
+export const CHANNEL_DISPLAY : UTSJSONObject | null = null
+export const EMAIL_LOGIN_AVAILABLE : boolean = true

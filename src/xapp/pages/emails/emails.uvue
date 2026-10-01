@@ -1,0 +1,390 @@
+<template>
+  <view class="ph-screen">
+    <view class="ph-header" :style="'padding-top:' + statusBarHeight + 'px'">
+      <view class="ph-back" v-on:click="goBack"><text class="ph-back-text">‹ {{ t('back') }}</text></view>
+      <text class="ph-title">{{ t('title') }}</text>
+    </view>
+
+    <text v-if="loading" class="ph-hint">{{ t('loading') }}</text>
+
+    <scroll-view direction="vertical" v-else class="ph-list">
+      <view v-for="(e, i) in emails" :key="i" class="ph-row">
+        <view class="ph-row-main">
+          <text class="ph-number">{{ e.getString('email') }}</text>
+          <text v-if="e.getBoolean('is_primary') == true" class="ph-badge">{{ t('primaryBadge') }}</text>
+          <text v-else-if="e.getString('verified_at') == null" class="ph-badge ph-badge-muted">未验证</text>
+        </view>
+        <view class="ph-row-actions">
+          <text v-if="e.getBoolean('is_primary') != true" class="ph-action" v-on:click="setPrimary(`${e.getString('email')}`)">{{ t('setPrimaryAction') }}</text>
+          <text class="ph-action ph-action-danger" v-on:click="removeEmail(`${e.getString('email')}`)">{{ t('removeAction') }}</text>
+        </view>
+      </view>
+
+      <view class="ph-add-btn" v-on:click="openAddEmail"><text class="btn-text">{{ t('addEmailBtn') }}</text></view>
+    </scroll-view>
+
+    <view v-if="addMode" class="ph-modal">
+      <view class="ph-card">
+        <view v-if="addStep == 'email'">
+          <text class="ph-label">{{ t('emailLabel') }}</text>
+          <input class="ph-input" v-model="newEmail" :placeholder="t('emailPlaceholder')" :maxlength="254" />
+          <text v-if="addError.length > 0" class="ph-error">{{ addError }}</text>
+          <view class="ph-btn" v-on:click="sendCode"><text class="btn-text">{{ addLoading ? t('sending') : t('sendCodeBtn') }}</text></view>
+        </view>
+        <view v-else>
+          <text class="ph-label">{{ t('codeLabel') }}</text>
+          <text class="ph-hint">{{ codeSentToText }}</text>
+          <input class="ph-input" v-model="code" placeholder="6位验证码" :maxlength="6" />
+          <text v-if="addError.length > 0" class="ph-error">{{ addError }}</text>
+          <view class="ph-btn" v-on:click="manualVerify"><text class="btn-text">{{ addLoading ? t('verifying') : t('verifyBtn') }}</text></view>
+          <view class="ph-link" v-on:click="changeEmail"><text class="ph-link-text">{{ t('changeEmail') }}</text></view>
+        </view>
+        <view class="ph-link" v-on:click="closeAddEmail"><text class="ph-link-text">{{ t('cancelBtn') }}</text></view>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+// Ported from miniapp pages/emails/emails.js — sibling of the phones page. Waven-root
+// channels only (server refuses aeviva-tree accounts with channel_not_supported, kept as a
+// user-visible error string). Live-filtered inputs → v-model + validate-on-send.
+
+import { BASE } from '../../utils/config.uts'
+import { state } from '../../utils/state.uts'
+import { saveSession } from '../../utils/session.uts'
+import { getBody, postBody } from '../../utils/request.uts'
+import { maskPhone, maskEmail } from '../../utils/phone.uts'
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+
+const T_ZH : UTSJSONObject = {
+  title: '邮箱管理', back: '返回', loading: '加载中…', primaryBadge: '主邮箱',
+  setPrimaryAction: '设为主邮箱', removeAction: '移除', addEmailBtn: '+ 添加邮箱',
+  emailLabel: '邮箱', emailPlaceholder: '请输入邮箱地址', sendCodeBtn: '发送验证码', sending: '发送中…',
+  codeLabel: '输入验证码', codeSentTo: '验证码已发送至 {email}', verifyBtn: '验证并添加', verifying: '验证中…',
+  changeEmail: '更换邮箱', cancelBtn: '取消',
+  confirmRemoveTitle: '移除邮箱', confirmRemoveContent: '确定要移除 {email} 吗？',
+  confirmSetPrimaryTitle: '设为主邮箱', confirmSetPrimaryContent: '将 {email} 设为主邮箱？',
+  errorInvalidEmail: '请输入正确的邮箱地址', errorSendFailed: '验证码发送失败，请重试',
+  errorRateLimited: '发送过于频繁，请稍后再试', errorNetwork: '网络错误，请重试',
+  errorInvalidCode: '验证码不正确', errorTooManyAttempts: '错误次数过多，请重新获取验证码',
+  errorEmailInUse: '该邮箱已被其他账号绑定', errorChannel: '当前账号不支持邮箱登录',
+  toastRemoved: '已移除', toastPrimarySet: '已设为主邮箱', toastAdded: '已添加',
+} as UTSJSONObject
+const T_EN : UTSJSONObject = {
+  title: 'Manage Emails', back: 'Back', loading: 'Loading…', primaryBadge: 'Primary',
+  setPrimaryAction: 'Set Primary', removeAction: 'Remove', addEmailBtn: '+ Add Email',
+  emailLabel: 'Email', emailPlaceholder: 'Enter email address', sendCodeBtn: 'Send Code', sending: 'Sending…',
+  codeLabel: 'Enter Verification Code', codeSentTo: 'Code sent to {email}', verifyBtn: 'Verify & Add', verifying: 'Verifying…',
+  changeEmail: 'Change Email', cancelBtn: 'Cancel',
+  confirmRemoveTitle: 'Remove Email', confirmRemoveContent: 'Remove {email}?',
+  confirmSetPrimaryTitle: 'Set Primary', confirmSetPrimaryContent: 'Set {email} as your primary email?',
+  errorInvalidEmail: 'Please enter a valid email address', errorSendFailed: 'Failed to send code, please try again',
+  errorRateLimited: 'Too many requests, please try again later', errorNetwork: 'Network error, please try again',
+  errorInvalidCode: 'Invalid code', errorTooManyAttempts: 'Too many wrong attempts — request a new code',
+  errorEmailInUse: 'This email is already bound to another account', errorChannel: 'Email login is not available for this account',
+  toastRemoved: 'Removed', toastPrimarySet: 'Primary email updated', toastAdded: 'Added',
+} as UTSJSONObject
+
+export default {
+  name: 'EmailsPage',
+  data() {
+    return {
+      lang: 'zh',
+      statusBarHeight: 44,
+      emails: [] as UTSJSONObject[],
+      loading: true,
+      addMode: false,
+      addStep: 'email',
+      newEmail: '',
+      code: '',
+      addLoading: false,
+      addError: '',
+      codeSentToText: '',
+    }
+  },
+  onLoad(_options : OnLoadOptions) {
+    this.lang = state.lang
+    const info = uni.getWindowInfo()
+    this.statusBarHeight = info.statusBarHeight
+    this.fetchEmails()
+  },
+  methods: {
+    t(key : string) : string {
+      const dict = this.lang == 'en' ? T_EN : T_ZH
+      const v = dict.getString(key)
+      return v != null ? v : key
+    },
+    _fmt(s : string, email : string) : string {
+      return s.split('{email}').join(email)
+    },
+    goBack() {
+      uni.navigateBack()
+    },
+    async fetchEmails() {
+      const user = state.user
+      if (user == null || user!.getBoolean('guest') == true) { this.loading = false; return }
+      this.loading = true
+      const uid = user!.getString('user_id') ?? ''
+      const res = await getBody(`${BASE}/api/email-otp/list?user_id=${encodeURIComponent(uid)}`)
+      const out : UTSJSONObject[] = []
+      if (res != null && res!.getBoolean('success') == true) {
+        const list = res!.getArray<UTSJSONObject>('emails')
+        if (list != null) {
+          for (const e of list!) out.push(e)
+        }
+      }
+      this.emails = out
+      this.loading = false
+    },
+    openAddEmail() {
+      this.addMode = true
+      this.addStep = 'email'
+      this.newEmail = ''
+      this.code = ''
+      this.addError = ''
+    },
+    closeAddEmail() {
+      this.addMode = false
+    },
+    async sendCode() {
+      const email = this.newEmail.trim().toLowerCase()
+      if (!EMAIL_RE.test(email)) { this.addError = this.t('errorInvalidEmail'); return }
+      this.newEmail = email
+      this.addLoading = true
+      this.addError = ''
+      const res = await postBody(`${BASE}/api/email-otp/send`, {
+        email: email, purpose: 'bind', language: this.lang,
+      } as UTSJSONObject)
+      this.addLoading = false
+      if (res == null || res.getBoolean('success') != true) {
+        const err = res == null ? '' : res.getString('error')
+        this.addError = err == 'rate_limited' ? this.t('errorRateLimited')
+          : err == 'invalid_email' ? this.t('errorInvalidEmail')
+          : this.t('errorSendFailed')
+        return
+      }
+      this.addStep = 'code'
+      this.code = ''
+      this.codeSentToText = this._fmt(this.t('codeSentTo'), email)
+    },
+    manualVerify() {
+      this.verifyCode()
+    },
+    async verifyCode() {
+      const code = this.code.trim()
+      if (code.length == 0 || this.addLoading) return
+      const user = state.user
+      if (user == null) return
+      this.addLoading = true
+      this.addError = ''
+      const res = await postBody(`${BASE}/api/email-otp/bind`, {
+        user_id: user!.getString('user_id'), email: this.newEmail, code: code,
+      } as UTSJSONObject)
+      this.addLoading = false
+      if (res == null) { this.addError = this.t('errorNetwork'); return }
+      if (res.getBoolean('success') != true) {
+        const err = res.getString('error')
+        this.addError = err == 'invalid_code' ? this.t('errorInvalidCode')
+          : err == 'too_many_attempts' ? this.t('errorTooManyAttempts')
+          : err == 'email_in_use' ? this.t('errorEmailInUse')
+          : err == 'channel_not_supported' ? this.t('errorChannel')
+          : this.t('errorNetwork')
+        return
+      }
+      // Same merge semantics as phone bind: the response user (winner) replaces the cache.
+      const token = res.getString('session_token')
+      if (token != null && token!.length > 0) saveSession(token!)
+      this._applyUpdatedUser(res.getJSON('user'), res.getJSON('channel'))
+      this.addMode = false
+      uni.showToast({ title: this.t('toastAdded'), icon: 'success' })
+      this.fetchEmails()
+    },
+    changeEmail() {
+      this.addStep = 'email'
+      this.code = ''
+      this.addError = ''
+    },
+    setPrimary(email : string) {
+      uni.showModal({
+        title: this.t('confirmSetPrimaryTitle'),
+        content: this._fmt(this.t('confirmSetPrimaryContent'), email),
+        success: (res) => { (async () : Promise<void> => {
+          if (!res.confirm) return
+          const user = state.user
+          if (user == null) return
+          const r = await postBody(`${BASE}/api/email-otp/set-primary`, {
+            user_id: user!.getString('user_id'), email: email,
+          } as UTSJSONObject)
+          if (r == null || r.getBoolean('success') != true) { uni.showToast({ title: this.t('errorNetwork'), icon: 'none' }); return }
+          var verified = false
+          for (const row of this.emails) {
+            if (row.getString('email') == email && row.getString('verified_at') != null) verified = true
+          }
+          this._applyEmailChange(email, verified)
+          uni.showToast({ title: this.t('toastPrimarySet'), icon: 'success' })
+          this.fetchEmails()
+        })() }
+      })
+    },
+    removeEmail(email : string) {
+      uni.showModal({
+        title: this.t('confirmRemoveTitle'),
+        content: this._fmt(this.t('confirmRemoveContent'), email),
+        success: (res) => { (async () : Promise<void> => {
+          if (!res.confirm) return
+          const user = state.user
+          if (user == null) return
+          const r = await postBody(`${BASE}/api/email-otp/remove`, {
+            user_id: user!.getString('user_id'), email: email,
+          } as UTSJSONObject)
+          if (r == null || r.getBoolean('success') != true) { uni.showToast({ title: this.t('errorNetwork'), icon: 'none' }); return }
+          const next = r.getString('new_primary')
+          var verified = false
+          if (next != null) {
+            for (const row of this.emails) {
+              if (row.getString('email') == next! && row.getString('verified_at') != null) verified = true
+            }
+          }
+          this._applyEmailChange(next, next != null && verified)
+          uni.showToast({ title: this.t('toastRemoved'), icon: 'success' })
+          this.fetchEmails()
+        })() }
+      })
+    },
+    _applyEmailChange(newPrimaryEmail : string | null, verified : boolean) {
+      const user = state.user
+      if (user == null) return
+      const updated = new UTSJSONObject()
+      user!.toMap().forEach((v : any | null, k : string) => { updated[k] = v })
+      updated['email'] = newPrimaryEmail
+      updated['email_verified'] = newPrimaryEmail != null && verified
+      this._applyUpdatedUser(updated, state.channel)
+    },
+    _applyUpdatedUser(updatedUser : UTSJSONObject | null, channel : UTSJSONObject | null) {
+      if (updatedUser == null) return
+      const rawPhone = updatedUser!.getString('phone')
+      const rawEmail = updatedUser!.getString('email')
+      const storedMasked = updatedUser!.getString('maskedPhone')
+      var masked = storedMasked != null ? storedMasked! : ''
+      if (masked.length == 0) {
+        const mp = maskPhone(rawPhone)
+        masked = mp.length > 0 ? mp : maskEmail(rawEmail)
+      }
+      const fullUser = new UTSJSONObject()
+      updatedUser!.toMap().forEach((v : any | null, k : string) => { fullUser[k] = v })
+      fullUser['maskedPhone'] = masked
+      state.user = fullUser
+      if (channel != null) state.channel = channel
+      const stored = new UTSJSONObject()
+      fullUser.toMap().forEach((v : any | null, k : string) => {
+        if (k == 'phone' || k == 'email') return
+        stored[k] = v
+      })
+      const phoneSet = fullUser.getBoolean('phoneSet')
+      stored['phoneSet'] = (rawPhone != null && rawPhone!.length > 0) || (phoneSet != null && phoneSet!)
+      stored['phone_verified'] = fullUser.getBoolean('phone_verified') == true
+      stored['email_verified'] = fullUser.getBoolean('email_verified') == true
+      stored['maskedPhone'] = masked
+      uni.setStorageSync('nano_user', stored)
+    },
+  },
+  watch: {
+    code(newVal : string) {
+      let clean = ''
+      for (let i = 0; i < newVal.length; i++) {
+        const c = newVal.charCodeAt(i) ?? 0
+        if (c >= 48 && c <= 57) clean += newVal.charAt(i)
+      }
+      if (clean.length > 6) { this.code = clean.substring(0, 6); return }
+      if (clean != newVal) { this.code = clean; return }
+      this.addError = ''
+      if (clean.length == 6) this.verifyCode()
+    },
+    newEmail(newVal : string) {
+      this.addError = ''
+    },
+  }
+}
+</script>
+
+<style>
+.ph-screen { flex: 1; background-color: #0B1C2E; }
+.ph-header { flex-direction: row; align-items: center; padding: 12px 16px; }
+.ph-back { margin-right: 8px; }
+.ph-back-text { color: #A6C4E5; font-size: 15px; }
+.ph-title { color: #EAF2FB; font-size: 17px; font-weight: bold; }
+.ph-list { flex: 1; padding: 0 16px; }
+.ph-row {
+  background-color: #12283F;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 10px;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+.ph-row-main { flex-direction: row; align-items: center; }
+.ph-number { color: #EAF2FB; font-size: 14px; }
+.ph-badge {
+  margin-left: 8px;
+  color: #2E7CF6;
+  font-size: 11px;
+  background-color: rgba(46, 124, 246, 0.12);
+  border-radius: 6px;
+  padding-left: 6px;
+  padding-right: 6px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.ph-badge-muted { color: #A6C4E5; background-color: rgba(166, 196, 229, 0.12); }
+.ph-row-actions { flex-direction: row; }
+.ph-action { color: #2E7CF6; font-size: 13px; margin-left: 14px; }
+.ph-action-danger { color: #FF6B6B; }
+.ph-add-btn {
+  height: 46px;
+  background-color: #2E7CF6;
+  border-radius: 12px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+  margin-bottom: 20px;
+}
+.btn-text { color: #FFFFFF; font-size: 15px; font-weight: bold; }
+.ph-modal {
+  position: fixed;
+  left: 0; top: 0; right: 0; bottom: 0;
+  background-color: rgba(4, 10, 18, 0.72);
+  justify-content: center;
+  align-items: center;
+}
+.ph-card {
+  width: 86%;
+  background-color: #12283F;
+  border-radius: 16px;
+  padding: 18px;
+}
+.ph-label { color: #EAF2FB; font-size: 15px; font-weight: bold; margin-bottom: 8px; }
+.ph-hint { color: rgba(166, 196, 229, 0.7); font-size: 12px; margin: 8px 16px; }
+.ph-input {
+  height: 46px;
+  background-color: #0B1C2E;
+  color: #EAF2FB;
+  border-radius: 10px;
+  padding-left: 12px;
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+.ph-btn {
+  height: 46px;
+  background-color: #2E7CF6;
+  border-radius: 12px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 6px;
+}
+.ph-link { margin-top: 12px; align-items: center; }
+.ph-link-text { color: #A6C4E5; font-size: 14px; }
+.ph-error { color: #FF6B6B; font-size: 12px; margin-bottom: 6px; }
+</style>

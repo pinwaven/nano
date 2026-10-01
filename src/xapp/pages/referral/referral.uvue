@@ -1,0 +1,131 @@
+<template>
+  <view class="rf-screen">
+    <view class="rf-header" :style="'padding-top:' + statusBarHeight + 'px'">
+      <view class="rf-back" v-on:click="goBack"><text class="rf-back-text">‹ {{ t('back') }}</text></view>
+      <text class="rf-title">{{ t('title') }}</text>
+    </view>
+
+    <view class="rf-card">
+      <text class="rf-label">{{ t('yourCode') }}</text>
+      <text class="rf-code">{{ referralCode }}</text>
+      <view class="rf-btn" v-on:click="copyCode"><text class="btn-text">{{ t('copyCode') }}</text></view>
+      <view class="rf-btn rf-btn-ghost" v-on:click="copyShareText"><text class="btn-text">{{ t('shareCard') }}</text></view>
+      <text class="rf-hint">{{ t('shareNote') }}</text>
+    </view>
+
+    <view class="rf-card">
+      <text class="rf-section">{{ t('howTitle') }}</text>
+      <text class="rf-how">{{ t('how1') }}</text>
+      <text class="rf-how">{{ t('how2') }}</text>
+      <text class="rf-how">{{ t('how3') }}</text>
+    </view>
+  </view>
+</template>
+
+<script>
+// Ported from miniapp pages/referral/referral.js. Deviation: a native app has no
+// onShareAppMessage card — 分享给好友 becomes copy-invite-text (link + title), the app's
+// own share sheet can come with a share plugin later.
+
+import { state } from '../../utils/state.uts'
+
+const T_ZH : UTSJSONObject = {
+  title: '邀请好友', back: '返回', yourCode: '您的专属邀请码', copyCode: '复制邀请码',
+  copied: '已复制', shareCard: '复制邀请链接', shareNote: '好友在登录页「邀请码」入口填入即可绑定邀请关系。',
+  shareTitle: '加入 Waven Nano，开启精准健康之旅',
+  howTitle: '如何邀请？',
+  how1: '将邀请链接发送给好友。',
+  how2: '好友通过您的链接注册后，即成功绑定邀请关系。',
+  how3: '好友购买商品时，您将获得对应佣金，积分可申请提现。',
+} as UTSJSONObject
+const T_EN : UTSJSONObject = {
+  title: 'Invite Friends', back: 'Back', yourCode: 'Your Referral Code', copyCode: 'Copy Code',
+  copied: 'Copied', shareCard: 'Copy Invite Link', shareNote: 'Friends enter the code on the login screen to link the invitation.',
+  shareTitle: 'Join Waven Nano — precision health for your biology',
+  howTitle: 'How it works',
+  how1: 'Send your invite link to a friend.',
+  how2: 'When your friend registers through your link, they\'re linked to you.',
+  how3: 'You earn credits whenever your friend makes a purchase. Credits can be withdrawn as cash.',
+} as UTSJSONObject
+
+export default {
+  name: 'ReferralPage',
+  data() {
+    return {
+      lang: 'zh',
+      statusBarHeight: 44,
+      referralCode: '',
+    }
+  },
+  onLoad(_options : OnLoadOptions) {
+    this.lang = state.lang
+    const info = uni.getWindowInfo()
+    this.statusBarHeight = info.statusBarHeight
+    const user = state.user
+    if (user != null) {
+      const rc = user!.getString('referral_code')
+      const uid = user!.getString('user_id')
+      this.referralCode = rc != null && rc!.length > 0 ? rc! : (uid != null ? uid : '')
+    }
+  },
+  methods: {
+    t(key : string) : string {
+      const dict = this.lang == 'en' ? T_EN : T_ZH
+      const v = dict.getString(key)
+      return v != null ? v : key
+    },
+    copyCode() {
+      uni.setClipboardData({
+        data: this.referralCode,
+        success: () => { uni.showToast({ title: this.t('copied'), icon: 'success' }) }
+      })
+    },
+    copyShareText() {
+      const text = `${this.t('shareTitle')}  ${this.t('yourCode')}: ${this.referralCode}`
+      uni.setClipboardData({
+        data: text,
+        success: () => { uni.showToast({ title: this.t('copied'), icon: 'success' }) }
+      })
+    },
+    goBack() {
+      uni.navigateBack()
+    }
+  }
+}
+</script>
+
+<style>
+.rf-screen { flex: 1; background-color: #0B1C2E; }
+.rf-header { flex-direction: row; align-items: center; padding: 12px 16px; }
+.rf-back { margin-right: 8px; }
+.rf-back-text { color: #A6C4E5; font-size: 15px; }
+.rf-title { color: #EAF2FB; font-size: 17px; font-weight: bold; }
+.rf-card {
+  background-color: #12283F;
+  border-radius: 16px;
+  margin: 12px 16px;
+  padding: 16px;
+}
+.rf-label { color: #A6C4E5; font-size: 13px; }
+.rf-code {
+  color: #EAF2FB;
+  font-size: 26px;
+  font-weight: bold;
+  margin-top: 8px;
+  margin-bottom: 12px;
+  letter-spacing: 3px;
+}
+.rf-btn {
+  height: 44px;
+  background-color: #2E7CF6;
+  border-radius: 12px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8px;
+}
+.rf-btn-ghost { background-color: rgba(46, 124, 246, 0.18); }
+.btn-text { color: #FFFFFF; font-size: 15px; }
+.rf-hint { color: rgba(166, 196, 229, 0.7); font-size: 11px; margin-top: 8px; }
+.rf-section { color: #EAF2FB; font-size: 15px; font-weight: bold; margin-bottom: 8px; }
+.rf-how { color: #A6C4E5; font-size: 13px; margin-bottom: 6px; }
+</style>

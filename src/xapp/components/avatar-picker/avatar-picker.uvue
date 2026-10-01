@@ -1,0 +1,106 @@
+<template>
+  <view v-if="visible" class="picker-backdrop">
+    <view class="picker-sheet">
+      <text class="picker-title">选择头像</text>
+      <text class="picker-hint">挑一个陪伴你的形象</text>
+      <scroll-view direction="vertical" class="picker-scroll">
+        <view class="picker-grid">
+          <view v-for="(a, i) in avatars" :key="i" class="picker-cell" v-on:click="onPick(a.id)">
+            <image class="picker-img" :src="a.thumb" mode="aspectFill" />
+          </view>
+        </view>
+      </scroll-view>
+      <view class="picker-cancel" v-on:click="onCancel"><text class="picker-cancel-text">取消</text></view>
+    </view>
+  </view>
+</template>
+
+<script>
+// Gallery-only port of components/avatar-picker. The miniapp component also owns the
+// custom-photo upload → Qwen-Image 4-mood generation flow (§20); that rides the async chat
+// event and comes with the main-page phase — for the first-run signup step the gallery is
+// the whole feature. emits: select {avatarId}, close.
+
+import { AVATAR_GALLERY, AvatarEntry } from '../../utils/avatar-gallery.uts'
+
+export default {
+  name: 'AvatarPicker',
+  props: {
+    visible: {
+      type: Boolean,
+      default: false
+    }
+  },
+  data() {
+    return {
+      avatars: AVATAR_GALLERY as AvatarEntry[]
+    }
+  },
+  methods: {
+    onPick(avatarId : string) {
+      this.$emit('select', { avatarId: avatarId } as UTSJSONObject)
+    },
+    onCancel() {
+      this.$emit('close')
+    }
+  }
+}
+</script>
+
+<style>
+.picker-backdrop {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(4, 10, 18, 0.72);
+  justify-content: flex-end;
+  align-items: center;
+}
+.picker-sheet {
+  width: 100%;
+  background-color: #12283F;
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  padding: 20px;
+}
+.picker-title {
+  font-size: 17px;
+  font-weight: bold;
+  color: #EAF2FB;
+}
+.picker-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(166, 196, 229, 0.7);
+}
+.picker-scroll {
+  height: 300px;
+  margin-top: 12px;
+}
+.picker-grid {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.picker-cell {
+  width: 25%;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.picker-img {
+  width: 64px;
+  height: 64px;
+  border-radius: 32px;
+}
+.picker-cancel {
+  margin-top: 8px;
+  align-items: center;
+  padding: 10px;
+}
+.picker-cancel-text {
+  color: #A6C4E5;
+  font-size: 14px;
+}
+</style>

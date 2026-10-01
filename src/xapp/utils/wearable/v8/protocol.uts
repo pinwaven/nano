@@ -1,0 +1,197 @@
+// Ported from miniapp utils/wearable/v8/protocol.js — V8 Smart Band BLE constants and builders.
+// Frame primitives are byte-identical to Halo (confirmed in the miniapp), so they are imported
+// from ../halo/protocol.uts; ONLY the opcode layer diverges here. Opcode divergence and the
+// deliberately-null fields: docs/architecture/v8-smart-band.md §6–7.
+
+import {
+  calculateChecksum, buildCommand, decToBcd, bcdToString, parseBcdDate, readLEInt,
+  buildHistorySyncPayload,
+  setTimePacket, getTimePacket,
+  getBatteryPacket, getMacPacket, getVersionPacket,
+  setFactoryResetPacket, setMcuResetPacket,
+  PersonalProfile, AutoMonitoringSettings,
+} from '../halo/protocol.uts'
+
+export {
+  calculateChecksum, buildCommand, decToBcd, bcdToString, parseBcdDate, readLEInt,
+  buildHistorySyncPayload,
+  setTimePacket, getTimePacket,
+  getBatteryPacket, getMacPacket, getVersionPacket,
+  setFactoryResetPacket, setMcuResetPacket,
+}
+
+export const SERVICE_UUID = '0000fff000001000800000805f9b34fb'
+export const WRITE_UUID = '0000fff600001000800000805f9b34fb'
+export const NOTIFY_UUID = '0000fff700001000800000805f9b34fb'
+
+// Confirmed directly against real hardware — not documented in the vendor SDK.
+export const V8_NAME_PREFIXES : string[] = ['JCV8B']
+
+// 0x02 — Write user profile
+export function setUserInfoPacket(p : PersonalProfile) : number[] {
+  return buildCommand(0x02, [
+    (p.gender == 'male' || p.gender == '1') ? 1 : 0,
+    p.age, p.height, p.weight, p.stride,
+    0, 0, 0, 0, 0, 0, 0, 0, 0,
+  ])
+}
+
+// 0x42 — Read user profile from band
+export function getUserInfoPacket() : number[] { return buildCommand(0x42) }
+
+// 0x2a — Set background measurement schedule.
+// Confirmed byte-for-byte identical layout to Halo's 0x2A via live write + read-back.
+export function setAutoMonitoringPacket(s : AutoMonitoringSettings) : number[] {
+  const interval = s.intervalMinutes
+  return buildCommand(0x2A, [
+    s.workMode,
+    decToBcd(s.startHour),
+    decToBcd(s.startMinute),
+    decToBcd(s.endHour),
+    decToBcd(s.endMinute),
+    s.weekdays,
+    interval % 256,
+    Math.floor(interval / 256) % 256,
+    s.type,
+    0, 0, 0, 0, 0,
+  ])
+}
+
+// 0x2b — Read background schedule for a given type
+export function getAutoMonitoringPacket(type : number) : number[] {
+  return buildCommand(0x2B, [type, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+}
+
+// --- History sync packets ---
+// mode: 0x00 = read latest, 0x02 = continue from last read position, 0x99 = delete all.
+// Same convention/offsets as Halo.
+
+export function getTotalStepDataPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x51, buildHistorySyncPayload(mode, dateFilter))
+}
+
+export function getDetailActivityDataPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x52, buildHistorySyncPayload(mode, dateFilter))
+}
+
+export function getSleepDataPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x53, buildHistorySyncPayload(mode, dateFilter))
+}
+
+export function getDynamicHrDataPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x54, buildHistorySyncPayload(mode, dateFilter))
+}
+
+export function getStaticHrDataPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x55, buildHistorySyncPayload(mode, dateFilter))
+}
+
+export function getHrvTestDataPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x56, buildHistorySyncPayload(mode, dateFilter))
+}
+
+export function getTemperatureHistoryPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x62, buildHistorySyncPayload(mode, dateFilter))
+}
+
+export function getOxygenDataPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x66, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// --- ECG (on-demand, streamed live — NOT a history type) ---
+// Ported verbatim from the miniapp/v8 builders after the 2026-09-19 live sessions
+// (docs/architecture/v8-smart-band.md §6, tools/halo/README.md "ECG"). Firmware behaviour
+// notes (wrist+finger contact; duration is the only clean stop; lift finger after expiry)
+// are hardware facts, not implementation freedom — keep them.
+
+export function measurementTypeByte(type : string) : number {
+  if (type == 'hrv') return 0x01
+  if (type == 'hr') return 0x02
+  if (type == 'spo2') return 0x03
+  if (type == 'ecg') return 0x04
+  throw new Error(`Unknown measurement type "${type}"`)
+}
+
+// 0x28 -- start/stop an on-demand measurement; duration to bytes 4-5 LE; ECG sets byte 6 = 1.
+export function setMeasurementPacket(type : string, open : boolean, durationSeconds : number) : number[] {
+  const typeByte = measurementTypeByte(type)
+  const d = Math.max(0, Math.min(65535, Math.round(durationSeconds)))
+  const payload = new Array<number>(14).fill(0)
+  payload[0] = typeByte
+  payload[1] = open ? 1 : 0
+  payload[3] = d % 256
+  payload[4] = Math.floor(d / 256)
+  if (typeByte == 0x04) payload[5] = 1
+  return buildCommand(0x28, payload)
+}
+
+// 0x07 -- open/close the ECG realtime tap
+export function setEcgRealtimePacket(open : boolean) : number[] {
+  return buildCommand(0x07, [open ? 1 : 0])
+}
+
+export class EcgChunk {
+  packetId : number
+  samples : number[]
+  constructor(packetId : number, samples : number[]) {
+    this.packetId = packetId
+    this.samples = samples
+  }
+}
+
+// 0x07 data notification: byte1 = packetId (uint8, wraps), then (len-2)/3 unsigned 24-bit LE
+// samples. A 16-byte frame on this opcode is the tap ack, not data.
+export function parseEcgChunk(buf : number[]) : EcgChunk | null {
+  if (buf.length <= 16) return null
+  const packetId = buf[1]
+  const count = Math.floor((buf.length - 2) / 3)
+  const samples : number[] = []
+  for (let i = 0; i < count; i++) samples.push(readLEInt(buf, 2 + 3 * i, 3))
+  return new EcgChunk(packetId, samples)
+}
+
+// ---- PPG stream (the SDK's "blood glucose" collection) ----
+// 0x78 modes: 1 start, 3 stop, 5 quit (2/4 unneeded). Streams 0x3a frames: `3a 00 <seq>` then
+// 50 samples, 4-byte BIG-endian in a 203-byte frame, 3-byte in a 153-byte one; one frame per
+// second at 50 Hz; byte-identical on Halo; needs negotiated MTU >= 203.
+
+function _ppgModeByte(mode : string) : number {
+  if (mode == 'start') return 1
+  if (mode == 'result') return 2
+  if (mode == 'stop') return 3
+  if (mode == 'progress') return 4
+  if (mode == 'quit') return 5
+  throw new Error(`Unknown PPG mode "${mode}"`)
+}
+
+export function ppgModePacket(mode : string, status : number) : number[] {
+  const m = _ppgModeByte(mode)
+  const payload : number[] = [m]
+  if (m != 1) payload.push(Math.floor(status))
+  return buildCommand(0x78, payload)
+}
+
+export class PpgChunk {
+  packetId : number
+  samples : number[]
+  constructor(packetId : number, samples : number[]) {
+    this.packetId = packetId
+    this.samples = samples
+  }
+}
+
+// 0x3a data frame → samples or null for any other length.
+export function parsePpgChunk(buf : number[]) : PpgChunk | null {
+  let width = 0
+  if (buf.length == 153) width = 3
+  else if (buf.length == 203) width = 4
+  if (width == 0) return null
+  const count = Math.floor((buf.length - 3) / width)
+  const samples : number[] = []
+  for (let i = 0; i < count; i++) {
+    let v = 0
+    for (let k = 0; k < width; k++) v = v * 256 + buf[3 + width * i + k]
+    samples.push(v)
+  }
+  return new PpgChunk(buf[2], samples)
+}

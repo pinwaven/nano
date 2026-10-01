@@ -1,0 +1,227 @@
+// Ported from miniapp utils/tool-actions.js. Shape changes:
+// - ctx.req is the page's own wrapper returning RespEnvelope {statusCode, data} (the miniapp's
+//   tool-actions always used raw wx.request-style responses, not the throwing utils/request req).
+// - i18n `t` is a UTSJSONObject until utils/i18n.uts is ported with the chat page.
+// - runTestChip: wx.scanCode → uni.scanCode (verify coverage on first device build).
+// - _doUpload: binary PUT is stubbed behind readFileBytes() — UTS reads files via native APIs
+//   (Android FileInputStream / iOS NSData); wire it during the device-testing pass.
+
+import { BASE } from './config.uts'
+
+export class ToolItem {
+  action : string
+  icon : string
+  label : string
+  constructor(action : string, icon : string, label : string) {
+    this.action = action
+    this.icon = icon
+    this.label = label
+  }
+}
+
+export class RespEnvelope {
+  statusCode : number
+  data : UTSJSONObject | null
+  constructor(statusCode : number, data : UTSJSONObject | null) {
+    this.statusCode = statusCode
+    this.data = data
+  }
+}
+
+type ReqFn = (url : string, method : string, body : UTSJSONObject | null, timeoutMs : number) => Promise<RespEnvelope>
+type AddMsgFn = (role : string, content : string, persist : boolean) => void
+type SetTypingFn = (b : boolean) => void
+
+export class ToolCtx {
+  addMsg : AddMsgFn
+  req : ReqFn
+  setTyping : SetTypingFn
+  addActionMsg : ((action : string, label : string, persist : boolean) => void) | null = null
+  // Present only on main.js's ctx (it owns a notification-polling loop that delivers the
+  // async reply later); coach.js omits it and gets an honest "still working" line instead.
+  onAsyncStart : (() => void) | null = null
+  addImageMsg : ((tempPath : string) => string) | null = null
+  updateImageMsg : ((msgId : string, permanentUrl : string | null) => void) | null = null
+  onHealthReportPending : ((payload : UTSJSONObject) => void) | null = null
+
+  constructor(addMsg : AddMsgFn, req : ReqFn, setTyping : SetTypingFn) {
+    this.addMsg = addMsg
+    this.req = req
+    this.setTyping = setTyping
+  }
+}
+
+export class ToolOpts {
+  skipUserMsg : boolean = false
+  ignoreFocus : boolean = false
+  async : boolean = false
+}
+
+function _tr(t : UTSJSONObject, key : string) : string {
+  const s = t.getString(key)
+  return s != null ? s : ''
+}
+
+export function getToolList(t : UTSJSONObject) : ToolItem[] {
+  return [
+    new ToolItem('upload_image', '▣', _tr(t, 'toolUploadImage')),
+    new ToolItem('test_chip', '⬡', _tr(t, 'toolTestChip')),
+    new ToolItem('formula_dots', '◉', _tr(t, 'toolFormulaDots')),
+    new ToolItem('health_advice', '♥', _tr(t, 'toolHealthAdvice')),
+  ]
+}
+
+export function runTestChip(openid : string, t : UTSJSONObject, ctx : ToolCtx) : Promise<boolean> {
+  return new Promise<boolean>((resolve : (v : boolean) => void, _reject : (e : any | null) => void) => {
+    uni.scanCode({
+      onlyFromCamera: false,
+      success: (res) => { (async () : Promise<void> => {
+        const chipId = res.result
+        ctx.addMsg('user', chipId, true)
+        ctx.setTyping(true)
+        try {
+          const scanRes = await ctx.req(`${BASE}/api/kino-scan`, 'POST', { openid: openid, chip_id: chipId } as UTSJSONObject, 0)
+          if (scanRes.statusCode != 200) throw new Error('server error')
+          const status = scanRes.data?.getString('status')
+          if (status == 'invalid_chip') ctx.addMsg('ai', _tr(t, 'kinoScanInvalidChip'), true)
+          else if (status == 'already_linked') ctx.addMsg('ai', _tr(t, 'kinoScanAlreadyLinked'), true)
+          else if (status == 'used') ctx.addMsg('ai', _tr(t, 'kinoScanUsed'), true)
+          else if (status == 'claimed_by_other') ctx.addMsg('ai', _tr(t, 'kinoScanClaimedByOther'), true)
+          else {
+            ctx.addMsg('ai', _tr(t, 'kinoScanSuccess'), true)
+            ctx.addMsg('ai', _tr(t, 'kinoScanInstruction'), true)
+          }
+        } catch (e : any) {
+          ctx.addMsg('ai', _tr(t, 'kinoScanError'), true)
+        } finally {
+          ctx.setTyping(false)
+          resolve(true)
+        }
+      })() },
+      fail: (_) => {
+        resolve(true)
+      }
+    })
+  })
+}
+
+// opts.skipUserMsg — the classifier launched this from the user's own message, which is already
+// in the chat; re-adding the canned trigger line would read as asking twice.
+// opts.ignoreFocus — the user picked 不设方向; the server zeroes plan focus entirely on this flag.
+export async function runFormulaDs(openid : string, t : UTSJSONObject, ctx : ToolCtx, opts : ToolOpts = new ToolOpts()) : Promise<void> {
+  if (!opts.skipUserMsg) ctx.addMsg('user', _tr(t, 'toolFormulaDotMsg'), true)
+  ctx.addMsg('ai', _tr(t, 'formulaGenerating'), true)
+  ctx.setTyping(true)
+  try {
+    const body = { openid: openid } as UTSJSONObject
+    if (opts.ignoreFocus) body['ignore_focus'] = true
+    const res = await ctx.req(`${BASE}/api/formula-dots`, 'POST', body, 0)
+    const processing = res.data?.getBoolean('processing')
+    if (processing != null && processing!) {
+      // The dot-count decision runs the full agentic loop asynchronously (up to ~180s) — with
+      // main.js's polling ctx alive, keep the waiting UI up and let the follow-up message land;
+      // callers without onAsyncStart get an honest "still working" line, never a premature done.
+      if (ctx.onAsyncStart != null) {
+        ctx.onAsyncStart!()
+        return
+      }
+      ctx.addMsg('ai', _tr(t, 'formulaProcessing'), true)
+      ctx.setTyping(false)
+      return
+    }
+    ctx.addMsg('ai', _tr(t, 'formulaComplete'), true)
+    ctx.setTyping(false)
+  } catch (e : any) {
+    ctx.addMsg('ai', _tr(t, 'formulaError'), true)
+    ctx.setTyping(false)
+  }
+}
+
+export async function runHealthAdvice(openid : string, t : UTSJSONObject, ctx : ToolCtx, opts : ToolOpts = new ToolOpts()) : Promise<void> {
+  const wantAsync = opts.async
+  ctx.addMsg('user', _tr(t, 'toolHealthAdviceMsg'), true)
+  ctx.setTyping(true)
+  try {
+    // 290s: the server-side agentic loop is bounded at 200s and grounding can add ~60s — a
+    // legit turn measures ~266s (2026-08-22). Tripping the client timeout makes FC cancel the
+    // invocation and destroys the work; non-async callers have no polling fallback.
+    const res = await ctx.req(`${BASE}/api/health-advice`, 'POST', { openid: openid, async: wantAsync } as UTSJSONObject, 290000)
+    if (res.statusCode != 200 && res.statusCode != 201) throw new Error('server error')
+    const processing = res.data?.getBoolean('processing')
+    if (wantAsync && processing != null && processing!) {
+      if (ctx.onAsyncStart != null) ctx.onAsyncStart!()
+      return
+    }
+    const reply = res.data?.getString('message')
+    if (reply == null) throw new Error('empty response')
+    ctx.addMsg('ai', reply!, true)
+    ctx.setTyping(false)
+  } catch (e : any) {
+    ctx.addMsg('ai', _tr(t, 'healthAdviceError'), true)
+    ctx.setTyping(false)
+  }
+}
+
+export function runUploadImage(openid : string, t : UTSJSONObject, ctx : ToolCtx, tempFilePath : string) {
+  doUpload(tempFilePath, openid, t, ctx)
+}
+
+// TODO(port): native file read per platform — wire with conditional compilation during the
+// device-testing pass. Returning null shows the error line instead of silently corrupting.
+function readFileBytes(path : string) : ArrayBuffer | null {
+  return null
+}
+
+export function doUpload(tempPath : string, openid : string, t : UTSJSONObject, ctx : ToolCtx) {
+  const filename = `img_${Date.now()}.jpg`
+  ctx.addMsg('ai', _tr(t, 'imageUploading'), false)
+  ctx.setTyping(true)
+  ctx.req(`${BASE}/api/oss/presign?type=image&filename=${encodeURIComponent(filename)}&category=user-images`, 'GET', null, 0)
+    .then(async (presignRes) : Promise<void> => {
+      const putUrl = presignRes.data?.getString('put_url')
+      const getUrl = presignRes.data?.getString('get_url')
+      const key = presignRes.data?.getString('key')
+      if (putUrl == null) throw new Error('presign failed')
+      const msgId = ctx.addImageMsg != null ? ctx.addImageMsg!(tempPath) : null
+      const bytes = readFileBytes(tempPath)
+      if (bytes == null || getUrl == null || key == null) throw new Error('read failed')
+      try {
+        const code = await _putBinary(putUrl!, bytes!)
+        if (code != 200) throw new Error('PUT ' + code)
+        if (msgId != null && ctx.updateImageMsg != null) ctx.updateImageMsg!(msgId!, getUrl!)
+        ctx.addMsg('ai', _tr(t, 'imageAnalyzing'), false)
+        const res = await ctx.req(`${BASE}/api/analyze-image`, 'POST', { openid: openid, oss_key: key!, filename: filename, get_url: getUrl! } as UTSJSONObject, 0)
+        const reply = res.data?.getString('message')
+        if (reply != null) ctx.addMsg('ai', reply!, true)
+        const pending = res.data?.getBoolean('pending_health_report')
+        if (pending != null && pending! && ctx.onHealthReportPending != null && res.data != null) {
+          const payload = res.data!.getJSON('payload')
+          if (payload != null) ctx.onHealthReportPending!(payload!)
+        }
+        ctx.setTyping(false)
+      } catch (e2 : any) {
+        if (msgId != null && ctx.updateImageMsg != null) ctx.updateImageMsg!(msgId!, null)
+        ctx.addMsg('ai', _tr(t, 'imageError'), false)
+        ctx.setTyping(false)
+      }
+    })
+    .catch((): void => {
+      ctx.addMsg('ai', _tr(t, 'imageError'), false)
+      ctx.setTyping(false)
+    })
+}
+
+// The awaitable uni.request overload silently picks RequestTask for an ArrayBuffer body —
+// callbacks only. (Same finding as health-documents' OSS PUT.)
+async function _putBinary(putUrl : string, bytes : ArrayBuffer) : Promise<number> {
+  return await new Promise<number>((resolve : (v : number) => void, reject : (e : any | null) => void) => {
+    uni.request<UTSJSONObject>({
+      url: putUrl,
+      method: 'PUT' as RequestMethod,
+      header: { 'Content-Type': 'application/octet-stream' } as UTSJSONObject,
+      data: bytes,
+      success: (r) => { resolve(r.statusCode) },
+      fail: (err) => { reject(new Error('PUT network')) },
+    })
+  })
+}

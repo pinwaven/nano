@@ -1,0 +1,206 @@
+// Ported from miniapp utils/wearable/ble-manager.js. Same orchestration (adapter open
+// tolerance, prefix-filtered scan, MTU best-effort + 800ms settle, UUID normalization,
+// notify subscription from a map, send-and-collect-until-done assembly), but over the
+// transport.uts BleTransport instead of wx.*Bluetooth* directly.
+
+import {
+  BleTransport, BleScanDevice, NotifyCharFn,
+  normalizeUUID, delay, concatBytes,
+} from './transport.uts'
+
+export class NotifyPair {
+  serviceUUID : string
+  txCharUUID : string
+  rxCharUUID : string
+  constructor(serviceUUID : string, txCharUUID : string, rxCharUUID : string) {
+    this.serviceUUID = serviceUUID
+    this.txCharUUID = txCharUUID
+    this.rxCharUUID = rxCharUUID
+  }
+}
+
+type IsDoneFn = (combined : number[]) => boolean
+
+export class BLEManager {
+  private transport : BleTransport
+  private connectedDeviceId : string | null = null
+  private notifyHandlers = new Map<string, NotifyCharFn>()
+  private serviceUUIDs = new Map<string, string>()
+  private charUUIDs = new Map<string, string>()
+  private valueChangeListenerAttached : boolean = false
+
+  constructor(transport : BleTransport) {
+    this.transport = transport
+  }
+
+  async openAdapter() : Promise<void> {
+    try {
+      await this.transport.openAdapter()
+    } catch (e : any) {
+      // "already opened" means the adapter is already usable (a prior BLEManager instance —
+      // e.g. the bind flow's own scan phase — opened it); not a real failure.
+      const msg = `${e}`
+      if (msg.indexOf('already opened') != -1) return
+      throw new Error(msg)
+    }
+  }
+
+  closeAdapter() {
+    this.transport.closeAdapter()
+  }
+
+  // Scan for nearby BLE devices, keeping those whose name starts with any prefix
+  // (prefixes null → all devices, use the services advertisement filter instead).
+  scan(prefixes : string[] | null, timeoutMs : number = 8000, services : string[] = [] as string[]) : Promise<BleScanDevice[]> {
+    return this._scanAsync(prefixes, timeoutMs, services)
+  }
+
+  private async _scanAsync(prefixes : string[] | null, timeoutMs : number, services : string[]) : Promise<BleScanDevice[]> {
+    const found = new Map<string, BleScanDevice>()
+
+    this.transport.onDeviceFound((devices : BleScanDevice[]) => {
+      for (const d of devices) {
+        const name = d.name
+        if (name.length == 0 && services.length == 0) continue
+        if (prefixes != null) {
+          let matched = false
+          for (const p of prefixes!) {
+            if (name.toLowerCase().startsWith(p.toLowerCase())) { matched = true; break }
+          }
+          if (!matched) continue
+        }
+        found.set(d.deviceId, d)
+      }
+    })
+
+    try {
+      await this.transport.startDiscovery(services)
+    } catch (e : any) {
+      this.transport.onDeviceFound(null)
+      throw new Error(`${e}`)
+    }
+    await delay(timeoutMs)
+    this.transport.stopDiscovery()
+    this.transport.onDeviceFound(null)
+    const out : BleScanDevice[] = []
+    found.forEach((v : BleScanDevice) => { out.push(v) })
+    return out
+  }
+
+  // Connect and subscribe notifications on every tx characteristic in notifyPairs.
+  async connect(deviceId : string, notifyPairs : NotifyPair[]) : Promise<void> {
+    this.connectedDeviceId = deviceId
+
+    await this.transport.createConnection(deviceId)
+
+    // Larger MTU: writes are capped at ~20 usable bytes without it. Android needs this; iOS
+    // auto-negotiates and has no equivalent — best-effort, swallow failure (same as wx.setBLEMTU).
+    try {
+      await this.transport.negotiateMtu(deviceId, 247)
+    } catch (e : any) {}
+
+    // Delay after connection before discovering services — R10 needs ~800ms
+    await delay(800)
+
+    const services = await this.transport.getServices(deviceId)
+    for (const svc of services) {
+      this.serviceUUIDs.set(normalizeUUID(svc.uuid), svc.uuid)
+    }
+
+    this._attachValueChangeListener()
+
+    for (const pair of notifyPairs) {
+      var svc : string | null = null
+      for (const s of services) {
+        if (normalizeUUID(s.uuid) == normalizeUUID(pair.serviceUUID)) { svc = s.uuid; break }
+      }
+      if (svc == null) continue
+
+      const chars = await this.transport.getCharacteristics(deviceId, svc!)
+      for (const c of chars) {
+        this.charUUIDs.set(normalizeUUID(c.uuid), c.uuid)
+      }
+
+      var txChar : string | null = null
+      for (const c of chars) {
+        if (normalizeUUID(c.uuid) == normalizeUUID(pair.txCharUUID)) { txChar = c.uuid; break }
+      }
+      if (txChar == null) continue
+
+      await this.transport.enableNotify(deviceId, svc!, txChar!)
+    }
+  }
+
+  disconnect() {
+    const deviceId = this.connectedDeviceId
+    this.connectedDeviceId = null
+    this.notifyHandlers.clear()
+    this.serviceUUIDs.clear()
+    this.charUUIDs.clear()
+    if (deviceId == null) return
+    this.transport.closeConnection(deviceId!)
+  }
+
+  onNotify(charUUID : string, fn : NotifyCharFn | null) {
+    const key = normalizeUUID(charUUID)
+    if (fn == null) {
+      this.notifyHandlers.delete(key)
+      return
+    }
+    this.notifyHandlers.set(key, fn!)
+  }
+
+  write(deviceId : string, serviceUUID : string, charUUID : string, packet : number[]) : Promise<void> {
+    // Resolves protocol-format UUIDs to the actual discovered format first.
+    const actualSvc = this.serviceUUIDs.get(normalizeUUID(serviceUUID))
+    const actualChar = this.charUUIDs.get(normalizeUUID(charUUID))
+    return this.transport.write(deviceId,
+      actualSvc != null ? actualSvc! : serviceUUID,
+      actualChar != null ? actualChar! : charUUID,
+      packet)
+  }
+
+  // Send a packet and accumulate notifications until isDone(combined) — multi-packet history
+  // responses arrive in many chunks; the caller owns the completion predicate.
+  sendAndReceive(deviceId : string, serviceUUID : string, charUUID : string, txCharUUID : string,
+    packet : number[], isDone : IsDoneFn, timeoutMs : number = 5000) : Promise<number[]> {
+    return new Promise<number[]>((resolve : (v : number[]) => void, reject : (e : any | null) => void) => {
+      const chunks : number[][] = []
+      let settled = false
+
+      setTimeout(() => {
+        if (settled) return
+        settled = true
+        this.onNotify(txCharUUID, null)
+        reject(new Error('sendAndReceive timed out'))
+      }, timeoutMs)
+
+      this.onNotify(txCharUUID, (data : number[]) => {
+        if (settled) return
+        chunks.push(data)
+        const combined = concatBytes(chunks)
+        if (isDone(combined)) {
+          settled = true
+          this.onNotify(txCharUUID, null)
+          resolve(combined)
+        }
+      })
+
+      this.write(deviceId, serviceUUID, charUUID, packet).catch((err : any | null) => {
+        if (settled) return
+        settled = true
+        this.onNotify(txCharUUID, null)
+        reject(err)
+      })
+    })
+  }
+
+  private _attachValueChangeListener() {
+    if (this.valueChangeListenerAttached) return
+    this.valueChangeListenerAttached = true
+    this.transport.onCharacteristicChange((deviceId : string, characteristicId : string, value : number[]) => {
+      const handler = this.notifyHandlers.get(normalizeUUID(characteristicId))
+      if (handler != null) handler!(value)
+    })
+  }
+}

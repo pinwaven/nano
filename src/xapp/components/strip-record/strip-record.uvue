@@ -1,0 +1,1140 @@
+<template>
+  <!-- 心电节律 / 脉搏波 记录 overlay — ported from components/strip-record/strip-record.wxml.
+       The miniapp's catchtouchmove="noop" (scroll-through guard) has no uvue equivalent; the
+       fixed full-screen overlay swallows touches itself. -->
+  <view v-if="open" class="strip-overlay">
+    <scroll-view direction="vertical" :class="theme == 'light' ? 'strip-sheet strip-sheet-light' : 'strip-sheet'">
+      <view class="strip-head">
+        <text class="strip-title">{{ tt('title') }}</text>
+        <view class="strip-close" v-on:click="handleClose()"><text class="strip-close-text">✕</text></view>
+      </view>
+
+      <!-- idle: instructions -->
+      <view v-if="stage == 'idle'" class="strip-block">
+        <view class="strip-guide">
+          <text class="strip-guide-glyph">{{ tt('guideGlyph') }}</text>
+          <text class="strip-guide-line">{{ tt('guide1') }}</text>
+          <text class="strip-guide-line">{{ tt('guide2') }}</text>
+          <text class="strip-guide-line strip-guide-muted">{{ tt('guide3') }}</text>
+        </view>
+        <view class="strip-btn strip-btn-primary" v-on:click="handleStart()"><text class="strip-btn-text">{{ tt('start') }}</text></view>
+        <text class="strip-footnote">{{ tt('notDiagnosis') }}</text>
+      </view>
+
+      <!-- connecting / measuring / saving -->
+      <view v-if="stage == 'connecting' || stage == 'measuring' || stage == 'saving'" class="strip-block">
+        <view class="strip-status-row">
+          <text class="strip-status">{{ statusText() }}</text>
+          <text v-if="stage == 'measuring'" class="strip-countdown">{{ remaining }}s</text>
+        </view>
+        <view class="strip-canvas-wrap">
+          <!-- uvue canvas uses `id` (the miniapp's legacy canvas-id does not exist here) -->
+          <canvas id="strip-live" class="strip-canvas"></canvas>
+        </view>
+        <view class="strip-meta-row">
+          <text class="strip-meta">{{ tt('packets') }} {{ packetCount }}</text>
+          <text class="strip-meta">{{ tt('beatsLive') }} {{ liveBeats }}</text>
+        </view>
+        <view v-if="stage == 'measuring'" class="strip-btn strip-btn-ghost" v-on:click="handleStop()"><text class="strip-btn-text">{{ tt('stopEarly') }}</text></view>
+      </view>
+
+      <!-- loading a stored strip -->
+      <view v-if="stage == 'loading'" class="strip-block">
+        <view class="strip-guide"><text class="strip-guide-line strip-guide-muted">{{ tt('loading') }}</text></view>
+      </view>
+
+      <!-- result (just recorded) / view (a stored strip): same layout, whole strip stacked in rows -->
+      <view v-if="stage == 'result' || stage == 'view'" class="strip-block">
+        <text v-if="stage == 'view'" class="strip-when">{{ viewWhen }}</text>
+        <view class="strip-result-hero">
+          <text class="strip-bpm">{{ resBpm }}</text>
+          <text class="strip-bpm-unit">bpm</text>
+        </view>
+        <view class="strip-result-grid">
+          <view class="strip-cell"><text class="strip-cell-v">{{ resAcceptedBeats }}</text><text class="strip-cell-k">{{ tt('beats') }}</text></view>
+          <view class="strip-cell"><text class="strip-cell-v">{{ resRrMedian }}</text><text class="strip-cell-k">{{ tt('rrMedian') }}</text></view>
+          <view class="strip-cell"><text class="strip-cell-v">{{ resRrSd }}</text><text class="strip-cell-k">{{ tt('rrSd') }}</text></view>
+          <view class="strip-cell"><text class="strip-cell-v">{{ resDuration }}</text><text class="strip-cell-k">{{ tt('duration') }}</text></view>
+        </view>
+        <view class="strip-canvas-wrap" :style="'height:' + stripHeightPx + 'px;'">
+          <canvas id="strip-strip" class="strip-canvas strip-strip-canvas" :style="'height:' + stripHeightPx + 'px;'"></canvas>
+        </view>
+        <text class="strip-footnote">{{ tt('notDiagnosis') }}</text>
+        <view class="strip-btn strip-btn-primary" v-on:click="handleClose()"><text class="strip-btn-text">{{ tt('done') }}</text></view>
+        <view v-if="stage == 'view' && !readOnly" class="strip-btn strip-btn-ghost strip-btn-danger" v-on:click="handleDelete()"><text class="strip-btn-text">{{ tt('delete') }}</text></view>
+      </view>
+
+      <!-- refused / failed -->
+      <view v-if="stage == 'failed'" class="strip-block">
+        <view class="strip-guide">
+          <text class="strip-guide-glyph">⚠</text>
+          <text class="strip-guide-line">{{ failTitle }}</text>
+          <text class="strip-guide-line strip-guide-muted">{{ failBody }}</text>
+        </view>
+        <view class="strip-btn strip-btn-primary" v-on:click="handleRetry()"><text class="strip-btn-text">{{ tt('retry') }}</text></view>
+        <view class="strip-btn strip-btn-ghost" v-on:click="handleClose()"><text class="strip-btn-text">{{ tt('close') }}</text></view>
+      </view>
+    </scroll-view>
+  </view>
+</template>
+
+<script>
+// 心电节律 / 脉搏波 记录 — one overlay that records a raw strip from a bound wearable, uploads it
+// for analysis and shows the result, and that reads a stored strip back. `kind` picks which:
+//   kind="ecg"  single-lead ECG from the V8 band (§18/§45 心电节律; V8 only), 35 s capture with
+//               the first 5 s discarded, leaving a 30 s strip at ≈255 Hz, needs a finger from the
+//               other hand on the electrode — POST /api/ecg;
+//   kind="ppg"  the raw optical pulse wave from the V8 band or the Halo ring, 35 s capture with
+//               the first 5 s discarded, leaving a 30 s strip at 50 Hz — POST /api/ppg.
+// Both are twin layer 2 data (§34). Self view only for recording; the host (user-health) renders
+// it only when the bound wearable supports the kind. Device behaviour was established live
+// (2026-09-19 ECG, 2026-09-20 PPG) — tools/halo/README.md "ECG"/"PPG", docs/architecture/
+// v8-smart-band.md §6, docs/architecture/halo-smart-ring.md §3.12:
+//   - ECG: contact owns the measurement (wrist + finger, or the band aborts within ~3 s); the
+//     band ends it at the requested duration; a start that produces no packets is explained as
+//     "lift the finger and place it again";
+//   - PPG: the pulse is a few percent of the light level and the device re-ranges gain on motion,
+//     so a loose strap or moving hand is refused by the server as poor_contact and explained as
+//     "snug and still", never as a device error.
+// Nothing here is a diagnosis: the devices give dimensionless counts, the server derives rhythm.
+//
+// Contract preserved from the miniapp component:
+//   properties → props: kind, open, userId, brand, deviceId, deviceName, lang, theme, viewId,
+//             coachId, readOnly (same names/defaults).
+//   events:   'close' (no detail), 'deleted' {id, kind}, 'saved' {kind, ecg|ppg: row}.
+// Deviations (trial port): BLE transport not yet installed (utils/wearable/transport.uts gap —
+// createWearable gets a default BleTransport whose methods reject with 'BLE transport not
+// installed', which lands in the same failBle branch as a real connect failure); canvas drawing
+// marked TODO(port); the per-request 20s timeout of the miniapp's own _req is not carried (the
+// shared request.uts helpers do not expose one).
+
+import { BASE } from '../../utils/config.uts'
+import { getBody, postBody, deleteBody } from '../../utils/request.uts'
+import { tr } from '../../utils/i18n.uts'
+import { createWearable } from '../../utils/wearable/index.uts'
+import { BleTransport } from '../../utils/wearable/transport.uts'
+import { HaloRing, PpgPacketRecord, RecordPpgOpts } from '../../utils/wearable/halo/index.uts'
+import { V8Band, V8StreamPacket, V8RecordOpts } from '../../utils/wearable/v8/index.uts'
+
+const NO_SIGNAL_AFTER_MS = 5000
+const CONNECT_TIMEOUT_MS = 15000
+const LIVE_WINDOW_SEC = 4
+const STRIP_ROW_SEC = 5   // a printed strip: 5 s per row
+const STRIP_ROW_PX = 64
+const STRIP_SETTLE_MS = 5000
+
+class KindInfo {
+  durationSec : number
+  method : string        // 'recordEcg' | 'recordPpg'
+  path : string          // 'ecg' | 'ppg'
+  brands : string[]
+  rateHz : number
+  liveSd : number
+  liveRefractoryS : number
+  liveHighPassS : number
+  constructor(durationSec : number, method : string, path : string, brands : string[],
+    rateHz : number, liveSd : number, liveRefractoryS : number, liveHighPassS : number) {
+    this.durationSec = durationSec
+    this.method = method
+    this.path = path
+    this.brands = brands
+    this.rateHz = rateHz
+    this.liveSd = liveSd
+    this.liveRefractoryS = liveRefractoryS
+    this.liveHighPassS = liveHighPassS
+  }
+}
+
+// Per-kind facts: capture length, the adapter method, the endpoint, the nominal sample rate the
+// live drawing assumes, and the live beat detector's threshold (sd multiples) / refractory (s).
+const KINDS = new Map<string, KindInfo>()
+KINDS.set('ecg', new KindInfo(35, 'recordEcg', 'ecg', ['v8'], 256, 3, 0.3, 0.5))
+KINDS.set('ppg', new KindInfo(35, 'recordPpg', 'ppg', ['v8', 'halo'], 50, 0.5, 0.4, 0.5))
+
+// Shared copy first, then each kind's own. Every tt.* the template uses must exist in both
+// languages for both kinds. The source spread COMMON into each per-kind table; the flattened
+// copies below carry the same keys verbatim (COMMON first, per-kind keys after).
+const ECG_ZH : UTSJSONObject = {
+  connecting: '正在连接设备…',
+  saving: '正在分析…',
+  stopEarly: '提前结束',
+  packets: '数据包',
+  beatsLive: '心搏',
+  beats: '有效心搏',
+  rrMedian: '间期中位 ms',
+  rrSd: '间期波动 ms',
+  duration: '时长',
+  done: '完成',
+  retry: '重新记录',
+  close: '关闭',
+  loading: '正在读取记录…',
+  delete: '删除这条记录',
+  deleteConfirm: '删除后无法恢复，确定删除这条记录？',
+  deleteFailed: '删除失败，请稍后重试。',
+  failLoadTitle: '无法读取记录',
+  failLoadBody: '网络异常或记录已被删除。',
+  failBleTitle: '无法连接设备',
+  failBleBody: '请确认设备在附近且蓝牙已开启，然后重试。',
+  failUploadTitle: '保存失败',
+  failUploadBody: '网络异常，记录未能保存。请稍后重试。',
+  failUnsupported: '当前绑定的设备不支持这项记录。',
+  title: '心电节律记录',
+  guideGlyph: '☝︎',
+  guide1: '戴好手环，用另一只手的指尖轻按手环上的金属电极。',
+  guide2: '保持手臂放松不动 35 秒；前 5 秒用于稳定信号，只保存后 30 秒。',
+  guide3: '如果记录没有开始，抬起手指再重新按上去。',
+  start: '开始记录',
+  measuring: '记录中，请保持不动',
+  noSignal: '没有收到信号：抬起手指，再重新按上电极',
+  notDiagnosis: '这是手环单导联的节律记录，只用于观察心率与节律规律性，不是心电图诊断。如有不适请就医。',
+  failPoorContactTitle: '没有记录到足够清晰的心搏',
+  failPoorContactBody: '请确认指尖稳稳按在电极上、手臂放松不动，抬起手指后重新按上再试一次。',
+  failTooShortTitle: '记录太短',
+  failTooShortBody: '手环没有持续发送数据。抬起手指、重新按上电极后再试。',
+} as UTSJSONObject
+
+const ECG_EN : UTSJSONObject = {
+  connecting: 'Connecting to the device…',
+  saving: 'Analysing…',
+  stopEarly: 'Stop early',
+  packets: 'packets',
+  beatsLive: 'beats',
+  beats: 'clean beats',
+  rrMedian: 'interval median ms',
+  rrSd: 'interval spread ms',
+  duration: 'length',
+  done: 'Done',
+  retry: 'Record again',
+  close: 'Close',
+  loading: 'Loading the strip…',
+  delete: 'Delete this strip',
+  deleteConfirm: 'This cannot be undone. Delete this strip?',
+  deleteFailed: 'Could not delete. Try again later.',
+  failLoadTitle: "Couldn't load the strip",
+  failLoadBody: 'Network problem, or the strip was deleted.',
+  failBleTitle: "Couldn't connect to the device",
+  failBleBody: 'Make sure the device is nearby and Bluetooth is on, then retry.',
+  failUploadTitle: 'Could not save',
+  failUploadBody: 'Network problem — the strip was not saved. Try again later.',
+  failUnsupported: 'The bound device does not support this recording.',
+  title: 'ECG rhythm strip',
+  guideGlyph: '☝︎',
+  guide1: 'Wear the band, then rest a fingertip of your other hand on its metal electrode.',
+  guide2: 'Keep your arm still for 35 seconds. The first 5 seconds let the signal settle; only the final 30 are saved.',
+  guide3: 'If nothing starts, lift the finger and place it again.',
+  start: 'Start recording',
+  measuring: 'Recording — hold still',
+  noSignal: 'No signal yet: lift your finger and place it on the electrode again',
+  notDiagnosis: 'A single-lead rhythm strip from the band, for heart rate and rhythm regularity only — not a diagnostic ECG. See a doctor if you feel unwell.',
+  failPoorContactTitle: 'Not enough clear beats were recorded',
+  failPoorContactBody: 'Keep the fingertip firmly on the electrode and the arm still. Lift the finger, place it again, and retry.',
+  failTooShortTitle: 'The recording was too short',
+  failTooShortBody: 'The band stopped sending data. Lift the finger, place it on the electrode again, and retry.',
+} as UTSJSONObject
+
+const PPG_ZH : UTSJSONObject = {
+  connecting: '正在连接设备…',
+  saving: '正在分析…',
+  stopEarly: '提前结束',
+  packets: '数据包',
+  beatsLive: '心搏',
+  beats: '有效心搏',
+  rrMedian: '间期中位 ms',
+  rrSd: '间期波动 ms',
+  duration: '时长',
+  done: '完成',
+  retry: '重新记录',
+  close: '关闭',
+  loading: '正在读取记录…',
+  delete: '删除这条记录',
+  deleteConfirm: '删除后无法恢复，确定删除这条记录？',
+  deleteFailed: '删除失败，请稍后重试。',
+  failLoadTitle: '无法读取记录',
+  failLoadBody: '网络异常或记录已被删除。',
+  failBleTitle: '无法连接设备',
+  failBleBody: '请确认设备在附近且蓝牙已开启，然后重试。',
+  failUploadTitle: '保存失败',
+  failUploadBody: '网络异常，记录未能保存。请稍后重试。',
+  failUnsupported: '当前绑定的设备不支持这项记录。',
+  title: '脉搏波记录',
+  guideGlyph: '✋',
+  guide1: '戴好设备，确保传感器贴紧皮肤（手环请系紧一格）。',
+  guide2: '把手平放在桌面上，保持不动 35 秒；前 5 秒用于稳定信号，只保存后 30 秒。',
+  guide3: '不需要用手指触碰电极。',
+  start: '开始记录',
+  measuring: '记录中，请保持手不动',
+  noSignal: '没有收到信号：请确认设备已戴好并贴紧皮肤',
+  notDiagnosis: '这是光学传感器记录的脉搏波形，只用于观察心率与搏动规律性，不是血氧或血糖测量，也不是诊断。如有不适请就医。',
+  failPoorContactTitle: '脉搏信号不够稳定',
+  failPoorContactBody: '请把设备戴紧、贴住皮肤，手平放不动后再试一次。',
+  failTooShortTitle: '记录太短',
+  failTooShortBody: '设备没有持续发送数据。请确认设备已戴好后再试。',
+} as UTSJSONObject
+
+const PPG_EN : UTSJSONObject = {
+  connecting: 'Connecting to the device…',
+  saving: 'Analysing…',
+  stopEarly: 'Stop early',
+  packets: 'packets',
+  beatsLive: 'beats',
+  beats: 'clean beats',
+  rrMedian: 'interval median ms',
+  rrSd: 'interval spread ms',
+  duration: 'length',
+  done: 'Done',
+  retry: 'Record again',
+  close: 'Close',
+  loading: 'Loading the strip…',
+  delete: 'Delete this strip',
+  deleteConfirm: 'This cannot be undone. Delete this strip?',
+  deleteFailed: 'Could not delete. Try again later.',
+  failLoadTitle: "Couldn't load the strip",
+  failLoadBody: 'Network problem, or the strip was deleted.',
+  failBleTitle: "Couldn't connect to the device",
+  failBleBody: 'Make sure the device is nearby and Bluetooth is on, then retry.',
+  failUploadTitle: 'Could not save',
+  failUploadBody: 'Network problem — the strip was not saved. Try again later.',
+  failUnsupported: 'The bound device does not support this recording.',
+  title: 'Pulse wave strip',
+  guideGlyph: '✋',
+  guide1: 'Wear the device with the sensor snug against the skin (tighten a band one notch).',
+  guide2: 'Rest your hand flat on a table for 35 seconds. The first 5 seconds let the signal settle; only the final 30 are saved.',
+  guide3: 'No need to touch the electrode.',
+  start: 'Start recording',
+  measuring: 'Recording — keep the hand still',
+  noSignal: 'No signal yet: check the device is on and against the skin',
+  notDiagnosis: 'An optical pulse waveform, for heart rate and beat regularity only — not an oxygen or glucose reading, and not a diagnosis. See a doctor if you feel unwell.',
+  failPoorContactTitle: 'The pulse signal was not steady enough',
+  failPoorContactBody: 'Wear the device snug against the skin, rest the hand flat and still, and try again.',
+  failTooShortTitle: 'The recording was too short',
+  failTooShortBody: 'The device stopped sending data. Check it is worn properly and retry.',
+} as UTSJSONObject
+
+// Holder for the record's early-stop callback (a function value kept off the reactive data tree).
+class StopHandle {
+  fn : (() => void) | null = null
+}
+
+// 'x3' is the pre-rename Halo brand value still in old bindings (§18).
+function _normalizeBrand(b : string) : string {
+  const v = b.toLowerCase()
+  return v == 'x3' ? 'halo' : v
+}
+
+// The sheet is full-width with 32rpx side padding, so the canvas is windowWidth − 64rpx in px.
+// Used when the layout query returns nothing (the canvas draws in CSS px, phones differ).
+function _sheetInnerWidth() : number {
+  try {
+    const w = uni.getWindowInfo().windowWidth
+    return Math.round(w - 64 * w / 750)
+  } catch (e : any) { return 340 }
+}
+
+function _stripHeight(nSamples : number, rateHz : number) : number {
+  const r = rateHz > 0 ? rateHz : 256
+  return Math.max(1, Math.ceil(nSamples / Math.round(r * STRIP_ROW_SEC))) * STRIP_ROW_PX
+}
+
+// Each notification is timestamped on arrival, after its samples were collected. Trim the
+// packet that crosses the five-second boundary too, so none of its settling samples are saved.
+// Packets cross into this component as {packetId, samples, receivedAt} UTSJSONObjects.
+function _trimSettlingPackets(packets : UTSJSONObject[], startedAt : number, rateHz : number) : UTSJSONObject[] {
+  const cutoff = startedAt + STRIP_SETTLE_MS
+  const sampleMs = 1000 / rateHz
+  const kept : UTSJSONObject[] = []
+  for (const p of packets) {
+    const arr = p.getArray<number>('samples')
+    if (arr == null) continue
+    const samples = arr!
+    const receivedAt = p.getNumber('receivedAt') ?? 0
+    const packetStart = receivedAt - samples.length * sampleMs
+    const drop = Math.max(0, Math.min(samples.length, Math.ceil((cutoff - packetStart) / sampleMs)))
+    if (drop < samples.length) {
+      if (drop > 0) {
+        kept.push({ packetId: p.getNumber('packetId'), samples: samples.slice(drop), receivedAt: receivedAt } as UTSJSONObject)
+      } else {
+        kept.push(p)
+      }
+    }
+  }
+  return kept
+}
+
+function _pad2(n : number) : string {
+  return n < 10 ? `0${n}` : `${n}`
+}
+
+function _whenLabel(iso : string) : string {
+  if (iso.length == 0) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${_pad2(d.getMonth() + 1)}-${_pad2(d.getDate())} ${_pad2(d.getHours())}:${_pad2(d.getMinutes())}`
+}
+
+// Moving-average high-pass: v - mean(last w). The same baseline removal the strip page uses.
+// (The source used q.push/q.shift; expressed here as a window start index — same result.)
+function _highPass(a : number[], w : number) : number[] {
+  const out : number[] = []
+  let sum = 0.0
+  for (let i = 0; i < a.length; i++) {
+    sum += a[i]
+    if (i >= w) sum -= a[i - w]
+    const win = i + 1 < w ? i + 1 : w
+    out.push(a[i] - sum / win)
+  }
+  return out
+}
+
+function _tail(a : number[], n : number) : number[] {
+  if (a.length <= n) return a
+  return a.slice(a.length - n)
+}
+
+function _v8PacketsToJSON(packets : V8StreamPacket[]) : UTSJSONObject[] {
+  const out : UTSJSONObject[] = []
+  for (const p of packets) out.push({ packetId: p.packetId, samples: p.samples, receivedAt: p.receivedAt } as UTSJSONObject)
+  return out
+}
+
+function _haloPacketsToJSON(packets : PpgPacketRecord[]) : UTSJSONObject[] {
+  const out : UTSJSONObject[] = []
+  for (const p of packets) out.push({ packetId: p.packetId, samples: p.samples, receivedAt: p.receivedAt } as UTSJSONObject)
+  return out
+}
+
+function _disconnectRing(ring : HaloRing | V8Band, brand : string) : void {
+  // Fire-and-forget, like the miniapp's ring.disconnect().catch((): void => {}).
+  if (brand == 'v8') {
+    const band = ring as V8Band
+    band!.disconnect().catch((e : any | null) => {})
+  } else {
+    const halo = ring as HaloRing
+    halo!.disconnect().catch((e : any | null) => {})
+  }
+}
+
+export default {
+  name: 'StripRecord',
+  props: {
+    kind: { type: String, default: 'ecg' },
+    open: { type: Boolean, default: false },
+    userId: { type: String, default: '' },
+    brand: { type: String, default: '' },
+    deviceId: { type: String, default: '' },
+    deviceName: { type: String, default: '' },
+    lang: { type: String, default: 'zh' },
+    theme: { type: String, default: 'dark' },
+    // Viewing a stored strip: the host passes the health_events id and, in coach view, its
+    // coach id (the server re-checks users.coach_id). readOnly hides delete.
+    viewId: { type: Number, default: 0 },
+    coachId: { type: String, default: '' },
+    readOnly: { type: Boolean, default: false },
+  },
+  data() {
+    return {
+      t: ECG_ZH as UTSJSONObject,
+      stage: 'idle' as string,        // idle | connecting | measuring | saving | result | failed | loading | view
+      stripHeightPx: 160 as number,   // the stacked full-strip canvas grows with the recording length
+      viewWhen: '' as string,
+      remaining: 35 as number,
+      packetCount: 0 as number,
+      liveBeats: 0 as number,
+      noSignal: false as boolean,
+      result: null as UTSJSONObject | null,
+      failTitle: '' as string,
+      failBody: '' as string,
+      // Result-block display strings (precomputed; the template cannot index UTSJSONObject):
+      resBpm: '—' as string,
+      resAcceptedBeats: '—' as string,
+      resRrMedian: '—' as string,
+      resRrSd: '—' as string,
+      resDuration: '—' as string,
+      // Non-reactive internals (same _-prefix data() idiom as coach.uvue):
+      _samples: [] as number[],
+      _packets: [] as UTSJSONObject[],   // {packetId, samples, receivedAt} rows
+      _lastPacketAt: 0 as number,
+      _countdown: 0 as number,
+      _ring: null as HaloRing | V8Band | null,
+      _ringBrand: '' as string,
+      _stop: new StopHandle(),
+    }
+  },
+  watch: {
+    // The miniapp's observers were compound ('kind, lang' / 'open, viewId'); per-prop watchers
+    // calling the same methods give the same outcome.
+    kind(_nv : string) { this._applyLocale() },
+    lang(_nv : string) { this._applyLocale() },
+    open(_nv : boolean) { this._onOpenOrViewId() },
+    viewId(_nv : number) { this._onOpenOrViewId() },
+  },
+  created() {
+    // WeChat observers fire once at init with the current values — reproduce that here.
+    this._applyLocale()
+    this._onOpenOrViewId()
+  },
+  beforeUnmount() {
+    this._teardown()
+  },
+  methods: {
+    tt(key : string) : string { return tr(this.t, key) },
+
+    statusText() : string {
+      if (this.stage == 'connecting') return this.tt('connecting')
+      if (this.stage == 'saving') return this.tt('saving')
+      return this.noSignal ? this.tt('noSignal') : this.tt('measuring')
+    },
+
+    _kind() : KindInfo {
+      const k = KINDS.get(this.kind)
+      return k != null ? k! : (KINDS.get('ecg') as KindInfo)
+    },
+
+    _applyLocale() {
+      const k = KINDS.has(this.kind) ? this.kind : 'ecg'
+      this.t = (k == 'ecg' ? (this.lang == 'en' ? ECG_EN : ECG_ZH) : (this.lang == 'en' ? PPG_EN : PPG_ZH)) as UTSJSONObject
+      this.remaining = this._kind().durationSec
+    },
+
+    _onOpenOrViewId() {
+      if (!this.open) return
+      const K = this._kind()
+      this.stage = 'idle'
+      this.result = null
+      this.noSignal = false
+      this.packetCount = 0
+      this.liveBeats = 0
+      this.remaining = K.durationSec
+      if (this.viewId > 0) this._loadView(this.viewId)
+    },
+
+    handleClose() {
+      if (this.stage == 'measuring') {
+        const fn = this._stop.fn
+        if (fn != null) fn!()
+      }
+      this._teardown()
+      this.$emit('close')
+    },
+
+    handleStop() {
+      const fn = this._stop.fn
+      if (fn != null) fn!()
+    },
+
+    handleRetry() {
+      if (this.viewId > 0) this._loadView(this.viewId)
+      else this.handleStart()
+    },
+
+    async handleStart() {
+      const K = this._kind()
+      const brand = _normalizeBrand(this.brand)
+      if (!K.brands.includes(brand) || this.deviceId.length == 0) {
+        this.stage = 'failed'
+        this.failTitle = this.tt('failUnsupported')
+        this.failBody = ''
+        return
+      }
+      this._samples = [] as number[]
+      this._packets = [] as UTSJSONObject[]
+      this._lastPacketAt = 0
+      this.stage = 'connecting'
+      this.packetCount = 0
+      this.liveBeats = 0
+      this.noSignal = false
+      this.remaining = K.durationSec
+      this.result = null
+
+      // Deviation: until a UTS BLE plugin adapter is installed (xapp README gap), this default
+      // transport rejects with 'BLE transport not installed' → the failBle branch below.
+      const ring = createWearable(brand, new BleTransport())
+      this._ring = ring
+      this._ringBrand = brand
+      try {
+        // The BLE stack can sit in "connecting" indefinitely with the adapter off or the device
+        // out of range (seen in the simulator: no adapter, no rejection). Cap it.
+        // TODO(port): Promise.race typing in UTS — verify at compile; the settled-flag pattern
+        // in utils/wearable/v8 recordPpg is the fallback.
+        const connectP : Promise<void> = brand == 'v8'
+          ? (ring as V8Band)!.connect(this.deviceId)
+          : (ring as HaloRing)!.connect(this.deviceId)
+        await new Promise<boolean>((resolve : (v : boolean) => void, reject : (e : any | null) => void) => {
+          let settled = false
+          setTimeout(() => {
+            if (!settled) { settled = true; reject(new Error('connect timeout')) }
+          }, CONNECT_TIMEOUT_MS)
+          ;(async () : Promise<void> => {
+            await connectP
+            if (!settled) { settled = true; resolve(true) }
+          })()
+        })
+      } catch (err : any) {
+        console.log(JSON.stringify({ level: 'WARN', msg: `${this.kind} connect failed`, error: `${err}` } as UTSJSONObject))
+        this._teardown()
+        this.stage = 'failed'
+        this.failTitle = this.tt('failBleTitle')
+        this.failBody = this.tt('failBleBody')
+        return
+      }
+
+      const startedAt = Date.now()
+      this.stage = 'measuring'
+      this._countdown = setInterval(() => {
+        const left = Math.max(0, K.durationSec - Math.round((Date.now() - startedAt) / 1000))
+        this.remaining = left
+        this.noSignal = this._packets.length == 0 && Date.now() - startedAt > NO_SIGNAL_AFTER_MS
+      }, 500)
+
+      let capturePackets : UTSJSONObject[] = []
+      let captureStartedAt = 0
+      try {
+        if (K.method == 'recordEcg') {
+          const band = ring as V8Band
+          const opts = new V8RecordOpts()
+          opts.durationSec = K.durationSec
+          opts.onPacket = (rec : V8StreamPacket) => { this._onPacket(rec.packetId, rec.samples, rec.receivedAt) }
+          opts.onStopSignal = (fn : () => void) => { this._stop.fn = fn }
+          const cap = await band!.recordEcg(opts)
+          capturePackets = _v8PacketsToJSON(cap.packets)
+          captureStartedAt = cap.startedAt
+        } else if (brand == 'v8') {
+          const band = ring as V8Band
+          const opts = new V8RecordOpts()
+          opts.durationSec = K.durationSec
+          opts.onPacket = (rec : V8StreamPacket) => { this._onPacket(rec.packetId, rec.samples, rec.receivedAt) }
+          opts.onStopSignal = (fn : () => void) => { this._stop.fn = fn }
+          const cap = await band!.recordPpg(opts)
+          capturePackets = _v8PacketsToJSON(cap.packets)
+          captureStartedAt = cap.startedAt
+        } else {
+          const halo = ring as HaloRing
+          const opts = new RecordPpgOpts()
+          opts.durationSec = K.durationSec
+          opts.onPacket = (rec : PpgPacketRecord) => { this._onPacket(rec.packetId, rec.samples, rec.receivedAt) }
+          opts.onStopSignal = (fn : () => void) => { this._stop.fn = fn }
+          const cap = await halo!.recordPpg(opts)
+          capturePackets = _haloPacketsToJSON(cap.packets)
+          captureStartedAt = cap.startedAt
+        }
+      } catch (err : any) {
+        console.log(JSON.stringify({ level: 'WARN', msg: `${this.kind} record failed`, error: `${err}` } as UTSJSONObject))
+        capturePackets = this._packets
+        captureStartedAt = startedAt
+      }
+      if (this._countdown != 0) { clearInterval(this._countdown); this._countdown = 0 }
+      this._stop.fn = null
+      _disconnectRing(ring, brand)
+      this._ring = null
+      this._ringBrand = ''
+
+      // Keep the live preview, but exclude the first five seconds from the saved waveform and
+      // the server's analysis for both ECG and PPG.
+      const startedForSave = captureStartedAt != 0 ? captureStartedAt : startedAt
+      const savedPackets = _trimSettlingPackets(capturePackets, startedForSave, K.rateHz)
+      if (savedPackets.length == 0) {
+        this.stage = 'failed'
+        this.failTitle = this.tt('failTooShortTitle')
+        this.failBody = this.tt('failTooShortBody')
+        return
+      }
+      this.stage = 'saving'
+      await this._upload(savedPackets, startedForSave + STRIP_SETTLE_MS, brand)
+    },
+
+    _onPacket(packetId : number, samples : number[], receivedAt : number) {
+      const rate = this._kind().rateHz
+      this._packets.push({ packetId: packetId, samples: samples, receivedAt: receivedAt } as UTSJSONObject)
+      for (const v of samples) this._samples.push(v)
+      const keep = rate * (LIVE_WINDOW_SEC + 2)
+      if (this._samples.length > keep) this._samples.splice(0, this._samples.length - keep)
+      const now = Date.now()
+      if (now - this._lastPacketAt > 300) {
+        this._lastPacketAt = now
+        this.packetCount = this._packets.length
+        this.liveBeats = this._countLiveBeats()
+        this.noSignal = false
+        this._drawLive()
+      }
+    },
+
+    // A cheap running beat count for the live meta line only: local maxima of the
+    // baseline-removed signal above K.liveSd sd, K.liveRefractoryS apart. The server's detector
+    // is the real one.
+    _countLiveBeats() : number {
+      const K = this._kind()
+      const x = this._samples
+      if (x.length < K.rateHz * 2) return 0
+      const hp = _highPass(x, Math.round(K.rateHz * K.liveHighPassS))
+      if (hp.length == 0) return 0
+      let mean = 0.0
+      for (const v of hp) mean += v
+      mean /= hp.length
+      let sd = 0.0
+      for (const v of hp) sd += (v - mean) * (v - mean)
+      sd = Math.sqrt(sd / hp.length)
+      if (sd == 0) sd = 1
+      const refractory = Math.round(K.rateHz * K.liveRefractoryS)
+      let n = 0
+      let last = -refractory
+      for (let i = 1; i < hp.length - 1; i++) {
+        if (hp[i] > mean + K.liveSd * sd && hp[i] >= hp[i - 1] && hp[i] > hp[i + 1] && i - last > refractory) {
+          n++
+          last = i
+        }
+      }
+      return n
+    },
+
+    // uni-app x canvas: web-standard UniCanvasElement via uni.getElementById (App-Android 3.91+),
+    // then getContext('2d'). The miniapp's legacy wx.createCanvasContext + ctx.draw() flush is
+    // gone — uni-app x paints immediately.
+    _getCtx(id : string, cb : (ctx : CanvasRenderingContext2D) => void) {
+      const el = uni.getElementById(id)
+      if (el == null) return
+      const ctx = (el as UniCanvasElement).getContext('2d')
+      if (ctx == null) return
+      cb(ctx!)
+    },
+
+    _drawLive() {
+      const K = this._kind()
+      const x = this._samples
+      if (x.length == 0) return
+      const W = _sheetInnerWidth()
+      const H = 160
+      this._getCtx('strip-live', (ctx : CanvasRenderingContext2D) => {
+        // Paper grid: 0.2 s squares over a 4 s window.
+        ctx.fillStyle = '#fbf5f4'
+        ctx.fillRect(0, 0, W, H)
+        ctx.strokeStyle = '#f0cfcc'
+        ctx.lineWidth = 1
+        for (let gx = 0; gx <= W; gx += W / 20) {
+          ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke()
+        }
+        for (let gy = 0; gy <= H; gy += H / 8) {
+          ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke()
+        }
+        const win = _tail(x, Math.round(K.rateHz * LIVE_WINDOW_SEC))
+        const hp = _highPass(win, Math.round(K.rateHz * K.liveHighPassS))
+        const sorted = hp.slice()
+        sorted.sort((a : number, b : number) : number => a - b)
+        const lo = sorted[Math.floor(sorted.length * 0.02)]
+        const hi = sorted[Math.floor(sorted.length * 0.98)]
+        const rng = (hi - lo) != 0 ? (hi - lo) : 1
+        ctx.strokeStyle = '#1a1d21'
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        for (let i = 0; i < hp.length; i++) {
+          const px = i / (K.rateHz * LIVE_WINDOW_SEC) * W
+          const py = H - 8 - (Math.min(hi, Math.max(lo, hp[i])) - lo) / rng * (H - 16)
+          if (i == 0) ctx.moveTo(px, py); else ctx.lineTo(px, py)
+        }
+        ctx.stroke()
+      })
+    },
+
+    // A stored strip: summary from the row, waveform + peaks from OSS via the worker.
+    async _loadView(id : number) {
+      const K = this._kind()
+      this.stage = 'loading'
+      try {
+        const coach = this.coachId.length > 0 ? `&coach_id=${encodeURIComponent(this.coachId)}` : ''
+        const res = await getBody(`${BASE}/api/${K.path}/${id}/waveform?openid=${encodeURIComponent(this.userId)}${coach}`)
+        const ok = res != null && res!.getBoolean('success') == true
+        let row : UTSJSONObject | null = null
+        if (ok) {
+          row = res!.getJSON(K.path)
+          if (row == null) row = res!.getJSON('ecg')
+        }
+        const samples = res != null ? res!.getArray<number>('samples') : null
+        if (row == null || samples == null) {
+          throw new Error(res != null ? (res!.getString('error') ?? 'load failed') : 'load failed')
+        }
+        if (this.viewId != id || !this.open) return
+        const peaks = res!.getArray<number>('peaks') ?? ([] as number[])
+        const rateNum = row!.getNumber('sample_rate_hz')
+        const rate = rateNum != null && rateNum! > 0 ? rateNum! : K.rateHz
+        this.stage = 'view'
+        this.result = row
+        this.viewWhen = _whenLabel(row!.getString('recorded_at') ?? '')
+        this.stripHeightPx = _stripHeight(samples!.length, rate)
+        this._fillResultFields(row!)
+        this.$nextTick(() => { this._drawStrip(samples!, peaks, rate) })
+      } catch (e : any) {
+        this.stage = 'failed'
+        this.failTitle = this.tt('failLoadTitle')
+        this.failBody = this.tt('failLoadBody')
+      }
+    },
+
+    // Template cannot read result.* directly (UTSJSONObject) — mirror the four grid cells + the
+    // hero bpm into plain strings when a result/view row arrives.
+    _fillResultFields(row : UTSJSONObject) {
+      const bpm = row.getNumber('bpm')
+      const acc = row.getNumber('accepted_beats')
+      const rrMed = row.getNumber('rr_median_ms')
+      const rrSd = row.getNumber('rr_sd_ms')
+      const dur = row.getNumber('duration_seconds')
+      this.resBpm = bpm != null ? `${bpm!}` : '—'
+      this.resAcceptedBeats = acc != null ? `${acc!}` : '—'
+      this.resRrMedian = rrMed != null ? `${rrMed!}` : '—'
+      this.resRrSd = rrSd != null ? `${rrSd!}` : '—'
+      this.resDuration = dur != null ? `${dur!}s` : '—'
+    },
+
+    handleDelete() {
+      const id = this.viewId
+      if (id <= 0 || this.readOnly) return
+      const K = this._kind()
+      uni.showModal({
+        title: '', content: this.tt('deleteConfirm'), confirmColor: '#e0565b',
+        success: (r : ShowModalSuccess) => {
+          if (!r.confirm) return
+          deleteBody(`${BASE}/api/${K.path}/${id}?openid=${encodeURIComponent(this.userId)}`, null)
+            .then((res : UTSJSONObject | null) => {
+              const ok = res != null && res!.getBoolean('success') == true
+              if (!ok) throw new Error('delete failed')
+              this.$emit('deleted', { id: id, kind: this.kind } as UTSJSONObject)
+              this.handleClose()
+            })
+            .catch((e : any | null) => {
+              uni.showToast({ title: this.tt('deleteFailed'), icon: 'none' })
+            })
+        },
+      })
+    },
+
+    // The whole strip on paper, printed-ECG style: rows of STRIP_ROW_SEC each, one scale for
+    // every row, server-detected peaks ticked along the top of each row. Width is measured
+    // from the layout because the canvas draws in CSS px and phones differ.
+    _drawStrip(samples : number[], peaks : number[], rateHz : number) {
+      if (samples.length == 0) return
+      const rate = Math.round(rateHz > 0 ? rateHz : this._kind().rateHz)
+      const perRow = Math.round(rate * STRIP_ROW_SEC)
+      const nRows = Math.max(1, Math.ceil(samples.length / perRow))
+      const H = nRows * STRIP_ROW_PX
+      this._getCtx('strip-strip', (ctx : CanvasRenderingContext2D) => {
+          // The canvas element's own width replaces the miniapp's measured boundingClientRect.
+          const el = uni.getElementById('strip-strip')
+          const measured = el != null ? (el as UniCanvasElement).width : 0
+          const W = measured > 0 ? measured : _sheetInnerWidth()
+          ctx.fillStyle = '#fbf5f4'
+          ctx.fillRect(0, 0, W, H)
+          ctx.lineWidth = 1
+          ctx.strokeStyle = '#f0cfcc'
+          const gxStep = W / (STRIP_ROW_SEC * 5) // 0.2 s squares
+          for (let x = 0; x <= W; x += gxStep) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke()
+          }
+          for (let y = 0; y <= H; y += STRIP_ROW_PX / 4) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke()
+          }
+          ctx.strokeStyle = '#e3b3af'
+          for (let r = 1; r < nRows; r++) {
+            ctx.beginPath(); ctx.moveTo(0, r * STRIP_ROW_PX); ctx.lineTo(W, r * STRIP_ROW_PX); ctx.stroke()
+          }
+          const hp = _highPass(samples, Math.round(rate / 2))
+          const sorted = hp.slice()
+          sorted.sort((a : number, b : number) : number => a - b)
+          const lo = sorted[Math.floor(sorted.length * 0.02)]
+          const hi = sorted[Math.floor(sorted.length * 0.98)]
+          const rng = (hi - lo) != 0 ? (hi - lo) : 1
+          ctx.strokeStyle = '#1a1d21'
+          ctx.lineWidth = 1.2
+          ctx.beginPath()
+          let lastRow = -1
+          for (let i = 0; i < hp.length; i++) {
+            const row = Math.floor(i / perRow)
+            const px = (i % perRow) / perRow * W
+            const py = row * STRIP_ROW_PX + STRIP_ROW_PX - 6 - (Math.min(hi, Math.max(lo, hp[i])) - lo) / rng * (STRIP_ROW_PX - 14)
+            if (row != lastRow) { ctx.moveTo(px, py); lastRow = row } else { ctx.lineTo(px, py) }
+          }
+          ctx.stroke()
+          if (peaks.length > 0) {
+            ctx.fillStyle = '#1fb7a6'
+            for (const p of peaks) {
+              if (!(p >= 0 && p < hp.length)) continue
+              const row = Math.floor(p / perRow)
+              const px = (p % perRow) / perRow * W
+              ctx.fillRect(px - 1, row * STRIP_ROW_PX + 2, 2, 6)
+            }
+          }
+        })
+    },
+
+    async _upload(packets : UTSJSONObject[], startedAt : number, brand : string) {
+      const K = this._kind()
+      const body = {
+        openid: this.userId,
+        brand: brand,
+        device_name: this.deviceName.length > 0 ? this.deviceName : null,
+        duration_seconds: K.durationSec - STRIP_SETTLE_MS / 1000,
+        started_at: startedAt,
+        packets: packets,   // already {packetId, samples, receivedAt} rows — the source's map() shape
+      } as UTSJSONObject
+      let res : UTSJSONObject | null = null
+      try {
+        res = await postBody(`${BASE}/api/${K.path}`, body)
+      } catch (err : any) {
+        this.stage = 'failed'
+        this.failTitle = this.tt('failUploadTitle')
+        this.failBody = this.tt('failUploadBody')
+        return
+      }
+      if (res == null) {
+        // network failure — the miniapp's _req rejected here
+        this.stage = 'failed'
+        this.failTitle = this.tt('failUploadTitle')
+        this.failBody = this.tt('failUploadBody')
+        return
+      }
+      const ok = res!.getBoolean('success') == true
+      const row = ok ? res!.getJSON(K.path) : null
+      if (row != null) {
+        // The result block mounts its own <canvas>; draw once it has rendered,
+        // not synchronously — the node does not exist yet at this line.
+        const all : number[] = []
+        for (const p of packets) {
+          const s = p.getArray<number>('samples')
+          if (s != null) for (const v of s!) all.push(v)
+        }
+        const rateNum = row!.getNumber('sample_rate_hz')
+        const rate = rateNum != null && rateNum! > 0 ? rateNum! : K.rateHz
+        this.stage = 'result'
+        this.result = row
+        this.stripHeightPx = _stripHeight(all.length, rate)
+        this._fillResultFields(row!)
+        this.$nextTick(() => { this._drawStrip(all, [] as number[], rate) })
+        const payload = new UTSJSONObject()
+        payload['kind'] = this.kind
+        payload[K.path] = row   // {kind, ecg|ppg: row} — same dynamic detail key as the source
+        this.$emit('saved', payload)
+        return
+      }
+      const reason = res!.getString('reason')
+      if (reason == 'poor_contact') {
+        this.stage = 'failed'; this.failTitle = this.tt('failPoorContactTitle'); this.failBody = this.tt('failPoorContactBody')
+      } else if (reason == 'too_short') {
+        this.stage = 'failed'; this.failTitle = this.tt('failTooShortTitle'); this.failBody = this.tt('failTooShortBody')
+      } else if (reason == 'unsupported_brand') {
+        this.stage = 'failed'; this.failTitle = this.tt('failUnsupported'); this.failBody = ''
+      } else {
+        this.stage = 'failed'
+        this.failTitle = this.tt('failUploadTitle')
+        const err = res!.getString('error')
+        this.failBody = err != null ? err : this.tt('failUploadBody')
+      }
+    },
+
+    _teardown() {
+      if (this._countdown != 0) { clearInterval(this._countdown); this._countdown = 0 }
+      const ring = this._ring
+      if (ring != null) {
+        _disconnectRing(ring!, this._ringBrand)
+        this._ring = null
+        this._ringBrand = ''
+      }
+      this._stop.fn = null
+    },
+  }
+}
+</script>
+
+<style>
+/* Structural port of strip-record.wxss — dark by default like the health tab; the light theme
+   is applied on this component's own root because the host page's theme class does not cross
+   the component boundary. Palette per the xapp port rules (#0B1C2E bg, #12283F sheet,
+   #2E7CF6 accent); the ECG-paper and trace colors are functional and kept from the source
+   drawing code. uni-app x CSS has no grid/env() — the result grid is a flex row and the
+   safe-area bottom padding is dropped. */
+.strip-overlay {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(4, 12, 24, 0.82);
+  justify-content: flex-end;
+  align-items: center;
+  z-index: 900;
+}
+.strip-sheet {
+  width: 100%;
+  max-height: 700px;
+  background-color: #12283F;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  padding: 14px 16px 20px 16px;
+}
+.strip-sheet-light {
+  background-color: #FFFFFF;
+}
+.strip-head {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.strip-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: #EAF2FB;
+}
+.strip-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  background-color: rgba(255, 255, 255, 0.08);
+  align-items: center;
+  justify-content: center;
+}
+.strip-close-text {
+  font-size: 13px;
+  color: #EAF2FB;
+}
+.strip-block {
+  flex-direction: column;
+}
+.strip-guide {
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 6px 16px 6px;
+}
+.strip-guide-glyph {
+  font-size: 36px;
+  line-height: 1;
+  margin-bottom: 4px;
+  color: #EAF2FB;
+}
+.strip-guide-line {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #EAF2FB;
+  margin-bottom: 6px;
+  text-align: center;
+}
+.strip-guide-muted {
+  font-size: 12px;
+  opacity: 0.6;
+}
+.strip-btn {
+  margin-top: 8px;
+  padding-top: 11px;
+  padding-bottom: 11px;
+  border-radius: 24px;
+  align-items: center;
+}
+.strip-btn-primary {
+  background-color: #2E7CF6;
+}
+.strip-btn-ghost {
+  background-color: rgba(0, 0, 0, 0);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+.strip-btn-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #EAF2FB;
+}
+.strip-btn-danger {
+  border-color: rgba(224, 86, 91, 0.45);
+}
+.strip-footnote {
+  margin-top: 9px;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.55;
+  text-align: center;
+  color: #EAF2FB;
+}
+.strip-status-row {
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+.strip-status {
+  font-size: 14px;
+  font-weight: 600;
+  color: #EAF2FB;
+}
+.strip-countdown {
+  font-size: 18px;
+  font-weight: bold;
+  color: #2E7CF6;
+}
+.strip-canvas-wrap {
+  width: 100%;
+  height: 160px;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: #fbf5f4;
+}
+.strip-canvas {
+  width: 100%;
+  height: 160px;
+}
+.strip-strip-canvas {
+  height: auto;
+}
+.strip-meta-row {
+  flex-direction: row;
+  margin-top: 6px;
+}
+.strip-meta {
+  font-size: 11px;
+  opacity: 0.65;
+  color: #EAF2FB;
+  margin-right: 16px;
+}
+.strip-result-hero {
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: center;
+  margin-top: 4px;
+  margin-bottom: 10px;
+}
+.strip-bpm {
+  font-size: 48px;
+  font-weight: bold;
+  line-height: 1;
+  color: #2E7CF6;
+}
+.strip-bpm-unit {
+  font-size: 13px;
+  opacity: 0.7;
+  color: #EAF2FB;
+}
+.strip-result-grid {
+  flex-direction: row;
+  margin-bottom: 10px;
+}
+.strip-cell {
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  padding: 7px 3px 7px 3px;
+  border-radius: 7px;
+  background-color: rgba(255, 255, 255, 0.06);
+  margin-left: 3px;
+  margin-right: 3px;
+}
+.strip-cell-v {
+  font-size: 15px;
+  font-weight: bold;
+  color: #EAF2FB;
+}
+.strip-cell-k {
+  font-size: 10px;
+  opacity: 0.6;
+  color: #EAF2FB;
+  margin-top: 2px;
+}
+.strip-when {
+  font-size: 12px;
+  opacity: 0.6;
+  text-align: center;
+  color: #EAF2FB;
+}
+</style>

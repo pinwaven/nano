@@ -1,0 +1,32 @@
+{
+  "name": "nano-xapp",
+  "appid": "",
+  "description": "uni-app x port of the Waven Nano WeChat miniapp (src/mini/nano-miniapp)",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "uni-app-x": {},
+  "app": {
+    "distribute": {
+      "android": {
+        "packagename": "net.gcn.nano",
+        "minSdkVersion": 21,
+        "targetSdkVersion": 33,
+        "abiFilters": ["arm64-v8a"],
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.INTERNET\"/>",
+          "<uses-permission android:name=\"android.permission.CAMERA\"/>",
+          "<uses-permission android:name=\"android.permission.BLUETOOTH\"/>",
+          "<uses-permission android:name=\"android.permission.BLUETOOTH_ADMIN\"/>",
+          "<uses-permission android:name=\"android.permission.BLUETOOTH_SCAN\"/>",
+          "<uses-permission android:name=\"android.permission.BLUETOOTH_CONNECT\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\"/>",
+          "<uses-permission android:name=\"android.permission.RECORD_AUDIO\"/>",
+          "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>"
+        ]
+      },
+      "ios": {
+        "bundleidentifier": "net.gcn.nano"
+      }
+    }
+  }
+}

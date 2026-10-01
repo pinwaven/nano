@@ -1,0 +1,364 @@
+// Ported from miniapp utils/wearable/halo/protocol.js — Halo Smart Ring BLE constants and
+// command builders (hardware family X3/X6/X9/V4). Pure logic, no wx.* APIs.
+//
+// Port adaptations:
+// - Byte buffers are number[] (0..255) instead of Uint8Array — the BLE transport converts to
+//   the platform byte array at the write boundary.
+// - Bitwise operators replaced with arithmetic (% / Math.floor): UTS `number` compiles to a
+//   Double-backed type and & / >> are not reliable there. Same values, different mechanics.
+// - Float32 encode/decode is pure IEEE-754 arithmetic (DataView availability unverified) —
+//   subnormals and the exercise-distance precision this is used for are fine; do not reuse
+//   for general float work.
+
+export const SERVICE_UUID = '0000fff000001000800000805f9b34fb'
+export const WRITE_UUID = '0000fff600001000800000805f9b34fb'
+export const NOTIFY_UUID = '0000fff700001000800000805f9b34fb'
+
+// Literal BLE-advertised hardware name prefixes for the Halo product line
+// (X3/X6/X9 rings + V4 band) — do not rename; this is what the hardware broadcasts.
+export const HALO_NAME_PREFIXES : string[] = ['X3', 'X6', 'X9', 'V4']
+
+// --- Low-level frame primitives ---
+
+export function calculateChecksum(buf : number[]) : number {
+  let sum = 0
+  for (let i = 0; i < buf.length - 1; i++) sum += buf[i]
+  return sum % 256
+}
+
+export function buildCommand(cmdId : number, payload : number[] | null = null) : number[] {
+  const buf = new Array<number>(16).fill(0)
+  buf[0] = cmdId
+  if (payload != null) {
+    for (let i = 0; i < payload!.length && i < 14; i++) buf[1 + i] = payload![i]
+  }
+  buf[15] = calculateChecksum(buf)
+  return buf
+}
+
+// Decimal to BCD: e.g. 26 → 0x26
+export function decToBcd(val : number) : number {
+  return Math.floor(val / 10) * 16 + (val % 10)
+}
+
+// BCD byte to 2-char string: e.g. 0x26 → "26"
+export function bcdToString(byte : number) : string {
+  return `${Math.floor(byte / 16)}${byte % 16}`
+}
+
+// Parse 6 consecutive BCD bytes at `offset` into "YYYY-MM-DD HH:MM:SS" (or without seconds)
+export function parseBcdDate(data : number[], offset : number, hasSeconds : boolean) : string {
+  const year = bcdToString(data[offset])
+  const month = bcdToString(data[offset + 1])
+  const day = bcdToString(data[offset + 2])
+  const hour = bcdToString(data[offset + 3])
+  const min = bcdToString(data[offset + 4])
+  const base = `20${year}-${month}-${day} ${hour}:${min}`
+  if (hasSeconds) {
+    const sec = bcdToString(data[offset + 5])
+    return `${base}:${sec}`
+  }
+  return base
+}
+
+// Little-endian multi-byte integer reader
+export function readLEInt(buffer : number[], offset : number, bytesCount : number) : number {
+  let val = 0
+  for (let i = 0; i < bytesCount; i++) val += buffer[offset + i] * Math.pow(256, i)
+  return val
+}
+
+// 4-byte little-endian IEEE 754 float (exercise session records)
+export function readFloat32LE(buf : number[], offset : number) : number {
+  let u = 0
+  for (let i = 0; i < 4; i++) u += buf[offset + i] * Math.pow(256, i)
+  const sign = u >= 2147483648 ? -1 : 1
+  if (sign < 0) u = u - 2147483648
+  const exp = Math.floor(u / 8388608)
+  const mant = u % 8388608
+  if (exp == 255) return NaN
+  if (exp == 0) return sign * mant * Math.pow(2, -149)
+  return sign * (1 + mant / 8388608) * Math.pow(2, exp - 127)
+}
+
+function _floatToLE(f : number) : number[] {
+  if (f == 0) return [0, 0, 0, 0]
+  const sign = f < 0 ? 1 : 0
+  let x = Math.abs(f)
+  let exp = 0
+  while (x >= 2) { x = x / 2; exp++ }
+  while (x < 1) { x = x * 2; exp-- }
+  let e = exp + 127
+  if (e < 0) e = 0
+  if (e > 254) e = 254
+  let mant = Math.round((x - 1) * 8388608)
+  if (mant >= 8388608) { mant = 0; e = e + 1 }
+  const bits = sign * 2147483648 + e * 8388608 + mant
+  const out : number[] = []
+  for (let i = 0; i < 4; i++) out.push(Math.floor(bits / Math.pow(256, i)) % 256)
+  return out
+}
+
+// UTS Date.getTimezoneOffset availability is unverified (no compiler yet) — China-only
+// product, so any failure falls back to UTC+8 rather than corrupting the clock packet.
+function _tzOffsetHours() : number {
+  try {
+    const off = new Date().getTimezoneOffset()
+    return -Math.floor(off / 60)
+  } catch (e : any) {
+    return 8
+  }
+}
+
+// History sync payload: mode byte + optional BCD date at frame bytes 4–9
+export function buildHistorySyncPayload(mode : number, dateFilter : Date | null) : number[] {
+  const payload = new Array<number>(14).fill(0)
+  payload[0] = mode
+  if (dateFilter != null) {
+    payload[3] = decToBcd(dateFilter!.getFullYear() % 100)
+    payload[4] = decToBcd(dateFilter!.getMonth() + 1)
+    payload[5] = decToBcd(dateFilter!.getDate())
+    payload[6] = decToBcd(dateFilter!.getHours())
+    payload[7] = decToBcd(dateFilter!.getMinutes())
+    payload[8] = decToBcd(dateFilter!.getSeconds())
+  }
+  return payload
+}
+
+// --- Command argument shapes ---
+
+export class PersonalProfile {
+  gender : string = 'male'
+  age : number = 0
+  height : number = 0
+  weight : number = 0
+  stride : number = 0
+}
+
+export class AutoMonitoringSettings {
+  // workMode: 0=off, 1=continuous, 2=scheduled; type: 1=HR, 2=SpO2, 3=Temperature, 4=HRV
+  // weekdays: bitmask bit0=Mon…bit6=Sun (0x7F=127 = all)
+  workMode : number = 1
+  startHour : number = 0
+  startMinute : number = 0
+  endHour : number = 23
+  endMinute : number = 59
+  weekdays : number = 127
+  intervalMinutes : number = 5
+  type : number = 1
+}
+
+// --- Command builders ---
+
+// 0x01 — Sync ring clock to host time
+export function setTimePacket(date : Date | null = null) : number[] {
+  const d = date != null ? date! : new Date()
+  const tzOffsetHours = _tzOffsetHours()
+  const zoneValue = tzOffsetHours < 0 ? Math.abs(tzOffsetHours) : (tzOffsetHours + 128)
+  return buildCommand(0x01, [
+    decToBcd(d.getFullYear() % 100),
+    decToBcd(d.getMonth() + 1),
+    decToBcd(d.getDate()),
+    decToBcd(d.getHours()),
+    decToBcd(d.getMinutes()),
+    decToBcd(d.getSeconds()),
+    0,
+    zoneValue,
+    0, 0, 0, 0, 0, 0,
+  ])
+}
+
+// 0x41 — Read ring's current clock
+export function getTimePacket() : number[] { return buildCommand(0x41) }
+
+// 0x02 — Write user profile (gender, age, height cm, weight kg, stride cm)
+export function setPersonalProfilePacket(p : PersonalProfile) : number[] {
+  return buildCommand(0x02, [
+    (p.gender == 'male' || p.gender == '1') ? 1 : 0,
+    p.age, p.height, p.weight, p.stride,
+    0, 0, 0, 0, 0, 0, 0, 0, 0,
+  ])
+}
+
+// 0x42 — Read user profile from ring
+export function getPersonalProfilePacket() : number[] { return buildCommand(0x42) }
+
+// 0x13 — Battery level and charging state
+export function getBatteryPacket() : number[] { return buildCommand(0x13) }
+
+// 0x22 — MAC address
+export function getMacPacket() : number[] { return buildCommand(0x22) }
+
+// 0x27 — Firmware version string
+export function getVersionPacket() : number[] { return buildCommand(0x27) }
+
+// 0x12 — Factory reset
+export function setFactoryResetPacket() : number[] { return buildCommand(0x12) }
+
+// 0x2E — MCU soft reset
+export function setMcuResetPacket() : number[] { return buildCommand(0x2E) }
+
+// 0x03 — Write hand placement and auto-motion detection flag
+// SDK confirmed: rightHand at value[3], autoMotion at value[4], using 0x81/0x80 (not 1/0)
+export function setBasicParametersPacket(rightHand : boolean, autoMotion : boolean) : number[] {
+  return buildCommand(0x03, [
+    0, 0,
+    rightHand ? 129 : 128,
+    autoMotion ? 129 : 128,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  ])
+}
+
+// 0x04 — Read basic ring parameters (hand, auto-motion, EOV)
+export function getBasicParametersPacket() : number[] { return buildCommand(0x04) }
+
+// 0x2A — Set background measurement schedule
+export function setAutoMonitoringPacket(s : AutoMonitoringSettings) : number[] {
+  const interval = s.intervalMinutes
+  return buildCommand(0x2A, [
+    s.workMode,
+    decToBcd(s.startHour),
+    decToBcd(s.startMinute),
+    decToBcd(s.endHour),
+    decToBcd(s.endMinute),
+    s.weekdays,
+    interval % 256,
+    Math.floor(interval / 256) % 256,
+    s.type,
+    0, 0, 0, 0, 0,
+  ])
+}
+
+// 0x2B — Read background schedule for a given type
+export function getAutoMonitoringPacket(type : number) : number[] {
+  return buildCommand(0x2B, [type, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+}
+
+// 0x09 — Toggle real-time step + temperature broadcast (25-byte packets every second)
+export function setRealTimeControlPacket(stepsOn : boolean, tempOn : boolean) : number[] {
+  return buildCommand(0x09, [stepsOn ? 1 : 0, tempOn ? 1 : 0])
+}
+
+// History sync packets (0x51…0x69) — mode byte + optional date filter, see
+// buildHistorySyncPayload. Record layouts are documented per-opcode in
+// docs/architecture/halo-smart-ring.md; parsing lives in halo/index.js.
+
+// 0x51 — Daily activity summary
+export function getDailyActivitySummaryPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x51, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x52 — Detailed step logs, 10-minute blocks
+export function getDetailActivityPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x52, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x53 — Sleep stages
+export function getSleepHistoryPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x53, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x54 — Continuous HR history (15 samples/record)
+export function getContinuousHeartRateHistoryPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x54, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x55 — Static (interval) HR history
+export function getStaticHeartRateHistoryPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x55, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x56 — HRV history (hrv, breath, hr, stress, mood, breathRate)
+export function getHrvHistoryPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x56, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x57 — Detailed SpO2 history (20 samples × 30 s)
+export function getSpo2DetailHistoryPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x57, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x60 — Sleep HRV / RMSSD per-night log
+export function getSleepHrvHistoryPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x60, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x62 — Skin / body temperature log (3 NTC sensors)
+export function getTemperatureHistoryPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x62, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x66 — Auto SpO2 history
+export function getAutoSpo2HistoryPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x66, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x5C — Exercise session logs
+export function getExerciseSessionsPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x5C, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x5D — Elevated Oxygen Variation
+export function getOxygenVariationPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x5D, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x5F — Sleep Apnea / OSA risk
+export function getSleepApneaPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x5F, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x69 — Sleep body temperature log
+export function getSleepTemperatureHistoryPacket(mode : number, dateFilter : Date | null = null) : number[] {
+  return buildCommand(0x69, buildHistorySyncPayload(mode, dateFilter))
+}
+
+// 0x19 — Sport/activity mode control (action: 1=start, 4=end; sportType table in
+// docs/architecture/halo-smart-ring.md)
+export function enterActivityModePacket(action : number, sportType : number) : number[] {
+  return buildCommand(0x19, [
+    0, sportType, 0, action,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  ])
+}
+
+// 0x19 query — ask ring for current activity mode status
+export function queryActivityModePacket() : number[] {
+  return buildCommand(0x19, [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+}
+
+// 0x17 — Sport session heartbeat (must be sent every ~1 s while activity mode is active)
+export function sendActivityHeartbeatPacket(distanceKm : number, paceSeconds : number, rssi : number) : number[] {
+  const distBytes = _floatToLE(distanceKm)
+  const paceMin = Math.floor(paceSeconds / 60)
+  const paceSec = paceSeconds % 60
+  return buildCommand(0x17, [
+    distBytes[0], distBytes[1], distBytes[2], distBytes[3],
+    paceMin % 256,
+    paceSec % 256,
+    rssi % 256,
+    0, 0, 0, 0, 0, 0, 0,
+  ])
+}
+
+// 0x28 — On-demand health measurement (type: 1=HRV, 2=HR, 3=SpO2)
+export function setMeasurementWithTypePacket(type : number, durationSeconds : number, open : boolean) : number[] {
+  return buildCommand(0x28, [
+    type,
+    open ? 1 : 0,
+    0,
+    durationSeconds % 256,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  ])
+}
+
+// 0x78 — Blood glucose PPG session control
+// ppgMode: 1=start, 2=send result, 3=stop, 4=progress, 5=exit
+export function ppgControlPacket(ppgMode : number, ppgStatus : number) : number[] {
+  return buildCommand(0x78, [ppgMode, ppgStatus])
+}
+
+// 0x11 — Raw PPG / PPI waveform streaming toggle
+export function setPpgStreamPacket(open : boolean) : number[] {
+  return buildCommand(0x11, [open ? 1 : 0])
+}

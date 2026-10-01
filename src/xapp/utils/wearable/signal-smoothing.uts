@@ -1,0 +1,95 @@
+// Ported from miniapp utils/wearable/signal-smoothing.js — pure statistics for chart-display
+// outlier smoothing (display layer only; never touches stored data).
+
+export class OutlierConfig {
+  min : number
+  max : number
+  k : number
+  window : number
+  epsilon : number
+  constructor(min : number, max : number, k : number, window : number, epsilon : number) {
+    this.min = min
+    this.max = max
+    this.k = k
+    this.window = window
+    this.epsilon = epsilon
+  }
+}
+
+export class SeriesPoint {
+  value : number
+  estimated : boolean
+  constructor(value : number, estimated : boolean) { this.value = value; this.estimated = estimated }
+}
+
+export function medianOf(arr : number[]) : number | null {
+  if (arr.length == 0) return null
+  const sorted = arr.slice(0)
+  sorted.sort((a, b) : number => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 != 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+export function madOf(arr : number[], median : number | null) : number | null {
+  if (arr.length == 0) return 0
+  const m = median != null ? median! : medianOf(arr)
+  const devs : number[] = []
+  for (const v of arr) devs.push(Math.abs(v - m!))
+  return medianOf(devs)
+}
+
+// Flags values very likely to be sensor errors: out of plausible bounds, a literal 0
+// sentinel, or a local MAD-based outlier vs a centered window of neighbors.
+export function flagOutliers(vals : number[], cfg : OutlierConfig) : boolean[] {
+  const half = Math.floor(cfg.window / 2)
+  const flags : boolean[] = []
+  for (const v of vals) flags.push(v == 0 || v < cfg.min || v > cfg.max)
+
+  for (let i = 0; i < vals.length; i++) {
+    if (flags[i]) continue
+    const lo = Math.max(0, i - half)
+    const hi = Math.min(vals.length, i + half + 1)
+    const neighborhood : number[] = []
+    for (let j = lo; j < hi; j++) {
+      if (j != i && !flags[j]) neighborhood.push(vals[j])
+    }
+    if (neighborhood.length < 3) continue // not enough local context to judge
+    const median = medianOf(neighborhood)
+    const mad = Math.max(madOf(neighborhood, median)!, cfg.epsilon)
+    if (Math.abs(vals[i] - median!) > cfg.k * mad) flags[i] = true
+  }
+  return flags
+}
+
+// Replaces flagged values with linear interpolation between nearest valid neighbors
+// (flat-extrapolated at edges).
+export function interpolateFlagged(vals : number[], flags : boolean[]) : SeriesPoint[] {
+  const validIdx : number[] = []
+  for (let i = 0; i < vals.length; i++) {
+    if (!flags[i]) validIdx.push(i)
+  }
+
+  const out : SeriesPoint[] = []
+  for (let i = 0; i < vals.length; i++) {
+    if (!flags[i]) {
+      out.push(new SeriesPoint(vals[i], false))
+      continue
+    }
+    if (validIdx.length == 0) {
+      out.push(new SeriesPoint(vals[i], true))
+      continue
+    }
+    var before = -1
+    var after = -1
+    for (const j of validIdx) {
+      if (j <= i) before = j
+      if (j >= i && after == -1) after = j
+    }
+    if (before == -1) { out.push(new SeriesPoint(vals[after], true)); continue }
+    if (after == -1) { out.push(new SeriesPoint(vals[before], true)); continue }
+    if (before == after) { out.push(new SeriesPoint(vals[before], true)); continue }
+    const t = (i - before) / (after - before)
+    out.push(new SeriesPoint(vals[before] + (vals[after] - vals[before]) * t, true))
+  }
+  return out
+}

@@ -1,0 +1,14 @@
+// Replaces the miniapp's App().globalData — uni-app x pages share this module instead of
+// getApp(). Field set mirrors app.js globalData.
+export class GlobalState {
+  user : UTSJSONObject | null = null
+  channel : UTSJSONObject | null = null
+  coach : UTSJSONObject | null = null
+  lang : string = 'zh'
+  theme : string = 'dark'
+  textScale : number = 0
+  apiToken : string = ''
+  sandboxMode : boolean = false
+}
+
+export const state = new GlobalState()

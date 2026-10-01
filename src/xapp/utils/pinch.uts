@@ -1,0 +1,63 @@
+// Ported from miniapp utils/pinch.js. Shape change: the stepper takes the two finger
+// coordinates instead of a WeChat touch event — call sites in .uvue extract
+// e.touches[0].clientX/.clientY themselves, which keeps this file free of touch-event types.
+// Same semantics: at most ONE onStep(dir) per gesture; dir is +1 (out) or -1 (in).
+
+type StepFn = (dir : number) => void
+
+class Defaults {
+  minSpread : number = 40
+  out : number = 1.25
+  inRatio : number = 0.8
+}
+
+export function spread(x0 : number, y0 : number, x1 : number, y1 : number) : number {
+  const dx = x0 - x1
+  const dy = y0 - y1
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
+export class PinchStepper {
+  private onStep : StepFn
+  private minSpread : number
+  private outRatio : number
+  private inRatio : number
+  private d0 : number = 0
+  private fired : boolean = false
+
+  constructor(onStep : StepFn, minSpread : number | null = null, out : number | null = null, in_ : number | null = null) {
+    const d = new Defaults()
+    this.onStep = onStep
+    this.minSpread = minSpread != null ? minSpread! : d.minSpread
+    this.outRatio = out != null ? out! : d.out
+    this.inRatio = in_ != null ? in_! : d.inRatio
+  }
+
+  // Pass the two contact points once length==2; call with count!=2 to reset.
+  start(count : number, x0 : number, y0 : number, x1 : number, y1 : number) {
+    if (count != 2) {
+      this.d0 = 0
+      return
+    }
+    const s = spread(x0, y0, x1, y1)
+    this.d0 = s > this.minSpread ? s : 0
+    this.fired = false
+  }
+
+  move(count : number, x0 : number, y0 : number, x1 : number, y1 : number) {
+    if (this.d0 == 0 || this.fired) return
+    if (count != 2) return
+    const r = spread(x0, y0, x1, y1) / this.d0
+    let dir = 0
+    if (r >= this.outRatio) dir = 1
+    else if (r <= this.inRatio) dir = -1
+    if (dir == 0) return
+    this.fired = true // latch: one step per gesture, however far it keeps going
+    this.onStep(dir)
+  }
+
+  end() {
+    this.d0 = 0
+    this.fired = false
+  }
+}

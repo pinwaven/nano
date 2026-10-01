@@ -1,0 +1,187 @@
+// Ported from miniapp utils/biomarker-series.js — sparkline series for the chat metric tiles.
+// Grounding rule unchanged: the series is built client-side from GET /api/biomarkers and reads
+// data.validated ONLY (AGENTS §17); the model contributes only the label.
+//
+// Deviation: buildSeriesIndex/appendReading iterate the six canonical KEYS instead of every key
+// on data.validated — UTSJSONObject doesn't expose a key listing, and no consumer draws a
+// non-canonical marker. Adding a 7th sparkline marker = add it to KEYS.
+
+export const SPARK_BARS = 8
+const SPARK_MIN_POINTS = 2
+const FLAT_REL_SPREAD = 0.02
+const FLAT_DELTA_PCT = 2
+const BAR_MIN_PCT = 16
+
+export const KEYS : string[] = ['hsCRP', 'IL6', 'GDF15', 'GA', 'CystatinC', 'CD38']
+
+const ALIASES = new Map<string, string[]>()
+ALIASES.set('hsCRP', ['hscrp', '超敏c反应蛋白', '超敏crp', 'c反应蛋白'])
+ALIASES.set('IL6', ['il6', 'interleukin6', '白介素6', '白细胞介素6'])
+ALIASES.set('GDF15', ['gdf15', 'growthdifferentiationfactor15', '生长分化因子15'])
+ALIASES.set('GA', ['ga', 'glycatedalbumin', '糖化白蛋白'])
+ALIASES.set('CystatinC', ['cystatinc', '胱抑素c', '胱抑素'])
+ALIASES.set('CD38', ['cd38'])
+
+// Every Kino marker is lower-is-better (AGENTS §11 ranges are upper bounds); explicit map so a
+// future higher-is-better marker can't silently inherit the inverted colour.
+const BETTER_LOW = new Map<string, boolean>()
+BETTER_LOW.set('hsCRP', true)
+BETTER_LOW.set('IL6', true)
+BETTER_LOW.set('GDF15', true)
+BETTER_LOW.set('GA', true)
+BETTER_LOW.set('CystatinC', true)
+BETTER_LOW.set('CD38', true)
+
+export class Point {
+  v : number
+  t : number
+  constructor(v : number, t : number) {
+    this.v = v
+    this.t = t
+  }
+}
+
+export class SparkBar {
+  h : number
+  last : boolean
+  constructor(h : number, last : boolean) {
+    this.h = h
+    this.last = last
+  }
+}
+
+export class Spark {
+  bars : SparkBar[]
+  n : number
+  dir : string
+  tone : string
+  delta : string
+  arrow : string
+  constructor(bars : SparkBar[], n : number, dir : string, tone : string, delta : string, arrow : string) {
+    this.bars = bars
+    this.n = n
+    this.dir = dir
+    this.tone = tone
+    this.delta = delta
+    this.arrow = arrow
+  }
+}
+
+function _norm(s : string | null) : string {
+  if (s == null) return ''
+  return s.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, '')
+}
+
+export function resolveBiomarkerKey(label : string | null) : string | null {
+  const n = _norm(label)
+  if (n.length == 0) return null
+  for (const key of KEYS) {
+    const list = ALIASES.get(key)
+    if (list == null) continue
+    for (const a of list!) {
+      if (n == a) return key
+      // 4+ char aliases also match as substring; shorter ones must match exactly.
+      if (a.length >= 4 && n.indexOf(a) != -1) return key
+    }
+  }
+  return null
+}
+
+// Date parsing is the known compile-time risk area (Android/iOS UTS Date differs from V8);
+// fall back to `fallback` on any failure rather than throwing.
+function _toMillis(iso : string | null, fallback : number) : number {
+  if (iso == null) return fallback
+  try {
+    const ms = new Date(iso).getTime()
+    return ms > 0 ? ms : fallback
+  } catch (e : any) {
+    return fallback
+  }
+}
+
+// GET /api/biomarkers records → { key: [Point oldest-first] }
+export function buildSeriesIndex(records : UTSJSONObject[]) : Map<string, Point[]> {
+  const rows = records
+    .filter((r) : boolean => {
+      if (r.getString('test_type') != 'kino_chip') return false
+      const data = r.getJSON('data')
+      if (data == null) return false
+      return data!.getJSON('validated') != null
+    })
+    .sort((a, b) : number => {
+      const ta = _toMillis(a.getString('tested_at'), 0)
+      const tb = _toMillis(b.getString('tested_at'), 0)
+      return ta - tb
+    })
+
+  const idx = new Map<string, Point[]>()
+  for (const r of rows) {
+    const validated = r.getJSON('data')!.getJSON('validated')!
+    const t = _toMillis(r.getString('tested_at'), 0)
+    for (const key of KEYS) {
+      const v = validated.getNumber(key)
+      if (v == null) continue
+      if (!idx.has(key)) idx.set(key, [] as Point[])
+      idx.get(key)!.push(new Point(v!, t))
+    }
+  }
+  return idx
+}
+
+// Series → the flat shape the tile renders; null when there is nothing honest to draw.
+export function buildSpark(points : Point[] | null, betterLow : boolean) : Spark | null {
+  if (points == null || points!.length < SPARK_MIN_POINTS) return null
+  const win = points!.length > SPARK_BARS ? points!.slice(points!.length - SPARK_BARS) : points!
+  const vals = win.map((p) : number => p.v)
+
+  let min = vals[0]
+  let max = vals[0]
+  for (const v of vals) {
+    if (v < min) min = v
+    if (v > max) max = v
+  }
+  const range = max - min
+  // Near-constant series must not min-max normalise into a dramatic staircase of assay noise.
+  const level = !(range > 0) || (Math.abs(max) > 0 && range / Math.abs(max) < FLAT_REL_SPREAD)
+  const mid = Math.round((BAR_MIN_PCT + 100) / 2)
+  const bars : SparkBar[] = []
+  for (let i = 0; i < vals.length; i++) {
+    const h = level ? mid : Math.round(BAR_MIN_PCT + ((vals[i] - min) / range) * (100 - BAR_MIN_PCT))
+    bars.push(new SparkBar(h, i == vals.length - 1))
+  }
+
+  const first = vals[0]
+  const last = vals[vals.length - 1]
+  const pct = first == 0 ? null : Math.round(((last - first) / Math.abs(first)) * 100)
+  const dir = (pct == null || Math.abs(pct!) < FLAT_DELTA_PCT) ? 'flat' : (pct! > 0 ? 'up' : 'down')
+  // tone drives colour: an improving trend is green whichever direction that happens to be.
+  const tone = dir == 'flat' ? 'flat' : ((dir == 'down') == betterLow ? 'good' : 'bad')
+  let delta = ''
+  if (dir != 'flat' && pct != null) {
+    delta = (pct! > 0 ? '+' : '') + pct + '%'
+  }
+  const arrow = dir == 'up' ? '↑' : (dir == 'down' ? '↓' : '')
+  return new Spark(bars, win.length, dir, tone, delta, arrow)
+}
+
+// Fold a just-finished scan in without a refetch — POST /api/biomarkers'
+// estimationReport.BiomarkerValues is verbatim what it writes to data.validated.
+export function appendReading(seriesIndex : Map<string, Point[]>, validated : UTSJSONObject | null, testedAt : string | null) : Map<string, Point[]> {
+  if (validated == null) return seriesIndex
+  const t = _toMillis(testedAt, Date.now())
+  for (const key of KEYS) {
+    const v = validated!.getNumber(key)
+    if (v == null) continue
+    if (!seriesIndex.has(key)) seriesIndex.set(key, [] as Point[])
+    seriesIndex.get(key)!.push(new Point(v!, t))
+  }
+  return seriesIndex
+}
+
+export function sparkForLabel(seriesIndex : Map<string, Point[]> | null, label : string | null) : Spark | null {
+  if (seriesIndex == null) return null
+  const key = resolveBiomarkerKey(label)
+  if (key == null) return null
+  const better = BETTER_LOW.get(key!)
+  return buildSpark(seriesIndex!.get(key!), better != null && better!)
+}

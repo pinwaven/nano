@@ -1,0 +1,106 @@
+// Transport contract for the ported BLE stack. uni-app x has NO built-in Bluetooth APIs —
+// the miniapp drove wx.*Bluetooth* directly, so here the manager talks to a BleTransport
+// (a bag of function fields, filled in by a UTS BLE plugin adapter, e.g. BLE Kit / xm-uts-ble,
+// or a hand-written Kotlin/Swift one). Until an adapter is wired, no connect/scan works —
+// everything ABOVE this line (protocols, packet building, parsing in halo/v8) is pure and
+// already ported.
+//
+// Byte payloads cross this boundary as number[] (0..255); the adapter converts to the
+// platform's byte array at the write/notify edges.
+
+export class BleScanDevice {
+  deviceId : string
+  name : string
+  rssi : number
+  constructor(deviceId : string, name : string, rssi : number) {
+    this.deviceId = deviceId
+    this.name = name
+    this.rssi = rssi
+  }
+}
+
+export class BleService {
+  uuid : string
+  constructor(uuid : string) {
+    this.uuid = uuid
+  }
+}
+
+export class BleCharacteristic {
+  uuid : string
+  constructor(uuid : string) {
+    this.uuid = uuid
+  }
+}
+
+export type NotifyCharFn = (data : number[]) => void
+export type CharChangeFn = (deviceId : string, characteristicId : string, value : number[]) => void
+
+export type RejectFn = (e : any) => void
+
+function _notInstalled<T>() : Promise<T> {
+  return new Promise<T>((resolve : (v : T) => void, reject : RejectFn) => {
+    reject(new Error('BLE transport not installed'))
+  })
+}
+
+function _resolved<T>(value : T) : Promise<T> {
+  return new Promise<T>((resolve : (v : T) => void, _ : RejectFn) => {
+    resolve(value)
+  })
+}
+
+export class BleTransport {
+  // Open the radio adapter. Rejecting with a message containing 'already opened' is
+  // tolerated by BLEManager.openAdapter (mirrors the miniapp's multi-instance case).
+  openAdapter : () => Promise<void> = () => _notInstalled<void>()
+  closeAdapter : () => void = () => {}
+
+  // Discovery: adapter emits every found device; BLEManager applies name filtering.
+  // Passing null clears the listener (called after each scan).
+  onDeviceFound : (cb : ((devices : BleScanDevice[]) => void) | null) => void = (_ : ((devices : BleScanDevice[]) => void) | null) => {}
+  startDiscovery : (services : string[]) => Promise<void> = (services : string[]) => _notInstalled<void>()
+  stopDiscovery : () => void = () => {}
+
+  createConnection : (deviceId : string) => Promise<void> = (deviceId : string) => _notInstalled<void>()
+  closeConnection : (deviceId : string) => void = (_ : string) => {}
+
+  // Best-effort MTU negotiation; BLEManager swallows failures here either way (Android
+  // requires it, iOS auto-negotiates — same semantics as the miniapp's wx.setBLEMTU).
+  negotiateMtu : (deviceId : string, mtu : number) => Promise<void> = (deviceId : string, mtu : number) => _notInstalled<void>()
+
+  getServices : (deviceId : string) => Promise<BleService[]> = (deviceId : string) => _resolved<BleService[]>([] as BleService[])
+  getCharacteristics : (deviceId : string, serviceUUID : string) => Promise<BleCharacteristic[]> = (deviceId : string, serviceUUID : string) => _resolved<BleCharacteristic[]>([] as BleCharacteristic[])
+  enableNotify : (deviceId : string, serviceUUID : string, charUUID : string) => Promise<void> = (deviceId : string, serviceUUID : string, charUUID : string) => _notInstalled<void>()
+
+  onCharacteristicChange : (cb : CharChangeFn | null) => void = (_ : CharChangeFn | null) => {}
+
+  write : (deviceId : string, serviceUUID : string, charUUID : string, packet : number[]) => Promise<void> = (deviceId : string, serviceUUID : string, charUUID : string, packet : number[]) => _notInstalled<void>()
+}
+
+export function normalizeUUID(uuid : string | null) : string {
+  if (uuid == null) return ''
+  let clean = uuid!.split('-').join('').toLowerCase()
+  if (clean.length == 4) {
+    clean = '0000' + clean + '00001000800000805f9b34fb'
+  } else if (clean.length == 8) {
+    clean = clean + '00001000800000805f9b34fb'
+  }
+  return clean
+}
+
+// Promise<boolean> rather than Promise<void>: the Kotlin-backed UTSPromise ctor wants
+// (value : T) => void for resolve and inferring T=void through two layers proved brittle.
+export function delay(ms : number) : Promise<boolean> {
+  return new Promise<boolean>((resolve : (v : boolean) => void) => {
+    setTimeout(() => { resolve(true) }, ms)
+  })
+}
+
+export function concatBytes(arrays : number[][]) : number[] {
+  const out : number[] = []
+  for (const arr of arrays) {
+    for (const b of arr) out.push(b)
+  }
+  return out
+}

@@ -1,0 +1,77 @@
+<script>
+// Ported from miniapp app.js onLaunch. Dropped as WeChat-only: the update-manager modal
+// (uni-app x ships its own wgt OTA path), wx.onNeedPrivacyAuthorization (native apps use OS
+// permission prompts), and wx.login silent re-auth (login page does phone/email OTP).
+import { BASE, BUILD_ENV } from './utils/config.uts'
+import { state } from './utils/state.uts'
+import { restoreSession } from './utils/session.uts'
+
+function _storedJSON(key : string) : UTSJSONObject | null {
+  const raw = uni.getStorageSync(key)
+  if (raw == null) return null
+  if (raw instanceof UTSJSONObject) return raw as UTSJSONObject
+  if (typeof raw == 'string') {
+    return JSON.parse<UTSJSONObject>(raw as string)
+  }
+  return null
+}
+
+export default {
+  onLaunch() {
+    // A stored session is only valid against the backend that issued it — same guard as the
+    // miniapp's nano_base check (live incident 2026-09-19, app.js comment).
+    const storedRaw = uni.getStorageSync('nano_base')
+    const storedBase = storedRaw == null ? '' : `${storedRaw}`
+    if (storedBase != BASE) {
+      if (storedBase.length > 0 || BUILD_ENV == 'develop') {
+        for (const k of ['nano_user', 'nano_channel', 'nano_coach', 'nano_last_session', 'nano_session', 'nano_session_at']) {
+          uni.removeStorageSync(k)
+        }
+      }
+      uni.setStorageSync('nano_base', BASE)
+    }
+
+    const user = _storedJSON('nano_user')
+    const channel = _storedJSON('nano_channel')
+    const coach = _storedJSON('nano_coach')
+
+    // Text scale reads outside the `user` branch: it must apply on the login screen too.
+    // ?? chain not ||: 0 is a valid level.
+    const storedScaleRaw = uni.getStorageSync('nano_text_scale')
+    const serverScaleRaw = user != null ? user!['text_scale'] : null
+    const storedScale = storedScaleRaw == null ? NaN : parseInt(`${storedScaleRaw}`)
+    const parsedServer = serverScaleRaw == null ? NaN : parseInt(`${serverScaleRaw}`)
+    let resolvedScale = 0
+    if (isNaN(storedScale)) {
+      resolvedScale = isNaN(parsedServer) ? 0 : parsedServer
+    } else {
+      resolvedScale = storedScale
+    }
+    state.textScale = Math.max(0, Math.min(3, resolvedScale))
+
+    if (user != null) {
+      state.user = user
+      state.channel = channel
+      state.coach = coach
+      const lang = user!.getString('language')
+      const channelLocale = channel != null ? channel!.getString('locale') : null
+      state.lang = lang == 'en' ? 'en' : (channelLocale == 'en' ? 'en' : 'zh')
+      const themeRaw = uni.getStorageSync('nano_theme')
+      const savedTheme = themeRaw == null ? '' : `${themeRaw}`
+      const userTheme = user!.getString('theme')
+      state.theme = savedTheme.length > 0 ? savedTheme : (userTheme != null ? userTheme : 'dark')
+      const sandboxRaw = uni.getStorageSync('nano_sandbox_active')
+      state.sandboxMode = sandboxRaw != null && `${sandboxRaw}` == 'true'
+    }
+
+    restoreSession()
+  },
+
+  onShow() {},
+  onHide() {}
+}
+</script>
+
+<style>
+/* Global styles port alongside pages; app.wxss equivalent lives here. */
+</style>

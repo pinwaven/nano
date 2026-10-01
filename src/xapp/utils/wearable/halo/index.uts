@@ -1,0 +1,750 @@
+// HaloRing — the connected-device class, ported from miniapp halo/index.js. Drives a
+// BLEManager over an injected BleTransport (see transport.uts — a UTS BLE plugin fills it).
+// Deviations: getDeviceTime returns epoch millis instead of a Date; timestamps from parsers
+// are 'YYYY-MM-DD HH:MM:SS' CST strings; Promise.race in recordPpg replaced by a settled flag.
+// PRESERVED BEHAVIOURS (§18): _stream resolves with partial data on timeout (never rejects
+// when something arrived); HRV/stress arrive together in one 0x28 response so the sibling is
+// cached for the follow-up read.
+
+import { BLEManager, NotifyPair } from '../ble-manager.uts'
+import { BleTransport, NotifyCharFn } from '../transport.uts'
+import {
+  SERVICE_UUID, WRITE_UUID, NOTIFY_UUID, HALO_NAME_PREFIXES,
+  PersonalProfile, AutoMonitoringSettings,
+  getBatteryPacket, setTimePacket, getTimePacket,
+  setPersonalProfilePacket, getPersonalProfilePacket,
+  getMacPacket, getVersionPacket,
+  setFactoryResetPacket, setMcuResetPacket,
+  setBasicParametersPacket, getBasicParametersPacket,
+  setAutoMonitoringPacket, getAutoMonitoringPacket,
+  setRealTimeControlPacket,
+  getDailyActivitySummaryPacket, getDetailActivityPacket,
+  getSleepHistoryPacket,
+  getContinuousHeartRateHistoryPacket, getStaticHeartRateHistoryPacket,
+  getHrvHistoryPacket,
+  getSpo2DetailHistoryPacket, getAutoSpo2HistoryPacket,
+  getSleepHrvHistoryPacket, getTemperatureHistoryPacket,
+  getExerciseSessionsPacket, getOxygenVariationPacket, getSleepApneaPacket,
+  getSleepTemperatureHistoryPacket,
+  setMeasurementWithTypePacket, ppgControlPacket, setPpgStreamPacket,
+  enterActivityModePacket, queryActivityModePacket, sendActivityHeartbeatPacket,
+  parseBcdDate, bcdToString, readLEInt,
+} from './protocol.uts'
+import {
+  isoDateStr, cstDateStrToMillis,
+  parseHrLog55, parseHrHistory54, parseHrvRecords56, parseSpo2Records66,
+  parseSpo2History57, parseSleepHrv60, parseTempLog62, parseSleepTempLog69,
+  parseExercise5C, parseSleepApnea5F, parseOxygenVariation5D, parseSteps,
+  parseSleepHistory, parseSleepBlocks, summariseSleepBlocks,
+  parseRealtimeActivity9, parsePpgPacket3A, parsePpgStream11,
+  HrLogItem, HrHistoryItem, HrvRecord, Spo2Record, SampleList, RmssdList, TempLogItem,
+  SleepTempItem, ExerciseItem, SleepApneaItem, OxygenVariationItem, StepsSummary,
+  SleepBlock, SleepNight, RealtimeSnapshot,
+} from './parsers.uts'
+import { BleScanDevice } from '../transport.uts'
+
+export class BatteryInfo {
+  level : number
+  charging : boolean
+  constructor(level : number, charging : boolean) { this.level = level; this.charging = charging }
+}
+
+export class BasicParameters {
+  rightHand : boolean
+  autoMotion : boolean
+  eov : number
+  constructor(rightHand : boolean, autoMotion : boolean, eov : number) { this.rightHand = rightHand; this.autoMotion = autoMotion; this.eov = eov }
+}
+
+export class ProfileReadback {
+  gender : string
+  age : number
+  height : number
+  weight : number
+  stride : number
+  constructor(gender : string, age : number, height : number, weight : number, stride : number) { this.gender = gender; this.age = age; this.height = height; this.weight = weight; this.stride = stride }
+}
+
+export class AutoMonitoringReadback {
+  workMode : number
+  startTime : string
+  endTime : string
+  weekdays : number
+  intervalMinutes : number
+  type : number
+  constructor(workMode : number, startTime : string, endTime : string, weekdays : number, intervalMinutes : number, type : number) {
+    this.workMode = workMode
+    this.startTime = startTime
+    this.endTime = endTime
+    this.weekdays = weekdays
+    this.intervalMinutes = intervalMinutes
+    this.type = type
+  }
+}
+
+export class StressReading {
+  timestamp : string
+  stress : number
+  constructor(timestamp : string, stress : number) { this.timestamp = timestamp; this.stress = stress }
+}
+
+class CachedHrvResult {
+  hrv : number | null = null
+  stress : number | null = null
+}
+
+export class PpgPacketRecord {
+  packetId : number
+  samples : number[]
+  receivedAt : number
+  constructor(packetId : number, samples : number[], receivedAt : number) { this.packetId = packetId; this.samples = samples; this.receivedAt = receivedAt }
+}
+
+export class PpgRecording {
+  packets : PpgPacketRecord[]
+  startedAt : number
+  endedAt : number
+  constructor(packets : PpgPacketRecord[], startedAt : number, endedAt : number) { this.packets = packets; this.startedAt = startedAt; this.endedAt = endedAt }
+}
+
+export class RecordPpgOpts {
+  durationSec : number = 60
+  captureMs : number = 0
+  onPacket : ((rec : PpgPacketRecord) => void) | null = null
+  onStopSignal : ((stop : () => void) => void) | null = null
+}
+
+export type IsDoneFn = (acc : number[]) => boolean
+
+export class HaloRing {
+  private ble : BLEManager
+  private deviceId : string | null = null
+  private cachedHrvResult : CachedHrvResult | null = null // {hrv?, stress?} — arrive together in 0x28
+  private ppgSamples : number[] = []
+
+  constructor(transport : BleTransport) {
+    this.ble = new BLEManager(transport)
+  }
+
+  // Scan for Halo rings nearby.
+  static async scan(transport : BleTransport, timeoutMs : number = 8000) : Promise<BleScanDevice[]> {
+    const mgr = new BLEManager(transport)
+    await mgr.openAdapter()
+    return await mgr.scan(HALO_NAME_PREFIXES, timeoutMs)
+  }
+
+  async connect(deviceId : string, syncTime : boolean = false) : Promise<void> {
+    this.deviceId = deviceId
+    await this.ble.openAdapter()
+    await this.ble.connect(deviceId, [new NotifyPair(SERVICE_UUID, NOTIFY_UUID, WRITE_UUID)])
+    if (syncTime) {
+      try {
+        const ringMs = await this.getDeviceTime()
+        if (ringMs == null || Math.abs(Date.now() - ringMs!) > 60000) {
+          await this.setTime(new Date())
+        }
+      } catch (e : any) {}
+    }
+  }
+
+  async disconnect() : Promise<void> {
+    this.ble.disconnect()
+    this.deviceId = null
+    this.cachedHrvResult = null
+  }
+
+  // --- Device info ---
+
+  async getBattery() : Promise<BatteryInfo> {
+    const r = await this._send(getBatteryPacket(), 0x13, 3000)
+    return new BatteryInfo(r[1], r[2] == 1)
+  }
+
+  async getFirmwareVersion() : Promise<string> {
+    const r = await this._send(getVersionPacket(), 0x27, 3000)
+    return `${r[1]}.${r[2]}.${r[3]}.${r[4]}`
+  }
+
+  // The ring's current clock as epoch millis (null on failure).
+  async getDeviceTime() : Promise<number | null> {
+    const r = await this._send(getTimePacket(), 0x41, 3000)
+    try {
+      return cstDateStrToMillis(parseBcdDate(r, 1, true))
+    } catch (e : any) {
+      return null
+    }
+  }
+
+  async getMac() : Promise<string> {
+    const r = await this._send(getMacPacket(), 0x22, 3000)
+    const parts : string[] = []
+    for (let i = 1; i < 7; i++) {
+      const b = r[i]
+      const hex = _toHex(b)
+      parts.push(hex.toUpperCase())
+    }
+    return parts.join(':')
+  }
+
+  async setTime(date : Date | null = null) : Promise<void> {
+    await this._send(setTimePacket(date), 0x01, 3000)
+  }
+
+  // --- Ring configuration ---
+
+  async setBasicParameters(rightHand : boolean, autoMotion : boolean) : Promise<void> {
+    await this._send(setBasicParametersPacket(rightHand, autoMotion), 0x03, 3000)
+  }
+
+  async getBasicParameters() : Promise<BasicParameters> {
+    const r = await this._send(getBasicParametersPacket(), 0x04, 3000)
+    return new BasicParameters(r[3] == 0x81, r[4] == 0x81, r[10])
+  }
+
+  async setPersonalProfile(profile : PersonalProfile) : Promise<void> {
+    await this._send(setPersonalProfilePacket(profile), 0x02, 3000)
+  }
+
+  async getPersonalProfile() : Promise<ProfileReadback> {
+    const r = await this._send(getPersonalProfilePacket(), 0x42, 3000)
+    return new ProfileReadback(r[1] == 1 ? 'male' : 'female', r[2], r[3], r[4], r[5])
+  }
+
+  async setAutoMonitoring(settings : AutoMonitoringSettings) : Promise<void> {
+    await this._send(setAutoMonitoringPacket(settings), 0x2A, 3000)
+  }
+
+  async getAutoMonitoring(type : number) : Promise<AutoMonitoringReadback> {
+    const r = await this._send(getAutoMonitoringPacket(type), 0x2B, 3000)
+    const pad = (n : number) : string => {
+      const v = parseInt(bcdToString(n))
+      return v < 10 ? `0${v}` : `${v}`
+    }
+    return new AutoMonitoringReadback(
+      r[1],
+      `${pad(r[2])}:${pad(r[3])}`,
+      `${pad(r[4])}:${pad(r[5])}`,
+      r[6],
+      readLEInt(r, 7, 2),
+      r[9],
+    )
+  }
+
+  // --- Maintenance ---
+
+  async factoryReset() : Promise<void> {
+    await this._send(setFactoryResetPacket(), 0x12, 3000)
+  }
+
+  async mcuReset() : Promise<void> {
+    await this._send(setMcuResetPacket(), 0x2E, 3000)
+  }
+
+  // --- History ---
+
+  async getHeartRateLog(date : Date | null = null, sinceDate : Date | null = null) : Promise<HrLogItem[]> {
+    const todayStr = isoDateStr(date)
+    const buf = await this._stream(
+      getStaticHeartRateHistoryPacket(sinceDate != null ? 0x01 : 0, sinceDate),
+      0x55,
+      (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+      8000,
+    )
+    return parseHrLog55(buf, todayStr)
+  }
+
+  async getHrvHistory(sinceDate : Date | null = null) : Promise<HrvRecord[]> {
+    const buf = await this._stream(
+      getHrvHistoryPacket(sinceDate != null ? 0x01 : 0, sinceDate),
+      0x56,
+      (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+      8000,
+    )
+    return parseHrvRecords56(buf)
+  }
+
+  async getHrvLog(date : Date | null = null) : Promise<HrvRecord[]> {
+    const dayStr = isoDateStr(date)
+    const history = await this.getHrvHistory()
+    return history.filter((r) : boolean => r.timestamp.startsWith(dayStr))
+  }
+
+  async getStressLog(date : Date | null = null) : Promise<StressReading[]> {
+    const dayStr = isoDateStr(date)
+    const history = await this.getHrvHistory()
+    const out : StressReading[] = []
+    for (const r of history) {
+      if (r.timestamp.startsWith(dayStr) && r.stress != null) out.push(new StressReading(r.timestamp, r.stress!))
+    }
+    return out
+  }
+
+  async getAutoSpo2History(sinceDate : Date | null = null) : Promise<Spo2Record[]> {
+    const buf = await this._stream(
+      getAutoSpo2HistoryPacket(sinceDate != null ? 0x01 : 0, sinceDate),
+      0x66,
+      (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+      8000,
+    )
+    return parseSpo2Records66(buf)
+  }
+
+  async getSpo2Log(date : Date | null = null) : Promise<Spo2Record[]> {
+    const dayStr = isoDateStr(date)
+    const history = await this.getAutoSpo2History()
+    return history.filter((r) : boolean => r.timestamp.startsWith(dayStr))
+  }
+
+  async getSteps(date : Date | null = null, sinceDate : Date | null = null) : Promise<StepsSummary> {
+    const todayStr = isoDateStr(date)
+    const buf51 = await this._stream(
+      getDailyActivitySummaryPacket(0, null),
+      0x51,
+      (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+      8000,
+    )
+    var buf52 : number[] | null = null
+    try {
+      buf52 = await this._stream(
+        getDetailActivityPacket(sinceDate != null ? 0x01 : 0, sinceDate),
+        0x52,
+        (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+        8000,
+      )
+    } catch (e : any) {
+      buf52 = null
+    }
+    return parseSteps(buf51, buf52, todayStr)
+  }
+
+  async getSleepHistory() : Promise<SleepNight[]> {
+    const buf = await this._stream(
+      getSleepHistoryPacket(0, null),
+      0x53,
+      (acc : number[]) : boolean => {
+        const n = acc.length
+        return n >= 2 && acc[n - 2] == 0x53 && acc[n - 1] == 0xFF
+      },
+      15000,
+    )
+    return parseSleepHistory(buf)
+  }
+
+  // Raw, unsummarized blocks for incremental sync — the caller merges these with stored
+  // blocks (keyed by dateStr) and re-derives nights via summariseSleepBlocks
+  // (halo-smart-ring.md §9).
+  async getSleepBlocks(sinceDate : Date | null = null) : Promise<SleepBlock[]> {
+    const buf = await this._stream(
+      getSleepHistoryPacket(sinceDate != null ? 0x01 : 0, sinceDate),
+      0x53,
+      (acc : number[]) : boolean => {
+        const n = acc.length
+        return n >= 2 && acc[n - 2] == 0x53 && acc[n - 1] == 0xFF
+      },
+      15000,
+    )
+    return parseSleepBlocks(buf)
+  }
+
+  async getHeartRateHistory(date : Date | null = null) : Promise<HrHistoryItem[]> {
+    const todayStr = isoDateStr(date)
+    const buf = await this._stream(
+      getContinuousHeartRateHistoryPacket(0, null),
+      0x54,
+      (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+      10000,
+    )
+    return parseHrHistory54(buf, todayStr)
+  }
+
+  async getSpo2History(date : Date | null = null) : Promise<SampleList[]> {
+    const todayStr = isoDateStr(date)
+    const buf = await this._stream(
+      getSpo2DetailHistoryPacket(0, null),
+      0x57,
+      (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+      8000,
+    )
+    return parseSpo2History57(buf, todayStr)
+  }
+
+  async getSleepHrv(date : Date | null = null) : Promise<RmssdList[]> {
+    const todayStr = isoDateStr(date)
+    const buf = await this._stream(
+      getSleepHrvHistoryPacket(0, null),
+      0x60,
+      (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+      10000,
+    )
+    return parseSleepHrv60(buf, todayStr)
+  }
+
+  async getTemperatureLog(date : Date | null = null) : Promise<TempLogItem[]> {
+    const todayStr = isoDateStr(date)
+    const buf = await this._stream(
+      getTemperatureHistoryPacket(0, null),
+      0x62,
+      (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+      8000,
+    )
+    return parseTempLog62(buf, todayStr)
+  }
+
+  async getTemperatureHistory(sinceDate : Date | null = null) : Promise<TempLogItem[]> {
+    const buf = await this._stream(
+      getTemperatureHistoryPacket(sinceDate != null ? 0x01 : 0, sinceDate),
+      0x62,
+      (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+      8000,
+    )
+    return parseTempLog62(buf, null)
+  }
+
+  async getExerciseSessions(date : Date | null = null) : Promise<ExerciseItem[]> {
+    const todayStr = isoDateStr(date)
+    const buf = await this._stream(
+      getExerciseSessionsPacket(0, null),
+      0x5C,
+      (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+      10000,
+    )
+    return parseExercise5C(buf, todayStr)
+  }
+
+  async getSleepApneaRisk(date : Date | null = null) : Promise<SleepApneaItem[]> {
+    const todayStr = isoDateStr(date)
+    const buf = await this._stream(
+      getSleepApneaPacket(0, null),
+      0x5F,
+      (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+      8000,
+    )
+    return parseSleepApnea5F(buf, todayStr)
+  }
+
+  async getSleepTemperatureLog(date : Date | null = null) : Promise<SleepTempItem[]> {
+    const todayStr = isoDateStr(date)
+    const buf = await this._stream(
+      getSleepTemperatureHistoryPacket(0, null),
+      0x69,
+      (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+      10000,
+    )
+    return parseSleepTempLog69(buf, todayStr)
+  }
+
+  // --- Sport / activity mode (0x19 + 0x17) ---
+
+  async startSportMode(sportType : number) : Promise<void> {
+    await this._send(enterActivityModePacket(1, sportType), 0x19, 3000)
+  }
+
+  async stopSportMode() : Promise<void> {
+    await this._send(enterActivityModePacket(4, 0), 0x19, 3000)
+  }
+
+  // status: 1=active, 2=paused, 3=resuming, 4=ended
+  async querySportMode() : Promise<number[]> {
+    const r = await this._send(queryActivityModePacket(), 0x19, 3000)
+    return [r[1], r[2]]
+  }
+
+  async sendSportHeartbeat(distanceKm : number, paceSeconds : number, rssi : number) : Promise<void> {
+    await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID,
+      sendActivityHeartbeatPacket(distanceKm, paceSeconds, rssi))
+  }
+
+  async getOxygenVariation(date : Date | null = null) : Promise<OxygenVariationItem[]> {
+    const todayStr = isoDateStr(date)
+    const buf = await this._stream(
+      getOxygenVariationPacket(0, null),
+      0x5D,
+      (acc : number[]) : boolean => acc.length > 0 && acc[acc.length - 1] == 0xFF,
+      8000,
+    )
+    return parseOxygenVariation5D(buf, todayStr)
+  }
+
+  // --- Real-time streaming (0x09) ---
+  // Do not mix with other BLE commands while active.
+
+  startRealtimeStream(cb : (snap : RealtimeSnapshot) => void, steps : boolean = true, temp : boolean = true) : Promise<void> {
+    this.ble.onNotify(NOTIFY_UUID, (data : number[]) => {
+      if (data[0] != 0x09 || data.length < 25) return
+      cb(parseRealtimeActivity9(data))
+    })
+    return this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, setRealTimeControlPacket(steps, temp))
+  }
+
+  async stopRealtimeStream() : Promise<void> {
+    this.ble.onNotify(NOTIFY_UUID, null)
+    try {
+      await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, setRealTimeControlPacket(false, false))
+    } catch (e : any) {}
+  }
+
+  // --- On-demand health measurement (0x28) ---
+  // type: 'heart-rate' | 'spo2' | 'hrv' | 'pressure'
+
+  getRealtime(type : string, timeoutMs : number = 30000) : Promise<number | null> {
+    if (type == 'hrv' && this.cachedHrvResult != null && this.cachedHrvResult!.hrv != null) {
+      const val = this.cachedHrvResult!.hrv!
+      this.cachedHrvResult = null
+      return new Promise<number | null>((resolve : (v : number | null) => void, _ : (e : any) => void) => { resolve(val) })
+    }
+    if (type == 'pressure' && this.cachedHrvResult != null && this.cachedHrvResult!.stress != null) {
+      const val = this.cachedHrvResult!.stress!
+      this.cachedHrvResult = null
+      return new Promise<number | null>((resolve : (v : number | null) => void, _ : (e : any) => void) => { resolve(val) })
+    }
+
+    var haloType = 0
+    if (type == 'heart-rate') haloType = 2
+    else if (type == 'spo2') haloType = 3
+    else if (type == 'hrv') haloType = 1
+    else if (type == 'pressure') haloType = 1
+    if (haloType == 0) throw new Error(`Unknown realtime type for Halo: ${type}`)
+
+    const startPkt = setMeasurementWithTypePacket(haloType, 30, true)
+    const stopPkt = setMeasurementWithTypePacket(haloType, 0, false)
+
+    const resultPromise = new Promise<number | null>((resolve : (v : number | null) => void, _ : (e : any) => void) => {
+      const cleanup = (value : number | null) => {
+        this.ble.onNotify(NOTIFY_UUID, null)
+        resolve(value)
+      }
+      const end = setTimeout(() => { cleanup(null) }, timeoutMs)
+
+      this.ble.onNotify(NOTIFY_UUID, (data : number[]) => {
+        if (data.length < 8 || data[0] != 0x28) return
+        if (data[1] != haloType) return
+        if (data[2] == 0 && data[3] == 0 && data[4] == 0 && data[5] == 0) return
+
+        var value : number | null = null
+        if (type == 'heart-rate' && data[2] != 0) {
+          value = data[2]
+        } else if (type == 'spo2' && data[3] != 0) {
+          value = data[3]
+        } else if (type == 'hrv' && data[4] != 0) {
+          value = data[4]
+          if (data[5] != 0) {
+            const c = new CachedHrvResult()
+            c.stress = 100 - data[5]
+            this.cachedHrvResult = c
+          }
+        } else if (type == 'pressure' && data[5] != 0) {
+          value = 100 - data[5]
+          if (data[4] != 0) {
+            const c = new CachedHrvResult()
+            c.hrv = data[4]
+            this.cachedHrvResult = c
+          }
+        }
+
+        if (value != null) {
+          clearTimeout(end)
+          cleanup(value)
+        }
+      })
+
+      this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, startPkt)
+        .catch((_: any | null) => { clearTimeout(end); cleanup(null) })
+    })
+
+    return resultPromise.then(async (value : number | null) : Promise<number | null> => {
+      try {
+        await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, stopPkt)
+      } catch (e : any) {}
+      return value
+    })
+  }
+
+  // --- Blood glucose PPG session (0x78 + 0x3A stream) ---
+  // Flow: start → (progress) → stop (returns samples) → result → exit.
+
+  startBloodGlucose(onData : ((samples : number[], total : number[]) => void) | null = null) : Promise<void> {
+    this.ppgSamples = []
+    this.ble.onNotify(NOTIFY_UUID, (data : number[]) => {
+      if (data[0] != 0x3A) return
+      const samples = parsePpgPacket3A(data)
+      for (const s of samples) this.ppgSamples.push(s)
+      if (onData != null) onData!(samples, this.ppgSamples)
+    })
+    return this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, ppgControlPacket(1, 0))
+  }
+
+  sendBloodGlucoseProgress(pct : number) : Promise<void> {
+    return this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID,
+      ppgControlPacket(4, Math.min(100, Math.max(0, Math.round(pct)))))
+  }
+
+  async stopBloodGlucose() : Promise<number[]> {
+    try {
+      await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, ppgControlPacket(3, 0))
+    } catch (e : any) {}
+    return this.ppgSamples.slice(0)
+  }
+
+  // status: 0=fail, 1=low, 2=normal, 3=high
+  sendBloodGlucoseResult(status : number) : Promise<void> {
+    return this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, ppgControlPacket(2, status))
+  }
+
+  async exitBloodGlucose() : Promise<void> {
+    this.ble.onNotify(NOTIFY_UUID, null)
+    this.ppgSamples = []
+    try {
+      await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, ppgControlPacket(5, 0))
+    } catch (e : any) {}
+  }
+
+  // Raw optical-channel capture (same 0x78/0x3a tap), same contract as V8Band.recordPpg():
+  // never rejects on an empty capture. 0xAA/0xAB status frames around start/stop are ignored.
+  async recordPpg(opts : RecordPpgOpts = new RecordPpgOpts()) : Promise<PpgRecording> {
+    const durationSec = Math.max(10, Math.min(300, Math.round(opts.durationSec)))
+    const captureMs = opts.captureMs > 0 ? opts.captureMs : durationSec * 1000 + 500
+    const packets : PpgPacketRecord[] = []
+    const startedAt = Date.now()
+    let settled = false
+
+    this.ble.onNotify(NOTIFY_UUID, (data : number[]) => {
+      if (data[0] != 0x3A) return
+      const samples = parsePpgPacket3A(data)
+      if (samples.length == 0) return
+      const rec = new PpgPacketRecord(data[2], samples, Date.now())
+      packets.push(rec)
+      if (opts.onPacket != null) opts.onPacket!(rec)
+    })
+
+    const done = new Promise<boolean>((resolve : (v : boolean) => void, _ : (e : any | null) => void) => {
+      const finish = () => {
+        if (settled) return
+        settled = true
+        resolve(true)
+      }
+      setTimeout(() => { finish() }, captureMs)
+      if (opts.onStopSignal != null) opts.onStopSignal!(() => { finish() })
+    })
+
+    try {
+      await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, ppgControlPacket(1, 0))
+      await done
+    } finally {
+      this.ble.onNotify(NOTIFY_UUID, null)
+      try {
+        await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, ppgControlPacket(3, 0))
+        await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, ppgControlPacket(5, 0))
+      } catch (err : any) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'Halo PPG stop write failed', error: `${err}` } as UTSJSONObject))
+      }
+    }
+    return new PpgRecording(packets, startedAt, Date.now())
+  }
+
+  // --- Raw PPG waveform streaming (0x11) ---
+  // Probed live 2026-09-20 on X3B 69526: ring acks and streams NOTHING. Non-functional until
+  // a ring produces a frame (halo-smart-ring.md §3.13).
+
+  startPpgStream(cb : (points : number[]) => void) : Promise<void> {
+    this.ble.onNotify(NOTIFY_UUID, (data : number[]) => {
+      if (data[0] != 0x11 || data.length < 3) return
+      const points = parsePpgStream11(data)
+      if (points.length > 0) cb(points)
+    })
+    return this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, setPpgStreamPacket(true))
+  }
+
+  async stopPpgStream() : Promise<void> {
+    this.ble.onNotify(NOTIFY_UUID, null)
+    try {
+      await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, setPpgStreamPacket(false))
+    } catch (e : any) {}
+  }
+
+  // --- Internal helpers ---
+
+  private _send(packet : number[], expectedCmdId : number, timeoutMs : number) : Promise<number[]> {
+    return new Promise<number[]>((resolve : (v : number[]) => void, reject : (e : any | null) => void) => {
+      let settled = false
+      setTimeout(() => {
+        if (settled) return
+        settled = true
+        this.ble.onNotify(NOTIFY_UUID, null)
+        reject(new Error(`Halo response timeout (cmd 0x${_toHex(expectedCmdId)})`))
+      }, timeoutMs)
+
+      this.ble.onNotify(NOTIFY_UUID, (data : number[]) => {
+        if (settled) return
+        if (data[0] == expectedCmdId) {
+          settled = true
+          this.ble.onNotify(NOTIFY_UUID, null)
+          resolve(data)
+        }
+      })
+
+      this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, packet)
+        .catch((err : any | null) => {
+          if (settled) return
+          settled = true
+          this.ble.onNotify(NOTIFY_UUID, null)
+          reject(err)
+        })
+    })
+  }
+
+  // On timeout, resolves with whatever accumulated instead of rejecting (§18): each
+  // notification is one complete record, so a partial buffer still parses cleanly — a ring
+  // with a large unsynced backlog can exceed any per-command timeout. Only rejects when
+  // nothing arrived at all (write failed / link dropped).
+  private _stream(packet : number[], expectedCmdId : number, isDone : IsDoneFn, timeoutMs : number) : Promise<number[]> {
+    return new Promise<number[]>((resolve : (v : number[]) => void, reject : (e : any | null) => void) => {
+      const chunks : number[][] = []
+      let settled = false
+
+      const finishWithPartial = () : number[] => {
+        const out : number[] = []
+        for (const c of chunks) { for (const b of c) out.push(b) }
+        return out
+      }
+
+      setTimeout(() => {
+        if (settled) return
+        settled = true
+        this.ble.onNotify(NOTIFY_UUID, null)
+        if (chunks.length == 0) {
+          reject(new Error(`Halo stream timeout (cmd 0x${_toHex(expectedCmdId)}), no data received`))
+          return
+        }
+        console.log(JSON.stringify({ level: 'WARN', msg: 'Halo stream timed out, returning partial data', cmd: `0x${_toHex(expectedCmdId)}`, packets: chunks.length } as UTSJSONObject))
+        resolve(finishWithPartial())
+      }, timeoutMs)
+
+      this.ble.onNotify(NOTIFY_UUID, (data : number[]) => {
+        if (settled) return
+        if (data[0] != expectedCmdId) return
+        chunks.push(data)
+        const acc = finishWithPartial()
+        if (isDone(acc)) {
+          settled = true
+          this.ble.onNotify(NOTIFY_UUID, null)
+          resolve(acc)
+        }
+      })
+
+      this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, packet)
+        .catch((err : any | null) => {
+          if (settled) return
+          settled = true
+          this.ble.onNotify(NOTIFY_UUID, null)
+          reject(err)
+        })
+    })
+  }
+}
+
+function _toHex(n : number) : string {
+  const digits = '0123456789abcdef'
+  const hi = Math.floor(n / 16) % 16
+  const lo = n % 16
+  return `${digits[hi]}${digits[lo]}`
+}

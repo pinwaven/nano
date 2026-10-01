@@ -1,0 +1,579 @@
+// V8Band — ported from miniapp v8/index.js. First pass per v8-smart-band.md: battery/time/MAC/
+// firmware/auto-monitoring/steps/HR/HRV/SpO2/temperature/ECG/PPG; sleep stage BREAKDOWN stays
+// null deliberately (codes unconfirmed). doSleepRecords model is per-notification parsing, NOT
+// Halo's concatenated _stream (§3). sinceDate (mode 0x01) support on V8 is UNCONFIRMED against
+// hardware — sync.uts must not pass it until validated live (§6-7).
+
+import { BLEManager, NotifyPair } from '../ble-manager.uts'
+import { BleTransport, BleScanDevice } from '../transport.uts'
+import {
+  SERVICE_UUID, WRITE_UUID, NOTIFY_UUID, V8_NAME_PREFIXES,
+  getBatteryPacket, setTimePacket, getTimePacket,
+  setUserInfoPacket, getUserInfoPacket,
+  getMacPacket, getVersionPacket,
+  setFactoryResetPacket, setMcuResetPacket,
+  setAutoMonitoringPacket, getAutoMonitoringPacket,
+  getTotalStepDataPacket, getDetailActivityDataPacket,
+  getSleepDataPacket,
+  getDynamicHrDataPacket, getStaticHrDataPacket,
+  getHrvTestDataPacket, getTemperatureHistoryPacket, getOxygenDataPacket,
+  parseBcdDate, readLEInt,
+  setMeasurementPacket, setEcgRealtimePacket, parseEcgChunk,
+  ppgModePacket, parsePpgChunk,
+  EcgChunk, PpgChunk,
+} from './protocol.uts'
+import { bcdToString, PersonalProfile, AutoMonitoringSettings } from '../halo/protocol.uts'
+import {
+  isoDateStr, cstDateStrToMillis,
+  HrLogItem, SleepBlock,
+} from '../halo/parsers.uts'
+import {
+  ChunkResult, TotalStepRecord, DetailActivityRecord, DynamicHrRecord, StaticHrRecord,
+  V8HrvRecord, V8TempRecord, V8OxygenRecord, V8SleepNight,
+  parseTotalStepChunk, parseDetailActivityChunk, parseDynamicHrChunk, parseStaticHrChunk,
+  parseHrvChunk, parseTemperatureChunk, parseOxygenChunk, parseV8SleepBlocks,
+  summariseV8SleepBlocks,
+} from './parsers.uts'
+import {
+  BatteryInfo, ProfileReadback, AutoMonitoringReadback,
+} from '../halo/index.uts'
+
+export class V8StepsSummary {
+  steps : number
+  calories : number
+  distance : number
+  slots : DetailActivityRecord[]
+  constructor(steps : number, calories : number, distance : number, slots : DetailActivityRecord[]) {
+    this.steps = steps
+    this.calories = calories
+    this.distance = distance
+    this.slots = slots
+  }
+}
+
+export class V8HrvHistoryItem {
+  timestamp : string
+  hrv : number | null
+  vascularAging : number | null
+  heartRate : number | null
+  stress : number | null
+  highBP : number | null
+  lowBP : number | null
+  constructor(timestamp : string, hrv : number | null, vascularAging : number | null, heartRate : number | null, stress : number | null, highBP : number | null, lowBP : number | null) {
+    this.timestamp = timestamp
+    this.hrv = hrv
+    this.vascularAging = vascularAging
+    this.heartRate = heartRate
+    this.stress = stress
+    this.highBP = highBP
+    this.lowBP = lowBP
+  }
+}
+
+export class V8Spo2Item {
+  timestamp : string
+  spo2 : number
+  constructor(timestamp : string, spo2 : number) { this.timestamp = timestamp; this.spo2 = spo2 }
+}
+
+export class V8TempItem {
+  date : string
+  estimatedBodyTemp : number
+  skinTemp : number
+  status : number | null
+  constructor(date : string, temperature : number) {
+    this.date = date
+    this.estimatedBodyTemp = temperature
+    this.skinTemp = temperature
+    // Halo's _estimateBodyTemp genuinely does not apply: single combined reading, no
+    // ambient/shell delta to compute a status level from.
+    this.status = null
+  }
+}
+
+export class V8StreamPacket {
+  packetId : number
+  samples : number[]
+  receivedAt : number
+  constructor(packetId : number, samples : number[], receivedAt : number) {
+    this.packetId = packetId
+    this.samples = samples
+    this.receivedAt = receivedAt
+  }
+}
+
+export class V8Recording {
+  packets : V8StreamPacket[]
+  startedAt : number
+  endedAt : number
+  constructor(packets : V8StreamPacket[], startedAt : number, endedAt : number) {
+    this.packets = packets
+    this.startedAt = startedAt
+    this.endedAt = endedAt
+  }
+}
+
+export class V8RecordOpts {
+  durationSec : number = 0
+  captureMs : number = 0
+  onPacket : ((rec : V8StreamPacket) => void) | null = null
+  onStopSignal : ((stop : () => void) => void) | null = null
+}
+
+type ChunkParser<T> = (buf : number[]) => ChunkResult<T>
+
+function _hex(n : number) : string {
+  const digits = '0123456789abcdef'
+  const hi = Math.floor(n / 16) % 16
+  const lo = n % 16
+  if (hi == 0) return `${digits[lo]}`
+  return `${digits[hi]}${digits[lo]}`
+}
+
+function _hex2(n : number) : string {
+  const digits = '0123456789ABCDEF'
+  const hi = Math.floor(n / 16) % 16
+  const lo = n % 16
+  return `${digits[hi]}${digits[lo]}`
+}
+
+export class V8Band {
+  private ble : BLEManager
+  private deviceId : string | null = null
+
+  constructor(transport : BleTransport) {
+    this.ble = new BLEManager(transport)
+  }
+
+  static scanPrefixes() : string[] {
+    return V8_NAME_PREFIXES
+  }
+
+  static async scan(transport : BleTransport, timeoutMs : number = 8000) : Promise<BleScanDevice[]> {
+    const mgr = new BLEManager(transport)
+    await mgr.openAdapter()
+    return await mgr.scan(V8_NAME_PREFIXES, timeoutMs)
+  }
+
+  async connect(deviceId : string, syncTime : boolean = false) : Promise<void> {
+    this.deviceId = deviceId
+    await this.ble.openAdapter()
+    await this.ble.connect(deviceId, [new NotifyPair(SERVICE_UUID, NOTIFY_UUID, WRITE_UUID)])
+    if (syncTime) {
+      try {
+        const bandMs = await this.getDeviceTime()
+        if (bandMs == null || Math.abs(Date.now() - bandMs!) > 60000) {
+          await this.setTime(new Date())
+        }
+      } catch (e : any) {}
+    }
+  }
+
+  async disconnect() : Promise<void> {
+    this.ble.disconnect()
+    this.deviceId = null
+  }
+
+  // --- Device info ---
+
+  async getBattery() : Promise<BatteryInfo> {
+    const r = await this._send(getBatteryPacket(), 0x13, 3000)
+    return new BatteryInfo(r[1], r[2] == 1)
+  }
+
+  async getDeviceTime() : Promise<number | null> {
+    const r = await this._send(getTimePacket(), 0x41, 3000)
+    try {
+      return cstDateStrToMillis(parseBcdDate(r, 1, true))
+    } catch (e : any) {
+      return null
+    }
+  }
+
+  async getMac() : Promise<string> {
+    const r = await this._send(getMacPacket(), 0x22, 3000)
+    const parts : string[] = []
+    for (let i = 1; i < 7; i++) parts.push(_hex2(r[i]))
+    return parts.join(':')
+  }
+
+  async getFirmwareVersion() : Promise<string> {
+    const r = await this._send(getVersionPacket(), 0x27, 3000)
+    return `${_hex(r[1]).toUpperCase()}.${_hex(r[2]).toUpperCase()}.${_hex(r[3]).toUpperCase()}.${_hex(r[4]).toUpperCase()}`
+  }
+
+  async setTime(date : Date | null = null) : Promise<void> {
+    await this._send(setTimePacket(date), 0x01, 3000)
+  }
+
+  async setPersonalProfile(profile : PersonalProfile) : Promise<void> {
+    await this._send(setUserInfoPacket(profile), 0x02, 3000)
+  }
+
+  async getPersonalProfile() : Promise<ProfileReadback> {
+    const r = await this._send(getUserInfoPacket(), 0x42, 3000)
+    return new ProfileReadback(r[1] == 1 ? 'male' : 'female', r[2], r[3], r[4], r[5])
+  }
+
+  // --- Auto-monitoring — confirmed identical layout to Halo via live write + read-back (§4) ---
+
+  async setAutoMonitoring(settings : AutoMonitoringSettings) : Promise<void> {
+    await this._send(setAutoMonitoringPacket(settings), 0x2A, 3000)
+  }
+
+  async getAutoMonitoring(type : number) : Promise<AutoMonitoringReadback> {
+    const r = await this._send(getAutoMonitoringPacket(type), 0x2B, 3000)
+    const pad = (n : number) : string => {
+      const v = parseInt(bcdToString(n))
+      return v < 10 ? `0${v}` : `${v}`
+    }
+    return new AutoMonitoringReadback(
+      r[1],
+      `${pad(r[2])}:${pad(r[3])}`,
+      `${pad(r[4])}:${pad(r[5])}`,
+      r[6],
+      readLEInt(r, 7, 2),
+      type, // not echoed by the device — pass through the request
+    )
+  }
+
+  async factoryReset() : Promise<void> {
+    await this._send(setFactoryResetPacket(), 0x12, 3000)
+  }
+
+  async mcuReset() : Promise<void> {
+    await this._send(setMcuResetPacket(), 0x2E, 3000)
+  }
+
+  // --- History ---
+
+  async getSteps(date : Date | null = null, sinceDate : Date | null = null) : Promise<V8StepsSummary> {
+    const todayStr = isoDateStr(date)
+    const totals = await this._streamRecords<TotalStepRecord>(getTotalStepDataPacket(0, null), 0x51, ((b : number[]) : ChunkResult<TotalStepRecord> => parseTotalStepChunk(b)), 8000)
+    var detail : DetailActivityRecord[] = []
+    try {
+      detail = await this._streamRecords<DetailActivityRecord>(
+        getDetailActivityDataPacket(sinceDate != null ? 0x01 : 0, sinceDate),
+        0x52, ((b : number[]) : ChunkResult<DetailActivityRecord> => parseDetailActivityChunk(b)), 8000)
+    } catch (e : any) {
+      detail = [] as DetailActivityRecord[]
+    }
+    var today : TotalStepRecord | null = null
+    for (const r of totals) {
+      if (r.date == todayStr) { today = r; break }
+    }
+    const slots : DetailActivityRecord[] = []
+    for (const r of detail) {
+      if (r.date.startsWith(todayStr) && r.step > 0) slots.push(r)
+    }
+    return new V8StepsSummary(
+      today != null ? today!.step : 0,
+      today != null ? today!.calories : 0,
+      // km → metres, matching Halo's snapshot convention
+      today != null ? today!.distance * 1000 : 0,
+      slots,
+    )
+  }
+
+  // sinceDate caveat: mode 0x01 on V8 is UNCONFIRMED against real hardware (§6-7) — do not
+  // pass it from sync until validated with tools/halo --device v8 history.
+  async getHeartRateLog(date : Date | null = null, sinceDate : Date | null = null) : Promise<HrLogItem[]> {
+    const todayStr = isoDateStr(date)
+    const records = await this._streamRecords<StaticHrRecord>(
+      getStaticHrDataPacket(sinceDate != null ? 0x01 : 0, sinceDate),
+      0x55, ((b : number[]) : ChunkResult<StaticHrRecord> => parseStaticHrChunk(b)), 8000)
+    const out : HrLogItem[] = []
+    for (const r of records) {
+      if (r.date.startsWith(todayStr) && r.heartRate > 0 && r.heartRate != 0xFF) {
+        out.push(new HrLogItem(r.heartRate, r.date))
+      }
+    }
+    return out
+  }
+
+  async getHeartRateHistory() : Promise<DynamicHrRecord[]> {
+    // Confirmed live to have a lot of history — generous timeout.
+    const records = await this._streamRecords<DynamicHrRecord>(getDynamicHrDataPacket(0, null), 0x54, ((b : number[]) : ChunkResult<DynamicHrRecord> => parseDynamicHrChunk(b)), 25000)
+    const out : DynamicHrRecord[] = []
+    for (const r of records) {
+      const clean : number[] = []
+      for (const v of r.samples) {
+        if (v > 0 && v != 0xFF) clean.push(v)
+      }
+      if (clean.length > 0) out.push(new DynamicHrRecord(r.date, clean))
+    }
+    return out
+  }
+
+  // NOTE: vascularAging has no health_events mapping in sync (V8's byte-10 is not Halo's breath
+  // rate) — exposed for completeness, not synced.
+  async getHrvHistory(sinceDate : Date | null = null) : Promise<V8HrvHistoryItem[]> {
+    const records = await this._streamRecords<V8HrvRecord>(
+      getHrvTestDataPacket(sinceDate != null ? 0x01 : 0, sinceDate),
+      0x56, ((b : number[]) : ChunkResult<V8HrvRecord> => parseHrvChunk(b)), 8000)
+    const out : V8HrvHistoryItem[] = []
+    for (const r of records) {
+      out.push(new V8HrvHistoryItem(
+        r.date,
+        r.hrv != 0 ? r.hrv : null,
+        r.vascularAging != 0 ? r.vascularAging : null,
+        r.heartRate != 0 ? r.heartRate : null,
+        r.stress != 0 ? r.stress : null,
+        r.highBP != 0 ? r.highBP : null,
+        r.lowBP != 0 ? r.lowBP : null,
+      ))
+    }
+    return out
+  }
+
+  async getAutoSpo2History(sinceDate : Date | null = null) : Promise<V8Spo2Item[]> {
+    const records = await this._streamRecords<V8OxygenRecord>(
+      getOxygenDataPacket(sinceDate != null ? 0x01 : 0, sinceDate),
+      0x66, ((b : number[]) : ChunkResult<V8OxygenRecord> => parseOxygenChunk(b)), 8000)
+    const out : V8Spo2Item[] = []
+    for (const r of records) {
+      if (r.spo2 > 0 && r.spo2 != 0xFF) out.push(new V8Spo2Item(r.date, r.spo2))
+    }
+    return out
+  }
+
+  async getTemperatureHistory(sinceDate : Date | null = null) : Promise<V8TempItem[]> {
+    const records = await this._streamRecords<V8TempRecord>(
+      getTemperatureHistoryPacket(sinceDate != null ? 0x01 : 0, sinceDate),
+      0x62, ((b : number[]) : ChunkResult<V8TempRecord> => parseTemperatureChunk(b)), 8000)
+    const out : V8TempItem[] = []
+    for (const r of records) out.push(new V8TempItem(r.date, r.temperature))
+    return out
+  }
+
+  // Raw blocks for incremental sync (merge with stored blocks keyed by dateStr, then
+  // summariseV8SleepBlocks) — live-validated on real V8 hardware 2026-07-31.
+  async getSleepBlocks(sinceDate : Date | null = null) : Promise<SleepBlock[]> {
+    const chunks = await this._streamSleepChunks(15000, sinceDate)
+    const blocks : SleepBlock[] = []
+    for (const buf of chunks) {
+      for (const b of parseV8SleepBlocks(buf)) blocks.push(b)
+    }
+    return blocks
+  }
+
+  async getSleepHistory() : Promise<V8SleepNight[]> {
+    const blocks = await this.getSleepBlocks(null)
+    return summariseV8SleepBlocks(blocks)
+  }
+
+  async getSleep() : Promise<V8SleepNight | null> {
+    const history = await this.getSleepHistory()
+    if (history.length == 0) return null
+    return history[history.length - 1]
+  }
+
+  // --- ECG (live stream, not history) ---
+  // Rules from tools/halo's V8Client.recordEcg, all confirmed on two units: needs wrist
+  // contact AND opposite-hand finger on the electrode; duration is the ONLY clean stop (the
+  // SDK's open=0 ends nothing); after expiry the finger must be lifted before a new
+  // measurement. Never rejects on an empty capture — zero packets is a contact miss the UI
+  // must explain, not an exception.
+
+  async recordEcg(opts : V8RecordOpts) : Promise<V8Recording> {
+    const durationSec = Math.max(5, Math.min(300, Math.round(opts.durationSec > 0 ? opts.durationSec : 30)))
+    const captureMs = opts.captureMs > 0 ? opts.captureMs : durationSec * 1000 + 1500
+    const packets : V8StreamPacket[] = []
+    const startedAt = Date.now()
+    let settled = false
+
+    this.ble.onNotify(NOTIFY_UUID, (data : number[]) => {
+      if (data[0] != 0x07) return
+      const chunk : EcgChunk | null = parseEcgChunk(data)
+      if (chunk == null) return
+      const rec = new V8StreamPacket(chunk!.packetId, chunk!.samples, Date.now())
+      packets.push(rec)
+      if (opts.onPacket != null) opts.onPacket!(rec)
+    })
+
+    const done = new Promise<boolean>((resolve : (v : boolean) => void, _ : (e : any | null) => void) => {
+      const finish = () => {
+        if (settled) return
+        settled = true
+        resolve(true)
+      }
+      setTimeout(() => { finish() }, captureMs)
+      if (opts.onStopSignal != null) opts.onStopSignal!(() => { finish() })
+    })
+
+    try {
+      await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, setMeasurementPacket('ecg', true, durationSec))
+      await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, setEcgRealtimePacket(true))
+      await done
+    } finally {
+      this.ble.onNotify(NOTIFY_UUID, null)
+      try {
+        // Harmless belt-and-braces pair (documented as NOT a stop):
+        await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, setEcgRealtimePacket(false))
+        await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, setMeasurementPacket('ecg', false, durationSec))
+      } catch (err : any) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'V8 ECG stop write failed', error: `${err}` } as UTSJSONObject))
+      }
+    }
+    return new V8Recording(packets, startedAt, Date.now())
+  }
+
+  // --- PPG (live stream) — same contract as recordEcg; unlike ECG there is no finger and no
+  // band-side duration — the host decides when to send stop + quit.
+
+  async recordPpg(opts : V8RecordOpts) : Promise<V8Recording> {
+    const durationSec = Math.max(10, Math.min(300, Math.round(opts.durationSec > 0 ? opts.durationSec : 60)))
+    const captureMs = opts.captureMs > 0 ? opts.captureMs : durationSec * 1000 + 500
+    const packets : V8StreamPacket[] = []
+    const startedAt = Date.now()
+    let settled = false
+
+    this.ble.onNotify(NOTIFY_UUID, (data : number[]) => {
+      if (data[0] != 0x3a) return
+      const chunk : PpgChunk | null = parsePpgChunk(data)
+      if (chunk == null) return
+      const rec = new V8StreamPacket(chunk!.packetId, chunk!.samples, Date.now())
+      packets.push(rec)
+      if (opts.onPacket != null) opts.onPacket!(rec)
+    })
+
+    const done = new Promise<boolean>((resolve : (v : boolean) => void, _ : (e : any | null) => void) => {
+      const finish = () => {
+        if (settled) return
+        settled = true
+        resolve(true)
+      }
+      setTimeout(() => { finish() }, captureMs)
+      if (opts.onStopSignal != null) opts.onStopSignal!(() => { finish() })
+    })
+
+    try {
+      await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, ppgModePacket('start', 0))
+      await done
+    } finally {
+      this.ble.onNotify(NOTIFY_UUID, null)
+      try {
+        await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, ppgModePacket('stop', 0))
+        await this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, ppgModePacket('quit', 0))
+      } catch (err : any) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'V8 PPG stop write failed', error: `${err}` } as UTSJSONObject))
+      }
+    }
+    return new V8Recording(packets, startedAt, Date.now())
+  }
+
+  // --- Internal helpers ---
+
+  private _send(packet : number[], expectedCmdId : number, timeoutMs : number) : Promise<number[]> {
+    return new Promise<number[]>((resolve : (v : number[]) => void, reject : (e : any | null) => void) => {
+      let settled = false
+      setTimeout(() => {
+        if (settled) return
+        settled = true
+        this.ble.onNotify(NOTIFY_UUID, null)
+        reject(new Error(`V8 response timeout (cmd 0x${_hex(expectedCmdId)})`))
+      }, timeoutMs)
+
+      this.ble.onNotify(NOTIFY_UUID, (data : number[]) => {
+        if (settled) return
+        if (data[0] == expectedCmdId) {
+          settled = true
+          this.ble.onNotify(NOTIFY_UUID, null)
+          resolve(data)
+        }
+      })
+
+      this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, packet)
+        .catch((err : any | null) => {
+          if (settled) return
+          settled = true
+          this.ble.onNotify(NOTIFY_UUID, null)
+          reject(err)
+        })
+    })
+  }
+
+  // Per-notification record accumulation (see file header); partial-resolve on timeout like
+  // Halo, reject only when nothing arrived at all.
+  private _streamRecords<T>(packet : number[], expectedCmdId : number, parseChunk : ChunkParser<T>, timeoutMs : number) : Promise<T[]> {
+    return new Promise<T[]>((resolve : (v : T[]) => void, reject : (e : any | null) => void) => {
+      let records = [] as T[]
+      let gotAny = false
+      let settled = false
+
+      setTimeout(() => {
+        if (settled) return
+        settled = true
+        this.ble.onNotify(NOTIFY_UUID, null)
+        if (!gotAny) {
+          reject(new Error(`V8 stream timeout (cmd 0x${_hex(expectedCmdId)}), no data received`))
+          return
+        }
+        console.log(JSON.stringify({ level: 'WARN', msg: 'V8 stream timed out, returning partial data', cmd: `0x${_hex(expectedCmdId)}`, records: records.length } as UTSJSONObject))
+        resolve(records)
+      }, timeoutMs)
+
+      this.ble.onNotify(NOTIFY_UUID, (data : number[]) => {
+        if (settled) return
+        if (data[0] != expectedCmdId) return
+        gotAny = true
+        const parsed = parseChunk(data)
+        for (const r of parsed.records) records.push(r)
+        if (parsed.done) {
+          settled = true
+          this.ble.onNotify(NOTIFY_UUID, null)
+          resolve(records)
+        }
+      })
+
+      this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, packet)
+        .catch((err : any | null) => {
+          if (settled) return
+          settled = true
+          this.ble.onNotify(NOTIFY_UUID, null)
+          reject(err)
+        })
+    })
+  }
+
+  // Sleep keeps RAW per-notification buffers (block shape depends on the notification's own
+  // length — see parseV8SleepBlocks). Terminator: last 2 bytes [0x53, 0xFF].
+  private _streamSleepChunks(timeoutMs : number, sinceDate : Date | null) : Promise<number[][]> {
+    return new Promise<number[][]>((resolve : (v : number[][]) => void, reject : (e : any | null) => void) => {
+      const chunks : number[][] = []
+      let settled = false
+
+      setTimeout(() => {
+        if (settled) return
+        settled = true
+        this.ble.onNotify(NOTIFY_UUID, null)
+        if (chunks.length == 0) {
+          reject(new Error('V8 sleep stream timeout, no data received'))
+          return
+        }
+        resolve(chunks)
+      }, timeoutMs)
+
+      this.ble.onNotify(NOTIFY_UUID, (data : number[]) => {
+        if (settled) return
+        if (data[0] != 0x53) return
+        chunks.push(data)
+        const n = data.length
+        const done = n >= 2 && data[n - 2] == 0x53 && data[n - 1] == 0xFF
+        if (done) {
+          settled = true
+          this.ble.onNotify(NOTIFY_UUID, null)
+          resolve(chunks)
+        }
+      })
+
+      this.ble.write(this.deviceId!, SERVICE_UUID, WRITE_UUID, getSleepDataPacket(sinceDate != null ? 0x01 : 0, sinceDate))
+        .catch((err : any | null) => {
+          if (settled) return
+          settled = true
+          this.ble.onNotify(NOTIFY_UUID, null)
+          reject(err)
+        })
+    })
+  }
+}

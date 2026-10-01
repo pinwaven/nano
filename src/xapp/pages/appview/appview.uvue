@@ -1,0 +1,71 @@
+<template>
+  <view class="av-screen">
+    <web-view :src="url" />
+  </view>
+</template>
+
+<script>
+// Ported from miniapp pages/appview/appview.js. On Android the native web-view fills the
+// page (no room for the miniapp's custom header — Android's system back gesture pops the
+// page instead). The webview-token minting flow (AGENTS §31: openid + context → /api/
+// webview-token → ?wvt=) is kept verbatim; GCN's dashboard reads wvt exactly the same way.
+
+import { BASE } from '../../utils/config.uts'
+import { state } from '../../utils/state.uts'
+import { postBody } from '../../utils/request.uts'
+
+export default {
+  name: 'AppviewPage',
+  data() {
+    return {
+      url: '',
+    }
+  },
+  onLoad(options : OnLoadOptions) {
+    // options values arrive inconsistently percent-encoded (same miniapp-era finding) —
+    // decode explicitly, never twice (a signed OSS URL's Signature would corrupt).
+    var rawUrl = ''
+    const u = options['url']
+    if (u != null) {
+      rawUrl = `${u}`
+      try { const d1 = decodeURIComponent(rawUrl); if (d1 != null) rawUrl = d1 } catch (e : any) {}
+    } else {
+      rawUrl = '/app'
+    }
+    const isExternal = /^https?:\/\//i.test(rawUrl)
+    const target = isExternal ? rawUrl : `${BASE}${rawUrl}`
+
+    const user = state.user
+    const openid = user != null ? (user!.getString('user_id') ?? user!.getString('openid')) : null
+    if (openid == null || openid!.length == 0) {
+      this.url = target
+      return
+    }
+
+    var context : UTSJSONObject | null = null
+    const ctxParam = options['context']
+    if (ctxParam != null) {
+      try {
+        var rawContext = `${ctxParam}`
+        try { const d2 = decodeURIComponent(rawContext); if (d2 != null) rawContext = d2 } catch (e : any) {}
+        context = JSON.parse<UTSJSONObject>(rawContext)
+      } catch (e : any) {
+        context = null
+      }
+    }
+
+    const body = context != null
+      ? { openid: openid, context: context } as UTSJSONObject
+      : { openid: openid } as UTSJSONObject
+    postBody(`${BASE}/api/webview-token`, body).then((res) => {
+      const wvt = res != null ? res!.getString('wvt') : null
+      const sep = target.indexOf('?') != -1 ? '&' : '?'
+      this.url = wvt != null ? `${target}${sep}wvt=${wvt}` : target
+    })
+  }
+}
+</script>
+
+<style>
+.av-screen { flex: 1; background-color: #0B1C2E; }
+</style>

@@ -1,0 +1,369 @@
+<template>
+  <view class="ph-screen">
+    <view class="ph-header" :style="'padding-top:' + statusBarHeight + 'px'">
+      <view class="ph-back" v-on:click="goBack"><text class="ph-back-text">‹ {{ t('back') }}</text></view>
+      <text class="ph-title">{{ t('title') }}</text>
+    </view>
+
+    <text v-if="loading" class="ph-hint">{{ t('loading') }}</text>
+
+    <scroll-view direction="vertical" v-else class="ph-list">
+      <view v-for="(p, i) in phones" :key="i" class="ph-row">
+        <view class="ph-row-main">
+          <text class="ph-number">{{ p.getString('masked') }}</text>
+          <text v-if="p.getBoolean('is_primary') == true" class="ph-badge">{{ t('primaryBadge') }}</text>
+          <text v-else-if="p.getString('verified_at') == null" class="ph-badge ph-badge-muted">未验证</text>
+        </view>
+        <view class="ph-row-actions">
+          <text v-if="p.getBoolean('is_primary') != true" class="ph-action" v-on:click="setPrimary(`${p.getString('phone')}`)">{{ t('setPrimaryAction') }}</text>
+          <text class="ph-action ph-action-danger" v-on:click="removePhone(`${p.getString('phone')}`)">{{ t('removeAction') }}</text>
+        </view>
+      </view>
+
+      <view class="ph-add-btn" v-on:click="openAddPhone"><text class="btn-text">{{ t('addPhoneBtn') }}</text></view>
+    </scroll-view>
+
+    <view v-if="addMode" class="ph-modal">
+      <view class="ph-card">
+        <view v-if="addStep == 'phone'">
+          <text class="ph-label">{{ t('phoneLabel') }}</text>
+          <input class="ph-input" v-model="newPhone" :placeholder="t('phonePlaceholder')" :maxlength="11" />
+          <text v-if="addError.length > 0" class="ph-error">{{ addError }}</text>
+          <view class="ph-btn" v-on:click="sendCode"><text class="btn-text">{{ addLoading ? t('sending') : t('sendCodeBtn') }}</text></view>
+        </view>
+        <view v-else>
+          <text class="ph-label">{{ t('codeLabel') }}</text>
+          <text class="ph-hint">{{ codeSentToText }}</text>
+          <input class="ph-input" v-model="code" placeholder="6位验证码" :maxlength="6" />
+          <text v-if="addError.length > 0" class="ph-error">{{ addError }}</text>
+          <view class="ph-btn" v-on:click="manualVerify"><text class="btn-text">{{ addLoading ? t('verifying') : t('verifyBtn') }}</text></view>
+          <view class="ph-link" v-on:click="changeNumber"><text class="ph-link-text">{{ t('changeNumber') }}</text></view>
+        </view>
+        <view class="ph-link" v-on:click="closeAddPhone"><text class="ph-link-text">{{ t('cancelBtn') }}</text></view>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+// Ported from miniapp pages/phones/phones.js (zh/en inline dictionary kept). Live-filtered
+// inputs → v-model + validate-on-send; data-* handlers → direct args; wx.showModal →
+// uni.showModal.
+
+import { BASE } from '../../utils/config.uts'
+import { state } from '../../utils/state.uts'
+import { saveSession } from '../../utils/session.uts'
+import { getBody, postBody } from '../../utils/request.uts'
+import { maskPhone } from '../../utils/phone.uts'
+
+const PHONE_RE = /^1\d{10}$/
+
+const T_ZH : UTSJSONObject = {
+  title: '手机号管理', back: '返回', loading: '加载中…', primaryBadge: '主号码',
+  setPrimaryAction: '设为主号码', removeAction: '移除', addPhoneBtn: '+ 添加手机号',
+  phoneLabel: '手机号', phonePlaceholder: '请输入手机号', sendCodeBtn: '发送验证码', sending: '发送中…',
+  codeLabel: '输入验证码', codeSentTo: '验证码已发送至 {phone}', verifyBtn: '验证并添加', verifying: '验证中…',
+  changeNumber: '更换手机号', cancelBtn: '取消',
+  confirmRemoveTitle: '移除手机号', confirmRemoveContent: '确定要移除 {phone} 吗？',
+  confirmSetPrimaryTitle: '设为主号码', confirmSetPrimaryContent: '将 {phone} 设为主号码？',
+  errorInvalidPhone: '请输入正确的手机号', errorSendFailed: '验证码发送失败，请重试',
+  errorNetwork: '网络错误，请重试', errorInvalidCode: '验证码不正确', errorPhoneInUse: '该手机号已被其他账号绑定',
+  toastRemoved: '已移除', toastPrimarySet: '已设为主号码', toastAdded: '已添加',
+} as UTSJSONObject
+const T_EN : UTSJSONObject = {
+  title: 'Manage Phone Numbers', back: 'Back', loading: 'Loading…', primaryBadge: 'Primary',
+  setPrimaryAction: 'Set Primary', removeAction: 'Remove', addPhoneBtn: '+ Add Phone Number',
+  phoneLabel: 'Phone Number', phonePlaceholder: 'Enter phone number', sendCodeBtn: 'Send Code', sending: 'Sending…',
+  codeLabel: 'Enter Verification Code', codeSentTo: 'Code sent to {phone}', verifyBtn: 'Verify & Add', verifying: 'Verifying…',
+  changeNumber: 'Change Number', cancelBtn: 'Cancel',
+  confirmRemoveTitle: 'Remove Phone Number', confirmRemoveContent: 'Remove {phone}?',
+  confirmSetPrimaryTitle: 'Set Primary', confirmSetPrimaryContent: 'Set {phone} as your primary number?',
+  errorInvalidPhone: 'Please enter a valid phone number', errorSendFailed: 'Failed to send code, please try again',
+  errorNetwork: 'Network error, please try again', errorInvalidCode: 'Invalid code',
+  errorPhoneInUse: 'This number is already bound to another account',
+  toastRemoved: 'Removed', toastPrimarySet: 'Primary number updated', toastAdded: 'Added',
+} as UTSJSONObject
+
+export default {
+  name: 'PhonesPage',
+  data() {
+    return {
+      lang: 'zh',
+      statusBarHeight: 44,
+      phones: [] as UTSJSONObject[],
+      loading: true,
+      addMode: false,
+      addStep: 'phone',
+      newPhone: '',
+      code: '',
+      addLoading: false,
+      addError: '',
+      codeSentToText: '',
+    }
+  },
+  onLoad(_options : OnLoadOptions) {
+    this.lang = state.lang
+    const info = uni.getWindowInfo()
+    this.statusBarHeight = info.statusBarHeight
+    this.fetchPhones()
+  },
+  methods: {
+    t(key : string) : string {
+      const dict = this.lang == 'en' ? T_EN : T_ZH
+      const v = dict.getString(key)
+      return v != null ? v : key
+    },
+    _fmt(s : string, phone : string) : string {
+      return s.split('{phone}').join(phone)
+    },
+    goBack() {
+      uni.navigateBack()
+    },
+    async fetchPhones() {
+      const user = state.user
+      if (user == null || user!.getBoolean('guest') == true) { this.loading = false; return }
+      this.loading = true
+      const uid = user!.getString('user_id') ?? ''
+      const res = await getBody(`${BASE}/api/phone-otp/list?user_id=${encodeURIComponent(uid)}`)
+      const out : UTSJSONObject[] = []
+      if (res != null && res!.getBoolean('success') == true) {
+        const list = res!.getArray<UTSJSONObject>('phones')
+        if (list != null) {
+          for (const p of list!) {
+            const row = new UTSJSONObject()
+            p.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+            row['masked'] = maskPhone(p.getString('phone'))
+            out.push(row)
+          }
+        }
+      }
+      this.phones = out
+      this.loading = false
+    },
+    openAddPhone() {
+      this.addMode = true
+      this.addStep = 'phone'
+      this.newPhone = ''
+      this.code = ''
+      this.addError = ''
+    },
+    closeAddPhone() {
+      this.addMode = false
+    },
+    _digitsOnly(s : string) : string {
+      let out = ''
+      for (let i = 0; i < s.length; i++) {
+        const c = s.charCodeAt(i) ?? 0
+        if (c >= 48 && c <= 57) out += s.charAt(i)
+      }
+      return out
+    },
+    async sendCode() {
+      const phone = this._digitsOnly(this.newPhone.trim())
+      if (!PHONE_RE.test(phone)) { this.addError = this.t('errorInvalidPhone'); return }
+      this.newPhone = phone
+      this.addLoading = true
+      this.addError = ''
+      const res = await postBody(`${BASE}/api/phone-otp/send`, { phone: phone } as UTSJSONObject)
+      this.addLoading = false
+      if (res == null || res.getBoolean('success') != true) { this.addError = this.t('errorSendFailed'); return }
+      this.addStep = 'code'
+      this.code = ''
+      this.codeSentToText = this._fmt(this.t('codeSentTo'), phone)
+    },
+    manualVerify() {
+      this.verifyCode()
+    },
+    async verifyCode() {
+      const code = this.code.trim()
+      if (code.length == 0 || this.addLoading) return
+      const user = state.user
+      if (user == null) return
+      this.addLoading = true
+      this.addError = ''
+      const res = await postBody(`${BASE}/api/phone-otp/bind`, {
+        user_id: user!.getString('user_id'), phone: this.newPhone, code: code,
+      } as UTSJSONObject)
+      this.addLoading = false
+      if (res == null) { this.addError = this.t('errorNetwork'); return }
+      if (res.getBoolean('success') != true) {
+        const err = res.getString('error')
+        this.addError = err == 'invalid_code' ? this.t('errorInvalidCode')
+          : err == 'phone_in_use' ? this.t('errorPhoneInUse')
+          : this.t('errorNetwork')
+        return
+      }
+      // The bind may MERGE into the account that already owned the number — the response
+      // carries that winner's session and user; both replace the cached ones wholesale.
+      const token = res.getString('session_token')
+      if (token != null && token!.length > 0) saveSession(token!)
+      this._applyUpdatedUser(res.getJSON('user'), res.getJSON('channel'))
+      this.addMode = false
+      uni.showToast({ title: this.t('toastAdded'), icon: 'success' })
+      this.fetchPhones()
+    },
+    changeNumber() {
+      this.addStep = 'phone'
+      this.code = ''
+      this.addError = ''
+    },
+    setPrimary(phone : string) {
+      uni.showModal({
+        title: this.t('confirmSetPrimaryTitle'),
+        content: this._fmt(this.t('confirmSetPrimaryContent'), maskPhone(phone)),
+        success: (res) => { (async () : Promise<void> => {
+          if (!res.confirm) return
+          const user = state.user
+          if (user == null) return
+          const r = await postBody(`${BASE}/api/phone-otp/set-primary`, {
+            user_id: user!.getString('user_id'), phone: phone,
+          } as UTSJSONObject)
+          if (r == null || r.getBoolean('success') != true) { uni.showToast({ title: this.t('errorNetwork'), icon: 'none' }); return }
+          this._applyPhoneChange(phone)
+          uni.showToast({ title: this.t('toastPrimarySet'), icon: 'success' })
+          this.fetchPhones()
+        })() }
+      })
+    },
+    removePhone(phone : string) {
+      uni.showModal({
+        title: this.t('confirmRemoveTitle'),
+        content: this._fmt(this.t('confirmRemoveContent'), maskPhone(phone)),
+        success: (res) => { (async () : Promise<void> => {
+          if (!res.confirm) return
+          const user = state.user
+          if (user == null) return
+          const r = await postBody(`${BASE}/api/phone-otp/remove`, {
+            user_id: user!.getString('user_id'), phone: phone,
+          } as UTSJSONObject)
+          if (r == null || r.getBoolean('success') != true) { uni.showToast({ title: this.t('errorNetwork'), icon: 'none' }); return }
+          this._applyPhoneChange(r.getString('new_primary'))
+          uni.showToast({ title: this.t('toastRemoved'), icon: 'success' })
+          this.fetchPhones()
+        })() }
+      })
+    },
+    _applyPhoneChange(newPrimaryPhone : string | null) {
+      const user = state.user
+      if (user == null) return
+      const updated = new UTSJSONObject()
+      user!.toMap().forEach((v : any | null, k : string) => { updated[k] = v })
+      updated['phone'] = newPrimaryPhone
+      updated['phone_verified'] = newPrimaryPhone != null
+      this._applyUpdatedUser(updated, state.channel)
+    },
+    _applyUpdatedUser(updatedUser : UTSJSONObject | null, channel : UTSJSONObject | null) {
+      if (updatedUser == null) return
+      const rawPhone = updatedUser!.getString('phone')
+      const masked = maskPhone(rawPhone)
+      const fullUser = new UTSJSONObject()
+      updatedUser!.toMap().forEach((v : any | null, k : string) => { fullUser[k] = v })
+      fullUser['maskedPhone'] = masked
+      state.user = fullUser
+      if (channel != null) state.channel = channel
+      const stored = new UTSJSONObject()
+      fullUser.toMap().forEach((v : any | null, k : string) => {
+        if (k == 'phone' || k == 'email') return
+        stored[k] = v
+      })
+      stored['phoneSet'] = true
+      stored['phone_verified'] = updatedUser!.getString('phone') != null
+      stored['maskedPhone'] = masked
+      uni.setStorageSync('nano_user', stored)
+    },
+  },
+  watch: {
+    code(newVal : string) {
+      const clean = this._digitsOnly(newVal)
+      if (clean != newVal) { this.code = clean; return }
+      this.addError = ''
+      if (clean.length == 6) this.verifyCode()
+    },
+    newPhone(newVal : string) {
+      const clean = this._digitsOnly(newVal)
+      if (clean != newVal) { this.newPhone = clean }
+      this.addError = ''
+    },
+  }
+}
+</script>
+
+<style>
+.ph-screen { flex: 1; background-color: #0B1C2E; }
+.ph-header { flex-direction: row; align-items: center; padding: 12px 16px; }
+.ph-back { margin-right: 8px; }
+.ph-back-text { color: #A6C4E5; font-size: 15px; }
+.ph-title { color: #EAF2FB; font-size: 17px; font-weight: bold; }
+.ph-list { flex: 1; padding: 0 16px; }
+.ph-row {
+  background-color: #12283F;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 10px;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+.ph-row-main { flex-direction: row; align-items: center; }
+.ph-number { color: #EAF2FB; font-size: 15px; }
+.ph-badge {
+  margin-left: 8px;
+  color: #2E7CF6;
+  font-size: 11px;
+  background-color: rgba(46, 124, 246, 0.12);
+  border-radius: 6px;
+  padding-left: 6px;
+  padding-right: 6px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.ph-badge-muted { color: #A6C4E5; background-color: rgba(166, 196, 229, 0.12); }
+.ph-row-actions { flex-direction: row; }
+.ph-action { color: #2E7CF6; font-size: 13px; margin-left: 14px; }
+.ph-action-danger { color: #FF6B6B; }
+.ph-add-btn {
+  height: 46px;
+  background-color: #2E7CF6;
+  border-radius: 12px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+  margin-bottom: 20px;
+}
+.btn-text { color: #FFFFFF; font-size: 15px; font-weight: bold; }
+.ph-modal {
+  position: fixed;
+  left: 0; top: 0; right: 0; bottom: 0;
+  background-color: rgba(4, 10, 18, 0.72);
+  justify-content: center;
+  align-items: center;
+}
+.ph-card {
+  width: 86%;
+  background-color: #12283F;
+  border-radius: 16px;
+  padding: 18px;
+}
+.ph-label { color: #EAF2FB; font-size: 15px; font-weight: bold; margin-bottom: 8px; }
+.ph-hint { color: rgba(166, 196, 229, 0.7); font-size: 12px; margin: 8px 16px; }
+.ph-input {
+  height: 46px;
+  background-color: #0B1C2E;
+  color: #EAF2FB;
+  border-radius: 10px;
+  padding-left: 12px;
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+.ph-btn {
+  height: 46px;
+  background-color: #2E7CF6;
+  border-radius: 12px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 6px;
+}
+.ph-link { margin-top: 12px; align-items: center; }
+.ph-link-text { color: #A6C4E5; font-size: 14px; }
+.ph-error { color: #FF6B6B; font-size: 12px; margin-bottom: 6px; }
+</style>

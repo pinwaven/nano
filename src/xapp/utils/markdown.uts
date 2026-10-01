@@ -1,0 +1,807 @@
+// Ported from miniapp utils/markdown.js — Markdown → renderable SEGMENTS for the chat tab.
+// Same contract: prose runs become an html segment (rich-text at the page level), and the
+// designed cards (metric/takeaway/dots/formula/product/grocery/lesson/checkin) are structured
+// segments a page renders natively. Directive rows are SERVER-written (lib/chatCards.js) —
+// the model never authors card data; that rule carries over untouched.
+//
+// UTS adaptations: flat Segment class (WXML-style destructuring doesn't exist either way);
+// regex replaces use the callback form; \u0000 code-span stashing kept verbatim.
+
+export class MetricItem {
+  label : string
+  value : string
+  unit : string
+  sl : string
+  s : string
+  constructor(label : string, value : string, unit : string, sl : string, s : string) {
+    this.label = label; this.value = value; this.unit = unit; this.sl = sl; this.s = s
+  }
+}
+
+export class TakeawaySeg {
+  title : string
+  h : string
+  constructor(title : string, h : string) { this.title = title; this.h = h }
+}
+
+export class DotItem {
+  id : string
+  name : string
+  note : string
+  constructor(id : string, name : string, note : string) { this.id = id; this.name = name; this.note = note }
+}
+
+export class FormulaDotItem {
+  key : string
+  name : string
+  color : string
+  am : number
+  pm : number
+  total : number
+  weeks : string
+  amPct : number
+  pmPct : number
+  constructor(key : string, name : string, color : string, am : number, pm : number, weeks : string) {
+    this.key = key; this.name = name; this.color = color; this.am = am; this.pm = pm
+    this.total = am + pm; this.weeks = weeks; this.amPct = 0.0; this.pmPct = 0.0
+  }
+}
+
+export class FormulaGroup {
+  days : string
+  kind : string
+  items : FormulaDotItem[] = []
+  am : number = 0
+  pm : number = 0
+  total : number = 0
+  constructor(days : string, kind : string) { this.days = days; this.kind = kind }
+}
+
+export class RosterItem {
+  key : string
+  name : string
+  color : string
+  constructor(key : string, name : string, color : string) { this.key = key; this.name = name; this.color = color }
+}
+
+export class FormulaTier {
+  label : string
+  width : number
+  recommended : boolean
+  note : string
+  pitch : string
+  groups : FormulaGroup[] = []
+  dots : RosterItem[] = []
+  open : boolean = false
+  constructor(label : string, width : number, recommended : boolean, note : string, pitch : string) {
+    this.label = label; this.width = width; this.recommended = recommended; this.note = note; this.pitch = pitch
+  }
+}
+
+export class FormulaRung {
+  label : string
+  width : number
+  pitch : string
+  items : FormulaDotItem[] = []
+  constructor(label : string, width : number, pitch : string) { this.label = label; this.width = width; this.pitch = pitch }
+}
+
+export class ProductItem {
+  sku : string
+  name : string
+  price : string
+  reason : string
+  constructor(sku : string, name : string, price : string, reason : string) { this.sku = sku; this.name = name; this.price = price; this.reason = reason }
+}
+
+export class GroceryItem {
+  supplier : string
+  supplierName : string
+  id : string
+  name : string
+  price : string
+  image : string
+  reason : string
+  constructor(supplier : string, supplierName : string, id : string, name : string, price : string, image : string, reason : string) {
+    this.supplier = supplier; this.supplierName = supplierName; this.id = id; this.name = name
+    this.price = price; this.image = image; this.reason = reason
+  }
+}
+
+export class Segment {
+  // t ∈ html | rule | metric | takeaway | dots | formula | product | grocery | lesson | checkin
+  t : string
+  h : string = ''                       // html / takeaway body
+  metricItems : MetricItem[] = []
+  takeaway : TakeawaySeg | null = null
+  dotItems : DotItem[] = []
+  formulaGroups : FormulaGroup[] = []   // kept non-empty tiers[0]-equivalent legacy top level
+  formulaTiers : FormulaTier[] = []
+  formulaRungs : FormulaRung[] = []
+  cycleDays : number = 0
+  cycleCapsules : number = 0
+  planId : string = ''
+  orderMode : string = 'buy'
+  labelUrl : string = ''
+  // legacy top-level fields of a no-#tier card
+  legacyItems : FormulaDotItem[] = []
+  legacyAm : number = 0
+  legacyPm : number = 0
+  legacyTotal : number = 0
+  productItems : ProductItem[] = []
+  groceryItems : GroceryItem[] = []
+  groceryNote : string = ''
+  lessonId : string = ''
+  lessonTitle : string = ''
+  lessonUrl : string = ''
+  lessonPoster : string = ''
+  lessonLoading : boolean = false
+  lessonDone : boolean = false
+  checkinProgramId : string = ''
+  checkinDayIndex : string = ''
+  checkinLabel : string = ''
+  checkinDone : boolean = false
+  checkinLessonDone : boolean = true
+  checkinActive : boolean = false
+  constructor(t : string) { this.t = t }
+}
+
+const B = 'rgba(127,127,127,0.30)'
+const F = 'rgba(127,127,127,0.13)'
+
+// Theme-INVARIANT chrome, em-relative sizes — same reasoning as the miniapp (inline styles beat
+// stylesheets and this map is bound once).
+export const MD_TAG_STYLE = new Map<string, string>()
+MD_TAG_STYLE.set('p', 'margin:0 0 20rpx')
+MD_TAG_STYLE.set('h1', 'font-size:1.21em;font-weight:700;margin:30rpx 0 12rpx;line-height:1.35')
+MD_TAG_STYLE.set('h2', 'font-size:1.14em;font-weight:700;margin:28rpx 0 10rpx;line-height:1.35')
+MD_TAG_STYLE.set('h3', 'font-size:1.04em;font-weight:600;margin:24rpx 0 8rpx;line-height:1.4')
+MD_TAG_STYLE.set('h4', 'font-size:1em;font-weight:600;margin:20rpx 0 6rpx')
+MD_TAG_STYLE.set('h5', 'font-size:1em;font-weight:600;margin:20rpx 0 6rpx')
+MD_TAG_STYLE.set('h6', 'font-size:1em;font-weight:600;margin:20rpx 0 6rpx')
+MD_TAG_STYLE.set('ul', 'margin:10rpx 0 18rpx;padding-left:38rpx')
+MD_TAG_STYLE.set('ol', 'margin:10rpx 0 18rpx;padding-left:44rpx')
+MD_TAG_STYLE.set('li', 'margin:0 0 8rpx;line-height:1.6')
+MD_TAG_STYLE.set('strong', 'font-weight:600')
+MD_TAG_STYLE.set('em', 'font-style:italic')
+MD_TAG_STYLE.set('blockquote', 'margin:18rpx 0;padding:2rpx 0 2rpx 22rpx;border-left:6rpx solid ' + B)
+MD_TAG_STYLE.set('code', 'font-family:monospace;font-size:0.89em;background:' + F + ';padding:2rpx 8rpx;border-radius:6rpx')
+MD_TAG_STYLE.set('pre', 'font-family:monospace;white-space:pre;display:block;font-size:0.86em;background:' + F + ';border:1rpx solid ' + B + ';border-radius:12rpx;padding:16rpx 18rpx;margin:18rpx 0;overflow-x:auto')
+MD_TAG_STYLE.set('table', 'width:100%;table-layout:fixed;border-collapse:collapse;font-size:0.89em;margin:18rpx 0')
+MD_TAG_STYLE.set('th', 'border:1rpx solid ' + B + ';padding:10rpx 12rpx;text-align:left;font-weight:600')
+MD_TAG_STYLE.set('td', 'border:1rpx solid ' + B + ';padding:10rpx 12rpx;text-align:left;word-break:break-word')
+MD_TAG_STYLE.set('a', 'color:inherit;text-decoration:underline')
+
+const STATUS_TOKENS = new Map<string, string>()
+STATUS_TOKENS.set('正常', 'normal')
+STATUS_TOKENS.set('normal', 'normal')
+STATUS_TOKENS.set('偏高', 'high')
+STATUS_TOKENS.set('高', 'high')
+STATUS_TOKENS.set('升高', 'high')
+STATUS_TOKENS.set('elevated', 'high')
+STATUS_TOKENS.set('high', 'high')
+STATUS_TOKENS.set('偏低', 'low')
+STATUS_TOKENS.set('低', 'low')
+STATUS_TOKENS.set('low', 'low')
+STATUS_TOKENS.set('良好', 'good')
+STATUS_TOKENS.set('优秀', 'good')
+STATUS_TOKENS.set('good', 'good')
+STATUS_TOKENS.set('optimal', 'good')
+STATUS_TOKENS.set('关注', 'watch')
+STATUS_TOKENS.set('注意', 'watch')
+STATUS_TOKENS.set('watch', 'watch')
+STATUS_TOKENS.set('borderline', 'watch')
+
+function _normStatus(s : string | null) : string {
+  if (s == null || s.length == 0) return 'none'
+  const k = s.trim().toLowerCase()
+  const v = STATUS_TOKENS.get(k)
+  return v != null ? v : 'none'
+}
+
+function _esc(s : string) : string {
+  let out = ''
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charAt(i)
+    if (c == '&') out += '&amp;'
+    else if (c == '<') out += '&lt;'
+    else if (c == '>') out += '&gt;'
+    else out += c
+  }
+  return out
+}
+
+// escape → stash code spans → transform → restore (stashing stops **x** inside a backtick span
+// from being processed as bold — the original bug this design exists for).
+function _inline(s : string) : string {
+  const codes : string[] = []
+  let out = _esc(s)
+  out = out.replace(/`([^`\n]+)`/g, (_m : string, c : string, _off : number, _src : string) : string => {
+    codes.push(c)
+    return '\u0000' + `${codes.length - 1}` + '\u0000'
+  })
+  out = out.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_m : string, txt : string, href : string, _off : number, _src : string) : string => {
+    return '<a href="' + href.split('"').join('&quot;') + '">' + txt + '</a>'
+  })
+  out = out.replace(/~~(.+?)~~/g, (_m : string, c : string, _off : number, _src : string) : string => '<del>' + c + '</del>')
+  out = out.replace(/\*\*\*(.+?)\*\*\*/g, (_m : string, c : string, _off : number, _src : string) : string => '<strong><em>' + c + '</em></strong>')
+  out = out.replace(/\*\*(.+?)\*\*/g, (_m : string, c : string, _off : number, _src : string) : string => '<strong>' + c + '</strong>')
+  out = out.replace(/\*([^*\n]+)\*/g, (_m : string, c : string, _off : number, _src : string) : string => '<em>' + c + '</em>')
+  // _italic_ REQUIRES word boundaries — the unanchored rule mangled user_id / DOT_N7.
+  out = out.replace(
+    /(^|[\s(（【「])_([^_\s][^_]*?)_(?=[\s.,!?)）】」。，！？；;:：]|$)/g,
+    (_m : string, pre : string, c : string, _off : number, _src : string) : string => pre + '<em>' + c + '</em>'
+  )
+  out = out.replace(/\u0000(\d+)\u0000/g, (_m : string, i : string, _off : number, _src : string) : string => '<code>' + codes[parseInt(i)] + '</code>')
+  return out
+}
+
+function _isHr(t : string) : boolean { return /^\s*([-*_])\s*(?:\1\s*){2,}$/.test(t) }
+function _isHeading(t : string) : boolean { return /^#{1,6}\s+/.test(t) }
+function _isListItem(l : string) : boolean { return /^(\s*)([-*+]|\d+[.)])\s+/.test(l) }
+function _isQuote(l : string) : boolean { return /^\s*>/.test(l) }
+function _isFence(t : string) : boolean { return t.startsWith('```') }
+
+function _isTableStart(lines : string[], i : number) : boolean {
+  if (i + 1 >= lines.length) return false
+  if (lines[i].indexOf('|') == -1) return false
+  const next = lines[i + 1]
+  return /^\s*\|?[\s:\-|]*\|[\s:\-|]*$/.test(next) && next.indexOf('-') != -1
+}
+
+function _tableCells(line : string) : string[] {
+  let t = line.trim()
+  if (t.startsWith('|')) t = t.substring(1)
+  if (t.endsWith('|')) t = t.substring(0, t.length - 1)
+  const parts = t.split('|')
+  const out : string[] = []
+  for (const c of parts) out.push(c.trim())
+  return out
+}
+
+class ListEntry {
+  indent : number
+  ordered : boolean
+  text : string
+  level : number = 0
+  constructor(indent : number, ordered : boolean, text : string) {
+    this.indent = indent; this.ordered = ordered; this.text = text
+  }
+}
+
+// Distinct indent widths map to levels ascending (2- and 4-space both nest).
+function _renderList(items : ListEntry[]) : string {
+  const seen : number[] = []
+  for (const it of items) {
+    if (seen.indexOf(it.indent) == -1) seen.push(it.indent)
+  }
+  seen.sort((a, b) : number => a - b)
+  for (const it of items) {
+    it.level = Math.min(3, seen.indexOf(it.indent))
+  }
+
+  let html = ''
+  const stack : boolean[] = [] // ordered?
+  const close = () => {
+    const ordered = stack.pop()
+    html += '</li></' + (ordered == true ? 'ol' : 'ul') + '>'
+  }
+
+  for (const it of items) {
+    while (stack.length > it.level + 1) close()
+    if (stack.length == it.level + 1) {
+      html += '</li>'
+    } else {
+      const tag = it.ordered ? 'ol' : 'ul'
+      html += '<' + tag + (stack.length > 0 ? ' style="margin:0"' : '') + '>'
+      stack.push(it.ordered)
+    }
+    const tm = /^\[([ xX])\]\s+([\s\S]*)$/.exec(it.text)
+    if (tm != null) {
+      const box = (tm![1] ?? '') == ' ' ? '○ ' : '✓ '
+      html += '<li style="list-style:none;margin-left:-24rpx">' + box + _inline(tm![2] ?? '')
+    } else {
+      html += '<li>' + _inline(it.text)
+    }
+  }
+  while (stack.length > 0) close()
+  return html
+}
+
+function _parseBlocks(lines : string[]) : string[] {
+  const out : string[] = []
+  let i = 0
+  while (i < lines.length) {
+    const raw = lines[i]
+    const line = raw.trim()
+
+    if (_isFence(line)) {
+      i++
+      const code : string[] = []
+      while (i < lines.length && !_isFence(lines[i].trim())) { code.push(lines[i]); i++ }
+      if (i < lines.length) i++
+      out.push('<pre>' + _esc(code.join('\n')) + '</pre>')
+      continue
+    }
+
+    if (line == '') { i++; continue }
+
+    // only reachable via blockquote recursion (top level emits {t:'rule'} — <hr> is outside
+    // the rich-text whitelist).
+    if (_isHr(line)) {
+      out.push('<div style="height:1rpx;background:' + B + ';margin:18rpx 0"></div>')
+      i++
+      continue
+    }
+
+    const hm = /^(#{1,6})\s+(.+)$/.exec(line)
+    if (hm != null) {
+      const n = (hm![1] ?? '').length
+      out.push('<h' + n + '>' + _inline((hm![2] ?? '').trim()) + '</h' + n + '>')
+      i++
+      continue
+    }
+
+    if (_isQuote(raw)) {
+      const inner : string[] = []
+      while (i < lines.length && (_isQuote(lines[i]) || (lines[i].trim() != '' && inner.length > 0 && !_isListItem(lines[i]) && !_isHeading(lines[i].trim())))) {
+        if (!_isQuote(lines[i]) && lines[i].trim() == '') break
+        inner.push(lines[i].replace(/^\s*>\s?/, ''))
+        i++
+      }
+      out.push('<blockquote>' + _parseBlocks(inner).join('') + '</blockquote>')
+      continue
+    }
+
+    if (_isTableStart(lines, i)) {
+      const head = _tableCells(lines[i])
+      i += 2
+      let th = ''
+      for (let c = 0; c < head.length; c++) th += '<th>' + _inline(head[c]) + '</th>'
+      let tbl = '<table><thead><tr>' + th + '</tr></thead><tbody>'
+      while (i < lines.length && lines[i].indexOf('|') != -1 && lines[i].trim() != '') {
+        const cells = _tableCells(lines[i])
+        i++
+        let td = ''
+        for (let d = 0; d < cells.length; d++) td += '<td>' + _inline(cells[d]) + '</td>'
+        tbl += '<tr>' + td + '</tr>'
+      }
+      out.push(tbl + '</tbody></table>')
+      continue
+    }
+
+    if (_isListItem(raw)) {
+      const items : ListEntry[] = []
+      while (i < lines.length) {
+        const lm = /^(\s*)([-*+]|\d+[.)])\s+([\s\S]*)$/.exec(lines[i])
+        if (lm == null) {
+          // A blank line only ends the list if a list item doesn't resume right after it.
+          if (lines[i].trim() == '' && i + 1 < lines.length && _isListItem(lines[i + 1])) { i++; continue }
+          break
+        }
+        const indent = (lm![1] ?? '').split('\t').join('  ').length
+        items.push(new ListEntry(indent, /\d/.test(lm![2] ?? ''), lm![3] ?? ''))
+        i++
+      }
+      out.push(_renderList(items))
+      continue
+    }
+
+    // Paragraph: consecutive non-blank lines → ONE <p> joined with <br> (keeps single-newline
+    // layout — joining with spaces would reflow CJK line boundaries).
+    const para : string[] = []
+    while (i < lines.length) {
+      const pl = lines[i]
+      const pt = pl.trim()
+      if (pt == '' || _isFence(pt) || _isHr(pt) || _isHeading(pt) || _isQuote(pl) || _isListItem(pl) || _isTableStart(lines, i)) break
+      para.push(pt)
+      i++
+    }
+    if (para.length > 0) {
+      const joined : string[] = []
+      for (let p = 0; p < para.length; p++) joined.push(_inline(para[p]))
+      out.push('<p>' + joined.join('<br>') + '</p>')
+    } else {
+      i++ // safety: never spin
+    }
+  }
+  return out
+}
+
+// The miniapp bound MD_TAG_STYLE through mp-html's `tag-style`; uni-app x rich-text has no such
+// prop, so the map must arrive as inline styles on each tag. Callers wrap their :nodes bindings
+// with this (page-side, so mdToHtml/mdToSegments stay byte-identical to the miniapp).
+export function inlineTagStyles(html : string) : string {
+  return html.replace(/<([a-z][a-z0-9]*)([^>]*)>/gi, (m : string, tag : string, attrs : string, _off : number, _src : string) : string => {
+    const st = MD_TAG_STYLE.get(tag.toLowerCase())
+    if (st == null) return m
+    if (/\sstyle="/i.test(attrs)) {
+      return '<' + tag + attrs.replace(/\sstyle="/i, ' style="' + st + ';') + '>'
+    }
+    return '<' + tag + ' style="' + st + '"' + attrs + '>'
+  })
+}
+
+// Zero the trailing margin of a prose run's last block (inline style beats tagStyle).
+function _zeroLastMargin(block : string) : string {
+  return block.replace(/^<([a-z][a-z0-9]*)([^>]*)>/i, (_m : string, tag : string, attrs : string, _off : number, _src : string) : string => {
+    if (/\sstyle="/.test(attrs)) {
+      return '<' + tag + attrs.replace(/\sstyle="/, ' style="margin-bottom:0;') + '>'
+    }
+    return '<' + tag + attrs + ' style="margin-bottom:0">'
+  })
+}
+
+const DIRECTIVE_NAMES = new Set<string>(['metric', 'takeaway', 'dots', 'formula', 'product', 'grocery', 'lesson', 'checkin'])
+
+// "1-9,12-28" → "1–9 · 12–28". Digits, '-' and ',' only — this string renders next to the
+// page's own localised day word; anything else in it came from somewhere it shouldn't.
+function _prettyDayRanges(raw : string) : string {
+  const parts = raw.split(',')
+  const out : string[] = []
+  for (const part of parts) {
+    const p = part.trim()
+    if (!/^[0-9]+(-[0-9]+)?$/.test(p)) continue
+    out.push(p.split('-').join('\u2013'))
+  }
+  return out.join(' \u00b7 ')
+}
+
+function _buildDirective(name : string, inner : string[]) : Segment | null {
+  const rows : string[] = []
+  for (const line of inner) {
+    const r = line.trim()
+    if (r != '') rows.push(r)
+  }
+  if (rows.length == 0) return null
+
+  if (name == 'metric') {
+    const seg = new Segment('metric')
+    const mitems : MetricItem[] = []
+    for (const row of rows) {
+      const p = row.split('|')
+      for (let q = 0; q < p.length; q++) p[q] = p[q].trim()
+      if (p[0].length == 0) continue
+      const sl = p.length > 3 ? p[3] : ''
+      mitems.push(new MetricItem(p[0], p.length > 1 ? p[1] : '', p.length > 2 ? p[2] : '', sl, _normStatus(p.length > 3 ? p[3] : null)))
+    }
+    if (mitems.length == 0) return null
+    seg.metricItems = mitems
+    return seg
+  }
+
+  if (name == 'takeaway') {
+    // title left empty → the page falls back to its localised t.mdTakeaway; this file has no
+    // language context and must not hardcode one.
+    const seg = new Segment('takeaway')
+    seg.takeaway = new TakeawaySeg('', _parseBlocks(inner).join(''))
+    return seg
+  }
+
+  // :::formula — the Formulate-Dots proposal chart. Rows key|name|color|am|pm written by the
+  // SERVER from a validated allocation; totals derived here. Meta lines are '#'-prefixed (no
+  // dot key can start with one). Pre-rework cards without tiers become one unnamed package —
+  // one render path. Full contract incl. retired #rung and legacy-history rules: see the
+  // miniapp source lines 365-567; behaviour reproduced 1:1 below.
+  if (name == 'formula') {
+    const fgroups : FormulaTier[] = [] // groups holder reused via tiers below
+    const groups : FormulaGroup[] = []
+    var cur : FormulaGroup | null = null
+    let cycleDays = 0
+    let cycleCaps = 0
+    let plan = ''
+    let mode = 'buy'
+    let label = ''
+    const rungs : FormulaRung[] = []
+    var curRung : FormulaRung | null = null
+    const tiers : FormulaTier[] = []
+    var curTier : FormulaTier | null = null
+
+    for (const line of rows) {
+      const fp = line.split('|')
+      for (let y = 0; y < fp.length; y++) fp[y] = fp[y].trim()
+      const head = fp[0]
+      if (head == '#cycle') {
+        const d = parseInt(fp.length > 1 ? fp[1] : '0')
+        const c = parseInt(fp.length > 2 ? fp[2] : '0')
+        cycleDays = d > 0 ? d : 0
+        cycleCaps = c > 0 ? c : 0
+        continue
+      }
+      if (head == '#plan') {
+        plan = /^[0-9]{1,18}$/.test(fp.length > 1 ? fp[1] : '') ? fp[1] : ''
+        continue
+      }
+      if (head == '#label') {
+        const url = fp.slice(1).join('|')
+        label = /^https:\/\/[^\s]+$/.test(url) ? url : ''
+        continue
+      }
+      if (head == '#order') {
+        const m = fp.length > 1 ? fp[1] : ''
+        mode = (m == 'submit' || m == 'ag') ? m : 'buy'
+        continue
+      }
+      if (head == '#tier') {
+        const w = parseInt(fp.length > 2 ? fp[2] : '0')
+        curTier = new FormulaTier(fp.length > 1 ? fp[1] : '', w > 0 ? w : 0, fp.length > 3 && fp[3] == '1', '', '')
+        cur = null // a new package starts its own chart
+        tiers.push(curTier!)
+        continue
+      }
+      if (head == '#note' || head == '#pitch') {
+        if (curTier != null) {
+          if (head == '#note') curTier!.note = fp.slice(1).join('|')
+          else curTier!.pitch = fp.slice(1).join('|')
+        }
+        continue
+      }
+      if (head == '#rung') {
+        // RETIRED 2026-09-10, still parsed — chat history is permanent.
+        const w = parseInt(fp.length > 2 ? fp[2] : '0')
+        curRung = new FormulaRung(fp.length > 1 ? fp[1] : '', w > 0 ? w : 0, fp.slice(3).join('|'))
+        cur = null
+        rungs.push(curRung!)
+        continue
+      }
+      if (head == '#day') {
+        cur = new FormulaGroup(_prettyDayRanges(fp.length > 1 ? fp[1] : ''), (fp.length > 2 && fp[2] == 'n7') ? 'n7' : 'regular')
+        groups.push(cur!)
+        if (curTier != null) curTier!.groups.push(cur!)
+        continue
+      }
+      if (head.length > 0 && head.substring(0, 1) == '#') continue
+
+      const am0 = parseInt(fp.length > 3 ? fp[3] : '0')
+      const pm0 = parseInt(fp.length > 4 ? fp[4] : '0')
+      if (fp[0].length == 0 || (isNaN(am0) || am0 <= 0) && (isNaN(pm0) || pm0 <= 0)) continue
+      const am = am0 > 0 ? am0 : 0
+      const pm = pm0 > 0 ? pm0 : 0
+      const color = /^#[0-9a-fA-F]{3,8}$/.test(fp.length > 2 ? fp[2] : '') ? fp[2] : '#6B7B8C'
+      const nameStr = fp.length > 1 && fp[1].length > 0 ? fp[1] : fp[0]
+      if (curRung != null) {
+        const weeks = /^[0-9]+(,[0-9]+)*$/.test(fp.length > 5 ? fp[5] : '') ? fp[5] : ''
+        curRung!.items.push(new FormulaDotItem(fp[0], nameStr, color, am, pm, weeks))
+        continue
+      }
+      if (cur == null) {
+        cur = new FormulaGroup('', 'regular')
+        groups.push(cur!)
+        if (curTier != null) curTier!.groups.push(cur!)
+      }
+      cur!.am += am
+      cur!.pm += pm
+      cur!.items.push(new FormulaDotItem(fp[0], nameStr, color, am, pm, ''))
+    }
+
+    const kept : FormulaGroup[] = []
+    for (const g of groups) {
+      if (g.items.length > 0) kept.push(g)
+    }
+    if (kept.length == 0) return null
+
+    // Bar widths are % of the LARGEST capsule across EVERY group, so a reset day's smaller
+    // capsule reads genuinely smaller instead of self-normalising.
+    let fmax = 1
+    for (const g of kept) {
+      if (g.am > fmax) fmax = g.am
+      if (g.pm > fmax) fmax = g.pm
+    }
+    for (const g of kept) {
+      g.total = g.am + g.pm
+      for (const it of g.items) {
+        it.amPct = it.am / fmax * 100
+        it.pmPct = it.pm / fmax * 100
+      }
+    }
+
+    const tierKept : FormulaTier[] = []
+    for (const tr of tiers) {
+      const tgroups : FormulaGroup[] = []
+      for (const g of tr.groups) {
+        if (g.items.length > 0) tgroups.push(g)
+      }
+      if (tgroups.length == 0) continue
+      tr.groups = tgroups
+      tierKept.push(tr)
+    }
+    if (tierKept.length == 0) {
+      tierKept.push(new FormulaTier('', 0, true, '', ''))
+      for (const g of kept) tierKept[0].groups.push(g)
+    }
+    for (const tier of tierKept) {
+      const seen = new Set<string>()
+      const roster : RosterItem[] = []
+      for (const g of tier.groups) {
+        if (g.kind == 'n7') continue // roster = the everyday dots only
+        for (const it of g.items) {
+          if (seen.has(it.key)) continue
+          seen.add(it.key)
+          roster.push(new RosterItem(it.key, it.name, it.color))
+        }
+      }
+      tier.dots = roster
+      tier.open = tier.recommended
+    }
+    var anyOpen = false
+    for (const tier of tierKept) {
+      if (tier.open && !anyOpen) { anyOpen = true; continue }
+      tier.open = false
+    }
+    if (!anyOpen) tierKept[0].open = true
+
+    const seg = new Segment('formula')
+    seg.formulaGroups = kept
+    seg.formulaTiers = tierKept
+    seg.cycleDays = cycleDays
+    seg.cycleCapsules = cycleCaps
+    seg.planId = plan
+    seg.orderMode = mode
+    seg.labelUrl = label
+    const keptRungs : FormulaRung[] = []
+    for (const r of rungs) {
+      if (r.items.length > 0) keptRungs.push(r)
+    }
+    seg.formulaRungs = keptRungs
+    seg.legacyItems = kept[0].items
+    seg.legacyAm = kept[0].am
+    seg.legacyPm = kept[0].pm
+    seg.legacyTotal = kept[0].total
+    fgroups.length = 0
+    return seg
+  }
+
+  if (name == 'dots') {
+    const ditems : DotItem[] = []
+    for (const row of rows) {
+      const dp = row.split('|')
+      for (let z = 0; z < dp.length; z++) dp[z] = dp[z].trim()
+      const head = dp[0] != null ? dp[0] : ''
+      // "12号原粒 夜安宁" / "DOT-N12 Night Calm" — id then name; keeps factCheck's dot
+      // reference extraction working.
+      const hm = /^(\S+)\s+([\s\S]+)$/.exec(head)
+      const id = hm != null ? (hm![1] ?? head) : head
+      const nm = hm != null ? (hm![2] ?? '') : ''
+      const note = dp.length > 1 ? dp[1] : ''
+      if (id.length > 0) ditems.push(new DotItem(id, nm, note))
+    }
+    if (ditems.length == 0) return null
+    const seg = new Segment('dots')
+    seg.dotItems = ditems
+    return seg
+  }
+
+  // :::product — server-written sku|name|price|reason (§37: prices never reach the model;
+  // the sku is a tap target, never displayed).
+  if (name == 'product') {
+    const pitems : ProductItem[] = []
+    for (const row of rows) {
+      const pp = row.split('|')
+      for (let j = 0; j < pp.length; j++) pp[j] = pp[j].trim()
+      if (pp[0].length == 0 || pp.length < 2 || pp[1].length == 0) continue
+      pitems.push(new ProductItem(pp[0], pp[1], pp.length > 2 ? pp[2] : '', pp.length > 3 ? pp[3] : ''))
+    }
+    if (pitems.length == 0) return null
+    const seg = new Segment('product')
+    seg.productItems = pitems
+    return seg
+  }
+
+  // :::grocery — supplier|supplierName|id|name|price|image|reason (§46); '#note' meta carries
+  // the disclaimer; only http(s) images render.
+  if (name == 'grocery') {
+    const gitems : GroceryItem[] = []
+    let gnote = ''
+    for (const row of rows) {
+      const gp = row.split('|')
+      for (let j = 0; j < gp.length; j++) gp[j] = gp[j].trim()
+      if (gp[0] == '#note') { gnote = gp.slice(1).join('|'); continue }
+      if (gp[0].length > 0 && gp[0].substring(0, 1) == '#') continue
+      if (gp[0].length == 0 || gp.length < 4 || gp[2].length == 0 || gp[3].length == 0) continue
+      var gimg = gp.length > 5 ? gp[5] : ''
+      if (!/^https?:\/\//.test(gimg)) gimg = ''
+      gitems.push(new GroceryItem(gp[0], gp.length > 1 ? gp[1] : '', gp[2], gp[3], gp.length > 4 ? gp[4] : '', gimg, gp.length > 6 ? gp[6] : ''))
+    }
+    if (gitems.length == 0) return null
+    const seg = new Segment('grocery')
+    seg.groceryItems = gitems
+    seg.groceryNote = gnote
+    return seg
+  }
+
+  // :::lesson — one row lesson_id|title; url/poster are runtime state fetched on tap (§42).
+  if (name == 'lesson') {
+    const lp = rows[0].split('|')
+    const lessonId = (lp[0] != null ? lp[0] : '').trim()
+    if (!/^[0-9]{1,18}$/.test(lessonId)) return null
+    const seg = new Segment('lesson')
+    seg.lessonId = lessonId
+    seg.lessonTitle = lp.length > 1 ? lp[1].trim() : ''
+    return seg
+  }
+
+  // :::checkin — program_id|day_index|label.
+  if (name == 'checkin') {
+    const cp = rows[0].split('|')
+    const programId = (cp[0] != null ? cp[0] : '').trim()
+    const dayIndex = (cp.length > 1 ? cp[1] : '').trim()
+    if (!/^[0-9]{1,18}$/.test(programId) || !/^[0-9]{1,4}$/.test(dayIndex)) return null
+    const seg = new Segment('checkin')
+    seg.checkinProgramId = programId
+    seg.checkinDayIndex = dayIndex
+    seg.checkinLabel = cp.length > 2 ? cp[2].trim() : ''
+    return seg
+  }
+
+  return null
+}
+
+export function mdToSegments(md : string | null) : Segment[] {
+  const segs : Segment[] = []
+  if (md == null) return segs
+  const lines = md!.replace(/\r\n?/g, '\n').split('\n')
+  let prose : string[] = []
+
+  const flush = () => {
+    if (prose.length == 0) return
+    const blocks = _parseBlocks(prose)
+    prose = []
+    if (blocks.length == 0) return
+    blocks[blocks.length - 1] = _zeroLastMargin(blocks[blocks.length - 1])
+    const seg = new Segment('html')
+    seg.h = blocks.join('')
+    segs.push(seg)
+  }
+
+  let i = 0
+  let inCode = false
+  while (i < lines.length) {
+    const line = lines[i]
+    const t = line.trim()
+
+    // fenced code at the top level is tracked so a ``` block containing ::: or --- is left alone
+    if (_isFence(t)) { inCode = !inCode; prose.push(line); i++; continue }
+    if (inCode) { prose.push(line); i++; continue }
+
+    const dm = /^:::\s*([a-z][a-z0-9_-]*)\s*$/i.exec(t)
+    if (dm != null) {
+      const name = (dm![1] ?? '').toLowerCase()
+      const inner : string[] = []
+      i++
+      while (i < lines.length) {
+        const it = lines[i].trim()
+        if (/^:::\s*$/.test(it)) { i++; break }
+        if (/^:::\s*[a-z]/i.test(it)) break
+        inner.push(lines[i])
+        i++
+      }
+      // unterminated fences are normal (LLM truncation) — EOF closes implicitly above
+      if (DIRECTIVE_NAMES.has(name)) {
+        const seg = _buildDirective(name, inner)
+        if (seg != null) { flush(); segs.push(seg!); continue }
+      }
+      // unknown/unbuildable directive → prose. Never drop content.
+      for (const l of inner) prose.push(l)
+      continue
+    }
+
+    if (_isHr(t)) { flush(); segs.push(new Segment('rule')); i++; continue }
+
+    prose.push(line)
+    i++
+  }
+  flush()
+  return segs
+}
+
+// Whole-document markdown → ONE html string (Viva AG report viewer). Deliberately does NOT
+// interpret ::: directives — its input comes from an EXTERNAL system and designed cards inside
+// untrusted text are the injection surface handlers/viva_ag.js strips. Raw HTML is escaped.
+export function mdToHtml(md : string | null) : string {
+  if (md == null) return ''
+  const lines = md!.replace(/\r\n?/g, '\n').split('\n')
+  const blocks = _parseBlocks(lines)
+  if (blocks.length == 0) return ''
+  blocks[blocks.length - 1] = _zeroLastMargin(blocks[blocks.length - 1])
+  return blocks.join('')
+}
