@@ -8,7 +8,7 @@ export const BASE : string = BUILD_ENV == 'develop' ? 'https://nano-dev.gcn.net'
 
 // Same marker rule as the miniapp (AGENTS.md "Miniapp VERSION Marker"): bump on every
 // change under src/xapp/. Format MMDD-N.
-export const VERSION : string = '1001-6'
+export const VERSION : string = '1001-7'
 
 export const IS_DEV : boolean = BUILD_ENV != 'release'
 

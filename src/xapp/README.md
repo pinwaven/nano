@@ -122,6 +122,18 @@ tab by tab. Fixed in this pass:
 Known remaining gaps: light theme (the miniapp's ~690 `.theme-light` rules have no uvue
 equivalent yet — a dynamic-class pass), BLE transport, binary file I/O, ASR mic (see list above).
 
+## Review fixes (2026-10-01, VERSION 1001-7)
+
+- **Legacy shared bearer removed** from `utils/session.uts` (it was shipped in the APK for a
+  miniapp-storage upgrade path a native install never takes). A stored identity without a `u.`
+  session is now dropped at launch → login; login's "continue as previous" requires a stored
+  `session_token`.
+- **qrlogin refuses a QR for the other backend** instead of switching to it — a `d:` code in a
+  release build would have posted the prod session to `nano-dev`.
+- Stale pull-to-refresh TODO in `main.uvue` removed (`pages.json` already enables it).
+- Still open from the same review: nothing navigates to `pages/qrlogin`, and `pages/pay-qr` is
+  unreachable because `appview`'s web-view has no bridge for GCN's `navigateTo`.
+
 ### History (per-phase detail, kept for provenance)
 
 - Core utils: `config.uts`, `state.uts`, `request.uts`, `session.uts`, `phone.uts`,

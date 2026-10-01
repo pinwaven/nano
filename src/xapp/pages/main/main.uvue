@@ -2785,8 +2785,7 @@ export default {
     this._stopKinoSlide()
   },
 
-  // TODO(port): pages.json (off-limits to this change) does not set enablePullDownRefresh on
-  // pages/main; add it there during the compile pass, or this hook never fires on pull.
+  // Fires because pages.json sets enablePullDownRefresh on pages/main.
   onPullDownRefresh() {
     (async () : Promise<void> => {
     const tab = this.tab
