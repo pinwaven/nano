@@ -22,11 +22,9 @@
 // (`[d:]<session_id>` payload) for xapp clients — wxacode images are unreadable outside
 // WeChat. Same /qr-login/confirm contract (own session token proves who grants the login).
 
-import { BASE } from '../../utils/config.uts'
+import { BASE, BUILD_ENV } from '../../utils/config.uts'
 import { state } from '../../utils/state.uts'
 import { postBody } from '../../utils/request.uts'
-
-const DEV_BASE = 'https://nano-dev.gcn.net'
 
 export default {
   name: 'QrloginPage',
@@ -78,7 +76,14 @@ export default {
       }
       const isDev = scene.startsWith('d:')
       const sessionId = isDev ? scene.substring(2) : scene
-      const apiBase = isDev ? DEV_BASE : BASE
+      // Never switch backends on a scanned code: confirming posts this build's session token,
+      // so a `d:` QR in a release build would hand a prod session to the dev server (and the
+      // reverse can't validate anyway). A QR for the other backend is refused.
+      if (isDev != (BUILD_ENV == 'develop')) {
+        this.status = 'error'
+        this.errorMsg = isDev ? '这是测试环境的二维码，请使用正式版网页后台' : '这是正式环境的二维码，请使用测试版网页后台'
+        return
+      }
       const user = state.user
       if (user == null || user!.getString('user_id') == null) {
         this.status = 'error'
@@ -87,7 +92,7 @@ export default {
       }
       this.status = 'loading'
       this.errorMsg = ''
-      postBody(`${apiBase}/api/qr-login/confirm`, {
+      postBody(`${BASE}/api/qr-login/confirm`, {
         session_id: sessionId,
         openid: user!.getString('user_id'),
       } as UTSJSONObject).then((res) => {
