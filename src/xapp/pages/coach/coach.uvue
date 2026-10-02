@@ -780,6 +780,17 @@
         <view class="overlay-confirm-btn" :class="apptBusy || apptClientId.length == 0 || apptTitleText.trim().length == 0 ? 'btn-busy' : ''" v-on:click="submitAppt"><text>{{ apptBusy ? tr('loading') : tr('apptCreate') }}</text></view>
       </view>
     </view>
+    <!-- #ifdef MP-WEIXIN -->
+    <!-- Page-level WeChat privacy modal — the miniapp's coach.wxml one (see main.uvue). -->
+    <view v-if="showPrivacyModal" class="page-privacy-mask" v-on:click.stop="noop">
+      <view class="page-privacy-box">
+        <text class="page-privacy-title">{{ lang == 'en' ? 'Privacy Notice' : '隐私保护提示' }}</text>
+        <text class="page-privacy-body">{{ lang == 'en' ? 'To upload images and use health features, this app needs access to your photo album and camera. Please agree to our privacy policy to continue.' : '为上传图片及使用健康功能，本应用需要访问您的相册和摄像头。请阅读并同意我们的隐私保护指引后继续。' }}</text>
+        <button class="page-privacy-agree-btn" id="privacy-agree-btn" open-type="agreePrivacyAuthorization" v-on:agreeprivacyauthorization="onPrivacyAgree">{{ lang == 'en' ? 'Agree & Continue' : '同意并继续' }}</button>
+        <view class="page-privacy-cancel-btn" v-on:click="onPrivacyCancel"><text>{{ lang == 'en' ? 'Decline' : '拒绝' }}</text></view>
+      </view>
+    </view>
+    <!-- #endif -->
   </view>
   </view>
   <!-- #endif -->
@@ -1158,6 +1169,7 @@ import { T_MAIN_ZH, T_MAIN_EN } from '../../utils/main-t.uts'
 import { tr as trPath } from '../../utils/i18n.uts'
 import { scanQr, setScanTitle, syncRootClasses } from '../../utils/web-ui.uts'
 import { state } from '../../utils/state.uts'
+import { setPrivacyHandler, resolvePrivacy } from '../../utils/privacy.uts'
 import { saveSession, clearSession, checkAuthStatus } from '../../utils/session.uts'
 import { maskPhone } from '../../utils/phone.uts'
 import { RespEnvelope, ToolCtx, ToolOpts, ToolItem, getToolList, runTestChip, runFormulaDs, runHealthAdvice, runUploadImage, doUpload } from '../../utils/tool-actions.uts'
@@ -1443,6 +1455,7 @@ export default {
       detailTabs: ['health', 'chat', 'plans', 'notes', 'goals', 'facts'] as string[],
       detailTabOrder: ['health', 'plans', 'chat', 'notes', 'goals', 'facts'] as string[],
       statusBarHeight: 0,
+      showPrivacyModal: false, // xapp-mini WeChat privacy consent (utils/privacy.uts)
       // mp-weixin: room for WeChat's ••• capsule at the header's right (miniapp's capsuleRightPad)
       capsuleRightPad: 0,
       theme: 'dark',
@@ -1630,9 +1643,13 @@ export default {
   // A backgrounded coach must not keep a stale client list indefinitely (2026-08-30):
   // onShow refetches. onLoad already ran once, so guard on the resolved user id.
   onShow() {
+    setPrivacyHandler(() => { this.showPrivacyModal = true })
     if (this._coachUserId.length > 0 && this.clients.length > 0) this._loadAll()
   },
-  onUnload() { this._stopVivaPoll() },
+  onUnload() {
+    this._stopVivaPoll()
+    setPrivacyHandler(null)
+  },
   // Web: theme / text scale tokens live on <html> (utils/web-ui.uts syncRootClasses).
   watch: {
     theme(v : string) { syncRootClasses(v, this.textScale) },
@@ -1938,6 +1955,14 @@ export default {
       if (this.tab == 'questionnaires') this._loadQuestionnaires()
     },
     noop() {},
+    onPrivacyAgree() {
+      resolvePrivacy(true)
+      this.showPrivacyModal = false
+    },
+    onPrivacyCancel() {
+      resolvePrivacy(false)
+      this.showPrivacyModal = false
+    },
     // Chat (web): the main chat's dictionary, segments and tag styles — see the chat panel.
     mt(key : string) : string { return trPath(this.lang == 'en' ? T_MAIN_EN : T_MAIN_ZH, key) },
     sh(h : string) : string { return inlineTagStyles(h) },

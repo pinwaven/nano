@@ -1634,8 +1634,20 @@
       </view>
     </view>
 
-    <!-- TODO(port): the page-level WeChat privacy-authorization modal (wx.onNeedPrivacyAuthorization
-         + agreePrivacyAuthorization button) is dropped — native OS permission prompts cover it. -->
+    <!-- Page-level WeChat privacy modal (xapp-mini) — outside every tab container, so it shows
+         whichever tab is active. The agree button must be WeChat's own agreePrivacyAuthorization
+         button: that is what releases the held privacy API call (utils/privacy.uts). Android and
+         web use OS permission prompts. -->
+    <!-- #ifdef MP-WEIXIN -->
+    <view v-if="showPrivacyModal" class="page-privacy-mask" v-on:click.stop="noop">
+      <view class="page-privacy-box">
+        <text class="page-privacy-title">{{ lang == 'en' ? 'Privacy Notice' : '隐私保护提示' }}</text>
+        <text class="page-privacy-body">{{ lang == 'en' ? 'To upload images and use health features, this app needs access to your photo album and camera. Please agree to our privacy policy to continue.' : '为上传图片及使用健康功能，本应用需要访问您的相册和摄像头。请阅读并同意我们的隐私保护指引后继续。' }}</text>
+        <button class="page-privacy-agree-btn" id="privacy-agree-btn" open-type="agreePrivacyAuthorization" v-on:agreeprivacyauthorization="onPrivacyAgree">{{ lang == 'en' ? 'Agree & Continue' : '同意并继续' }}</button>
+        <view class="page-privacy-cancel-btn" v-on:click="onPrivacyCancel"><text class="page-privacy-cancel-text">{{ lang == 'en' ? 'Decline' : '拒绝' }}</text></view>
+      </view>
+    </view>
+    <!-- #endif -->
   </view>
 </template>
 
@@ -1676,6 +1688,7 @@ import { idOf } from '../../utils/json-id.uts'
 import { speechSupported, startSpeech, stopSpeech } from '../../utils/web-speech.uts'
 import { scanQr, setScanTitle, syncRootClasses } from '../../utils/web-ui.uts'
 import { state } from '../../utils/state.uts'
+import { setPrivacyHandler, resolvePrivacy } from '../../utils/privacy.uts'
 import { clearSession, checkAuthStatus } from '../../utils/session.uts'
 import { maskPhone } from '../../utils/phone.uts'
 import { PinchStepper } from '../../utils/pinch.uts'
@@ -2301,6 +2314,9 @@ export default {
       sandboxMode: false,
       sandboxBannerText: '',
       menuOpen: false,
+      planWeightKeyboard: 0, // px the weight sheet lifts above the keyboard
+      guestKeyboardHeight: 0, // px the guest code sheet pads above the keyboard
+      showPrivacyModal: false, // xapp-mini WeChat privacy consent (utils/privacy.uts)
 
       // Chat
       messages: [] as ChatMsg[],
@@ -2810,6 +2826,9 @@ export default {
   // onLoad's async init may not have resolved the user id yet — guarded below.
   onShow() {
     syncRootClasses(this.theme, this.textScale);
+    // The page on screen owns the privacy modal; re-taken on every show, so returning from coach
+    // (which registers its own) hands it back here. The miniapp only registered once, in onReady.
+    setPrivacyHandler(() => { this.showPrivacyModal = true });
     (async () : Promise<void> => {
     const user = this.user
     if (user != null && !this.isGuest) {
@@ -2859,6 +2878,7 @@ export default {
   onUnload() {
     this._stopPolling()
     this._stopKinoSlide()
+    setPrivacyHandler(null)
   },
 
   // Fires because pages.json sets enablePullDownRefresh on pages/main.
@@ -3863,6 +3883,14 @@ export default {
     toggleMenu() { this.menuOpen = !this.menuOpen },
     closeMenu() { this.menuOpen = false },
     noop() {},
+    onPrivacyAgree() {
+      resolvePrivacy(true)
+      this.showPrivacyModal = false
+    },
+    onPrivacyCancel() {
+      resolvePrivacy(false)
+      this.showPrivacyModal = false
+    },
 
     toggleLang() {
       const lang = this.lang == 'zh' ? 'en' : 'zh'
@@ -8274,6 +8302,36 @@ export default {
 .mic-recording-banner { flex-direction: row; align-items: center; background-color: rgba(226, 88, 88, 0.12); border-top-width: 0.5px; border-top-style: solid; border-top-color: rgba(226, 88, 88, 0.3); padding: 7px 12px; }
 .mic-recording-dot { width: 7px; height: 7px; border-radius: 4px; background-color: #E25858; margin-right: 6px; }
 .mic-recording-text { font-size: 12px; color: #FFB3B3; }
+/* #endif */
+
+/* #ifdef MP-WEIXIN */
+/* Page-level privacy modal — the miniapp's main.wxss .page-privacy-* (24rpx gap → 12px margins) */
+.page-privacy-mask { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999; background-color: rgba(0, 0, 0, 0.65); align-items: center; justify-content: center; }
+.page-privacy-box { margin: 0 24px; padding: 24px 20px 18px; background-color: #132236; border-radius: 12px; align-items: center; }
+.page-privacy-title { font-size: 16px; font-weight: bold; color: #e2eaf4; text-align: center; }
+.page-privacy-body { margin-top: 12px; font-size: 13px; line-height: 21px; color: rgba(166, 196, 229, 0.8); text-align: center; }
+.page-privacy-agree-btn { width: 100%; margin-top: 16px; padding: 10px 0; background-color: #3b82f6; color: #FFFFFF; border-radius: 50px; border-width: 0px; font-size: 14px; font-weight: bold; line-height: 22px; }
+.page-privacy-cancel-btn { margin-top: 12px; padding: 4px 0; }
+.page-privacy-cancel-text { font-size: 13px; color: rgba(166, 196, 229, 0.5); }
+/* #endif */
+
+/* #ifdef MP-WEIXIN */
+/* 使用微信地址 — the miniapp's .checkout-wx-addr-* / .code-wx-addr */
+.checkout-wx-addr-btn { flex-direction: row; align-items: center; background-color: rgba(99, 117, 236, 0.15); border-style: solid; border-width: 1px; border-color: rgba(99, 117, 236, 0.35); border-radius: 12px; padding: 4px 10px; }
+.checkout-wx-addr-icon { font-size: 11px; margin-right: 3px; }
+.checkout-wx-addr-text { font-size: 11px; font-weight: bold; color: #8B9FFF; }
+.code-wx-addr { align-self: flex-start; margin: 2px 0 6px; font-size: 12px; color: #7A9ABF; text-decoration: underline; }
+/* #endif */
+
+/* #ifdef MP-WEIXIN */
+/* The miniapp's values Android's CSS engine rejects (align-items: baseline, max-width: %);
+   native gets the nearest supported value in the rule itself. */
+.fcard-head { align-items: baseline; }
+.fcard-tier-head { align-items: baseline; }
+.fcard-tier-name { align-items: baseline; }
+.fcard-days { align-items: baseline; }
+.dots-header { align-items: baseline; }
+.message-ai { max-width: 100%; }
 /* #endif */
 </style>
 

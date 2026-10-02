@@ -1,0 +1,40 @@
+// WeChat privacy authorization for xapp-mini — the miniapp's app.js _privacyResolve /
+// _onPrivacyRequest pair, as a module. With "__usePrivacyCheck__" on (manifest.json mp-weixin),
+// WeChat calls wx.onNeedPrivacyAuthorization the first time a privacy API runs (Bluetooth,
+// album, camera, clipboard, address…) and holds that call until the resolve it hands over is
+// answered from an agreePrivacyAuthorization button. Without the listener, release builds fail
+// those APIs with "privacy api banned", and review rejects the build.
+//
+// The page that is on screen shows the consent modal: it registers with setPrivacyHandler() and
+// answers with resolvePrivacy(). Android and web have OS permission prompts instead; every
+// export is a no-op there.
+
+let _resolve : any | null = null
+let _handler : (() => void) | null = null
+
+export function installPrivacyListener() {
+  // #ifdef MP-WEIXIN
+  if (wx.onNeedPrivacyAuthorization == null) return
+  wx.onNeedPrivacyAuthorization((resolve : any) => {
+    _resolve = resolve
+    if (_handler != null) _handler!()
+  })
+  // #endif
+}
+
+// A page calls this when it is shown, with the function that opens its consent modal. A request
+// that arrived before any page registered (during launch) opens the modal straight away.
+export function setPrivacyHandler(h : (() => void) | null) {
+  _handler = h
+  if (h != null && _resolve != null) h()
+}
+
+export function resolvePrivacy(agree : boolean) {
+  // #ifdef MP-WEIXIN
+  if (_resolve == null) return
+  const r = _resolve
+  _resolve = null
+  if (agree) r({ event: 'agree', buttonId: 'privacy-agree-btn' })
+  else r({ event: null })
+  // #endif
+}

@@ -1,13 +1,14 @@
 <script>
 // Ported from miniapp app.js onLaunch. Dropped as WeChat-only: the update-manager modal
-// (uni-app x ships its own wgt OTA path), wx.onNeedPrivacyAuthorization (native apps use OS
-// permission prompts), and wx.login silent re-auth (login page does phone/email OTP).
+// (uni-app x ships its own wgt OTA path). wx.onNeedPrivacyAuthorization runs on xapp-mini only
+// (utils/privacy.uts); native apps use OS permission prompts.
 import { API_ORIGIN, BUILD_ENV } from './utils/config.uts'
 import { state } from './utils/state.uts'
 import { restoreSession } from './utils/session.uts'
 // #ifdef MP-WEIXIN
 import { installBleTransport } from './utils/wearable/index.uts'
 import { createMpWeixinTransport } from './utils/wearable/transport-mp.uts'
+import { installPrivacyListener } from './utils/privacy.uts'
 // #endif
 // #ifdef APP-ANDROID
 import { installBleTransport } from './utils/wearable/index.uts'
@@ -33,6 +34,7 @@ export default {
     // web have no transport (the bind flow reports a connection failure).
     // #ifdef MP-WEIXIN
     installBleTransport(createMpWeixinTransport())
+    installPrivacyListener()
     // #endif
     // #ifdef APP-ANDROID
     installBleTransport(createAndroidTransport())
