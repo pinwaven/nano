@@ -102,8 +102,8 @@
 //   properties → props: kind, open, userId, brand, deviceId, deviceName, lang, theme, viewId,
 //             coachId, readOnly (same names/defaults).
 //   events:   'close' (no detail), 'deleted' {id, kind}, 'saved' {kind, ecg|ppg: row}.
-// Deviations (trial port): BLE runs over the installed transport, which only xapp-mini has so far
-// (utils/wearable/transport-mp.uts); elsewhere a default BleTransport rejects with 'BLE transport
+// Deviations (trial port): BLE runs over the installed transport (xapp-mini: transport-mp.uts,
+// Android: transport-android.uts); on iOS/web a default BleTransport rejects with 'BLE transport
 // not installed', which lands in the same failBle branch as a real connect failure; canvas drawing
 // marked TODO(port); the per-request 20s timeout of the miniapp's own _req is not carried (the
 // shared request.uts helpers do not expose one).
@@ -545,7 +545,7 @@ export default {
       this.remaining = K.durationSec
       this.result = null
 
-      // The installed transport (xapp-mini: WeChat's). Where none is installed (native, web), a
+      // The installed transport (xapp-mini, Android). Where none is installed (iOS, web), a
       // default one rejects with 'BLE transport not installed' → the failBle branch below.
       const installed = getInstalledBleTransport()
       const ring = createWearable(brand, installed != null ? installed! : new BleTransport())

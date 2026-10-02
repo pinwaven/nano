@@ -1,0 +1,487 @@
+// Android BLE central for the xapp (see ../interface.uts for the contract).
+//
+// Android allows ONE outstanding GATT operation per connection — a second write/descriptor
+// write/MTU request issued before the first one's callback is silently dropped. WeChat queues
+// these internally; here every GATT op goes through a per-connection queue and completes on
+// its own callback (or a timeout, so a lost callback cannot wedge the queue).
+//
+// All state lives on the main thread: Android delivers scan/GATT callbacks on binder threads,
+// so each one copies what it needs and posts the handling to the main looper.
+
+import BluetoothManager from 'android.bluetooth.BluetoothManager'
+import BluetoothAdapter from 'android.bluetooth.BluetoothAdapter'
+import BluetoothDevice from 'android.bluetooth.BluetoothDevice'
+import BluetoothGatt from 'android.bluetooth.BluetoothGatt'
+import BluetoothGattCallback from 'android.bluetooth.BluetoothGattCallback'
+import BluetoothGattCharacteristic from 'android.bluetooth.BluetoothGattCharacteristic'
+import BluetoothGattDescriptor from 'android.bluetooth.BluetoothGattDescriptor'
+import BluetoothGattService from 'android.bluetooth.BluetoothGattService'
+import BluetoothProfile from 'android.bluetooth.BluetoothProfile'
+import BluetoothLeScanner from 'android.bluetooth.le.BluetoothLeScanner'
+import ScanCallback from 'android.bluetooth.le.ScanCallback'
+import ScanResult from 'android.bluetooth.le.ScanResult'
+import ScanFilter from 'android.bluetooth.le.ScanFilter'
+import ScanSettings from 'android.bluetooth.le.ScanSettings'
+import ParcelUuid from 'android.os.ParcelUuid'
+import Context from 'android.content.Context'
+import Build from 'android.os.Build'
+import Handler from 'android.os.Handler'
+import Looper from 'android.os.Looper'
+import Runnable from 'java.lang.Runnable'
+import UUID from 'java.util.UUID'
+
+import { BleErrCb, BleFoundCb, BleListCb, BleValueCb } from '../interface.uts'
+
+const CCCD = '00002902-0000-1000-8000-00805f9b34fb'
+const OP_TIMEOUT_MS = 6000
+const CONNECT_TIMEOUT_MS = 15000
+
+// ── main-thread hop ──
+class MainRun implements Runnable {
+  fn : () => void
+  constructor(fn : () => void) {
+    this.fn = fn
+  }
+  override run() : void {
+    this.fn()
+  }
+}
+const _main = new Handler(Looper.getMainLooper())
+function onMain(fn : () => void) {
+  _main.post(new MainRun(fn))
+}
+
+// 'fff0' / '0000fff0' / 32 hex / dashed → a java UUID (WeChat accepts all of these).
+function toUuid(s : string) : UUID {
+  let hex = s.split('-').join('').toLowerCase()
+  if (hex.length == 4) hex = '0000' + hex + '00001000800000805f9b34fb'
+  else if (hex.length == 8) hex = hex + '00001000800000805f9b34fb'
+  const dashed = hex.substring(0, 8) + '-' + hex.substring(8, 12) + '-' + hex.substring(12, 16) + '-' + hex.substring(16, 20) + '-' + hex.substring(20, 32)
+  return UUID.fromString(dashed)
+}
+
+function bytesToArray(b : ByteArray | null) : number[] {
+  const out : number[] = []
+  if (b == null) return out
+  for (let i : Int = 0; i < b.size; i++) {
+    let v = b[i].toInt()
+    if (v < 0) v += 256
+    out.push(v)
+  }
+  return out
+}
+
+function arrayToBytes(a : number[]) : ByteArray {
+  const out = new ByteArray(a.length.toInt())
+  for (let i = 0; i < a.length; i++) {
+    out[i.toInt()] = a[i].toByte()
+  }
+  return out
+}
+
+// ── adapter + permissions ──
+let _adapter : BluetoothAdapter | null = null
+
+function _permissions() : string[] {
+  if (Build.VERSION.SDK_INT >= 31) {
+    return ['android.permission.BLUETOOTH_SCAN', 'android.permission.BLUETOOTH_CONNECT']
+  }
+  return ['android.permission.ACCESS_FINE_LOCATION']
+}
+
+function _adapterReady(adapter : BluetoothAdapter, cb : BleErrCb) {
+  if (!adapter.isEnabled()) {
+    cb('openBluetoothAdapter:fail bluetooth is off')
+    return
+  }
+  _adapter = adapter
+  cb(null)
+}
+
+export function bleOpen(cb : BleErrCb) {
+  const act = UTSAndroid.getUniActivity()
+  if (act == null) { cb('openBluetoothAdapter:fail no activity'); return }
+  const mgr = act.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager | null
+  const adapter = mgr != null ? mgr.getAdapter() : null
+  if (adapter == null) { cb('openBluetoothAdapter:fail not available'); return }
+  const perms = _permissions()
+  if (UTSAndroid.checkSystemPermissionGranted(act, perms)) {
+    _adapterReady(adapter, cb)
+    return
+  }
+  UTSAndroid.requestSystemPermission(act, perms, (allRight : boolean, _granted : string[]) => {
+    if (allRight) onMain(() => { _adapterReady(adapter, cb) })
+    else onMain(() => { cb('openBluetoothAdapter:fail permission denied') })
+  }, (_doNotAskAgain : boolean, _granted : string[]) => {
+    onMain(() => { cb('openBluetoothAdapter:fail permission denied') })
+  }, true) // shallUnCheck: skip the manifest sanity check — the HBuilderX standard base declares
+           // NEARBY_WIFI_DEVICES without neverForLocation, and the check throws on that (2026-10-02)
+}
+
+export function bleClose() {
+  bleStopScan()
+  const ids : string[] = []
+  _conns.forEach((_c : Conn, id : string) => { ids.push(id) })
+  for (const id of ids) bleDisconnect(id)
+  _adapter = null
+}
+
+// ── discovery ──
+let _scanner : BluetoothLeScanner | null = null
+let _scanCallback : DeviceScanCallback | null = null
+let _onFound : BleFoundCb | null = null
+
+class DeviceScanCallback extends ScanCallback {
+  constructor() {
+    super()
+  }
+  override onScanResult(callbackType : Int, result : ScanResult) : void {
+    const device = result.getDevice()
+    let name = ''
+    const record = result.getScanRecord()
+    if (record != null) {
+      const advName = record.getDeviceName()
+      if (advName != null) name = advName
+    }
+    if (name.length == 0) {
+      try {
+        const n = device.getName()
+        if (n != null) name = n
+      } catch (e : any) {}
+    }
+    const id = device.getAddress()
+    const rssi = result.getRssi()
+    onMain(() => {
+      const f = _onFound
+      if (f != null) f(id, name, rssi)
+    })
+  }
+  override onScanFailed(errorCode : Int) : void {
+    console.log(`waven-ble scan failed ${errorCode}`)
+  }
+}
+
+export function bleOnFound(cb : BleFoundCb | null) {
+  _onFound = cb
+}
+
+export function bleStartScan(services : string[], cb : BleErrCb) {
+  const adapter = _adapter
+  if (adapter == null) { cb('startBluetoothDevicesDiscovery:fail adapter not opened'); return }
+  const scanner = adapter.getBluetoothLeScanner()
+  if (scanner == null) { cb('startBluetoothDevicesDiscovery:fail bluetooth is off'); return }
+  bleStopScan()
+  const filters = new ArrayList<ScanFilter>()
+  for (const s of services) {
+    filters.add(new ScanFilter.Builder().setServiceUuid(new ParcelUuid(toUuid(s))).build())
+  }
+  const settings = new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
+  const callback = new DeviceScanCallback()
+  try {
+    scanner.startScan(filters, settings, callback)
+  } catch (e : any) {
+    cb(`startBluetoothDevicesDiscovery:fail ${e}`)
+    return
+  }
+  _scanner = scanner
+  _scanCallback = callback
+  cb(null)
+}
+
+export function bleStopScan() {
+  const scanner = _scanner
+  const callback = _scanCallback
+  _scanner = null
+  _scanCallback = null
+  if (scanner == null || callback == null) return
+  try { scanner.stopScan(callback) } catch (e : any) {}
+}
+
+// ── connections and the GATT op queue ──
+class GattOp {
+  name : string
+  start : (gatt : BluetoothGatt) => boolean
+  done : BleErrCb
+  constructor(name : string, start : (gatt : BluetoothGatt) => boolean, done : BleErrCb) {
+    this.name = name
+    this.start = start
+    this.done = done
+  }
+}
+
+class Conn {
+  deviceId : string
+  gatt : BluetoothGatt | null = null
+  connected : boolean = false
+  servicesDiscovered : boolean = false
+  connectCb : BleErrCb | null = null
+  queue : GattOp[] = []
+  current : GattOp | null = null
+  opSeq : number = 0
+  constructor(deviceId : string) {
+    this.deviceId = deviceId
+  }
+}
+
+const _conns = new Map<string, Conn>()
+let _onValue : BleValueCb | null = null
+
+function _pump(conn : Conn) {
+  if (conn.current != null || conn.queue.length == 0) return
+  const gatt = conn.gatt
+  const op = conn.queue.shift()!
+  if (gatt == null || !conn.connected) {
+    op.done(`${op.name}:fail not connected`)
+    _pump(conn)
+    return
+  }
+  conn.current = op
+  conn.opSeq += 1
+  const seq = conn.opSeq
+  let started = false
+  try { started = op.start(gatt) } catch (e : any) { started = false }
+  if (!started) {
+    _finishOp(conn, `${op.name}:fail could not start`)
+    return
+  }
+  setTimeout(() => {
+    if (conn.current === op && conn.opSeq == seq) _finishOp(conn, `${op.name}:fail timeout`)
+  }, OP_TIMEOUT_MS)
+}
+
+function _finishOp(conn : Conn, err : string | null) {
+  const op = conn.current
+  if (op == null) return
+  conn.current = null
+  op.done(err)
+  _pump(conn)
+}
+
+function _enqueue(deviceId : string, op : GattOp) {
+  const conn = _conns.get(deviceId)
+  if (conn == null || !conn.connected) {
+    op.done(`${op.name}:fail not connected`)
+    return
+  }
+  conn.queue.push(op)
+  _pump(conn)
+}
+
+function _teardown(conn : Conn, reason : string) {
+  _conns.delete(conn.deviceId)
+  conn.connected = false
+  const pending = conn.connectCb
+  conn.connectCb = null
+  if (pending != null) pending(`createBLEConnection:fail ${reason}`)
+  const cur = conn.current
+  conn.current = null
+  if (cur != null) cur.done(`${cur.name}:fail ${reason}`)
+  for (const op of conn.queue) op.done(`${op.name}:fail ${reason}`)
+  conn.queue = []
+  const gatt = conn.gatt
+  conn.gatt = null
+  if (gatt != null) {
+    try { gatt.close() } catch (e : any) {}
+  }
+}
+
+class ConnGattCallback extends BluetoothGattCallback {
+  deviceId : string
+  constructor(deviceId : string) {
+    super()
+    this.deviceId = deviceId
+  }
+
+  override onConnectionStateChange(gatt : BluetoothGatt, status : Int, newState : Int) : void {
+    const id = this.deviceId
+    onMain(() => {
+      const conn = _conns.get(id)
+      if (conn == null) {
+        try { gatt.close() } catch (e : any) {}
+        return
+      }
+      if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
+        conn.gatt = gatt
+        conn.connected = true
+        const cb = conn.connectCb
+        conn.connectCb = null
+        if (cb != null) cb(null)
+        return
+      }
+      if (newState == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS) {
+        _teardown(conn, `status ${status}`)
+      }
+    })
+  }
+
+  override onServicesDiscovered(gatt : BluetoothGatt, status : Int) : void {
+    const id = this.deviceId
+    onMain(() => {
+      const conn = _conns.get(id)
+      if (conn == null) return
+      if (status == BluetoothGatt.GATT_SUCCESS) conn.servicesDiscovered = true
+      _finishOp(conn, status == BluetoothGatt.GATT_SUCCESS ? null : `getBLEDeviceServices:fail status ${status}`)
+    })
+  }
+
+  override onMtuChanged(gatt : BluetoothGatt, mtu : Int, status : Int) : void {
+    const id = this.deviceId
+    onMain(() => {
+      const conn = _conns.get(id)
+      if (conn == null) return
+      _finishOp(conn, status == BluetoothGatt.GATT_SUCCESS ? null : `setBLEMTU:fail status ${status}`)
+    })
+  }
+
+  override onDescriptorWrite(gatt : BluetoothGatt, descriptor : BluetoothGattDescriptor, status : Int) : void {
+    const id = this.deviceId
+    onMain(() => {
+      const conn = _conns.get(id)
+      if (conn == null) return
+      _finishOp(conn, status == BluetoothGatt.GATT_SUCCESS ? null : `notifyBLECharacteristicValueChange:fail status ${status}`)
+    })
+  }
+
+  override onCharacteristicWrite(gatt : BluetoothGatt, characteristic : BluetoothGattCharacteristic, status : Int) : void {
+    const id = this.deviceId
+    onMain(() => {
+      const conn = _conns.get(id)
+      if (conn == null) return
+      _finishOp(conn, status == BluetoothGatt.GATT_SUCCESS ? null : `writeBLECharacteristicValue:fail status ${status}`)
+    })
+  }
+
+  // The pre-Android-13 form. On 13+ the new 3-argument callback's default implementation calls
+  // this one after setting the characteristic's value, so overriding only this covers both.
+  override onCharacteristicChanged(gatt : BluetoothGatt, characteristic : BluetoothGattCharacteristic) : void {
+    const id = this.deviceId
+    const charUuid = characteristic.getUuid().toString()
+    const value = bytesToArray(characteristic.getValue())
+    onMain(() => {
+      const f = _onValue
+      if (f != null) f(id, charUuid, value)
+    })
+  }
+}
+
+export function bleConnect(deviceId : string, cb : BleErrCb) {
+  const adapter = _adapter
+  const act = UTSAndroid.getUniActivity()
+  if (adapter == null || act == null) { cb('createBLEConnection:fail adapter not opened'); return }
+  const existing = _conns.get(deviceId)
+  if (existing != null && existing.connected) { cb(null); return }
+  if (existing != null) _teardown(existing, 'reconnect')
+  let device : BluetoothDevice
+  try {
+    device = adapter.getRemoteDevice(deviceId)
+  } catch (e : any) {
+    cb(`createBLEConnection:fail ${e}`)
+    return
+  }
+  const conn = new Conn(deviceId)
+  conn.connectCb = cb
+  _conns.set(deviceId, conn)
+  const callback = new ConnGattCallback(deviceId)
+  const gatt = Build.VERSION.SDK_INT >= 23
+    ? device.connectGatt(act, false, callback, BluetoothDevice.TRANSPORT_LE)
+    : device.connectGatt(act, false, callback)
+  conn.gatt = gatt
+  setTimeout(() => {
+    if (conn.connectCb != null && _conns.get(deviceId) === conn) {
+      try { gatt?.disconnect() } catch (e : any) {}
+      _teardown(conn, 'timeout')
+    }
+  }, CONNECT_TIMEOUT_MS)
+}
+
+export function bleDisconnect(deviceId : string) {
+  const conn = _conns.get(deviceId)
+  if (conn == null) return
+  const gatt = conn.gatt
+  if (gatt != null) {
+    try { gatt.disconnect() } catch (e : any) {}
+  }
+  _teardown(conn, 'closed')
+}
+
+export function bleRequestMtu(deviceId : string, mtu : number, cb : BleErrCb) {
+  if (Build.VERSION.SDK_INT < 21) { cb('setBLEMTU:fail unsupported'); return }
+  _enqueue(deviceId, new GattOp('setBLEMTU', (gatt : BluetoothGatt) : boolean => gatt.requestMtu(mtu.toInt()), cb))
+}
+
+function _serviceUuids(gatt : BluetoothGatt) : string[] {
+  const out : string[] = []
+  const list = gatt.getServices()
+  for (let i = 0; i < list.size; i++) out.push(list.get(i.toInt()).getUuid().toString())
+  return out
+}
+
+export function bleGetServices(deviceId : string, cb : BleListCb) {
+  const conn = _conns.get(deviceId)
+  if (conn == null || !conn.connected || conn.gatt == null) { cb('getBLEDeviceServices:fail not connected', [] as string[]); return }
+  if (conn.servicesDiscovered) { cb(null, _serviceUuids(conn.gatt!)); return }
+  _enqueue(deviceId, new GattOp('getBLEDeviceServices', (gatt : BluetoothGatt) : boolean => gatt.discoverServices(), (err : string | null) => {
+    const g = conn.gatt
+    if (err != null || g == null) cb(err ?? 'getBLEDeviceServices:fail not connected', [] as string[])
+    else cb(null, _serviceUuids(g))
+  }))
+}
+
+function _findService(conn : Conn, serviceUuid : string) : BluetoothGattService | null {
+  const gatt = conn.gatt
+  if (gatt == null) return null
+  return gatt.getService(toUuid(serviceUuid))
+}
+
+function _findChar(conn : Conn, serviceUuid : string, charUuid : string) : BluetoothGattCharacteristic | null {
+  const svc = _findService(conn, serviceUuid)
+  if (svc == null) return null
+  return svc.getCharacteristic(toUuid(charUuid))
+}
+
+export function bleGetCharacteristics(deviceId : string, serviceUuid : string, cb : BleListCb) {
+  const conn = _conns.get(deviceId)
+  if (conn == null || !conn.connected) { cb('getBLEDeviceCharacteristics:fail not connected', [] as string[]); return }
+  const svc = _findService(conn, serviceUuid)
+  if (svc == null) { cb('getBLEDeviceCharacteristics:fail no service', [] as string[]); return }
+  const out : string[] = []
+  const list = svc.getCharacteristics()
+  for (let i = 0; i < list.size; i++) out.push(list.get(i.toInt()).getUuid().toString())
+  cb(null, out)
+}
+
+export function bleEnableNotify(deviceId : string, serviceUuid : string, charUuid : string, cb : BleErrCb) {
+  const conn = _conns.get(deviceId)
+  if (conn == null || !conn.connected || conn.gatt == null) { cb('notifyBLECharacteristicValueChange:fail not connected'); return }
+  const ch = _findChar(conn, serviceUuid, charUuid)
+  if (ch == null) { cb('notifyBLECharacteristicValueChange:fail no characteristic'); return }
+  if (!conn.gatt!.setCharacteristicNotification(ch, true)) { cb('notifyBLECharacteristicValueChange:fail could not enable'); return }
+  const desc = ch.getDescriptor(toUuid(CCCD))
+  if (desc == null) { cb(null); return } // notifications without a CCCD: nothing to write
+  const indicateOnly = (ch.getProperties() & BluetoothGattCharacteristic.PROPERTY_NOTIFY) == 0
+    && (ch.getProperties() & BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0
+  _enqueue(deviceId, new GattOp('notifyBLECharacteristicValueChange', (gatt : BluetoothGatt) : boolean => {
+    desc.setValue(indicateOnly ? BluetoothGattDescriptor.ENABLE_INDICATION_VALUE : BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+    return gatt.writeDescriptor(desc)
+  }, cb))
+}
+
+export function bleOnValue(cb : BleValueCb | null) {
+  _onValue = cb
+}
+
+export function bleWrite(deviceId : string, serviceUuid : string, charUuid : string, value : number[], cb : BleErrCb) {
+  const conn = _conns.get(deviceId)
+  if (conn == null || !conn.connected) { cb('writeBLECharacteristicValue:fail not connected'); return }
+  const ch = _findChar(conn, serviceUuid, charUuid)
+  if (ch == null) { cb('writeBLECharacteristicValue:fail no characteristic'); return }
+  const props = ch.getProperties()
+  const noResponse = (props & BluetoothGattCharacteristic.PROPERTY_WRITE) == 0
+    && (props & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0
+  const bytes = arrayToBytes(value)
+  _enqueue(deviceId, new GattOp('writeBLECharacteristicValue', (gatt : BluetoothGatt) : boolean => {
+    ch.setWriteType(noResponse ? BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE : BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+    ch.setValue(bytes)
+    return gatt.writeCharacteristic(ch)
+  }, cb))
+}

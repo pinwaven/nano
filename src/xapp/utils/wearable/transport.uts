@@ -1,11 +1,11 @@
 // Transport contract for the ported BLE stack. The miniapp drove wx.*Bluetooth* directly; here
 // the manager talks to a BleTransport (a bag of function fields), one adapter per platform:
 //   - WeChat mini-program (xapp-mini): transport-mp.uts, WeChat's Bluetooth API. Installed.
-//   - Android / iOS: none yet. uni-app x's built-in Bluetooth API is declared for mp-weixin
-//     only (HBuilderX 5.26), so native needs a UTS BLE plugin adapter (e.g. BLE Kit /
-//     xm-uts-ble, or a hand-written Kotlin/Swift one). Until then no connect/scan works there —
-// everything ABOVE this line (protocols, packet building, parsing in halo/v8) is pure and
-// already ported.
+//   - Android: transport-android.uts over the waven-ble UTS plugin (uni_modules/waven-ble,
+//     Android's BluetoothLeScanner/BluetoothGatt). Installed. uni-app x's own Bluetooth API is
+//     declared for mp-weixin only (HBuilderX 5.26), hence the plugin.
+//   - iOS / web: none. No connect/scan works there.
+// Everything above this layer (protocols, packet building, parsing in halo/v8) is shared.
 //
 // Byte payloads cross this boundary as number[] (0..255); the adapter converts to the
 // platform's byte array at the write/notify edges.

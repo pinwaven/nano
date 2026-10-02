@@ -1,0 +1,13 @@
+// waven-ble — a minimal BLE central for the xapp's Halo/V8 stack on Android.
+//
+// The API is shaped like the subset of wx.*Bluetooth* that utils/wearable/transport.uts needs,
+// with plain callbacks and primitive arguments so nothing crosses the plugin boundary but
+// strings, numbers and arrays. utils/wearable/transport-android.uts adapts it to BleTransport.
+//
+// Errors are strings in wx's errMsg style ('createBLEConnection:fail …'); null means success.
+// Every callback runs on the main thread.
+
+export type BleErrCb = (err : string | null) => void
+export type BleFoundCb = (deviceId : string, name : string, rssi : number) => void
+export type BleListCb = (err : string | null, uuids : string[]) => void
+export type BleValueCb = (deviceId : string, charUuid : string, value : number[]) => void

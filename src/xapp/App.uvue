@@ -9,6 +9,10 @@ import { restoreSession } from './utils/session.uts'
 import { installBleTransport } from './utils/wearable/index.uts'
 import { createMpWeixinTransport } from './utils/wearable/transport-mp.uts'
 // #endif
+// #ifdef APP-ANDROID
+import { installBleTransport } from './utils/wearable/index.uts'
+import { createAndroidTransport } from './utils/wearable/transport-android.uts'
+// #endif
 
 function _storedJSON(key : string) : UTSJSONObject | null {
   const raw = uni.getStorageSync(key)
@@ -25,9 +29,13 @@ function _storedJSON(key : string) : UTSJSONObject | null {
 
 export default {
   onLaunch() {
-    // xapp-mini: Halo/V8 over WeChat's Bluetooth API. Native has no transport yet.
+    // Halo/V8 Bluetooth: WeChat's API on xapp-mini, the waven-ble plugin on Android. iOS and
+    // web have no transport (the bind flow reports a connection failure).
     // #ifdef MP-WEIXIN
     installBleTransport(createMpWeixinTransport())
+    // #endif
+    // #ifdef APP-ANDROID
+    installBleTransport(createAndroidTransport())
     // #endif
     // A stored session is only valid against the backend that issued it — same guard as the
     // miniapp's nano_base check (live incident 2026-09-19, app.js comment).
