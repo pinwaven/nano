@@ -29,7 +29,12 @@
         </view>
         <view class="strip-canvas-wrap">
           <!-- uvue canvas uses `id` (the miniapp's legacy canvas-id does not exist here) -->
+          <!-- #ifdef MP-WEIXIN -->
+          <canvas id="strip-live" type="2d" class="strip-canvas"></canvas>
+          <!-- #endif -->
+          <!-- #ifndef MP-WEIXIN -->
           <canvas id="strip-live" class="strip-canvas"></canvas>
+          <!-- #endif -->
         </view>
         <view class="strip-meta-row">
           <text class="strip-meta">{{ tt('packets') }} {{ packetCount }}</text>
@@ -57,7 +62,12 @@
           <view class="strip-cell"><text class="strip-cell-v">{{ resDuration }}</text><text class="strip-cell-k">{{ tt('duration') }}</text></view>
         </view>
         <view class="strip-canvas-wrap" :style="'height:' + stripHeightPx + 'px;'">
+          <!-- #ifdef MP-WEIXIN -->
+          <canvas id="strip-strip" type="2d" class="strip-canvas strip-strip-canvas" :style="'height:' + stripHeightPx + 'px;'"></canvas>
+          <!-- #endif -->
+          <!-- #ifndef MP-WEIXIN -->
           <canvas id="strip-strip" class="strip-canvas strip-strip-canvas" :style="'height:' + stripHeightPx + 'px;'"></canvas>
+          <!-- #endif -->
         </view>
         <text class="strip-footnote">{{ tt('notDiagnosis') }}</text>
         <view class="strip-btn strip-btn-primary" v-on:click="handleClose()"><text class="strip-btn-text">{{ tt('done') }}</text></view>
@@ -434,6 +444,7 @@ export default {
     return {
       t: ECG_ZH as UTSJSONObject,
       stage: 'idle' as string,        // idle | connecting | measuring | saving | result | failed | loading | view
+      _mpLiveCtx: null as any | null, // xapp-mini: the live canvas's 2d context, once found
       stripHeightPx: 160 as number,   // the stacked full-strip canvas grows with the recording length
       viewWhen: '' as string,
       remaining: 35 as number,
@@ -496,6 +507,7 @@ export default {
     },
 
     _onOpenOrViewId() {
+      this._mpLiveCtx = null // the overlay's canvas is re-created when it opens
       if (!this.open) return
       const K = this._kind()
       this.stage = 'idle'
@@ -690,6 +702,28 @@ export default {
     // then getContext('2d'). The miniapp's legacy wx.createCanvasContext + ctx.draw() flush is
     // gone — uni-app x paints immediately.
     _getCtx(id : string, cb : (ctx : CanvasRenderingContext2D) => void) {
+      // #ifdef MP-WEIXIN
+      // xapp-mini: WeChat's 2d canvas (type="2d"), found inside this component through its
+      // mini-program instance; the backing store is sized to the CSS box × pixel ratio, so the
+      // drawing code keeps working in CSS px as on Android. The live trace redraws on every
+      // sample batch, so its context is kept (the full strip changes height, so it is re-found).
+      if (id == 'strip-live' && this._mpLiveCtx != null) { cb(this._mpLiveCtx as CanvasRenderingContext2D); return }
+      uni.createCanvasContextAsync({
+        id: id,
+        component: (this as any).$scope,
+        success: (cc : any) => {
+          const ctx = cc.getContext('2d')
+          const dpr = uni.getWindowInfo().pixelRatio
+          ctx.canvas.width = (cc._width as number) * dpr
+          ctx.canvas.height = (cc._height as number) * dpr
+          ctx.setTransform(1, 0, 0, 1, 0, 0)
+          ctx.scale(dpr, dpr)
+          if (id == 'strip-live') this._mpLiveCtx = ctx
+          cb(ctx as CanvasRenderingContext2D)
+        },
+      } as any)
+      return
+      // #endif
       const el = uni.getElementById(id)
       if (el == null) return
       const ctx = (el as UniCanvasElement).getContext('2d')
@@ -1138,4 +1172,16 @@ export default {
   text-align: center;
   color: #EAF2FB;
 }
+
+/* #ifdef MP-WEIXIN */
+/* xapp-mini: the miniapp's strip-record.wxss colours and sheet — teal accent (#1fb7a6) where the
+   native port uses its blue, the #0f2540 sheet, 92vh cap. */
+.strip-sheet { background-color: #0f2540; max-height: 92vh; border-top-left-radius: 16px; border-top-right-radius: 16px; padding: 14px 16px 24px 16px; }
+.strip-btn-primary { background-color: #1fb7a6; }
+.strip-btn-primary .strip-btn-text { color: #04141a; }
+.strip-btn-ghost .strip-btn-text { font-weight: 500; }
+.strip-btn-danger .strip-btn-text { color: #e0565b; }
+.strip-bpm { color: #1fb7a6; }
+.strip-countdown { color: #1fb7a6; }
+/* #endif */
 </style>
