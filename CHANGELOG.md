@@ -10,6 +10,12 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **xapp-mini: charts, ECG recorder, avatar picker and light theme as in the miniapp (not deployed)** · 2026-10-03: compared screen by screen with the miniapp in WeChat DevTools. Android and web are unchanged. xapp VERSION `1002-48`.
+  - **Charts** are drawn on WeChat's canvas from the miniapp's own drawing code (`utils/mp-chart.uts`): the metric, blood-pressure, sub-age and lab charts and the BioAge chart, in the miniapp's bottom sheet. The health page's trend tiles, sleep-chart axis and ECG summary now lay out like the miniapp's.
+  - **ECG / pulse-wave recorder** draws its waveforms on WeChat's canvas, in the miniapp's colours.
+  - **Avatar picker** is the miniapp's, with custom-photo avatars (upload, generate, preview, apply). Opening it is checked; the upload needs a phone.
+  - **Light theme:** the miniapp's light-theme rules for the main page and health tab, plus overrides where the earlier style pass left dark-theme colours.
+
 - **xapp-mini has the miniapp's WeChat features (not deployed)** · 2026-10-03: the mini build gets back the WeChat-only features the native port had left out. Android and web are unchanged. xapp VERSION `1002-38`.
   - **Privacy consent**, which review needs: WeChat's privacy check is on, and the main and coach pages show the miniapp's 隐私保护提示 modal. Checked in DevTools: agreeing records consent.
   - **The miniapp's `app.json` settings** in `manifest.json` (`mp-weixin`): the address declaration, background audio, the WechatSI plugin and the permission texts.
