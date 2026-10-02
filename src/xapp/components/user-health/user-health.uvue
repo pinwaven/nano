@@ -54,13 +54,11 @@
           </view>
         </view>
 
-        <!-- avatar-picker: the xapp port is gallery-only (visible + select/close); the
-             miniapp also passes selected-id/lang/theme/allow-upload/user-id/custom-moods and
-             binds customapplied. -->
-        <!-- TODO(port): custom-avatar upload flow (§20) lives in the miniapp avatar-picker;
-             the xapp component renders the gallery only. onCustomAvatarApplied is kept wired
-             for when it lands. -->
-        <avatar-picker :visible="avatarPickerVisible" v-on:select="onAvatarSelect" v-on:close="onAvatarPickerClose" />
+        <!-- avatar-picker: on xapp-mini the miniapp's whole picker, custom-photo flow included
+             (§20); Android and web render the gallery only and ignore the extra props. -->
+        <avatar-picker :visible="avatarPickerVisible" :selectedId="avatarCharacterOf()" :lang="isZh ? 'zh' : 'en'"
+          :theme="theme" :allowUpload="mode == 'self'" :userId="userId" :customMoods="avatarMoodsOf()"
+          v-on:select="onAvatarSelect" v-on:close="onAvatarPickerClose" v-on:customapplied="onCustomAvatarApplied" />
 
         <!-- Edit form -->
         <view v-if="(mode == 'self' || mode == 'coach') && editing" class="health-section">
@@ -5253,6 +5251,15 @@ export default {
 
     // The picker already applied a generated set server-side; the page only needs to refresh
     // its copy of the user so avatar_character/avatar_moods resolve from here on.
+    avatarCharacterOf() : string {
+      const u = this.user as UTSJSONObject | null
+      return u != null ? (u!.getString('avatar_character') ?? '') : ''
+    },
+    avatarMoodsOf() : UTSJSONObject | null {
+      const u = this.user as UTSJSONObject | null
+      return u != null ? u!.getJSON('avatar_moods') : null
+    },
+
     onCustomAvatarApplied(detail : UTSJSONObject | null) {
       this.avatarPickerVisible = false
       this.$emit('customavatar', detail ?? ({ } as UTSJSONObject))

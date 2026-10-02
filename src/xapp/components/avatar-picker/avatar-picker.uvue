@@ -1,4 +1,67 @@
 <template>
+  <!-- #ifdef MP-WEIXIN -->
+  <!-- xapp-mini: the miniapp's avatar-picker (markup, stylesheet and the custom-photo flow). -->
+  <view v-if="visible" class="ap-overlay" :class="theme == 'light' ? 'theme-light' : ''" v-on:click="onBackdropTap">
+    <view class="ap-sheet" v-on:click.stop="noop">
+      <view class="ap-header">
+        <text class="ap-title">{{ tr('title') }}</text>
+        <view class="ap-close" v-on:click="onBackdropTap"><text class="ap-close-icon">✕</text></view>
+      </view>
+
+      <view v-if="phase == 'uploading' || phase == 'generating'" class="ap-panel">
+        <view class="ap-panel-row">
+          <view class="ap-spinner"></view>
+          <text class="ap-panel-text">{{ phase == 'uploading' ? tr('uploading') : tr('generating') }}</text>
+        </view>
+        <text class="ap-panel-privacy">{{ tr('privacy') }}</text>
+        <view v-if="phase == 'generating'" class="ap-panel-actions">
+          <view class="ap-btn ap-btn-ghost" v-on:click="onClosePanel"><text>{{ tr('ok') }}</text></view>
+        </view>
+      </view>
+      <view v-else-if="phase == 'preview'" class="ap-panel">
+        <text class="ap-panel-title">{{ tr('previewTitle') }}</text>
+        <view class="ap-preview-row">
+          <view v-for="(item, i) in preview" :key="i" class="ap-preview-item">
+            <image class="ap-preview-img" :src="item.getString('url') ?? ''" mode="aspectFill" />
+            <text class="ap-preview-label">{{ item.getString('label') }}</text>
+          </view>
+        </view>
+        <text class="ap-panel-hint">{{ tr('previewHint') }}</text>
+        <view class="ap-panel-actions">
+          <view class="ap-btn ap-btn-ghost" :class="busy ? 'ap-btn-disabled' : ''" v-on:click="onRegenerate"><text>{{ tr('regenerate') }}</text></view>
+          <view class="ap-btn ap-btn-primary" :class="busy ? 'ap-btn-disabled' : ''" v-on:click="onApply"><text>{{ tr('use') }}</text></view>
+        </view>
+      </view>
+      <view v-else-if="phase == 'error'" class="ap-panel">
+        <text class="ap-panel-text ap-panel-error">{{ errorText }}</text>
+        <view class="ap-panel-actions">
+          <view class="ap-btn ap-btn-ghost" v-on:click="onClosePanel"><text>✕</text></view>
+          <view class="ap-btn ap-btn-primary" v-on:click="onRegenerate"><text>{{ tr('tryAgain') }}</text></view>
+        </view>
+      </view>
+
+      <scroll-view class="ap-grid-scroll" direction="vertical">
+        <view class="ap-grid">
+          <view v-if="allowUpload" class="ap-item ap-item-custom"
+                :class="[selectedId == 'custom' ? 'ap-item-selected' : '', customThumb.length > 0 ? '' : 'ap-item-custom-empty']"
+                v-on:click="onCustomTap">
+            <image v-if="customThumb.length > 0" class="ap-item-img" :src="customThumb" mode="aspectFill" />
+            <view v-else class="ap-item-custom-inner">
+              <text class="ap-item-custom-icon">📷</text>
+              <text class="ap-item-custom-text">{{ tr('myPhoto') }}</text>
+            </view>
+            <view v-if="customThumb.length > 0" class="ap-item-custom-badge"><text>📷</text></view>
+          </view>
+          <view v-for="(a, i) in avatars" :key="i" class="ap-item" :class="a.id == selectedId ? 'ap-item-selected' : ''" v-on:click="onPick(a.id)">
+            <image class="ap-item-img" :src="a.thumb" mode="aspectFill" />
+          </view>
+        </view>
+        <text v-if="allowUpload && customThumb.length == 0 && phase == 'idle'" class="ap-grid-hint">{{ tr('myPhotoHint') }} · {{ tr('privacy') }}</text>
+      </scroll-view>
+    </view>
+  </view>
+  <!-- #endif -->
+  <!-- #ifndef MP-WEIXIN -->
   <view v-if="visible" class="picker-backdrop">
     <view class="picker-sheet">
       <text class="picker-title">选择头像</text>
@@ -13,41 +76,462 @@
       <view class="picker-cancel" v-on:click="onCancel"><text class="picker-cancel-text">取消</text></view>
     </view>
   </view>
+  <!-- #endif -->
 </template>
 
 <script>
-// Gallery-only port of components/avatar-picker. The miniapp component also owns the
-// custom-photo upload → Qwen-Image 4-mood generation flow (§20); that rides the async chat
-// event and comes with the main-page phase — for the first-run signup step the gallery is
-// the whole feature. emits: select {avatarId}, close.
+// Avatar picker. Android/web: the gallery-only port (select / close). xapp-mini: the miniapp's
+// components/avatar-picker as a whole, including "use my photo" for the self view — pick → crop →
+// upload to a presigned URL → poll the generation → preview the four moods → apply
+// (docs/architecture/avatar-gallery.md §6). Emits select {avatarId}, close, and on xapp-mini
+// customapplied {avatar_url, avatar_character:'custom', avatar_moods}.
 
 import { AVATAR_GALLERY, AvatarEntry } from '../../utils/avatar-gallery.uts'
+import { BASE } from '../../utils/config.uts'
+import { getBody, postBody } from '../../utils/request.uts'
+
+const POLL_MS = 5000
+const MAX_UPLOAD_BYTES = 6 * 1024 * 1024
+const PREVIEW_ORDER : string[] = ['restored', 'relaxed', 'engaged', 'stressed']
+
+const T_ZH : UTSJSONObject = {
+  title: '选择头像',
+  myPhoto: '我的照片',
+  myPhotoHint: '用你的照片生成专属头像',
+  uploading: '正在上传照片…',
+  generating: '正在生成你的专属头像，约 1–2 分钟。可以先关闭，稍后回来查看。',
+  previewTitle: '你的专属头像',
+  previewHint: '四种状态会随你的手环数据自动切换',
+  use: '使用',
+  ok: '好的',
+  regenerate: '重新生成',
+  tryAgain: '换一张照片',
+  privacy: '原始照片仅用于生成，生成后立即删除。',
+  moodRestored: '恢复',
+  moodRelaxed: '放松',
+  moodEngaged: '活力',
+  moodStressed: '压力',
+  err_no_face: '没有检测到清晰的人脸，请换一张正面照片。',
+  err_multiple_faces: '照片里有多个人，请换一张只有你自己的照片。',
+  err_not_a_photo: '请上传一张真实的本人照片。',
+  err_not_frontal: '请换一张正面、面向镜头的照片。',
+  err_gen_failed: '生成失败了，请稍后再试。',
+  err_store_failed: '保存失败了，请稍后再试。',
+  err_daily_limit: '今天的生成次数已用完，明天再来试试。',
+  err_in_progress: '上一次生成还在进行中，请稍候。',
+  err_too_large: '照片太大了，请换一张。',
+  err_upload: '上传失败，请重试。',
+  err_apply: '设置失败，请重试。',
+} as UTSJSONObject
+const T_EN : UTSJSONObject = {
+  title: 'Choose an Avatar',
+  myPhoto: 'My photo',
+  myPhotoHint: 'Generate a personal avatar from your photo',
+  uploading: 'Uploading photo…',
+  generating: 'Generating your avatar — about 1–2 minutes. You can close this and come back.',
+  previewTitle: 'Your avatar',
+  previewHint: 'The four moods follow your wearable data',
+  use: 'Use it',
+  ok: 'OK',
+  regenerate: 'Regenerate',
+  tryAgain: 'Try another photo',
+  privacy: 'Your photo is only used for generation and deleted right after.',
+  moodRestored: 'Restored',
+  moodRelaxed: 'Relaxed',
+  moodEngaged: 'Engaged',
+  moodStressed: 'Stressed',
+  err_no_face: 'No clear face found — try a front-facing photo.',
+  err_multiple_faces: 'More than one person in the photo — use one with only you.',
+  err_not_a_photo: 'Please upload a real photo of yourself.',
+  err_not_frontal: 'Please use a photo facing the camera.',
+  err_gen_failed: 'Generation failed, please try again later.',
+  err_store_failed: 'Saving failed, please try again later.',
+  err_daily_limit: 'Daily limit reached — try again tomorrow.',
+  err_in_progress: 'The previous generation is still running.',
+  err_too_large: 'Photo is too large, please pick another.',
+  err_upload: 'Upload failed, please retry.',
+  err_apply: 'Could not apply, please retry.',
+} as UTSJSONObject
 
 export default {
   name: 'AvatarPicker',
   props: {
-    visible: {
-      type: Boolean,
-      default: false
-    }
+    visible: { type: Boolean, default: false },
+    selectedId: { type: String, default: '' },
+    lang: { type: String, default: 'zh' },
+    theme: { type: String, default: 'dark' },
+    // Self view only — a coach never generates for a client.
+    allowUpload: { type: Boolean, default: false },
+    userId: { type: String, default: '' },
+    // users.avatar_moods of the current user — renders the applied custom tile.
+    customMoods: { type: Object, default: null },
   },
   data() {
     return {
-      avatars: AVATAR_GALLERY as AvatarEntry[]
+      avatars: AVATAR_GALLERY as AvatarEntry[],
+      // phase: 'idle' | 'uploading' | 'generating' | 'preview' | 'error'
+      phase: 'idle',
+      gen: null as UTSJSONObject | null,   // latest generation row from the server
+      preview: [] as UTSJSONObject[],      // {mood, label, url} in PREVIEW_ORDER
+      errorText: '',
+      busy: false,
+      customThumb: '',
+      _pollTimer: 0,
     }
   },
+  watch: {
+    visible(v : boolean) {
+      if (v) this._onShow()
+      else this._stopPolling()
+    },
+    customMoods() { this._refreshCustomThumb() },
+  },
+  unmounted() { this._stopPolling() },
   methods: {
+    tr(k : string) : string {
+      const v = (this.lang == 'en' ? T_EN : T_ZH).getString(k)
+      return v != null ? v : k
+    },
+    noop() {},
     onPick(avatarId : string) {
       this.$emit('select', { avatarId: avatarId } as UTSJSONObject)
     },
-    onCancel() {
-      this.$emit('close')
-    }
+    onCancel() { this.$emit('close') },
+    onBackdropTap() { this.$emit('close') },
+
+    // ---- custom flow (xapp-mini) ---------------------------------------------------------------
+    _moodsOf(o : UTSJSONObject | null) : UTSJSONObject | null { return o != null ? o!.getJSON('moods') : null },
+    _onShow() {
+      if (!this.allowUpload || this.userId.length == 0) return
+      this._refreshCustomThumb()
+      this._fetchLatest()
+    },
+    _refreshCustomThumb() {
+      const moods = this.customMoods as UTSJSONObject | null
+      const applied = moods != null ? (moods!.getString('thumb') ?? moods!.getString('relaxed')) : null
+      const gen = this.gen
+      const gm = this._moodsOf(gen)
+      const latest = gen != null && gen!.getString('status') == 'done' && gm != null ? (gm!.getString('thumb') ?? gm!.getString('relaxed')) : null
+      this.customThumb = applied != null ? applied! : (latest != null ? latest! : '')
+    },
+    // An existing result opens the preview; a running one shows progress; otherwise pick a photo.
+    onCustomTap() {
+      if (this.busy) return
+      const gen = this.gen
+      const st = gen != null ? (gen!.getString('status') ?? '') : ''
+      if (st == 'pending' || st == 'running') { this.phase = 'generating'; return }
+      if (st == 'done' && this._moodsOf(gen) != null) { this._showPreview(gen!); return }
+      this.onPickPhoto()
+    },
+    onPickPhoto() {
+      if (this.busy) return
+      // #ifdef MP-WEIXIN
+      wx.chooseMedia({
+        count: 1, mediaType: ['image'], sourceType: ['album', 'camera'], sizeType: ['compressed'],
+        success: (res : any) => {
+          const files = res.tempFiles as any[]
+          if (files == null || files.length == 0 || files[0].tempFilePath == null) return
+          this._cropThenUpload(`${files[0].tempFilePath}`)
+        },
+        fail: (err : any) => {
+          // A cancel is not an error; a scope refusal is the appid's privacy guide.
+          const msg = err != null && err.errMsg != null ? `${err.errMsg}` : ''
+          if (/cancel/i.test(msg)) return
+          console.log(JSON.stringify({ level: 'WARN', msg: 'avatar chooseMedia failed', data: { errMsg: msg } }))
+          this._showError('err_upload')
+        },
+      } as any)
+      // #endif
+    },
+    // Square crop when the base library offers it (2.26+); the generator centres on the face anyway.
+    _cropThenUpload(tempPath : string) {
+      // #ifdef MP-WEIXIN
+      if (wx.cropImage != null) {
+        wx.cropImage({
+          src: tempPath, cropScale: '1:1',
+          success: (r : any) => { this._upload(r.tempFilePath != null ? `${r.tempFilePath}` : tempPath) },
+          fail: (err : any) => {
+            if (/cancel/i.test(err != null && err.errMsg != null ? `${err.errMsg}` : '')) return
+            this._upload(tempPath)
+          },
+        } as any)
+        return
+      }
+      this._upload(tempPath)
+      // #endif
+    },
+    async _upload(tempPath : string) {
+      // #ifdef MP-WEIXIN
+      const openid = this.userId
+      this.phase = 'uploading'; this.busy = true; this.errorText = ''
+      try {
+        const pre = await postBody(`${BASE}/api/avatar-generation/presign`, { openid: openid } as UTSJSONObject)
+        if (pre == null || pre!.getBoolean('success') != true) throw new Error('presign')
+        const key = pre!.getString('key') ?? ''
+        const putUrl = pre!.getString('put_url') ?? ''
+        const putType = pre!.getString('put_content_type') ?? 'image/jpeg'
+        const fs = wx.getFileSystemManager()
+        const bytes : any = fs.readFileSync(tempPath)
+        // Release the temp file now that the bytes are in memory.
+        fs.unlink({ filePath: tempPath, fail: () => {} } as any)
+        if ((bytes.byteLength as number) > MAX_UPLOAD_BYTES) { this._showError('err_too_large'); return }
+        const code = await new Promise<number>((resolve, reject) => {
+          wx.request({
+            url: putUrl, method: 'PUT', data: bytes, header: { 'Content-Type': putType }, responseType: 'text',
+            success: (r : any) => { resolve(r.statusCode as number) }, fail: (e : any) => { reject(e) },
+          } as any)
+        })
+        if (code < 200 || code >= 300) throw new Error(`put ${code}`)
+        const body = await postBody(`${BASE}/api/avatar-generation`, { openid: openid, oss_key: key } as UTSJSONObject)
+        if (body == null || (body!.getBoolean('success') != true && body!.getBoolean('processing') != true)) {
+          const reason = body != null ? body!.getString('reason') : null
+          this._showError(reason != null ? `err_${reason}` : 'err_gen_failed')
+          return
+        }
+        const gen = body!.getJSON('generation')
+        this.gen = gen
+        const st = gen != null ? (gen!.getString('status') ?? '') : ''
+        if (st == 'done') this._showPreview(gen!)
+        else if (st == 'rejected' || st == 'failed') this._showError(`err_${gen!.getString('error_code') ?? 'gen_failed'}`)
+        else { this.phase = 'generating'; this.busy = false; this._startPolling() }
+      } catch (e : any) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'avatar upload failed', data: { error: `${e}` } }))
+        this._showError('err_upload')
+      }
+      // #endif
+    },
+    async _fetchLatest() {
+      const res = await getBody(`${BASE}/api/avatar-generation?openid=${encodeURIComponent(this.userId)}`)
+      if (res == null) return // transient — the next tick retries
+      const gen = res!.getJSON('generation')
+      this.gen = gen
+      this._refreshCustomThumb()
+      const st = gen != null ? (gen!.getString('status') ?? '') : ''
+      if (st == 'pending' || st == 'running') {
+        if (this.phase == 'idle') this.phase = 'generating'
+        this._startPolling()
+      } else if (gen != null && this.phase == 'generating') {
+        // A poll just saw the job finish.
+        this._stopPolling()
+        if (st == 'done' && this._moodsOf(gen) != null) this._showPreview(gen!)
+        else this._showError(`err_${gen!.getString('error_code') ?? 'gen_failed'}`)
+      } else {
+        this._stopPolling()
+      }
+    },
+    _startPolling() {
+      if (this._pollTimer != 0) return
+      this._pollTimer = setInterval(() => { this._fetchLatest() }, POLL_MS)
+    },
+    _stopPolling() {
+      if (this._pollTimer != 0) { clearInterval(this._pollTimer); this._pollTimer = 0 }
+    },
+    _showPreview(gen : UTSJSONObject) {
+      const moods = this._moodsOf(gen)
+      const labels : UTSJSONObject = { restored: this.tr('moodRestored'), relaxed: this.tr('moodRelaxed'), engaged: this.tr('moodEngaged'), stressed: this.tr('moodStressed') }
+      const out : UTSJSONObject[] = []
+      for (const m of PREVIEW_ORDER) {
+        const url = moods != null ? moods!.getString(m) : null
+        if (url != null) out.push({ mood: m, label: labels.getString(m) ?? m, url: url } as UTSJSONObject)
+      }
+      this.phase = 'preview'; this.preview = out; this.gen = gen; this.busy = false; this.errorText = ''
+      this._refreshCustomThumb()
+    },
+    _showError(code : string) {
+      this.phase = 'error'
+      const v = (this.lang == 'en' ? T_EN : T_ZH).getString(code)
+      this.errorText = v != null ? v : this.tr('err_gen_failed')
+      this.busy = false
+    },
+    onClosePanel() { this.phase = 'idle'; this.errorText = '' },
+    onRegenerate() { this.phase = 'idle'; this.onPickPhoto() },
+    async onApply() {
+      const gen = this.gen
+      if (gen == null || gen!.getString('status') != 'done' || this.busy) return
+      this.busy = true
+      const body = await postBody(`${BASE}/api/avatar-generation/apply`, { openid: this.userId, gen_id: gen!.get('gen_id') } as UTSJSONObject)
+      if (body == null || body!.getBoolean('success') != true) { this._showError('err_apply'); return }
+      this.phase = 'idle'; this.busy = false
+      this.$emit('customapplied', { avatar_url: body!.getString('avatar_url'), avatar_character: 'custom', avatar_moods: body!.getJSON('avatar_moods') } as UTSJSONObject)
+    },
   }
 }
 </script>
 
 <style>
+/* #ifdef MP-WEIXIN */
+/* xapp-mini: the miniapp's components/avatar-picker/avatar-picker.wxss verbatim, after a reset of
+   uvue's flex-column views for this component's own classes (browser defaults, as the miniapp's
+   stylesheet assumes). */
+.ap-btn, .ap-btn-ghost, .ap-btn-primary, .ap-close, .ap-grid, .ap-grid-scroll, .ap-header, .ap-item, .ap-item-custom, .ap-item-custom-badge, .ap-item-custom-inner, .ap-overlay, .ap-panel, .ap-panel-actions, .ap-panel-row, .ap-preview-item, .ap-preview-row, .ap-sheet, .ap-spinner { display: block; position: static; flex-direction: row; flex-shrink: 1; align-items: normal; align-content: normal; justify-content: normal; min-height: auto; min-width: auto; }
+.ap-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 999;
+}
+
+.ap-sheet {
+  width: 100%;
+  max-height: 80vh;
+  background: #1a1a2e;
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 40rpx 32rpx 56rpx;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.ap-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 32rpx;
+}
+
+.ap-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #EEF2FF;
+}
+
+.ap-close {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ap-close-icon {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.ap-grid-scroll {
+  max-height: 68vh;
+}
+
+.ap-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24rpx;
+  padding-bottom: 16rpx;
+}
+
+.ap-item {
+  position: relative;
+  width: 100%;
+  height: 0;
+  padding-bottom: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 3rpx solid transparent;
+  box-sizing: border-box;
+}
+
+.ap-item-selected {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4rpx rgba(var(--blue-rgb), 0.25);
+}
+
+.ap-item-img {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+/* light theme */
+.theme-light .ap-sheet { background: #f8f9ff; }
+.theme-light .ap-title { color: #1a2744; }
+.theme-light .ap-close { background: rgba(0, 0, 0, 0.06); }
+.theme-light .ap-close-icon { color: #72706E; }
+
+/* ---- custom avatar (upload a photo) ---- */
+.ap-item-custom-empty {
+  border: 3rpx dashed rgba(255, 255, 255, 0.35);
+}
+.ap-item-custom-inner {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4rpx;
+}
+.ap-item-custom-icon { font-size: 40rpx; line-height: 1; }
+.ap-item-custom-text { font-size: 20rpx; color: rgba(255, 255, 255, 0.7); }
+.ap-item-custom-badge {
+  position: absolute;
+  right: 0; bottom: 0;
+  width: 40rpx; height: 40rpx;
+  border-radius: 50%;
+  background: var(--blue);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22rpx;
+}
+.ap-grid-hint {
+  display: block;
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.45);
+  padding: 8rpx 4rpx 16rpx;
+}
+
+.ap-panel {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 20rpx;
+  padding: 24rpx;
+  margin-bottom: 24rpx;
+  display: flex; flex-direction: column; gap: 16rpx;
+}
+.ap-panel-row { display: flex; align-items: center; gap: 16rpx; }
+.ap-panel-title { font-size: 28rpx; font-weight: 600; color: #EEF2FF; }
+.ap-panel-text { font-size: 26rpx; color: rgba(255, 255, 255, 0.85); line-height: 1.5; flex: 1; }
+.ap-panel-error { color: #ff8a80; }
+.ap-panel-hint, .ap-panel-privacy { font-size: 22rpx; color: rgba(255, 255, 255, 0.45); line-height: 1.5; }
+.ap-panel-actions { display: flex; justify-content: flex-end; gap: 16rpx; margin-top: 4rpx; }
+.ap-btn {
+  padding: 14rpx 32rpx;
+  border-radius: 999rpx;
+  font-size: 26rpx;
+  display: flex; align-items: center; justify-content: center;
+}
+.ap-btn-ghost { background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.85); }
+.ap-btn-primary { background: var(--blue); color: #fff; font-weight: 600; }
+.ap-btn-disabled { opacity: 0.5; }
+
+.ap-spinner {
+  width: 36rpx; height: 36rpx; flex-shrink: 0;
+  border: 4rpx solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: ap-spin 0.9s linear infinite;
+}
+@keyframes ap-spin { to { transform: rotate(360deg); } }
+
+.ap-preview-row { display: flex; gap: 12rpx; }
+.ap-preview-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8rpx; }
+.ap-preview-img { width: 100%; aspect-ratio: 1; border-radius: 50%; }
+.ap-preview-label { font-size: 22rpx; color: rgba(255, 255, 255, 0.7); }
+
+.theme-light .ap-item-custom-empty { border-color: rgba(0, 0, 0, 0.25); }
+.theme-light .ap-item-custom-text { color: #4a5568; }
+.theme-light .ap-grid-hint { color: #72706E; }
+.theme-light .ap-panel { background: rgba(0, 0, 0, 0.04); }
+.theme-light .ap-panel-title { color: #1a2744; }
+.theme-light .ap-panel-text { color: #1a2744; }
+.theme-light .ap-panel-error { color: #c62828; }
+.theme-light .ap-panel-hint, .theme-light .ap-panel-privacy { color: #72706E; }
+.theme-light .ap-btn-ghost { background: rgba(0, 0, 0, 0.06); color: #1a2744; }
+.theme-light .ap-spinner { border-color: rgba(0, 0, 0, 0.12); border-top-color: var(--blue); }
+.theme-light .ap-preview-label { color: #4a5568; }
+/* #endif */
+/* #ifndef MP-WEIXIN */
 .picker-backdrop {
   /* uvue makes every view position:relative, so later siblings in the health scroll would paint
      over this fixed layer without an explicit stacking order. */
@@ -106,4 +590,5 @@ export default {
   color: #A6C4E5;
   font-size: 14px;
 }
+/* #endif */
 </style>
