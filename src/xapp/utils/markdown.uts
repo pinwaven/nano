@@ -411,10 +411,21 @@ function _parseBlocks(lines : string[]) : string[] {
 // The miniapp bound MD_TAG_STYLE through mp-html's `tag-style`; uni-app x rich-text has no such
 // prop, so the map must arrive as inline styles on each tag. Callers wrap their :nodes bindings
 // with this (page-side, so mdToHtml/mdToSegments stay byte-identical to the miniapp).
+// <rich-text> takes inline styles as written and has no rpx unit (the miniapp's mp-html converts
+// them), so a `margin:0 0 20rpx` paragraph gap silently became 0 — rpx → px at this screen's scale.
+let _rpxScale = 0
+function _rpxToPx(st : string) : string {
+  if (_rpxScale == 0) _rpxScale = uni.getWindowInfo().windowWidth / 750
+  return st.replace(/(-?[\d.]+)rpx/g, (_m : string, n : string, _off : number, _src : string) : string => {
+    return `${Math.round(parseFloat(n) * _rpxScale * 10) / 10}px`
+  })
+}
+
 export function inlineTagStyles(html : string) : string {
   return html.replace(/<([a-z][a-z0-9]*)([^>]*)>/gi, (m : string, tag : string, attrs : string, _off : number, _src : string) : string => {
-    const st = MD_TAG_STYLE.get(tag.toLowerCase())
-    if (st == null) return m
+    const raw = MD_TAG_STYLE.get(tag.toLowerCase())
+    if (raw == null) return m
+    const st = _rpxToPx(raw)
     if (/\sstyle="/i.test(attrs)) {
       return '<' + tag + attrs.replace(/\sstyle="/i, ' style="' + st + ';') + '>'
     }
