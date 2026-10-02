@@ -102,16 +102,16 @@
 //   properties → props: kind, open, userId, brand, deviceId, deviceName, lang, theme, viewId,
 //             coachId, readOnly (same names/defaults).
 //   events:   'close' (no detail), 'deleted' {id, kind}, 'saved' {kind, ecg|ppg: row}.
-// Deviations (trial port): BLE transport not yet installed (utils/wearable/transport.uts gap —
-// createWearable gets a default BleTransport whose methods reject with 'BLE transport not
-// installed', which lands in the same failBle branch as a real connect failure); canvas drawing
+// Deviations (trial port): BLE runs over the installed transport, which only xapp-mini has so far
+// (utils/wearable/transport-mp.uts); elsewhere a default BleTransport rejects with 'BLE transport
+// not installed', which lands in the same failBle branch as a real connect failure; canvas drawing
 // marked TODO(port); the per-request 20s timeout of the miniapp's own _req is not carried (the
 // shared request.uts helpers do not expose one).
 
 import { BASE } from '../../utils/config.uts'
 import { getBody, postBody, deleteBody } from '../../utils/request.uts'
 import { tr } from '../../utils/i18n.uts'
-import { createWearable } from '../../utils/wearable/index.uts'
+import { createWearable, getInstalledBleTransport } from '../../utils/wearable/index.uts'
 import { BleTransport } from '../../utils/wearable/transport.uts'
 import { HaloRing, PpgPacketRecord, RecordPpgOpts } from '../../utils/wearable/halo/index.uts'
 import { V8Band, V8StreamPacket, V8RecordOpts } from '../../utils/wearable/v8/index.uts'
@@ -545,9 +545,10 @@ export default {
       this.remaining = K.durationSec
       this.result = null
 
-      // Deviation: until a UTS BLE plugin adapter is installed (xapp README gap), this default
-      // transport rejects with 'BLE transport not installed' → the failBle branch below.
-      const ring = createWearable(brand, new BleTransport())
+      // The installed transport (xapp-mini: WeChat's). Where none is installed (native, web), a
+      // default one rejects with 'BLE transport not installed' → the failBle branch below.
+      const installed = getInstalledBleTransport()
+      const ring = createWearable(brand, installed != null ? installed! : new BleTransport())
       this._ring = ring
       this._ringBrand = brand
       try {

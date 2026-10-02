@@ -3,8 +3,8 @@
 // they stay maintained only in the miniapp for users already bound there.
 // 'x3' remains accepted as the legacy alias for 'halo' (pre-rename storage/server values).
 //
-// uni-app x has no built-in BLE APIs (see transport.uts): the app installs a BleTransport
-// (a UTS BLE plugin adapter) once at startup via installBleTransport(); createWearable then
+// The app installs its platform's BleTransport (see transport.uts; xapp-mini: App.uvue →
+// transport-mp.uts) once at startup via installBleTransport(); createWearable then
 // falls back to it when no transport is passed explicitly.
 
 import { BleTransport } from './transport.uts'
