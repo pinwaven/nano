@@ -164,6 +164,7 @@ export default {
       _refCode: '',
       _channelSlug: '',
       _pendingNewUser: null as UTSJSONObject | null,
+      _netErr: '', // errMsg of the last failed _postReq (e.g. a domain not on the appid's request list)
     }
   },
   computed: {
@@ -324,8 +325,9 @@ export default {
       this.phoneError = ''
       const res = await this._postReq(`${BASE}/api/phone-otp/send`, { phone: phone } as UTSJSONObject)
       this.phoneLoading = false
-      if (res == null || res.getBoolean('success') != true) {
-        this.phoneError = '验证码发送失败，请重试'
+      if (res == null) { this.phoneError = this._networkError(); return }
+      if (res.getBoolean('success') != true) {
+        this.phoneError = res.getString('error') == 'rate_limited' ? '发送过于频繁，请稍后再试' : '验证码发送失败，请重试'
         return
       }
       this.phoneStep = 'code'
@@ -351,7 +353,7 @@ export default {
       // #endif
       const res = await this._postReq(`${BASE}/api/phone-otp/verify`, body)
       this.phoneLoading = false
-      if (res == null) { this.phoneError = '网络错误，请重试'; return }
+      if (res == null) { this.phoneError = this._networkError(); return }
       if (res.getBoolean('success') != true) {
         const err = res.getString('error')
         this.phoneError = err == 'invalid_code' ? '验证码不正确'
@@ -377,8 +379,9 @@ export default {
         email: email, language: state.lang,
       } as UTSJSONObject)
       this.phoneLoading = false
-      if (res == null || res.getBoolean('success') != true) {
-        const err = res == null ? '' : res.getString('error')
+      if (res == null) { this.phoneError = this._networkError(); return }
+      if (res.getBoolean('success') != true) {
+        const err = res.getString('error')
         this.phoneError = err == 'rate_limited' ? '发送过于频繁，请稍后再试'
           : err == 'invalid_email' ? '请输入正确的邮箱地址'
           : '验证码发送失败，请重试'
@@ -398,7 +401,7 @@ export default {
         email: this.email, code: code, language: state.lang,
       } as UTSJSONObject)
       this.phoneLoading = false
-      if (res == null) { this.phoneError = '网络错误，请重试'; return }
+      if (res == null) { this.phoneError = this._networkError(); return }
       if (res.getBoolean('success') != true) {
         const err = res.getString('error')
         this.phoneError = err == 'invalid_code' ? '验证码不正确'
@@ -537,7 +540,7 @@ export default {
       try {
         const code = await this._getWxCode()
         const res = await this._callWxLogin(code)
-        if (res == null) throw new Error('网络错误，请重试')
+        if (res == null) throw new Error(this._networkError())
         // Unknown WeChat user, nothing deliberate about the visit → browse as a guest.
         // Not persisted: every launch asks /wx-login again, as the miniapp does.
         if (res.getBoolean('guest') == true) {
@@ -639,10 +642,16 @@ export default {
             'Authorization': `Bearer ${state.apiToken}`
           } as UTSJSONObject,
           data: body,
-          success: (res) => { resolve(res.data) },
-          fail: (err) => { resolve(null) },
+          success: (res) => { this._netErr = ''; resolve(res.data) },
+          fail: (err) => { this._netErr = err.errMsg; resolve(null) },
         })
       })
+    },
+
+    // The miniapp's "网络错误" for a request that never got an answer; a develop build adds
+    // WeChat's errMsg so a blocked domain ("url not in domain list") is visible on a phone.
+    _networkError() : string {
+      return IS_DEV && this._netErr.length > 0 ? `网络错误，请重试（${this._netErr}）` : '网络错误，请重试'
     },
   },
   watch: {
