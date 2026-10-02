@@ -1,5 +1,5 @@
 <template>
-  <view class="uh-root" :class="theme == 'light' ? 'uh-root-light' : ''"
+  <view class="uh-root" :class="theme == 'light' ? 'uh-root-light theme-light' : ''"
         v-on:touchstart="onUhTouchStart" v-on:touchmove="onUhTouchMove"
         v-on:touchend="onUhTouchEnd" v-on:touchcancel="onUhTouchEnd">
 
@@ -7352,5 +7352,264 @@ export default {
 .ring-linechart-latest-row { align-items: baseline; }
 .ecg-card-hero { align-items: baseline; }
 .trend-val-row { align-items: baseline; }
+/* #endif */
+
+/* #ifdef MP-WEIXIN */
+/* Light theme on xapp-mini: every top-level .theme-light rule of the miniapp's components/user-health/user-health.wxss, verbatim
+   (the colour variables they read come from App.uvue's copy of app.wxss). Two-class selectors,
+   so they win over this file's own rules. Regenerate from the miniapp when its light theme
+   changes; Android keeps its own minimal light rules above. */
+.theme-light .uh-tab-bar { background: #f0f4ff; border-bottom-color: #dde5f5; }
+.theme-light .uh-tab-text { color: #607090; }
+.theme-light .uh-tab-active .uh-tab-text { color: #2942E5; }
+.theme-light .health-hero { border-bottom-color: rgba(201, 149, 106, 0.1); }
+.theme-light .health-hero-bg { background: var(--bg-hero); }
+.theme-light .health-avatar-wrap { border-color: rgba(201, 149, 106, 0.55); box-shadow: 0 0 28rpx rgba(201, 149, 106, 0.15); }
+.theme-light .health-avatar-placeholder { background: rgba(250, 247, 242, 0.9); }
+.theme-light .health-avatar-letter { color: var(--text-sub); }
+.theme-light .bio-chip { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.25); }
+.theme-light .bio-chip-primary { border-color: rgba(201, 149, 106, 0.55); box-shadow: 0 0 40rpx rgba(201, 149, 106, 0.15); }
+.theme-light .bio-chip-dim { background: rgba(250, 247, 242, 0.6); }
+.theme-light .bio-unit { color: var(--text-muted); }
+.theme-light .bio-num-chrono { color: var(--text-sub); }
+.theme-light .bio-bar-track { background: rgba(201, 149, 106, 0.1); }
+.theme-light .bio-bar-label { color: var(--text-muted); }
+.theme-light .bio-bar-ref { background: rgba(139, 110, 78, 0.3); }
+.theme-light .sub-age-card { background: rgba(255, 255, 255, 0.7); border-color: rgba(201, 149, 106, 0.15); }
+.theme-light .sub-age-label { color: var(--text-muted); }
+.theme-light .sub-age-desc { color: var(--text-muted); }
+.theme-light .health-section { border-bottom-color: rgba(201, 149, 106, 0.08); }
+.theme-light .section-title { color: var(--text-muted); }
+.theme-light .section-badge { background: rgba(201, 149, 106, 0.1); color: var(--text-sub); border-color: rgba(201, 149, 106, 0.2); }
+.theme-light .profile-toggle { background: rgba(201, 149, 106, 0.08); border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .profile-toggle-text { color: var(--text-sub); }
+.theme-light .profile-toggle-arrow { color: var(--text-muted); }
+.theme-light .info-grid-extra { border-top-color: rgba(201, 149, 106, 0.08); }
+.theme-light .info-key { color: var(--text-muted); }
+.theme-light .info-val { color: var(--text); }
+.theme-light .bm-label { color: var(--text-sub); }
+.theme-light .bm-unit { color: var(--text-muted); }
+.theme-light .bm-row { border-bottom-color: rgba(201, 149, 106, 0.08); }
+.theme-light .trend-card { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .trend-label { color: var(--text-muted); }
+.theme-light .trend-unit { color: var(--text-muted); }
+.theme-light .health-empty { color: var(--text-muted); }
+.theme-light .twin-umbrella-title { color: var(--text-main); }
+.theme-light .twin-umbrella-count { color: var(--text-muted); }
+.theme-light .twin-layer { border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .twin-layer-active { border-color: rgba(16, 185, 129, 0.45); }
+.theme-light .twin-layer-dot { background: rgba(201, 149, 106, 0.3); }
+.theme-light .twin-layer-label { color: var(--text-sub); }
+.theme-light .twin-layer-date { color: var(--text-muted); }
+.theme-light .fact-chip { border-color: rgba(201, 149, 106, 0.18); background: rgba(250, 247, 242, 0.6); }
+.theme-light .fact-text { color: var(--text-main); }
+.theme-light .fact-footnote { color: var(--text-muted); }
+.theme-light .health-cond-chip { border-color: rgba(201, 149, 106, 0.35); background: rgba(201, 149, 106, 0.08); color: var(--text-sub); }
+.theme-light .wchart-sheet { background: var(--bg-sheet); }
+.theme-light .wchart-handle { background: rgba(139, 110, 78, 0.2); }
+.theme-light .wchart-title { color: var(--text); }
+.theme-light .wchart-close { color: var(--text-muted); }
+.theme-light .pulse-dot { background: var(--blue); }
+.theme-light .edit-profile-btn { background: rgba(201, 149, 106, 0.1); border-color: rgba(201, 149, 106, 0.3); color: var(--text-sub); }
+.theme-light .edit-label { color: var(--text-muted); }
+.theme-light .edit-input { color: var(--text); }
+.theme-light .edit-picker-val { color: var(--text); }
+.theme-light .edit-picker-arrow { color: var(--text-muted); }
+.theme-light .edit-unit-text { color: var(--text-muted); }
+.theme-light .edit-row { border-bottom-color: rgba(201, 149, 106, 0.08); }
+.theme-light .gender-btn { border-color: rgba(201, 149, 106, 0.2); background: rgba(201, 149, 106, 0.05); color: var(--text-muted); }
+.theme-light .gender-btn-active { border-color: rgba(201, 149, 106, 0.7); background: rgba(201, 149, 106, 0.15); color: var(--text); }
+.theme-light .edit-section-label { color: var(--text-muted); }
+.theme-light .edit-cond-item { border-bottom-color: rgba(201, 149, 106, 0.05); }
+.theme-light .edit-cond-box { border-color: rgba(201, 149, 106, 0.3); }
+.theme-light .edit-cond-box-checked { border-color: var(--blue); background: var(--blue); }
+.theme-light .edit-cond-text { color: var(--text-sub); }
+.theme-light .edit-cancel-btn { border-color: rgba(201, 149, 106, 0.25); color: var(--text-muted); }
+.theme-light .edit-save-btn { background: linear-gradient(135deg, var(--blue) 0%, #E3B98A 100%); }
+.theme-light .twin-card { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.15); }
+.theme-light .twin-label { color: var(--text-muted); }
+.theme-light .twin-unit { color: var(--text-muted); }
+.theme-light .twin-sub { color: var(--text-muted); }
+.theme-light .twin-sub-deep { color: #885931; }
+.theme-light .twin-body-row { background: rgba(250, 247, 242, 0.7); border-color: rgba(201, 149, 106, 0.12); }
+.theme-light .twin-body-label { color: var(--text-muted); }
+.theme-light .twin-body-text { color: var(--text); }
+.theme-light .twin-coverage-title { color: var(--text-muted); }
+.theme-light .twin-source-chip { border-color: rgba(201, 149, 106, 0.12); background: rgba(250, 247, 242, 0.5); }
+.theme-light .twin-source-active { border-color: rgba(201, 149, 106, 0.3); background: rgba(201, 149, 106, 0.07); }
+.theme-light .twin-source-dot { background: rgba(139, 110, 78, 0.2); }
+.theme-light .twin-source-label { color: var(--text-muted); }
+.theme-light .twin-source-active .twin-source-label { color: var(--text-sub); }
+.theme-light .twin-source-date { color: #895A32; }
+.theme-light .ht-score-card { background: rgba(255, 255, 255, 0.7); border-color: rgba(201, 149, 106, 0.2); }
+.theme-light .ht-score-ring { background: rgba(250, 247, 242, 0.8); }
+.theme-light .ht-score-title { color: var(--text-muted); }
+.theme-light .ht-domain-label { color: var(--text-muted); }
+.theme-light .ht-domain-track { background: rgba(201, 149, 106, 0.1); }
+.theme-light .ht-gauges { background: rgba(255, 255, 255, 0.6); border-color: rgba(201, 149, 106, 0.12); }
+.theme-light .ht-gauge-item { border-bottom-color: rgba(201, 149, 106, 0.08); }
+.theme-light .ht-gauge-label { color: var(--text-sub); }
+.theme-light .ht-gauge-unit { color: var(--text-muted); }
+.theme-light .ht-gauge-marker { border-color: var(--navy); }
+.theme-light .ht-gauge-sublabel { color: var(--text-muted); }
+.theme-light .ht-body-card { background: rgba(255, 255, 255, 0.6); border-color: rgba(201, 149, 106, 0.12); }
+.theme-light .ht-body-title { color: var(--text-muted); }
+.theme-light .ht-body-vals { color: var(--text-sub); }
+.theme-light .ht-body-bar { background: rgba(201, 149, 106, 0.08); }
+.theme-light .ht-body-lbl { color: var(--text-muted); }
+.theme-light .rpt-sheet-header { border-bottom-color: rgba(201, 149, 106, 0.1); }
+.theme-light .rpt-sheet-institution { color: var(--text); }
+.theme-light .rpt-sheet-date { color: var(--text-muted); }
+.theme-light .rpt-close-x { color: var(--text-muted); }
+.theme-light .rpt-ev-row { border-bottom-color: rgba(201, 149, 106, 0.07); }
+.theme-light .rpt-ev-ref { color: var(--text-muted); }
+.theme-light .rpt-ev-val { color: var(--text); }
+.theme-light .rpt-ev-unit { color: var(--text-muted); }
+.theme-light .rpt-section-header { border-bottom-color: rgba(201, 149, 106, 0.1); }
+.theme-light .rpt-section-title { color: var(--text-muted); }
+.theme-light .rpt-diag-text { color: var(--text-sub); }
+.theme-light .rpt-advice-text { color: var(--text-sub); }
+.theme-light .rpt-dn-key { color: var(--text-muted); }
+.theme-light .rpt-vital-item { background: rgba(0, 0, 0, 0.03); border-color: rgba(201, 149, 106, 0.15); }
+.theme-light .rpt-vital-key { color: var(--text-muted); }
+.theme-light .rpt-vital-val { color: var(--text); }
+.theme-light .rpt-clinical-label { color: var(--text-muted); }
+.theme-light .ht-lab-card { background: rgba(255, 255, 255, 0.6); border-color: rgba(201, 149, 106, 0.15); }
+.theme-light .ht-lab-title { color: var(--text-muted); }
+.theme-light .ht-lab-snapshot-wrap { border-bottom-color: rgba(201, 149, 106, 0.1); }
+.theme-light .ht-lab-snapshot-title { color: var(--text-muted); }
+.theme-light .ht-lab-date { color: var(--text-muted); }
+.theme-light .guest-lock-card { background: rgba(255, 255, 255, 0.6); }
+.theme-light .guest-lock-btn { background: linear-gradient(135deg, var(--blue) 0%, #E3B98A 100%); }
+.theme-light .dt-hero-card { background: rgba(255, 255, 255, 0.7); box-shadow: 0 8rpx 40rpx rgba(0, 0, 0, 0.06); }
+.theme-light .dt-sa-bar { background: rgba(0, 0, 0, 0.06); }
+.theme-light .dt-bioage-canvas { background: var(--navy-card); }
+.theme-light .dt-htag { background: rgba(0, 0, 0, 0.03); }
+.theme-light .rpt-institution { color: var(--text); }
+.theme-light .rpt-advice-num { color: var(--blue); }
+.theme-light .rpt-followup-label { color: #047857; }
+.theme-light .ht-lab-alert-text { color: #dc2626; }
+.theme-light .ht-lab-ok-text { color: #036748; }
+.theme-light .wd-empty-card { background: rgba(255, 255, 255, 0.6); }
+.theme-light .wd-card { background: rgba(255, 255, 255, 0.7); }
+.theme-light .ecg-card { background: rgba(255, 255, 255, 0.7); }
+.theme-light .wd-battery-inline { color: #036748; }
+.theme-light .wd-unbind-txt { color: #AF1D1D; }
+.theme-light .ring-summary-card { background: rgba(255, 255, 255, 0.6); }
+.theme-light .ring-detail-card { background: rgba(255, 255, 255, 0.5); }
+.theme-light .privacy-box { background: var(--navy-card); }
+.theme-light .privacy-title { color: var(--text); }
+.theme-light .avatar-pill-text { color: #5D4C32; }
+.theme-light .guest-lock-title { color: #5D4C32; }
+.theme-light .dt-sa-label { color: #5D4C32; }
+.theme-light .dt-sa-trend-hint { color: #6B5839; }
+.theme-light .dt-bioage-chart-title { color: #7A6342; }
+.theme-light .dt-metric-unit { color: #6B5839; }
+.theme-light .dt-metric-label { color: #7A6342; }
+.theme-light .dt-metric-trend-hint { color: #6B5839; }
+.theme-light .bp-legend-label { color: #6B5839; }
+.theme-light .dt-htag-empty { color: #7A6342; }
+.theme-light .rpt-date { color: #6B5839; }
+.theme-light .rpt-arrow { color: #856C47; }
+.theme-light .ht-lab-unit { color: #7A6342; }
+.theme-light .ht-lab-sub, .theme-light .ht-lab-hint { color: #8A7A62; }
+.theme-light .wd-ring-icon { color: #5D4C32; }
+.theme-light .wd-bind-sub { color: #6B5839; }
+.theme-light .wd-server-hint { color: #5D4C32; }
+.theme-light .wd-chevron { color: #6B5839; }
+.theme-light .wd-status-text { color: #6B5839; }
+.theme-light .wd-gear-glyph { color: #6B5839; }
+.theme-light .wd-ring-time-label { color: #6B5839; }
+.theme-light .wd-ring-time-val { color: #5D4C32; }
+.theme-light .wd-interval-title { color: #5D4C32; }
+.theme-light .wd-interval-label { color: #6B5839; }
+.theme-light .wd-wm-on { color: var(--success); }
+.theme-light .wd-wm-off { color: var(--danger); }
+.theme-light .wd-int-btn { color: #7A6342; }
+.theme-light .wd-int-btn-on { color: #5D4C32; }
+.theme-light .wd-settings-loading-txt { color: #7A6342; }
+.theme-light .wd-save-txt { color: #5D4C32; }
+.theme-light .wd-measuring-txt { color: #5D4C32; }
+.theme-light .ring-sum-na { color: #7A6342; }
+.theme-light .ring-sum-unit { color: #6B5839; }
+.theme-light .ring-sum-sub { color: #7A6342; }
+.theme-light .ring-sum-footer { color: #856C47; }
+.theme-light .ring-chart-label { color: #7A6342; }
+.theme-light .ring-chart-time { color: #5D4C32; }
+.theme-light .ring-chart-date { color: #7A6342; }
+.theme-light .ring-chart-hlabel { color: #856C47; }
+.theme-light .ring-chart-day-avg { color: #6B5839; }
+.theme-light .ring-chart-day-label { color: #7A6342; }
+.theme-light .ring-reading-date-header { color: #7A6342; }
+.theme-light .ring-reading-date { color: #856C47; }
+.theme-light .ring-reading-time { color: #7A6342; }
+.theme-light .ring-reading-unit { color: #7A6342; }
+.theme-light .ring-lc-estimated-marker { color: #5D4C32; }
+.theme-light .ring-lc-smoothed-note { color: #856C47; }
+.theme-light .ring-linechart-unit { color: #7A6342; }
+.theme-light .ring-linechart-bound { color: #7A6342; }
+.theme-light .ring-linechart-count { color: #856C47; }
+.theme-light .ring-sleepweek-axis-lbl { color: #856C47; }
+.theme-light .ring-sleepweek-total { color: #6B5839; }
+.theme-light .ring-sleepweek-daylabel { color: #856C47; }
+.theme-light .ring-sleep-leg-txt { color: #6B5839; }
+.theme-light .privacy-body { color: #5D4C32; }
+.theme-light .privacy-cancel-btn text { color: #6B5839; }
+.theme-light .ins-card { background: rgba(255, 255, 255, 0.6); }
+.theme-light .ins-sub, .theme-light .ins-date, .theme-light .ins-provisional { color: #9A8A72; }
+.theme-light .ins-readiness-label, .theme-light .ins-row-label, .theme-light .ins-row-delta { color: #7A6342; }
+.theme-light .ins-chip { background: rgba(201, 149, 106, 0.12); border-color: rgba(201, 149, 106, 0.3); }
+.theme-light .ins-chip-dim { color: #7A6342; background: rgba(201, 149, 106, 0.06); border-color: rgba(201, 149, 106, 0.18); }
+.theme-light .ins-block { border-top-color: rgba(201, 149, 106, 0.18); }
+.theme-light .ins-band-track { background: rgba(201, 149, 106, 0.12); }
+.theme-light .ins-band-marker { border-color: #fff; }
+/* #endif */
+
+/* #ifdef MP-WEIXIN */
+/* Light-theme colours measured from the miniapp where xapp-mini's own (dark-measured) literals
+   would otherwise win: the miniapp gets these by inheriting var(--text) etc. */
+.theme-light .avatar-side-pill { background-color: rgba(152, 95, 51, 0.1); border-top-color: rgba(152, 95, 51, 0.3); border-left-color: rgba(152, 95, 51, 0.3); border-bottom-color: rgba(152, 95, 51, 0.3); border-right-color: rgba(152, 95, 51, 0.3); }
+.theme-light .dt-hero-card { border-top-color: rgba(152, 95, 51, 0.14); border-left-color: rgba(152, 95, 51, 0.14); border-bottom-color: rgba(152, 95, 51, 0.14); border-right-color: rgba(152, 95, 51, 0.14); }
+.theme-light .dt-hero-card-strips { border-top-color: rgba(152, 95, 51, 0.14); border-left-color: rgba(152, 95, 51, 0.14); border-bottom-color: rgba(152, 95, 51, 0.14); border-right-color: rgba(152, 95, 51, 0.14); }
+.theme-light .dt-metric-divider { background-color: rgba(152, 95, 51, 0.22); }
+.theme-light .dt-metrics-strip { border-top-color: rgba(152, 95, 51, 0.15); }
+.theme-light .dt-tags-strip { border-top-color: rgba(152, 95, 51, 0.1); }
+.theme-light .ecg-card { color: rgb(44, 44, 44); border-top-color: rgba(152, 95, 51, 0.22); border-left-color: rgba(152, 95, 51, 0.22); border-bottom-color: rgba(152, 95, 51, 0.22); border-right-color: rgba(152, 95, 51, 0.22); }
+.theme-light .ecg-card-foot { color: rgba(121, 96, 68, 0.45); }
+.theme-light .ecg-card-list { color: rgb(44, 44, 44); border-top-color: rgba(152, 95, 51, 0.12); }
+.theme-light .ecg-card-list-val { color: rgb(133, 108, 71); }
+.theme-light .ecg-card-list-when { color: rgb(133, 108, 71); }
+.theme-light .ecg-card-meta { color: rgb(133, 108, 71); }
+.theme-light .ecg-card-title { color: rgb(44, 44, 44); }
+.theme-light .ecg-card-unit { color: rgb(133, 108, 71); }
+.theme-light .ht-lab-item { background-color: rgba(152, 95, 51, 0.06); }
+.theme-light .ht-lab-ok { color: rgb(44, 44, 44); }
+.theme-light .ins-card { border-top-color: rgba(152, 95, 51, 0.14); border-left-color: rgba(152, 95, 51, 0.14); border-bottom-color: rgba(152, 95, 51, 0.14); border-right-color: rgba(152, 95, 51, 0.14); }
+.theme-light .ins-chip { color: rgb(44, 44, 44); }
+.theme-light .ins-readiness { color: rgb(44, 44, 44); }
+.theme-light .ins-score-of { color: rgba(121, 96, 68, 0.5); }
+.theme-light .ins-title { color: rgb(44, 44, 44); }
+.theme-light .ring-awake-seg { background-color: rgba(121, 96, 68, 0.18); }
+.theme-light .ring-deep-seg { background-color: rgb(152, 95, 51); }
+.theme-light .ring-detail-card { border-top-color: rgba(152, 95, 51, 0.1); border-left-color: rgba(152, 95, 51, 0.1); border-bottom-color: rgba(152, 95, 51, 0.1); border-right-color: rgba(152, 95, 51, 0.1); }
+.theme-light .ring-sleep-segs { background-color: rgba(152, 95, 51, 0.08); }
+.theme-light .ring-sleep-timeline { background-color: rgba(152, 95, 51, 0.08); }
+.theme-light .ring-sleepweek-gridline { background-color: rgba(121, 96, 68, 0.1); }
+.theme-light .ring-sleepweek-track { background-color: rgba(152, 95, 51, 0.06); }
+.theme-light .ring-sum-bar-seg { background-color: rgb(152, 95, 51); }
+.theme-light .ring-summary-card { border-top-color: rgba(152, 95, 51, 0.14); border-left-color: rgba(152, 95, 51, 0.14); border-bottom-color: rgba(152, 95, 51, 0.14); border-right-color: rgba(152, 95, 51, 0.14); }
+.theme-light .rpt-card { background-color: rgb(255, 255, 255); }
+.theme-light .tr-card { background-color: rgb(255, 255, 255); border-top-color: rgba(152, 95, 51, 0.28); border-left-color: rgba(152, 95, 51, 0.28); border-bottom-color: rgba(152, 95, 51, 0.28); border-right-color: rgba(152, 95, 51, 0.28); }
+.theme-light .tr-icon { color: rgb(44, 44, 44); background-color: rgba(152, 95, 51, 0.12); }
+.theme-light .tr-meta { color: rgba(121, 96, 68, 0.55); }
+.theme-light .tr-open { background-color: rgb(152, 95, 51); }
+.theme-light .tr-title { color: rgb(121, 96, 68); }
+.theme-light .twin-umbrella { color: rgb(44, 44, 44); }
+.theme-light .twin-umbrella-title { color: rgb(44, 44, 44); }
+.theme-light .wd-card { border-top-color: rgba(152, 95, 51, 0.22); border-left-color: rgba(152, 95, 51, 0.22); border-bottom-color: rgba(152, 95, 51, 0.22); border-right-color: rgba(152, 95, 51, 0.22); }
+.theme-light .wd-device-name { color: rgb(44, 44, 44); }
+.theme-light .wd-gear-btn { background-color: rgba(152, 95, 51, 0.08); border-top-color: rgba(152, 95, 51, 0.15); border-left-color: rgba(152, 95, 51, 0.15); border-bottom-color: rgba(152, 95, 51, 0.15); border-right-color: rgba(152, 95, 51, 0.15); }
+.theme-light .wd-sync-btn { color: rgb(44, 44, 44); background-color: rgba(152, 95, 51, 0.2); border-top-color: rgba(152, 95, 51, 0.35); border-left-color: rgba(152, 95, 51, 0.35); border-bottom-color: rgba(152, 95, 51, 0.35); border-right-color: rgba(152, 95, 51, 0.35); }
+.theme-light .wd-sync-btn-text { color: rgb(44, 44, 44); }
 /* #endif */
 </style>
