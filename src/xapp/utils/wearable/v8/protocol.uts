@@ -116,7 +116,10 @@ export function measurementTypeByte(type : string) : number {
 export function setMeasurementPacket(type : string, open : boolean, durationSeconds : number) : number[] {
   const typeByte = measurementTypeByte(type)
   const d = Math.max(0, Math.min(65535, Math.round(durationSeconds)))
-  const payload = new Array<number>(14).fill(0)
+  // Not `new Array<number>(14).fill(0)`: on Android (Kotlin) that is the one-element
+  // array [14], so every index past 0 throws. JS builds (xapp-mini, web) were unaffected.
+  const payload : number[] = []
+  for (let i = 0; i < 14; i++) payload.push(0)
   payload[0] = typeByte
   payload[1] = open ? 1 : 0
   payload[3] = d % 256

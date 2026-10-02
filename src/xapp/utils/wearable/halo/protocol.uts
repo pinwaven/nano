@@ -27,7 +27,10 @@ export function calculateChecksum(buf : number[]) : number {
 }
 
 export function buildCommand(cmdId : number, payload : number[] | null = null) : number[] {
-  const buf = new Array<number>(16).fill(0)
+  // Not `new Array<number>(16).fill(0)`: on Android (Kotlin) that is the one-element
+  // array [16], so every index past 0 throws. JS builds (xapp-mini, web) were unaffected.
+  const buf : number[] = []
+  for (let i = 0; i < 16; i++) buf.push(0)
   buf[0] = cmdId
   if (payload != null) {
     for (let i = 0; i < payload!.length && i < 14; i++) buf[1 + i] = payload![i]
@@ -112,7 +115,10 @@ function _tzOffsetHours() : number {
 
 // History sync payload: mode byte + optional BCD date at frame bytes 4–9
 export function buildHistorySyncPayload(mode : number, dateFilter : Date | null) : number[] {
-  const payload = new Array<number>(14).fill(0)
+  // Not `new Array<number>(14).fill(0)`: on Android (Kotlin) that is the one-element
+  // array [14], so every index past 0 throws. JS builds (xapp-mini, web) were unaffected.
+  const payload : number[] = []
+  for (let i = 0; i < 14; i++) payload.push(0)
   payload[0] = mode
   if (dateFilter != null) {
     payload[3] = decToBcd(dateFilter!.getFullYear() % 100)
