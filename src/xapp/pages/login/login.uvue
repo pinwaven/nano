@@ -12,6 +12,28 @@
       <text v-if="version.length > 0" class="login-version">v{{ version }}</text>
     </view>
 
+    <!-- #ifdef MP-WEIXIN -->
+    <!-- checking / accountChoice / error: the WeChat login steps (mp-weixin only). -->
+    <view v-if="step == 'checking'" class="status-wrap">
+      <view class="spinner"></view>
+      <text class="status-text">正在登录…</text>
+    </view>
+
+    <view v-else-if="step == 'accountChoice'" class="login-card">
+      <text class="login-card-label">欢迎使用 {{ channelName }}</text>
+      <text class="login-card-hint">已有账号可通过手机号连接原有健康数据</text>
+      <view class="login-btn" v-on:click="useOtherNumber"><text class="btn-text">登录已有账号</text></view>
+      <view class="login-link" v-on:click="continueNewAccount"><text class="link-text">创建新账号</text></view>
+    </view>
+
+    <view v-else-if="step == 'error'" class="status-wrap">
+      <text class="error-text">{{ error }}</text>
+      <view v-if="canRecoverByPhone" class="retry-btn" v-on:click="useOtherNumber"><text class="btn-text">验证手机号</text></view>
+      <view v-else class="login-link" v-on:click="useOtherNumber"><text class="link-text">使用手机号登录</text></view>
+      <view class="retry-btn" v-on:click="retry"><text class="btn-text">重试</text></view>
+    </view>
+    <!-- #endif -->
+
     <view v-if="step == 'loggedOut'" class="login-card">
       <text class="login-card-label">欢迎回来</text>
       <view class="login-btn" v-on:click="continueAsPrevious">
@@ -21,7 +43,7 @@
       <view class="login-link" v-on:click="useEmailLogin"><text class="link-text">使用邮箱登录</text></view>
     </view>
 
-    <view v-else class="login-card">
+    <view v-else-if="step == 'phoneEntry'" class="login-card">
       <view v-if="phoneStep == 'phone' && loginMethod == 'email'">
         <text class="login-card-label">邮箱登录</text>
         <input class="login-input" v-model="email" placeholder="请输入邮箱地址" :maxlength="254" />
@@ -70,15 +92,19 @@
 </template>
 
 <script>
-// Ported from miniapp pages/login/login.js. WeChat-era paths removed: silent wxLogin/
-// _callWxLogin/guest/invite-code/accountChoice steps (no openid on a native app — the
-// server's /phone-otp/verify links accounts by verified phone alone). Entry: stored user →
-// straight through; nano_last_session → loggedOut card; else phone/email entry.
+// Ported from miniapp pages/login/login.js.
+// - mp-weixin (xapp-mini) keeps the miniapp's whole entry: silent wx.login → /wx-login, which
+//   answers guest:true for an unknown WeChat user with no invite/coach/ref/channel — guest
+//   browsing is what lets the mini-program reviewer use the app without an account. Also
+//   ?invite=/?coach_id=/?ref=/channel QR, accountChoice, the error step and ?loggedOut=1.
+// - Native (and web) drop those WeChat-era paths (no openid on a native app — the server's
+//   /phone-otp/verify links accounts by verified phone alone): stored user → straight
+//   through; nano_last_session → loggedOut card; else phone/email entry. No guest mode.
 // Deviations: <picker selector> → uni.showActionSheet; live digit-filter bindinput →
 // validate-on-send (v-model); phone/email toggles always offered (EMAIL_LOGIN_AVAILABLE is
 // true for the root identity, config.uts).
 
-import { BASE, API_ORIGIN, VERSION, IS_DEV, EMAIL_LOGIN_AVAILABLE } from '../../utils/config.uts'
+import { BASE, API_ORIGIN, VERSION, IS_DEV, EMAIL_LOGIN_AVAILABLE, CHANNEL_SLUG } from '../../utils/config.uts'
 import { state } from '../../utils/state.uts'
 import { saveSession, clearSession } from '../../utils/session.uts'
 import { maskPhone, maskEmail } from '../../utils/phone.uts'
@@ -101,8 +127,10 @@ export default {
   name: 'LoginPage',
   data() {
     return {
-      step: 'loggedOut', // 'loggedOut' | 'phoneEntry'
+      step: 'loggedOut', // 'loggedOut' | 'phoneEntry'; mp-weixin also 'checking' | 'accountChoice' | 'error'
       loading: false,
+      error: '',
+      canRecoverByPhone: false,
       maskedPhone: '',
       phoneStep: 'phone', // 'phone' | 'code'
       loginMethod: 'phone', // 'phone' | 'email'
@@ -128,6 +156,12 @@ export default {
         new CountryOption('+81', '日本 +81', false),
       ] as CountryOption[],
       _cooldownTimer: 0 as number,
+      // mp-weixin /wx-login inputs (miniapp login.js _coachId/_inviteCode/_refCode/_channelSlug)
+      _coachId: '',
+      _inviteCode: '',
+      _refCode: '',
+      _channelSlug: '',
+      _pendingNewUser: null as UTSJSONObject | null,
     }
   },
   computed: {
@@ -142,6 +176,10 @@ export default {
     }
   },
   onLoad(options : OnLoadOptions) {
+    // #ifdef MP-WEIXIN
+    this._mpOnLoad(options)
+    return
+    // #endif
     // NOTE (gap): the miniapp's ?ref= referral ride-along only existed on /wx-login;
     // /phone-otp/verify has no ref parameter yet, so referral binding for xapp signups
     // needs a server-side addition before this page forwards it.
@@ -196,13 +234,13 @@ export default {
     // account the user chose, not the first one).
     continueAsPrevious() {
       const raw = uni.getStorageSync('nano_last_session')
-      if (raw == null || !(raw instanceof UTSJSONObject)) { this.step = 'phoneEntry'; return }
+      if (raw == null || !(raw instanceof UTSJSONObject)) { this._noSnapshot(); return }
       const lastSession = raw as UTSJSONObject
       const user = lastSession.getJSON('user')
-      if (user == null) { this.step = 'phoneEntry'; return }
+      if (user == null) { this._noSnapshot(); return }
       // No stored `u.` session → no way to resume (the legacy-bearer upgrade is not ported).
       const token = lastSession.getString('session_token')
-      if (token == null) { this.step = 'phoneEntry'; return }
+      if (token == null) { this._noSnapshot(); return }
       state.user = user
       state.channel = lastSession.getJSON('channel')
       state.coach = lastSession.getJSON('coach')
@@ -217,6 +255,16 @@ export default {
       if (co2 != null) uni.setStorageSync('nano_coach', co2)
       uni.setStorageSync('nano_base', API_ORIGIN)
       uni.reLaunch({ url: '/pages/main/main' })
+    },
+
+    // Nothing to resume: mp-weixin signs in through WeChat again (miniapp continueAsPrevious);
+    // native has only the phone/email entry.
+    _noSnapshot() {
+      // #ifdef MP-WEIXIN
+      this.wxLogin()
+      return
+      // #endif
+      this.step = 'phoneEntry'
     },
 
     useOtherNumber() {
@@ -247,6 +295,11 @@ export default {
 
     backToLoggedOut() {
       if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+      if (this._pendingNewUser != null) {
+        this.step = 'accountChoice'
+        this.phoneError = ''
+        return
+      }
       this.step = 'loggedOut'
       this.phoneError = ''
     },
@@ -284,9 +337,17 @@ export default {
       if (code.length == 0 || this.phoneLoading) return
       this.phoneLoading = true
       this.phoneError = ''
-      const res = await this._postReq(`${BASE}/api/phone-otp/verify`, {
-        phone: phone, code: code,
-      } as UTSJSONObject)
+      const body = { phone: phone, code: code } as UTSJSONObject
+      // #ifdef MP-WEIXIN
+      // Links this WeChat identity to the account (phone-otp.js linkVerifiedMiniappLogin);
+      // existing_only when the user came here to reach an existing account (miniapp parity).
+      let miniappCode = ''
+      try { miniappCode = await this._getWxCode() } catch (e : any) { miniappCode = '' }
+      body['miniapp_code'] = miniappCode
+      body['app_id'] = wx.getAccountInfoSync().miniProgram.appId
+      body['existing_only'] = this._pendingNewUser != null || this.canRecoverByPhone
+      // #endif
+      const res = await this._postReq(`${BASE}/api/phone-otp/verify`, body)
       this.phoneLoading = false
       if (res == null) { this.phoneError = '网络错误，请重试'; return }
       if (res.getBoolean('success') != true) {
@@ -367,10 +428,23 @@ export default {
     // PII trim kept: raw phone/email never persisted to storage; the masked form is computed
     // here (the one moment the raw phone exists) and stored as maskedPhone.
     _finishLogin(data : UTSJSONObject) {
+      if (!this._persistLogin(data, false)) return
+      uni.reLaunch({ url: '/pages/main/main' })
+    },
+
+    // A brand-new account from a deliberate sign-up (invite / coach link) — always
+    // phone-unverified, so it goes to verify-phone, which also owns the avatar step (?new=1).
+    _finishNewUser(data : UTSJSONObject) {
+      if (!this._persistLogin(data, true)) return
+      uni.reLaunch({ url: '/pages/verify-phone/verify-phone?new=1' })
+    },
+
+    _persistLogin(data : UTSJSONObject, pendingPhoneVerification : boolean) : boolean {
       const token = data.getString('session_token')
       if (token != null) saveSession(token!)
       const user = data.getJSON('user')
-      if (user == null) return
+      if (user == null) return false
+      if (pendingPhoneVerification) user['pendingPhoneVerification'] = true
       const channel = data.getJSON('channel')
       const coach = data.getJSON('coach')
       state.user = user
@@ -398,8 +472,151 @@ export default {
       if (channel != null) uni.setStorageSync('nano_channel', channel!)
       if (coach != null) uni.setStorageSync('nano_coach', coach!)
       uni.setStorageSync('nano_base', API_ORIGIN) // backend the session is valid against — App.uvue checks on launch
-      uni.reLaunch({ url: '/pages/main/main' })
+      return true
     },
+
+    // ── WeChat sign-in (mp-weixin only) — miniapp login.js onLoad/wxLogin ──
+    // #ifdef MP-WEIXIN
+    async _mpOnLoad(options : OnLoadOptions) {
+      this.step = 'checking' // the spinner, not the logged-out card, while branding loads
+      const opt = (k : string) : string => { const v = options[k]; return v != null ? `${v}` : '' }
+      this._coachId = opt('coach_id')
+      this._inviteCode = opt('invite')
+      // A 小程序码 from GET /channels/:id/miniapp-qrcode lands with scene `ch:<id>` (URL-encoded
+      // from a real scan); `?channel=<id>` covers share links and compile-mode testing.
+      const scene = decodeURIComponent(opt('scene'))
+      const channelParam = opt('channel').length > 0 ? opt('channel') : (scene.startsWith('ch:') ? scene.substring(3) : '')
+      const channelId = /^\d+$/.test(channelParam) ? parseInt(channelParam) : 0
+      if (opt('ref').length > 0) {
+        this._refCode = opt('ref')
+        uni.setStorageSync('nano_ref', this._refCode)
+      }
+      const deliberate = this._inviteCode.length > 0 || this._coachId.length > 0
+      // A session goes straight in — review requires free browsing, so phone verification is
+      // never a standing gate — except a sign-up interrupted before verify-phone finished.
+      if (state.user != null && !deliberate) {
+        const pending = state.user!.getBoolean('pendingPhoneVerification')
+        uni.reLaunch({ url: (pending == true) ? '/pages/verify-phone/verify-phone?new=1' : '/pages/main/main' })
+        return
+      }
+      const channel = state.channel
+      if (channel != null) {
+        const name = channel!.getString('name')
+        const logo = channel!.getString('logo_url')
+        if (name != null) this.channelName = name
+        if (logo != null) this.channelLogo = logo
+      }
+      // Channel QR: brand the first paint, and the name rides /wx-login as channel_slug.
+      if (channelId > 0 && !deliberate) {
+        const branded = await this._fetchChannelBranding(channelId)
+        if (branded != null) {
+          this._channelSlug = branded!.getString('name') ?? ''
+          this.channelName = this._channelSlug
+          this.channelLogo = branded!.getString('logo_url') ?? ''
+        }
+      }
+      // From an explicit logout: offer "continue as previous" rather than silently re-login.
+      if (opt('loggedOut').length > 0 && !deliberate) {
+        const raw = uni.getStorageSync('nano_last_session')
+        if (raw != null && raw instanceof UTSJSONObject && (raw as UTSJSONObject).getJSON('user') != null) {
+          const mp = (raw as UTSJSONObject).getString('maskedPhone')
+          this.maskedPhone = mp != null ? mp : ''
+          this.step = 'loggedOut'
+          return
+        }
+      }
+      this.wxLogin()
+    },
+
+    async wxLogin() {
+      this.loading = true
+      this.error = ''
+      this.step = 'checking'
+      try {
+        const code = await this._getWxCode()
+        const res = await this._callWxLogin(code)
+        if (res == null) throw new Error('网络错误，请重试')
+        // Unknown WeChat user, nothing deliberate about the visit → browse as a guest.
+        // Not persisted: every launch asks /wx-login again, as the miniapp does.
+        if (res.getBoolean('guest') == true) {
+          clearSession()
+          state.user = { guest: true } as UTSJSONObject
+          uni.reLaunch({ url: '/pages/main/main' })
+          return
+        }
+        if (res.getBoolean('success') != true) throw new Error(res.getString('error') ?? '登录失败，请重试')
+        const newUser = res.getBoolean('new_user') == true
+        if (newUser && (this._inviteCode.length > 0 || this._coachId.length > 0)) {
+          this._finishNewUser(res)
+          return
+        }
+        if (newUser && res.getBoolean('needs_existing_account_choice') == true) {
+          this._pendingNewUser = res
+          this.step = 'accountChoice'
+          this.loading = false
+          return
+        }
+        this._finishLogin(res)
+      } catch (e : any) {
+        const msg = (e as Error).message
+        const needsPhone = msg == 'wechat_identity_conflict_requires_verified_login'
+        this.loading = false
+        this.step = 'error'
+        this.canRecoverByPhone = needsPhone
+        this.error = needsPhone ? '请验证手机号以连接已有账号' : (msg.length > 0 ? msg : '登录失败，请重试')
+      }
+    },
+
+    retry() { this.wxLogin() },
+
+    continueNewAccount() {
+      const pending = this._pendingNewUser
+      if (pending == null) return
+      this._pendingNewUser = null
+      this._finishLogin(pending!)
+    },
+
+    _getWxCode() : Promise<string> {
+      return new Promise<string>((resolve, reject) => {
+        wx.login({
+          success: (res : any) => { resolve(`${res.code}`) },
+          fail: (e : any) => { reject(new Error(`${e?.errMsg ?? 'wx.login failed'}`)) },
+        } as any)
+      })
+    },
+
+    _callWxLogin(code : string) : Promise<UTSJSONObject | null> {
+      const body = { code: code, app_id: wx.getAccountInfoSync().miniProgram.appId } as UTSJSONObject
+      if (this._coachId.length > 0) body['coach_id'] = this._coachId
+      if (this._inviteCode.length > 0) body['invite_code'] = this._inviteCode
+      else if (this._channelSlug.length > 0 || CHANNEL_SLUG != null) body['channel_slug'] = this._channelSlug.length > 0 ? this._channelSlug : CHANNEL_SLUG
+      const storedRef = uni.getStorageSync('nano_ref')
+      const ref = this._refCode.length > 0 ? this._refCode : (storedRef != null ? `${storedRef}` : '')
+      if (ref.length > 0) body['ref'] = ref
+      return this._postReq(`${BASE}/api/wx-login`, body).then((res : UTSJSONObject | null) : UTSJSONObject | null => {
+        if (res != null) uni.removeStorageSync('nano_ref')
+        return res
+      })
+    },
+
+    // { name, logo_url } or null — branding is best-effort and never throws.
+    _fetchChannelBranding(channelId : number) : Promise<UTSJSONObject | null> {
+      return new Promise<UTSJSONObject | null>((resolve) => {
+        uni.request<UTSJSONObject>({
+          url: `${BASE}/api/channel-branding?id=${channelId}`,
+          method: 'GET' as RequestMethod,
+          timeout: 4000,
+          header: { 'Authorization': `Bearer ${state.apiToken}` } as UTSJSONObject,
+          success: (res) => {
+            const d = res.data
+            const ch = d != null && d!.getBoolean('success') == true ? d!.getJSON('channel') : null
+            resolve(ch != null && ch!.getString('name') != null ? ch : null)
+          },
+          fail: (_e) => { resolve(null) },
+        })
+      })
+    },
+    // #endif
 
     _digitsOnly(s : string) : string {
       let out = ''
@@ -564,6 +781,30 @@ export default {
   color: #FF6B6B;
   font-size: 12px;
   margin-bottom: 6px;
+}
+.status-wrap {
+  margin-top: 40px;
+  align-items: center;
+}
+.spinner {
+  width: 28px;
+  height: 28px;
+  border-style: solid;
+  border-width: 2px;
+  border-color: rgba(99, 117, 236, 0.25);
+  border-top-color: #6375EC;
+  border-radius: 14px;
+}
+.status-text {
+  margin-top: 12px;
+  font-size: 13px;
+  color: rgba(166, 196, 229, 0.6);
+}
+.retry-btn {
+  margin-top: 12px;
+  background-color: #6375EC;
+  border-radius: 12px;
+  padding: 10px 32px;
 }
 .login-footer {
   margin-top: auto;
