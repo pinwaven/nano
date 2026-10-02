@@ -36,7 +36,7 @@ stays the production frontend untouched.
 | `wx.getUpdateManager` OTA modal | dropped for now (uni-app x has its own wgt path) | WeChat-only |
 | WechatSI plugin (语音转文字) | **gap** — no equivalent yet | native ASR or drop the mic button |
 | signup `?ref=` referral capture | **gap** — rode `/wx-login` only; `/phone-otp/verify` has no `ref` param, so referral binding for xapp signups needs a small server addition | note in pages/login/login.uvue |
-| Halo/V8 BLE via `wx.*Bluetooth*` | **gap** — uni-app x has no built-in BLE APIs | needs a UTS BLE plugin (marketplace: BLE Kit id=29317, xm-uts-ble id=29718) or a hand-written one; porting plan in task list keeps protocol logic behind a transport interface |
+| Halo/V8 BLE via `wx.*Bluetooth*` | `utils/wearable/transport.uts` interface; Android: hand-written UTS plugin `uni_modules/waven-ble` (`transport-android.uts`); xapp-mini: `transport-mp.uts` | uni-app x declares its own BLE API for mp-weixin only; iOS has no transport |
 | `mp-html` component | TBD during component port | uni-app x `<rich-text>` or a UTS renderer |
 | bare-JSON-array API responses | `uni.request<UTSJSONObject>` only parses objects | array endpoints need `responseType:'text'` + `JSON.parse` — handle per call site |
 
@@ -70,8 +70,8 @@ Verification state of the whole tree (no device run yet):
 1. **Launch on the phone + `logcat`** — the compile pass is done; the first real boot (§23 chat
    scroll, picker UI, canvas draws, `uni.scanCode`) still needs a connected device
    (`adb devices` was empty at the time of writing — re-enable wireless debugging first).
-2. **BLE**: pick + wire a UTS BLE plugin behind `utils/wearable/transport.uts` (BLE Kit
-   id=29317 / xm-uts-ble id=29718), then `installBleTransport()` at app launch.
+2. **BLE**: done for Android (2026-10-02, `uni_modules/waven-ble`, see the section below);
+   iOS still has no transport.
 3. **Binary file I/O**: `readFileBytes()` stubs in `tool-actions.uts` /
    `health-documents.uts` + `viva-ag-panel` text reads + `openDocument` — native UTS calls, one
    pass together.
@@ -120,14 +120,43 @@ tab by tab. Fixed in this pass:
 - **Text-on-view warnings**: `ring-lc-smoothed-note` ×3 are now `<text>`.
 
 Known remaining gaps: light theme (the miniapp's ~690 `.theme-light` rules have no uvue
-equivalent yet — a dynamic-class pass), BLE transport, binary file I/O, ASR mic (see list above).
+equivalent yet — a dynamic-class pass), iOS BLE transport, binary file I/O, ASR mic (see list above).
+
+## Android Bluetooth — `uni_modules/waven-ble` (2026-10-02, VERSION 1002-5)
+
+uni-app x has no Bluetooth API on Android, so the native app gets a hand-written UTS plugin over
+Android's `BluetoothLeScanner` and `BluetoothGatt`. `utils/wearable/transport-android.uts` adapts it
+to `BleTransport`, and `App.uvue` installs it under `#ifdef APP-ANDROID`. The Halo/V8 protocol,
+sync and capture code above it is the same code xapp-mini runs.
+- **One GATT operation at a time.** Android silently drops a write, descriptor write or MTU request
+  issued before the previous one's callback, which WeChat hides by queueing. The plugin queues
+  per connection, completes each op on its callback, and times one out after 6 s so a lost
+  callback cannot wedge the queue. Connect times out after 15 s.
+- **Threads.** Scan and GATT callbacks arrive on binder threads; the plugin copies the data and
+  posts the handling to the main looper, so all its state and every callback into the app are
+  main-thread.
+- **Permissions** are requested at `openAdapter`: `BLUETOOTH_SCAN` + `BLUETOOTH_CONNECT` on
+  Android 12+, `ACCESS_FINE_LOCATION` before. The plugin's `AndroidManifest.xml` declares them for
+  a custom base or release build; the HBuilderX standard base (`io.dcloud.uniappx`) only grants
+  what its own manifest already declares.
+- **Notifications** override the pre-Android-13 `onCharacteristicChanged(gatt, characteristic)`;
+  on 13+ the new callback's default implementation calls it, so one override covers both.
+- Writes use write-without-response only when the characteristic offers nothing else, as WeChat does.
+- **Permission request** passes `shallUnCheck = true` to `UTSAndroid.requestSystemPermission`: without it, its manifest sanity
+  check throws on the standard base's own `NEARBY_WIFI_DEVICES` declaration (no `neverForLocation`), before any prompt.
+- **Tested on a phone** (2026-10-02, VERSION 1002-8): OnePlus PJZ110, Android 16, V8 "JCV8B DBE34D" — scan, bind, full sync,
+  ECG recording, rows on dev identical in shape and ids to xapp-mini's.
+- **Sync Now with a server-only binding** (`wearableId == '__server__'`, i.e. bound on another phone or in xapp-mini) starts the
+  bind flow instead of failing at once — there is no local device id or brand to connect to. The miniapp still has that dead end.
+- **HBuilderX does not rebuild a changed UTS plugin in watch mode**, and `--cleanCache` did not help either ("uts插件[waven-ble]
+  文件未发生变化，跳过编译"). After editing anything under `uni_modules/waven-ble`, stop the launch, delete `unpackage/`, and launch
+  again; check the generated `unpackage/cache/uts_standard_android/.../waven-ble/index.kt` for the change.
 
 ## WeChat mini-program export (2026-10-01, VERSION 1001-9)
 
 `tools/xapp-mini/build.sh` → `src/xapp-mini`, a WeChat DevTools project. Uploads read files
 through `getFileSystemManager` (`utils/file-bytes.uts`). Bluetooth (Halo/V8) runs over WeChat's API through
-`utils/wearable/transport-mp.uts`, installed from `App.uvue` (VERSION 1002-1); Android/iOS still have no
-transport. Login on mp-weixin is the miniapp's `wx.login` flow, including guest mode for mini-program
+`utils/wearable/transport-mp.uts`, installed from `App.uvue` (VERSION 1002-1). Login on mp-weixin is the miniapp's `wx.login` flow, including guest mode for mini-program
 review (VERSION 1002-4); native keeps phone/email OTP and has no guest mode. Details and gaps: [`tools/xapp-mini/README.md`](../../tools/xapp-mini/README.md).
 
 ## Web (H5) build (2026-10-01, VERSION 1001-8)

@@ -19,7 +19,8 @@ src/xapp/
 ├── components/          # user-health, health-documents, viva-ag-panel, strip-record,
 │                        # toolbox, avatar-picker
 ├── utils/               # config/state/request/session/markdown/tool-actions/main-t (i18n dict),
-│                        # wearable/ (halo, v8, sync, transport interface)
+│                        # wearable/ (halo, v8, sync, transport interface + mp/android adapters)
+├── uni_modules/waven-ble/ # Android BLE UTS plugin (BluetoothLeScanner/BluetoothGatt + op queue)
 └── static/              # icons + images copied from the miniapp assets/
 ```
 
@@ -35,9 +36,12 @@ this exposed (plain-text QR for `/qr-login`, `ref` param for signup referrals).
 ## Running on a device (runbook)
 
 ```bash
-# 1. HBuilderX (5.26 arm64) must be installed; project already imported.
-#    Watch-mode launch — compiles, installs the debug base, hot-pushes on every save:
+# 1. HBuilderX 5.26 must be installed; project already imported. Where it lives differs per Mac:
+#    the original arm64 Mac: /Applications/HBuilderX.app, project /Users/pin/waven/nano/src/xapp;
+#    i9 (Intel): ~/Applications/HBuilderX.app (user-level install), project ~/waven/xapp-android
+#    (an rsync of src/xapp). Watch-mode launch — compiles, installs the debug base, hot-pushes on every save:
 /Applications/HBuilderX.app/Contents/MacOS/cli launch app-android --project /Users/pin/waven/nano/src/xapp
+~/Applications/HBuilderX.app/Contents/MacOS/cli launch app-android --project ~/waven/xapp-android --deviceId <ip:port>   # i9
 # add `--compile true` for a compile-only pass (reports errors, ~80s/round, caps ~4/round)
 
 # 2. Wireless ADB (ports rotate per session — never trust an old ip:port):
@@ -45,6 +49,17 @@ adb mdns services            # find _adb-tls-pairing._tcp and _adb-tls-connect._
 adb pair <ip>:<pairport> <code>
 adb connect <ip>:<connectport>
 ```
+
+- **macOS Local Network privacy:** an adb server started from an SSH session cannot reach the phone
+  (`adb pair` fails with "protocol fault", the server log says "No route to host", although `nc` from the
+  same shell connects). Start the adb server from the Mac's own Terminal (`adb pair …` there); later adb
+  commands over SSH reuse that server.
+- **The connect port** is the one on the phone's main Wireless debugging screen, not the pairing port;
+  `dns-sd -B _adb-tls-connect._tcp` / `dns-sd -L "<name> (2)" _adb-tls-connect._tcp` finds it when mDNS
+  lists a stale entry first.
+- HBuilderX's bundled adb (`plugins/launcher-tools/tools/adbs/adb`) is protocol 1.0.41, so it reuses that server.
+- First run of a fresh HBuilderX install downloads the uni-app x launcher, the vue3 compiler and the UTS Android
+  extension; the CLI stops ("正在安装 uts Android 运行扩展", "运行状态错误，请重试") until they are in — rerun it.
 
 **Which app on the phone is which** (this confused a whole session):
 
@@ -99,6 +114,9 @@ Classes learned across the compile pass and two device passes (full log in READM
   (hand-written interfaces CCE at runtime; `InstanceType<typeof C['$component']>` is a parse error).
 - Data fields initialized from functions/imported consts infer to `Any` → annotate (`VERSION as string`).
 - Async work in callbacks/hooks: `(async () : Promise<void> => {…})()` wrappers (callbacks must return Unit).
+- **`new Array<number>(n)` is the one-element array `[n]` on Android**, not `n` empty slots as in JS — `.fill(0)` then gives
+  `[0]` and every index past 0 throws. Build zero buffers with a push loop. It compiled cleanly and only failed on the
+  phone; xapp-mini and web (JS) were unaffected (found 2026-10-02 in the Halo/V8 packet builders).
 
 **uvue CSS (app-uvue-css)**
 - `min-width`/`width` are CONTENT-box (WXSS default is border-box) — sizes that "match" the
