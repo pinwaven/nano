@@ -6267,6 +6267,14 @@ export default {
 
     async handleSyncWearable() {
       if (this.wearableBusy || this.wearableId.length == 0) return
+      // A binding known only from the server ('__server__': bound on another phone or in
+      // xapp-mini) has no local device id or brand to connect to. Pair it here first — the bind
+      // flow scans, saves wearable_device and re-syncs. (The miniapp has the same dead end:
+      // its Sync Now falls through to a failed connect.)
+      if (this.wearableId == '__server__' || _storageObj('wearable_device') == null) {
+        this.handleBindWearable()
+        return
+      }
       const t = this.t
       const lang = this.lang.length > 0 ? this.lang : 'zh'
       const isZh = lang != 'en'
