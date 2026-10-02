@@ -216,18 +216,22 @@ function syncWearableData(openid, snapshot, apiToken) {
     }
   }
 
-  // Per-measurement temperature events (Halo — one event per scheduled temp reading).
+  // Per-measurement temperature events (Halo and V8 — one event per scheduled temp reading).
+  // Halo slots carry `timestamp`; V8 slots carry the same 'YYYY-MM-DD HH:MM:SS' under `date`.
+  // The external_id keeps its two historical shapes (V8's is the date digits + '0000') so
+  // re-syncs keep upserting the same rows.
   if (snapshot.tempSlots?.length) {
     for (const slot of snapshot.tempSlots) {
       const ts = slot.timestamp ? slot.timestamp.replace(/\D/g, '') : String(slot.date || '').replace(/\D/g, '') + '0000'
-      const slotDate = slot.timestamp ? slot.timestamp.substring(0, 10) : String(slot.date || todayDate)
+      const slotDate = slot.timestamp ? slot.timestamp.substring(0, 10) : String(slot.date || todayDate).substring(0, 10)
+      const readingTs = slot.timestamp || (String(slot.date || '').length > 10 ? String(slot.date) : null)
       if (slot.estimatedBodyTemp == null) continue
       events.push({
         category: 'vitals',
         source: src,
         wearable_name: snapshot.wearableName ?? null,
         data_date: slotDate,
-        recorded_at: (slot.timestamp && _shanghaiTsToIso(slot.timestamp)) || recordedAt,
+        recorded_at: (readingTs && _shanghaiTsToIso(readingTs)) || recordedAt,
         external_id: `${src}_temp_${ts}`,
         data: {
           body_temp_c: slot.estimatedBodyTemp,
