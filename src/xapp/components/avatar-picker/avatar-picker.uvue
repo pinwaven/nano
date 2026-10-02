@@ -49,6 +49,9 @@ export default {
 
 <style>
 .picker-backdrop {
+  /* uvue makes every view position:relative, so later siblings in the health scroll would paint
+     over this fixed layer without an explicit stacking order. */
+  z-index: 1000;
   position: fixed;
   left: 0;
   top: 0;
