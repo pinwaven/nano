@@ -1206,7 +1206,8 @@
 
     <!-- Privacy consent popup — WeChat's onNeedPrivacyAuthorization path; the native app gets
          OS permission prompts instead. Kept guarded so it never renders in xapp unless a
-         caller sets showPrivacyPopup. TODO(port): OS BLE permission flow. -->
+         caller sets showPrivacyPopup. On Android the waven-ble plugin asks for the Bluetooth
+         permissions itself when the adapter opens. -->
     <view v-if="showPrivacyPopup" class="privacy-mask" v-on:click.stop="noop()">
       <view class="privacy-box">
         <text class="privacy-title">{{ isZh ? '隐私保护提示' : 'Privacy Notice' }}</text>
@@ -6155,10 +6156,10 @@ export default {
       const t = this.t
       this.wearableBusy = true
       try {
-        // TODO(port): uni-app x has no wx.*Bluetooth* — discovery runs over the installed
-        // BleTransport (utils/wearable/transport.uts; a UTS BLE plugin must call
-        // installBleTransport first). Without an installed transport the bind flow reports a
-        // connection failure instead of silently scanning nothing.
+        // Discovery runs over the installed BleTransport (utils/wearable/transport.uts:
+        // transport-android.uts on Android, transport-mp.uts on xapp-mini; App.uvue installs it).
+        // Without one (iOS, web) the bind flow reports a connection failure instead of silently
+        // scanning nothing.
         // Colmi/Aizo name prefixes and the Aizo service-UUID advertisement check are NOT
         // ported (§18): xapp binds Halo + V8 only.
         const transport = getInstalledBleTransport()
