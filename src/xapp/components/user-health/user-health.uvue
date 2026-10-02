@@ -198,6 +198,10 @@
                       v-on:touchmove="onChartTouch('dt-bioage-chart', $event)"
                       v-on:touchend="onChartTouchEnd('dt-bioage-chart')">
                   <view class="chart-box" :style="'width:' + bioAgeChartW + 'px;height:200px;'">
+                    <!-- #ifdef MP-WEIXIN -->
+                    <canvas id="dt-bioage-canvas" type="2d" class="chart-canvas" :style="'width:' + bioAgeChartW + 'px;height:200px;'"></canvas>
+                    <!-- #endif -->
+                    <!-- #ifndef MP-WEIXIN -->
                     <view v-for="(g, i) in abioArr('grid')" :key="'g' + i" class="chart-grid-line"
                           :style="'top:' + an(g, 'y') + 'px;left:' + abioN('pL') + 'px;width:' + abioN('plotW') + 'px;'"></view>
                     <text class="chart-y-label" :style="'top:' + (abioN('pT') + 2) + 'px;'">{{ abioS('maxLabel') }}</text>
@@ -210,6 +214,7 @@
                           :style="'left:' + (an(l, 'x') - 16) + 'px;top:' + (abioN('H') - abioN('pB') + 6) + 'px;'">
                       <text class="chart-x-label-text">{{ al(l, 'text') }}</text>
                     </view>
+                    <!-- #endif -->
                     <view v-if="bioAgeCross >= 0" class="chart-cross-line"
                           :style="'left:' + an(abioPt('bioAgeCross'), 'x') + 'px;top:' + abioN('pT') + 'px;height:' + abioN('plotH') + 'px;'"></view>
                     <view v-if="bioAgeCross >= 0" class="chart-cross-box" :style="bioAgeCrossBoxStyle()">
@@ -1153,6 +1158,12 @@
               v-on:touchstart="onChartTouch(chartModalCanvasId, $event)"
               v-on:touchmove="onChartTouch(chartModalCanvasId, $event)"
               v-on:touchend="onChartTouchEnd(chartModalCanvasId)">
+          <!-- xapp-mini draws the chart on a canvas, as the miniapp (utils/mp-chart.uts); native
+               and web lay it out as views. The crosshair below is views on every platform. -->
+          <!-- #ifdef MP-WEIXIN -->
+          <canvas id="uh-line-canvas" type="2d" class="chart-canvas" :style="'width:' + chartModalW + 'px;height:200px;'"></canvas>
+          <!-- #endif -->
+          <!-- #ifndef MP-WEIXIN -->
           <view v-for="(g, i) in aget(lineChart, 'grid')" :key="'g' + i" class="chart-grid-line"
                 :style="'top:' + an(g, 'y') + 'px;left:' + lcN('pL') + 'px;width:' + lcN('plotW') + 'px;'"></view>
           <text v-for="(g, i) in aget(lineChart, 'grid')" :key="'gl' + i" class="chart-grid-label"
@@ -1163,6 +1174,7 @@
                 :style="'left:' + (an(l, 'x') - 16) + 'px;top:172px;'">
             <text class="chart-x-label-text">{{ al(l, 'text') }}</text>
           </view>
+          <!-- #endif -->
           <view v-if="lcCrossIdx >= 0 && crossInfo != null" class="chart-cross-line"
                 :style="'left:' + an(crossPt(), 'x') + 'px;top:' + lcN('pT') + 'px;height:' + lcN('plotH') + 'px;'"></view>
           <view v-if="lcCrossIdx >= 0 && crossInfo != null" class="chart-cross-dot"
@@ -1188,6 +1200,10 @@
           <view class="bp-legend-item"><view class="bp-legend-dot bp-legend-dia"></view><text class="bp-legend-label">DIA</text></view>
         </view>
         <view class="chart-box" :style="'width:' + bpChartW + 'px;height:200px;'">
+          <!-- #ifdef MP-WEIXIN -->
+          <canvas id="uh-bp-canvas" type="2d" class="chart-canvas" :style="'width:' + bpChartW + 'px;height:200px;'"></canvas>
+          <!-- #endif -->
+          <!-- #ifndef MP-WEIXIN -->
           <view v-for="(g, i) in aget(bpChartLayout, 'grid')" :key="'g' + i" class="chart-grid-line"
                 :style="'top:' + an(g, 'y') + 'px;left:' + bpN('pL') + 'px;width:' + bpN('plotW') + 'px;'"></view>
           <text v-for="(g, i) in aget(bpChartLayout, 'grid')" :key="'gl' + i" class="chart-grid-label"
@@ -1200,6 +1216,7 @@
                 :style="'left:' + (an(l, 'x') - 16) + 'px;top:172px;'">
             <text class="chart-x-label-text">{{ al(l, 'text') }}</text>
           </view>
+          <!-- #endif -->
         </view>
       </view>
     </view>
@@ -1277,6 +1294,7 @@ import AvatarPicker from '../avatar-picker/avatar-picker.uvue'
 import HealthDocuments from '../health-documents/health-documents.uvue'
 import StripRecord from '../strip-record/strip-record.uvue'
 import VivaAgPanel from '../viva-ag-panel/viva-ag-panel.uvue'
+import { paintChart, ChartSpec, ChartSeries, paintBioAge, BioAgeSpec } from '../../utils/mp-chart.uts'
 
 const BM_META : UTSJSONObject[] = [
   { key: 'hsCRP', unit: 'mg/L', color: '#f472b6' } as UTSJSONObject,
@@ -1798,6 +1816,12 @@ function _maxOf(arr : number[]) : number {
   for (const v of arr) if (v > m) m = v
   return m
 }
+// '#rrggbb' + alpha → 'rgba(r,g,b,a)' (the miniapp's chart area fill under a series line)
+function _rgba(hex : string, a : number) : string {
+  const h = parseInt(hex.replace('#', ''), 16)
+  return `rgba(${(h >> 16) & 255},${(h >> 8) & 255},${h & 255},${a})`
+}
+
 function _minOf(arr : number[]) : number {
   let m = arr.length > 0 ? arr[0] : 0
   for (const v of arr) if (v < m) m = v
@@ -5403,6 +5427,33 @@ export default {
       } as UTSJSONObject
     },
 
+    // xapp-mini: paint lineChart (the open metric modal) on its canvas, as the miniapp's
+    // _drawGenericChart / _drawWeightFullChart. fill: the area colour, or null for the series
+    // colour at 10% (the generic charts). A no-op on native and web.
+    _paintLineChart(fill : string | null) {
+      const lc = this.lineChart
+      if (lc == null) return
+      const c = this._chartPalette()
+      const color = sget(lc, 'accent')
+      const spec : ChartSpec = {
+        W: nget(lc, 'W'), H: nget(lc, 'H'), pL: nget(lc, 'pL'), pT: nget(lc, 'pT'),
+        plotW: nget(lc, 'plotW'), plotH: nget(lc, 'plotH'), pB: nget(lc, 'pB'),
+        grid: aget(lc, 'grid'), labels: aget(lc, 'labels'),
+        series: [{ pts: aget(lc, 'pts'), color: color, fill: fill != null ? fill : _rgba(color, 0.1), dotFill: sget(c, 'textPrimary') } as ChartSeries],
+        gridColor: sget(c, 'gridLine'), gridText: sget(c, 'textMuted45'),
+        labelText: sget(c, 'textMuted50'), axisColor: sget(c, 'glow22'),
+      }
+      this.$nextTick(() => { paintChart('uh-line-canvas', this._mpScope(), spec) })
+    },
+
+    // The mini-program component instance a canvas lookup needs (null off WeChat).
+    _mpScope() : any | null {
+      // #ifdef MP-WEIXIN
+      return (this as any).$scope
+      // #endif
+      return null
+    },
+
     _registerLayout(canvasId : string, layout : UTSJSONObject, target : string) {
       const cl = new ChartLayout()
       cl.pL = nget(layout, 'pL')
@@ -5435,7 +5486,18 @@ export default {
         }
       }
       layout['grid'] = gridFixed
+      if (weights.length > 0) {
+        const minW = Math.floor(_minOf(weights)) - 2
+        const maxW = Math.ceil(_maxOf(weights)) + 2
+        const plotW = nget(layout, 'plotW')
+        const pts : UTSJSONObject[] = []
+        for (let i = 0; i < weights.length; i++) {
+          pts.push({ x: pL + (i / Math.max(weights.length - 1, 1)) * plotW, y: pT + ((maxW - weights[i]) / (maxW - minW)) * plotH } as UTSJSONObject)
+        }
+        layout['pts'] = pts
+      }
       this.lineChart = layout
+      this._paintLineChart(sget(this._chartPalette(), 'fillLight'))
     },
     closeWeightChart() { this.weightChartOpen = false },
 
@@ -5444,6 +5506,7 @@ export default {
       this.bmiChartOpen = true
       this.bmiChartW = W
       this.lineChart = this._buildLineChartLayout(this.bmiHistory, 'bmi', '', '#6375EC')
+      this._paintLineChart(null)
     },
     closeBmiChart() { this.bmiChartOpen = false },
 
@@ -5452,6 +5515,7 @@ export default {
       this.stepsChartOpen = true
       this.stepsChartW = W
       this.lineChart = this._buildLineChartLayout(this.stepsHistory, 'steps', '', '#0ea5e9')
+      this._paintLineChart(null)
     },
     closeStepsChart() { this.stepsChartOpen = false },
 
@@ -5460,6 +5524,7 @@ export default {
       this.hrvChartOpen = true
       this.hrvChartW = W
       this.lineChart = this._buildLineChartLayout(this.hrvHistory, 'hrv', 'ms', '#10b981')
+      this._paintLineChart(null)
     },
     closeHrvChart() { this.hrvChartOpen = false },
 
@@ -5468,6 +5533,7 @@ export default {
       this.stressChartOpen = true
       this.stressChartW = W
       this.lineChart = this._buildLineChartLayout(this.stressHistory, 'stress', '', '#f97316')
+      this._paintLineChart(null)
     },
     closeStressChart() { this.stressChartOpen = false },
 
@@ -5476,6 +5542,7 @@ export default {
       this.glucoseChartOpen = true
       this.glucoseChartW = W
       this.lineChart = this._buildLineChartLayout(this.glucoseHistory, 'glucose', 'mmol/L', '#a855f7')
+      this._paintLineChart(null)
     },
     closeGlucoseChart() { this.glucoseChartOpen = false },
 
@@ -5514,6 +5581,17 @@ export default {
         }
       }
       this.bpChartLayout = { W: W, H: H, pL: pL, plotW: plotW, sysPts: sysPts, diaPts: diaPts, grid: grid, labels: labels } as UTSJSONObject
+      // xapp-mini: the miniapp's _drawBpChart on a canvas (two series, no area fill)
+      const spec : ChartSpec = {
+        W: W, H: H, pL: pL, pT: pT, plotW: plotW, plotH: plotH, pB: pB, grid: grid, labels: labels,
+        series: [
+          { pts: sysPts, color: '#ef4444', fill: null, dotFill: '#EEF2FF' } as ChartSeries,
+          { pts: diaPts, color: '#6375EC', fill: null, dotFill: '#EEF2FF' } as ChartSeries,
+        ],
+        gridColor: 'rgba(99,117,236,0.12)', gridText: 'rgba(166,196,229,0.45)',
+        labelText: 'rgba(166,196,229,0.5)', axisColor: 'rgba(99,117,236,0.3)',
+      }
+      this.$nextTick(() => { paintChart('uh-bp-canvas', this._mpScope(), spec) })
     },
     closeBpChart() { this.bpChartOpen = false; this.bpChartLayout = null },
 
@@ -5530,6 +5608,7 @@ export default {
       const layout = this._buildLineChartLayout(history, 'value', '', color)
       this.lineChart = layout
       this._registerLayout('uh-subage-chart', layout, 'line')
+      this._paintLineChart(null)
       // (miniapp: _cacheChartRect('uh-subage-chart') after open — xLeft is computed in _registerLayout)
     },
     closeSubAgeChart() {
@@ -5562,6 +5641,7 @@ export default {
       const layout = this._buildLineChartLayout(points, 'value', unit, '#0ea5e9')
       this.lineChart = layout
       this._registerLayout('uh-lab-chart', layout, 'line')
+      this._paintLineChart(null)
     },
     closeLabChart() {
       this.labChartOpen = false
@@ -5671,6 +5751,19 @@ export default {
       if (open && this.bioAgeHistory.length > 1) {
         this._buildBioAgeLayout()
       }
+      if (open) this._paintBioAge()
+    },
+
+    // xapp-mini: the miniapp's BioAge chart on a canvas (utils/mp-chart.uts). No-op off WeChat.
+    _paintBioAge() {
+      const cAge = this.cAge
+      const spec : BioAgeSpec = {
+        W: this.bioAgeChartW, H: 200,
+        bAge: this.bAge, cAge: cAge != null ? `${cAge}` : '', bAgeColor: this.tc(this.bAgeColor),
+        bioLabel: this.tt('bioAge'), chronoLabel: this.tt('chronoAge'),
+        history: this.bioAgeHistory, palette: this._chartPalette(),
+      }
+      this.$nextTick(() => { paintBioAge('dt-bioage-canvas', this._mpScope(), spec) })
     },
 
     closeBioAgeTrend() {
@@ -6969,21 +7062,23 @@ export default {
 /* #endif */
 .ring-chart-date { color: rgba(166, 196, 229, 0.5); font-size: 10px; margin-right: 6px; }
 .ring-chart-time { color: rgba(166, 196, 229, 0.5); font-size: 10px; }
-.ring-chart-bars { flex-direction: row; align-items: flex-end; height: 41px; }
+.ring-chart-bars { flex-direction: row; align-items: flex-end; height: 40px; }
 .ring-chart-col { flex: 1; align-items: center; justify-content: flex-end; height: 41px; }
-.ring-chart-bar { width: 60%; border-radius: 2px; }
+/* WeChat shrinks flex items by default and uvue does not: the bar is what gives, so the value and
+   date labels above and below it always fit the 40px column (as in the miniapp). */
+.ring-chart-bar { width: 100%; flex-shrink: 1; min-height: 1.5px; border-top-left-radius: 1.5px; border-top-right-radius: 1.5px; }
 .ring-chart-bar-empty { opacity: 0.35; }
 .ring-chart-hlabel { color: rgba(166, 196, 229, 0.3); font-size: 7px; margin-top: 2px; }
-.ring-chart-day-col { flex: 1; align-items: center; justify-content: flex-end; height: 41px; margin-left: 2px; margin-right: 2px; }
-.ring-chart-day-avg { color: rgba(166, 196, 229, 0.55); font-size: 8px; font-weight: bold; }
-.ring-chart-day-label { color: rgba(166, 196, 229, 0.35); font-size: 7px; margin-top: 2px; }
+.ring-chart-day-col { flex: 1; align-items: center; justify-content: flex-end; height: 40px; margin-left: 0.75px; margin-right: 0.75px; }
+.ring-chart-day-avg { flex-shrink: 0; margin-bottom: 2px; color: rgba(166, 196, 229, 0.55); font-size: 8px; font-weight: bold; line-height: 8px; }
+.ring-chart-day-label { flex-shrink: 0; color: rgba(166, 196, 229, 0.35); font-size: 7.5px; line-height: 7.5px; margin-top: 2px; }
 
 .ring-sleepweek-wrap { flex-direction: row; margin-top: 4px; }
-.ring-sleepweek-axis { width: 17px; position: relative; color: rgb(238, 242, 255); padding: 0px 0px 16px 0px; justify-content: space-between; }
-.ring-sleepweek-axis-lbl { position: absolute; left: 0; color: rgba(166, 196, 229, 0.3); font-size: 7px; }
+.ring-sleepweek-axis { width: 17px; margin-right: 5px; padding-bottom: 16px; justify-content: space-between; }
+.ring-sleepweek-axis-lbl { color: rgba(166, 196, 229, 0.3); font-size: 7px; line-height: 7px; }
 .ring-sleepweek-days { flex: 1; flex-direction: row; }
-.ring-sleepweek-daycol { flex: 1; align-items: center; }
-.ring-sleepweek-track { width: 100%; position: relative; background-color: rgba(99, 117, 236, 0.06); border-radius: 4px; }
+.ring-sleepweek-daycol { flex: 1; align-items: center; margin-left: 1.5px; margin-right: 1.5px; }
+.ring-sleepweek-track { width: 100%; position: relative; background-color: rgba(99, 117, 236, 0.06); border-radius: 4px; overflow: hidden; margin-bottom: 3px; }
 .ring-sleepweek-gridline { position: absolute; left: 0; right: 0; height: 1px; background-color: rgba(166, 196, 229, 0.1); }
 .ring-sleepweek-block { position: absolute; left: 15%; width: 70%; border-radius: 2px; }
 .ring-sleepweek-block-nap { opacity: 0.75; }
@@ -7006,7 +7101,7 @@ export default {
 .ring-linechart-range { flex-direction: row; justify-content: space-between; margin: 4px 0px 0px 0px; align-items: center; }
 .ring-linechart-bound { color: rgba(166, 196, 229, 0.35); font-size: 9px; }
 .ring-linechart-count { color: rgba(166, 196, 229, 0.25); font-size: 9px; }
-.ring-lc-smoothed-note { color: rgba(245, 158, 11, 0.7); font-size: 9px; margin: 3px 0px 0px 0px; }
+.ring-lc-smoothed-note { color: rgba(166, 196, 229, 0.3); font-size: 8px; margin: 3px 0px 0px 0px; }
 .ring-sleep-timeline { flex-direction: row; height: 12px; border-radius: 6px; overflow: hidden; background-color: rgba(99, 117, 236, 0.08); }
 .ring-sleep-tl-seg { height: 12px; }
 
@@ -7028,10 +7123,10 @@ export default {
 .ecg-card-row { flex-direction: row; align-items: center; justify-content: space-between; }
 .ecg-card-main { flex: 1; }
 .ecg-card-title { color: rgb(238, 242, 255); font-size: 12px; font-weight: bold; }
-.ecg-card-hero { flex-direction: row; align-items: flex-end; margin-top: 4px; }
+.ecg-card-hero { flex-direction: row; flex-wrap: wrap; align-items: flex-end; margin-top: 4px; }
 .ecg-card-bpm { color: rgb(31, 183, 166); font-size: 22px; font-weight: bold; }
 .ecg-card-unit { color: rgba(166, 196, 229, 0.4); font-size: 11px; margin-left: 3px; }
-.ecg-card-meta { color: rgba(166, 196, 229, 0.4); font-size: 11px; margin-left: 8px; }
+.ecg-card-meta { width: 100%; margin-top: 3px; color: rgba(166, 196, 229, 0.4); font-size: 11px; }
 .ecg-card-empty { color: rgba(166, 196, 229, 0.5); font-size: 11px; margin-top: 4px; }
 .ecg-card-list { margin-top: 6px; border-top-width: 1px; border-top-color: rgba(99, 117, 236, 0.12); color: rgb(238, 242, 255); border-right-width: 0px; border-bottom-width: 0px; border-left-width: 0px; padding: 4px 0px 0px 0px; border-style: solid; }
 .ecg-card-list-row { flex-direction: row; justify-content: space-between; padding: 0px 0px 0px 0px; }
@@ -7192,13 +7287,14 @@ export default {
 .rpt-ev-status { border-style: solid; border-width: 1px; border-radius: 6px; padding: 2px 6px; margin-left: 6px; }
 .rpt-ev-status-text { font-size: 9px; font-weight: bold; }
 
-.wchart-overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; background-color: rgba(6, 15, 25, 0.75); z-index: 120; justify-content: center; align-items: center; }
-.wchart-sheet { background-color: #0F2235; border-radius: 16px; padding: 12px; margin-left: 24px; margin-right: 24px; }
-.wchart-handle { width: 40px; height: 4px; border-radius: 2px; background-color: rgba(166, 196, 229, 0.3); align-self: center; margin-bottom: 6px; }
-.wchart-header { flex-direction: row; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.wchart-title { color: #EAF2FB; font-size: 14px; font-weight: bold; }
-.wchart-close { padding: 4px 8px; }
-.wchart-close-x { color: #A6C4E5; font-size: 14px; }
+/* The miniapp's chart sheet: a bottom sheet the full width of the screen (user-health.wxss .wchart-*) */
+.wchart-overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; background-color: rgba(6, 15, 25, 0.75); z-index: 120; justify-content: flex-end; align-items: stretch; }
+.wchart-sheet { background-color: #0D1E35; border-top-left-radius: 20px; border-top-right-radius: 20px; padding: 10px 18px 30px; align-items: center; }
+.wchart-handle { width: 32px; height: 3px; border-radius: 2px; background-color: rgba(166, 196, 229, 0.2); align-self: center; margin-bottom: 12px; }
+.wchart-header { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.wchart-title { color: #EEF2FF; font-size: 15px; font-weight: bold; }
+.wchart-close { width: 24px; height: 24px; align-items: center; justify-content: center; }
+.wchart-close-x { color: rgba(166, 196, 229, 0.5); font-size: 14px; }
 .bp-chart-legend { flex-direction: row; margin-bottom: 4px; }
 .bp-legend-item { flex-direction: row; align-items: center; margin-right: 12px; }
 .bp-legend-dot { width: 8px; height: 8px; border-radius: 4px; margin-right: 4px; }
@@ -7208,6 +7304,11 @@ export default {
 
 /* view-based chart (replaces wx.createCanvasContext targets) */
 .chart-box { position: relative; background-color: #0a1228; border-radius: 10px; overflow: hidden; }
+/* #ifdef MP-WEIXIN */
+/* the miniapp's chart canvas sits straight on the sheet — no box of its own */
+.chart-box { background-color: transparent; border-radius: 0px; }
+.chart-canvas { position: absolute; left: 0; top: 0; }
+/* #endif */
 .chart-grid-line { position: absolute; height: 1px; background-color: rgba(99, 117, 236, 0.12); }
 .chart-grid-label { position: absolute; left: 2px; color: rgba(166, 196, 229, 0.45); font-size: 9px; }
 .chart-y-label { position: absolute; left: 4px; color: rgba(166, 196, 229, 0.45); font-size: 9px; }
