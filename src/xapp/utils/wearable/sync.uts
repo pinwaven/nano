@@ -322,21 +322,25 @@ export async function syncWearableData(openid : string, snapshot : WearableSnaps
     events.push(ev)
   }
 
-  // — per-measurement temperature —
+  // — per-measurement temperature (Halo and V8) —
+  // Halo slots carry `timestamp`; V8 slots carry the same 'YYYY-MM-DD HH:MM:SS' under `date`.
+  // The external_id keeps its two historical shapes (V8's is the date digits + '0000') so
+  // re-syncs keep upserting the same rows.
   for (const slot of snapshot.tempSlots) {
     const tsOpt = slot.getString('timestamp')
     const dateOpt = slot.getString('date')
     const bodyTemp = slot.getNumber('estimatedBodyTemp')
     if (bodyTemp == null) continue
     const ts = tsOpt != null ? _digitsOnly(tsOpt!) : `${_digitsOnly(dateOpt ?? todayDate)}0000`
-    const slotDate = tsOpt != null ? tsOpt!.substring(0, 10) : (dateOpt ?? todayDate)
+    const slotDate = tsOpt != null ? tsOpt!.substring(0, 10) : (dateOpt ?? todayDate).substring(0, 10)
+    const readingTs : string | null = tsOpt != null ? tsOpt : (dateOpt != null && dateOpt!.length > 10 ? dateOpt : null)
     const data = {
       body_temp_c: bodyTemp,
       skin_temp_c: slot.getNumber('skinTemp'),
     } as UTSJSONObject
     const ev = _ev('vitals', slotDate, `${src}_temp_${ts}`, data)
-    if (tsOpt != null) {
-      const iso = shanghaiTsToIso(tsOpt!)
+    if (readingTs != null) {
+      const iso = shanghaiTsToIso(readingTs!)
       if (iso != null) ev['recorded_at'] = iso
     }
     events.push(ev)
