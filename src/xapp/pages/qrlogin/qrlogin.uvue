@@ -25,6 +25,7 @@
 import { BASE, BUILD_ENV } from '../../utils/config.uts'
 import { state } from '../../utils/state.uts'
 import { postBody } from '../../utils/request.uts'
+import { scanQr } from '../../utils/web-ui.uts'
 
 export default {
   name: 'QrloginPage',
@@ -56,7 +57,7 @@ export default {
   },
   methods: {
     scanAndConfirm() {
-      uni.scanCode({
+      scanQr({
         success: (res) => {
           this._confirmWithScene(res.result)
         },

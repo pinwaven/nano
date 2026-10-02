@@ -7,6 +7,8 @@
 //   (Android FileInputStream / iOS NSData); wire it during the device-testing pass.
 
 import { BASE } from './config.uts'
+import { readFileBytes } from './file-bytes.uts'
+import { scanQr, setScanTitle } from './web-ui.uts'
 
 export class ToolItem {
   action : string
@@ -73,7 +75,8 @@ export function getToolList(t : UTSJSONObject) : ToolItem[] {
 
 export function runTestChip(openid : string, t : UTSJSONObject, ctx : ToolCtx) : Promise<boolean> {
   return new Promise<boolean>((resolve : (v : boolean) => void, _reject : (e : any | null) => void) => {
-    uni.scanCode({
+    setScanTitle(_tr(t, 'kinoScanBtn'))
+    scanQr({
       onlyFromCamera: false,
       success: (res) => { (async () : Promise<void> => {
         const chipId = res.result
@@ -166,12 +169,6 @@ export function runUploadImage(openid : string, t : UTSJSONObject, ctx : ToolCtx
   doUpload(tempFilePath, openid, t, ctx)
 }
 
-// TODO(port): native file read per platform — wire with conditional compilation during the
-// device-testing pass. Returning null shows the error line instead of silently corrupting.
-function readFileBytes(path : string) : ArrayBuffer | null {
-  return null
-}
-
 export function doUpload(tempPath : string, openid : string, t : UTSJSONObject, ctx : ToolCtx) {
   const filename = `img_${Date.now()}.jpg`
   ctx.addMsg('ai', _tr(t, 'imageUploading'), false)
@@ -183,7 +180,7 @@ export function doUpload(tempPath : string, openid : string, t : UTSJSONObject, 
       const key = presignRes.data?.getString('key')
       if (putUrl == null) throw new Error('presign failed')
       const msgId = ctx.addImageMsg != null ? ctx.addImageMsg!(tempPath) : null
-      const bytes = readFileBytes(tempPath)
+      const bytes = await readFileBytes(tempPath)
       if (bytes == null || getUrl == null || key == null) throw new Error('read failed')
       try {
         const code = await _putBinary(putUrl!, bytes!)

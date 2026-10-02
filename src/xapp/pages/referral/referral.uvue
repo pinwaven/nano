@@ -1,4 +1,32 @@
 <template>
+  <!-- #ifdef WEB -->
+  <!-- Web: the miniapp's pages/referral markup (the web user-app's ReferralPage), styled by the
+       shared stylesheet in static/web/. 分享给好友 shares/copies an ?invite= link to this app. -->
+  <view class="referral-page route-page" :class="theme == 'light' ? 'theme-light' : ''">
+    <view class="app-header">
+      <view class="back-btn" v-on:click="goBack"><text class="back-icon">‹</text><text class="back-label">{{ t('back') }}</text></view>
+      <text class="header-title">{{ t('title') }}</text>
+    </view>
+    <view class="tab-scroll" style="flex: 1">
+      <view class="card">
+        <text class="card-label">{{ t('yourCode') }}</text>
+        <view class="code-row"><text class="code-value">{{ referralCode }}</text></view>
+        <view class="btn-row">
+          <view class="btn btn-outline" v-on:click="copyCode"><text>{{ t('copyCode') }}</text></view>
+          <view class="btn btn-primary" v-on:click="shareInvite"><text>{{ t('shareCard') }}</text></view>
+        </view>
+      </view>
+      <view class="card how-card">
+        <text class="card-label">{{ t('howTitle') }}</text>
+        <view class="how-row"><text class="how-num">1</text><text class="how-text">{{ t('how1') }}</text></view>
+        <view class="how-row"><text class="how-num">2</text><text class="how-text">{{ t('how2') }}</text></view>
+        <view class="how-row"><text class="how-num">3</text><text class="how-text">{{ t('how3') }}</text></view>
+      </view>
+      <view class="bottom-safe"></view>
+    </view>
+  </view>
+  <!-- #endif -->
+  <!-- #ifndef WEB -->
   <view class="rf-screen">
     <view class="rf-header" :style="'padding-top:' + statusBarHeight + 'px'">
       <view class="rf-back" v-on:click="goBack"><text class="rf-back-text">‹ {{ t('back') }}</text></view>
@@ -20,6 +48,7 @@
       <text class="rf-how">{{ t('how3') }}</text>
     </view>
   </view>
+  <!-- #endif -->
 </template>
 
 <script>
@@ -48,6 +77,14 @@ const T_EN : UTSJSONObject = {
   how3: 'You earn credits whenever your friend makes a purchase. Credits can be withdrawn as cash.',
 } as UTSJSONObject
 
+// Web: the miniapp's own wording (分享给好友 shares a link here instead of a WeChat card).
+const T_WEB_ZH : UTSJSONObject = {
+  shareCard: '分享给好友', how1: '点击「分享给好友」，将邀请卡片发送给微信好友或群。', linkCopied: '邀请链接已复制',
+} as UTSJSONObject
+const T_WEB_EN : UTSJSONObject = {
+  shareCard: 'Share with Friends', how1: 'Tap "Share with Friends" to send your invite card via WeChat.', linkCopied: 'Invite link copied',
+} as UTSJSONObject
+
 export default {
   name: 'ReferralPage',
   data() {
@@ -55,10 +92,12 @@ export default {
       lang: 'zh',
       statusBarHeight: 44,
       referralCode: '',
+      theme: 'dark',
     }
   },
   onLoad(_options : OnLoadOptions) {
     this.lang = state.lang
+    this.theme = state.theme
     const info = uni.getWindowInfo()
     this.statusBarHeight = info.statusBarHeight
     const user = state.user
@@ -70,6 +109,10 @@ export default {
   },
   methods: {
     t(key : string) : string {
+      // #ifdef WEB
+      const w = (this.lang == 'en' ? T_WEB_EN : T_WEB_ZH).getString(key)
+      if (w != null) return w
+      // #endif
       const dict = this.lang == 'en' ? T_EN : T_ZH
       const v = dict.getString(key)
       return v != null ? v : key
@@ -87,6 +130,22 @@ export default {
         success: () => { uni.showToast({ title: this.t('copied'), icon: 'success' }) }
       })
     },
+    // Web: the user-app's ReferralPage share — the system share sheet when the browser has
+    // one, else copy the ?invite= link to this app (components/web-login reads it).
+    shareInvite() {
+      // #ifdef WEB
+      const url = `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(this.referralCode)}`
+      const nav = navigator as any
+      const copy = () => {
+        uni.setClipboardData({ data: url, success: () => { uni.showToast({ title: this.t('linkCopied'), icon: 'none' }) } })
+      }
+      if (nav.share != null) {
+        nav.share({ title: this.t('shareTitle'), url: url }).catch(() => { copy() })
+        return
+      }
+      copy()
+      // #endif
+    },
     goBack() {
       uni.navigateBack()
     }
@@ -95,6 +154,8 @@ export default {
 </script>
 
 <style>
+/* Native only — the web build renders the miniapp markup above, styled by static/web/. */
+/* #ifndef WEB */
 .rf-screen { flex: 1; background-color: #0B1C2E; }
 .rf-header { flex-direction: row; align-items: center; padding: 12px 16px; }
 .rf-back { margin-right: 8px; }
@@ -128,4 +189,5 @@ export default {
 .rf-hint { color: rgba(166, 196, 229, 0.7); font-size: 11px; margin-top: 8px; }
 .rf-section { color: #EAF2FB; font-size: 15px; font-weight: bold; margin-bottom: 8px; }
 .rf-how { color: #A6C4E5; font-size: 13px; margin-bottom: 6px; }
+/* #endif */
 </style>

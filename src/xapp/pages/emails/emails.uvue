@@ -1,4 +1,66 @@
 <template>
+  <!-- #ifdef WEB -->
+  <!-- Web: the miniapp's pages/emails markup (the web user-app's IdentityPage), styled by the
+       shared stylesheet in static/web/. Native keeps its own layout below. -->
+  <view class="emails-page route-page" :class="theme == 'light' ? 'theme-light' : ''">
+    <view class="app-header">
+      <view class="back-btn" v-on:click="goBack"><text class="back-icon">‹</text><text class="back-label">{{ t('back') }}</text></view>
+      <text class="header-title">{{ t('title') }}</text>
+    </view>
+    <view class="emails-content tab-scroll">
+      <view v-if="loading" class="center-msg"><text class="dim-text">{{ t('loading') }}</text></view>
+      <view v-else class="card">
+        <view v-for="(e, i) in emails" :key="i" class="email-row">
+          <view class="email-row-main">
+            <text class="email-value">{{ e.getString('email') }}</text>
+            <text v-if="e.getBoolean('is_primary') == true" class="email-badge">{{ t('primaryBadge') }}</text>
+            <text v-if="e.getString('verified_at') == null" class="email-badge email-badge-muted">{{ t('unverifiedBadge') }}</text>
+          </view>
+          <view class="email-row-actions">
+            <text v-if="e.getBoolean('is_primary') != true" class="email-action" v-on:click="setPrimary(`${e.getString('email')}`)">{{ t('setPrimaryAction') }}</text>
+            <text class="email-action email-action-danger" v-on:click="removeEmail(`${e.getString('email')}`)">{{ t('removeAction') }}</text>
+          </view>
+        </view>
+        <view v-if="emails.length == 0" class="center-msg"><text class="dim-text">{{ t('emptyHint') }}</text></view>
+        <view class="btn btn-outline add-email-btn" v-on:click="openAddEmail"><text>{{ t('addEmailBtn') }}</text></view>
+      </view>
+    </view>
+    <view v-if="addMode" class="withdraw-overlay" v-on:click="closeAddEmail">
+      <view class="withdraw-modal" v-on:click.stop="noop">
+        <text class="withdraw-modal-title">{{ t('addEmailBtn') }}</text>
+        <view v-if="addStep == 'email'">
+          <view class="form-field">
+            <text class="form-label">{{ t('emailLabel') }}</text>
+            <input class="form-input" v-model="newEmail" :placeholder="t('emailPlaceholder')" :maxlength="254" type="text" :focus="true" v-on:confirm="sendCode" />
+          </view>
+          <text v-if="addError.length > 0" class="error-text">{{ addError }}</text>
+          <view class="withdraw-btns">
+            <view class="btn btn-outline" v-on:click="closeAddEmail"><text>{{ t('cancelBtn') }}</text></view>
+            <view class="btn btn-primary" :class="addLoading ? 'disabled' : ''" v-on:click="sendCode"><text>{{ addLoading ? t('sending') : t('sendCodeBtn') }}</text></view>
+          </view>
+        </view>
+        <view v-else>
+          <view class="form-field">
+            <text class="form-label">{{ t('codeLabel') }}</text>
+            <text class="email-step-desc">{{ codeSentToText }}</text>
+            <input class="form-input" v-model="code" placeholder="——————" :maxlength="6" type="number" :focus="true" />
+          </view>
+          <text v-if="addError.length > 0" class="error-text">{{ addError }}</text>
+          <view class="emails-links">
+            <text v-if="resendCooldown > 0" class="dim-text">{{ t('resendCooldown').split('{n}').join(`${resendCooldown}`) }}</text>
+            <text v-else class="emails-link" v-on:click="sendCode">{{ t('resendCode') }}</text>
+            <text class="emails-link" v-on:click="changeEmail">{{ t('changeEmail') }}</text>
+          </view>
+          <view class="withdraw-btns">
+            <view class="btn btn-outline" v-on:click="closeAddEmail"><text>{{ t('cancelBtn') }}</text></view>
+            <view class="btn btn-primary" :class="addLoading ? 'disabled' : ''" v-on:click="manualVerify"><text>{{ addLoading ? t('verifying') : t('verifyBtn') }}</text></view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+  <!-- #endif -->
+  <!-- #ifndef WEB -->
   <view class="ph-screen">
     <view class="ph-header" :style="'padding-top:' + statusBarHeight + 'px'">
       <view class="ph-back" v-on:click="goBack"><text class="ph-back-text">‹ {{ t('back') }}</text></view>
@@ -43,6 +105,7 @@
       </view>
     </view>
   </view>
+  <!-- #endif -->
 </template>
 
 <script>
@@ -63,7 +126,8 @@ const T_ZH : UTSJSONObject = {
   setPrimaryAction: '设为主邮箱', removeAction: '移除', addEmailBtn: '+ 添加邮箱',
   emailLabel: '邮箱', emailPlaceholder: '请输入邮箱地址', sendCodeBtn: '发送验证码', sending: '发送中…',
   codeLabel: '输入验证码', codeSentTo: '验证码已发送至 {email}', verifyBtn: '验证并添加', verifying: '验证中…',
-  changeEmail: '更换邮箱', cancelBtn: '取消',
+  changeEmail: '更换邮箱', cancelBtn: '取消', resendCode: '重新发送验证码', resendCooldown: '{n}秒后可重新发送',
+  unverifiedBadge: '未验证', emptyHint: '还没有绑定邮箱。绑定后可用邮箱验证码登录。',
   confirmRemoveTitle: '移除邮箱', confirmRemoveContent: '确定要移除 {email} 吗？',
   confirmSetPrimaryTitle: '设为主邮箱', confirmSetPrimaryContent: '将 {email} 设为主邮箱？',
   errorInvalidEmail: '请输入正确的邮箱地址', errorSendFailed: '验证码发送失败，请重试',
@@ -77,7 +141,8 @@ const T_EN : UTSJSONObject = {
   setPrimaryAction: 'Set Primary', removeAction: 'Remove', addEmailBtn: '+ Add Email',
   emailLabel: 'Email', emailPlaceholder: 'Enter email address', sendCodeBtn: 'Send Code', sending: 'Sending…',
   codeLabel: 'Enter Verification Code', codeSentTo: 'Code sent to {email}', verifyBtn: 'Verify & Add', verifying: 'Verifying…',
-  changeEmail: 'Change Email', cancelBtn: 'Cancel',
+  changeEmail: 'Change Email', cancelBtn: 'Cancel', resendCode: 'Resend Code', resendCooldown: 'Resend in {n}s',
+  unverifiedBadge: 'Unverified', emptyHint: 'No email yet. Add one to sign in with an email code.',
   confirmRemoveTitle: 'Remove Email', confirmRemoveContent: 'Remove {email}?',
   confirmSetPrimaryTitle: 'Set Primary', confirmSetPrimaryContent: 'Set {email} as your primary email?',
   errorInvalidEmail: 'Please enter a valid email address', errorSendFailed: 'Failed to send code, please try again',
@@ -102,10 +167,15 @@ export default {
       addLoading: false,
       addError: '',
       codeSentToText: '',
+      theme: 'dark',
+      resendCooldown: 0,
+      _cooldownTimer: 0 as number,
     }
   },
+  onUnload() { this._stopCooldown() },
   onLoad(_options : OnLoadOptions) {
     this.lang = state.lang
+    this.theme = state.theme
     const info = uni.getWindowInfo()
     this.statusBarHeight = info.statusBarHeight
     this.fetchEmails()
@@ -147,10 +217,12 @@ export default {
     },
     closeAddEmail() {
       this.addMode = false
+      this._stopCooldown()
     },
     async sendCode() {
       const email = this.newEmail.trim().toLowerCase()
       if (!EMAIL_RE.test(email)) { this.addError = this.t('errorInvalidEmail'); return }
+      if (this.resendCooldown > 0 || this.addLoading) return
       this.newEmail = email
       this.addLoading = true
       this.addError = ''
@@ -168,7 +240,23 @@ export default {
       this.addStep = 'code'
       this.code = ''
       this.codeSentToText = this._fmt(this.t('codeSentTo'), email)
+      this._startCooldown()
     },
+    // pages/emails/emails.js: 60s before "resend" is offered again.
+    _startCooldown() {
+      this._stopCooldown()
+      this.resendCooldown = 60
+      this._cooldownTimer = setInterval(() => {
+        if (this.resendCooldown <= 1) this._stopCooldown()
+        else this.resendCooldown = this.resendCooldown - 1
+      }, 1000)
+    },
+    _stopCooldown() {
+      if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+      this._cooldownTimer = 0
+      this.resendCooldown = 0
+    },
+    noop() {},
     manualVerify() {
       this.verifyCode()
     },
@@ -205,6 +293,7 @@ export default {
       this.addStep = 'email'
       this.code = ''
       this.addError = ''
+      this._stopCooldown()
     },
     setPrimary(email : string) {
       uni.showModal({
@@ -310,6 +399,8 @@ export default {
 </script>
 
 <style>
+/* Native only — the web build renders the miniapp markup above, styled by static/web/. */
+/* #ifndef WEB */
 .ph-screen { flex: 1; background-color: #0B1C2E; }
 .ph-header { flex-direction: row; align-items: center; padding: 12px 16px; }
 .ph-back { margin-right: 8px; }
@@ -387,4 +478,5 @@ export default {
 .ph-link { margin-top: 12px; align-items: center; }
 .ph-link-text { color: #A6C4E5; font-size: 14px; }
 .ph-error { color: #FF6B6B; font-size: 12px; margin-bottom: 6px; }
+/* #endif */
 </style>

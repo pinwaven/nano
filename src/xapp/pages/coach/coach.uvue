@@ -1,4 +1,750 @@
 <template>
+  <!-- #ifdef WEB -->
+  <!-- Web: the miniapp's pages/coach markup (the web user-app's generated coach View), styled by
+       the shared stylesheet in static/web/ (.web-coach scope). Native keeps its layout below. -->
+  <view class="web-coach">
+  <view class="coach-page" :class="['fs-' + textScale, theme == 'light' ? 'theme-light' : '']">
+    <view class="status-bar-spacer"></view>
+
+    <view class="app-header" v-on:click="openUserPanel">
+      <view class="header-logo-btn">
+        <image class="header-logo-img" :src="channelLogo" mode="aspectFit" />
+        <text class="header-title">{{ channelName }}</text>
+      </view>
+      <view class="header-divider"></view>
+      <text class="header-user">{{ nickname }} ({{ tr('coachLabel') }})</text>
+    </view>
+
+    <view v-if="sandboxMode" class="sandbox-banner" v-on:click.stop="exitSandbox">
+      <text class="sandbox-banner-text">{{ sandboxBannerText }}</text>
+      <text class="sandbox-banner-exit">{{ tr('exitSandbox') }}</text>
+    </view>
+
+    <scroll-view direction="vertical" class="coach-content" :refresher-enabled="tab == 'clients'" v-on:refresherrefresh="onClientsRefresh">
+
+      <view v-if="loading" class="loading-row"><text class="loading-text">{{ tr('loading') }}</text></view>
+
+      <view v-else-if="tab == 'clients'" class="client-list">
+        <view v-if="mcEnabled" class="invite-generate-btn" v-on:click="openManagedForm('')">
+          <text class="invite-generate-text">{{ tr('mc.add') }}</text>
+        </view>
+        <view class="clients-search-wrap">
+          <view class="clients-search-bar">
+            <text class="search-icon-txt">🔍</text>
+            <input class="clients-search-input" :placeholder="tr('searchPlaceholder')" v-model="clientSearch" confirm-type="search" />
+            <view v-if="clientSearch.length > 0" class="search-clear-btn" v-on:click.stop="clientSearch = ''">
+              <text class="search-clear-icon">✕</text>
+            </view>
+          </view>
+        </view>
+        <scroll-view v-if="clientFilterStages.length > 0" direction="horizontal" class="stage-filter-scroll">
+          <view class="stage-filter-inner">
+            <view class="stage-chip" :class="clientStageFilter == '' ? 'stage-chip-active' : ''" v-on:click.stop="setStageFilter('')">
+              <text class="stage-chip-text">{{ tr('filterAll') }}</text>
+            </view>
+            <view v-for="(st, si) in clientFilterStages" :key="si" class="stage-chip"
+                  :class="clientStageFilter == st.getString('stage') ? 'stage-chip-colored' : ''"
+                  :style="clientStageFilter == st.getString('stage') ? ('border-color:' + st.getString('color') + '; background:' + st.getString('color') + '22;') : ''"
+                  v-on:click.stop="setStageFilter(`${st.getString('stage')}`)">
+              <text class="stage-chip-text" :style="clientStageFilter == st.getString('stage') ? ('color:' + st.getString('color') + ';') : ''">{{ st.getString('label') }}</text>
+              <text class="stage-chip-count">{{ st['count'] }}</text>
+            </view>
+          </view>
+        </scroll-view>
+        <view v-if="clientSearch.length > 0 || clientStageFilter.length > 0" class="search-result-row">
+          <text class="search-result-txt">{{ filteredClients.length }} / {{ clients.length }}</text>
+        </view>
+
+        <view v-if="filteredClients.length == 0" class="empty-state">
+          <text v-if="clientsLoadState == 'no_coach'" class="empty-text">{{ tr('noCoachSession') }}</text>
+          <text v-else-if="clientsLoadState == 'failed'" class="empty-text">{{ tr('clientsLoadFailed') }}</text>
+          <text v-else-if="clients.length == 0" class="empty-text">{{ tr('noClients') }}</text>
+          <text v-else class="empty-text">{{ tr('noMatchClients') }}</text>
+          <view v-if="clientsLoadState.length > 0" class="empty-retry" v-on:click.stop="handleRefresh">
+            <text class="empty-retry-txt">{{ tr('retryLoad') }}</text>
+          </view>
+          <text v-if="diagText.length > 0" class="empty-diag">{{ diagText }}</text>
+        </view>
+        <view v-for="(item, ci) in filteredClients" :key="ci" class="client-card">
+          <view class="client-row" v-on:click="openClientDetailFor(item, 'health')">
+            <view class="client-avatar" :style="(item.getString('avatar_url') ?? '').length > 0 ? '' : 'background: #1E3A5F;'">
+              <image v-if="(item.getString('avatar_url') ?? '').length > 0" class="client-avatar-img" :src="item.getString('avatar_url')" mode="aspectFill" />
+              <text v-else class="avatar-letter">{{ item.getString('_avatar') }}</text>
+            </view>
+            <view class="client-info">
+              <view class="client-name-row">
+                <text class="client-name">{{ item.getString('nickname') ?? '—' }}</text>
+                <view v-if="item.getString('account_type') == 'managed'" class="mc-badge"><text class="mc-badge-text">{{ tr('mc.badge') }}</text></view>
+              </view>
+              <view class="client-ages">
+                <view v-if="item.getNumber('_cAge') != null" class="age-chip">
+                  <text class="age-chip-text">{{ tr('chronoAge') }} {{ item.getNumber('_cAge') }}</text>
+                </view>
+                <view v-if="item['bio_age'] != null" class="age-chip" :style="'background: ' + item.getString('_bioAgeColor') + '20; border-color: ' + item.getString('_bioAgeColor') + ';'">
+                  <text class="age-chip-text" :style="'color: ' + item.getString('_bioAgeColor') + ';'">{{ tr('bioAge') }} {{ item['bio_age'] }}</text>
+                </view>
+              </view>
+              <text v-if="item.getBoolean('_hasScan') == true" class="client-meta client-meta-dim">{{ tr('lastScan') }}: {{ item.getString('_lastScanFmt') }}</text>
+              <text v-else class="client-meta client-meta-dim">{{ tr('joined') }}: {{ item.getString('_joinedFmt') }}</text>
+            </view>
+          </view>
+
+          <view v-if="item.getJSON('_crmStagePill') != null || (item.getArray<UTSJSONObject>('_crmTags') ?? []).length > 0" class="crm-meta-row">
+            <view v-if="item.getJSON('_crmStagePill') != null" class="stage-pill" :style="'background: ' + item.getJSON('_crmStagePill')!.getString('color') + '22; border-color: ' + item.getJSON('_crmStagePill')!.getString('color') + ';'">
+              <text class="stage-pill-text" :style="'color: ' + item.getJSON('_crmStagePill')!.getString('color') + ';'">{{ item.getJSON('_crmStagePill')!.getString('label') }}</text>
+            </view>
+            <view v-for="(tg, ti) in (item.getArray<UTSJSONObject>('_crmTags') ?? [])" :key="ti" class="tag-chip" :style="'background: ' + tg.getString('color_hex') + '22; border-color: ' + tg.getString('color_hex') + ';'">
+              <text class="tag-chip-text" :style="'color: ' + tg.getString('color_hex') + ';'">{{ tg.getString('name') }}</text>
+            </view>
+          </view>
+
+          <view v-if="item.getString('_lastUserMsg') != null" class="last-msg-strip">
+            <text v-if="item.getString('_lastMsgTimeFmt') != null" class="last-msg-time">{{ item.getString('_lastMsgTimeFmt') }}</text>
+            <text class="last-msg-text">{{ item.getString('_lastUserMsg') }}</text>
+          </view>
+
+          <view class="client-actions">
+            <view class="action-btn msg-btn" v-on:click.stop="openClientDetailFor(item, 'chat')"><text class="action-btn-text">{{ tr('openMessages') }}</text></view>
+            <view class="action-btn remind-icon-btn" v-on:click.stop="openQResponsesFor(item)"><text class="action-btn-text">📋</text></view>
+            <view class="action-btn remind-icon-btn" v-on:click.stop="openReminderFor(item)"><text class="action-btn-text">⏰</text></view>
+          </view>
+        </view>
+      </view>
+
+      <view v-else-if="tab == 'invites'" class="client-list">
+        <view class="invite-generate-btn" v-on:click="generateInvite"><text class="invite-generate-text">+ {{ tr('invite.generate') }}</text></view>
+        <view v-if="invites.length == 0" class="empty-state"><text class="empty-text">{{ tr('invite.noInvites') }}</text></view>
+        <view v-for="(iv, ii) in invites" :key="ii" class="client-card">
+          <view class="invite-code-row">
+            <text class="invite-code">{{ iv.getString('code') }}</text>
+            <view class="invite-status" :class="iv.getBoolean('is_active') == true ? 'invite-active' : 'invite-inactive'">
+              <text class="invite-status-text">{{ iv.getBoolean('is_active') == true ? tr('invite.active') : tr('invite.inactive') }}</text>
+            </view>
+          </view>
+          <view class="invite-note-row" v-on:click.stop="editInviteNote(ii)">
+            <text class="invite-note" :class="(iv.getString('note') ?? '').length > 0 ? '' : 'invite-note-empty'">{{ (iv.getString('note') ?? '').length > 0 ? iv.getString('note') : tr('invite.noNote') }}</text>
+            <text class="invite-note-edit">✎</text>
+          </view>
+          <text class="invite-uses">{{ tr('invite.uses') }}: {{ iv['use_count'] ?? 0 }}</text>
+          <view class="client-actions" style="margin-top: 12px;">
+            <view class="action-btn msg-btn" v-on:click.stop="copyInvite(ii)"><text class="action-btn-text">{{ tr('invite.copy') }}</text></view>
+            <view v-if="iv.getBoolean('is_active') == true" class="action-btn deact-btn" v-on:click.stop="deactivateInvite(ii)"><text class="action-btn-text deact-text">{{ tr('invite.deactivate') }}</text></view>
+          </view>
+        </view>
+      </view>
+
+      <view v-else-if="tab == 'earnings'" class="client-list">
+        <view v-if="earningsLoading" class="loading-row"><text class="loading-text">{{ tr('loading') }}</text></view>
+        <view v-else>
+          <view class="earnings-cards">
+            <view class="earnings-card">
+              <text class="earnings-card-label">{{ tr('earnings.thisMonth') }}</text>
+              <text class="earnings-card-value">{{ earningsThisMonth == '—' ? '¥0.00' : earningsThisMonth }}</text>
+            </view>
+            <view class="earnings-card earnings-card-green">
+              <text class="earnings-card-label">{{ tr('earnings.available') }}</text>
+              <text class="earnings-card-value">{{ earningsAvailable == '—' ? '¥0.00' : earningsAvailable }}</text>
+            </view>
+          </view>
+          <text class="section-label" style="margin: 16px 16px 8px;">{{ tr('earnings.payoutHistory') }}</text>
+          <view v-if="earningsPayouts.length == 0" class="empty-state"><text class="empty-text">{{ tr('earnings.noPayouts') }}</text></view>
+          <view v-for="(po, pi) in earningsPayouts" :key="pi" class="client-card">
+            <view class="invite-code-row">
+              <text class="invite-code">{{ po.getString('period') ?? po.getString('period_start') }}</text>
+              <view class="invite-status" :class="po.getString('status') == 'transferred' ? 'invite-active' : 'invite-inactive'">
+                <text class="invite-status-text">{{ po.getString('_statusFmt') }}</text>
+              </view>
+            </view>
+            <text class="invite-uses">{{ tr('earnings.amount') }}: {{ po.getString('_amountFmt') }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view v-else-if="tab == 'questionnaires'" class="client-list">
+        <view v-if="questionnairesLoading" class="loading-row"><text class="loading-text">{{ tr('loading') }}</text></view>
+        <view v-else-if="questionnaires.length == 0" class="empty-state"><text class="empty-text">{{ tr('questionnaires.noQuestionnaires') }}</text></view>
+        <view v-else>
+          <view v-for="(qn, qi) in questionnaires" :key="qi" class="client-card">
+            <view class="q-card-header">
+              <view class="q-card-info">
+                <text class="q-card-name">{{ lang == 'zh' ? (qn.getString('name_zh') ?? qn.getString('name')) : qn.getString('name') }}</text>
+                <text v-if="(qn.getString('description_zh') ?? qn.getString('description') ?? '').length > 0" class="q-card-desc">{{ lang == 'zh' ? (qn.getString('description_zh') ?? qn.getString('description')) : (qn.getString('description') ?? qn.getString('description_zh')) }}</text>
+                <view class="invite-status invite-active q-type-badge">
+                  <text class="invite-status-text">{{ qn.getString('type') == 'onboarding' ? (lang == 'zh' ? '入门' : 'Onboarding') : (lang == 'zh' ? '自定义' : 'Custom') }}</text>
+                </view>
+              </view>
+              <view class="action-btn msg-btn q-assign-btn" v-on:click="openQAssign(qi)"><text class="action-btn-text">{{ tr('questionnaires.assign') }}</text></view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view v-else-if="tab == 'crm'" class="crm-tab">
+        <view v-if="crmLoading" class="panel-center"><text class="loading-text">{{ tr('loading') }}</text></view>
+        <view v-else>
+          <view class="crm-section-header"><text class="crm-section-title">{{ tr('crmPipeline') }}</text></view>
+          <scroll-view direction="horizontal" class="pipeline-kanban">
+            <view v-for="(col, coi) in crmPipelineColumns" :key="coi" class="pipeline-col">
+              <view class="pipeline-col-header" :style="'border-color: ' + col.getString('color') + ';'">
+                <text class="pipeline-col-title" :style="'color: ' + col.getString('color') + ';'">{{ col.getString('label') }}</text>
+                <view class="pipeline-col-badge" :style="'background: ' + col.getString('color') + '33;'">
+                  <text class="pipeline-col-count" :style="'color: ' + col.getString('color') + ';'">{{ (col.getArray<UTSJSONObject>('clients') ?? []).length }}</text>
+                </view>
+              </view>
+              <view v-for="(cl, cli) in (col.getArray<UTSJSONObject>('clients') ?? [])" :key="cli" class="pipeline-card"
+                    v-on:click.stop="openClientDetailFor(cl, 'health')" v-on:longpress="openStagePicker(cl)">
+                <text class="pipeline-card-name">{{ cl.getString('nickname') ?? '—' }}</text>
+                <text v-if="cl.getNumber('bio_age') != null && cl.getNumber('_cAge') != null" class="pipeline-card-delta" :class="cl.getNumber('bio_age')! <= cl.getNumber('_cAge')! ? 'delta-good' : 'delta-bad'">{{ cl.getNumber('bio_age')! <= cl.getNumber('_cAge')! ? '-' : '+' }}{{ Math.abs(cl.getNumber('bio_age')! - cl.getNumber('_cAge')!).toFixed(1) }}yr</text>
+              </view>
+            </view>
+          </scroll-view>
+
+          <view class="crm-section-header">
+            <text class="crm-section-title">{{ tr('crmAppointments') }}</text>
+            <view class="crm-section-btn" v-on:click.stop="openApptForm(null)"><text class="crm-section-btn-text">{{ tr('newAppt') }}</text></view>
+          </view>
+          <view v-if="crmUpcomingAppts.length == 0" class="panel-center-sm"><text class="empty-text-sm">{{ tr('noAppointments') }}</text></view>
+          <view v-for="(ap, api) in crmUpcomingAppts" :key="api" class="appt-card">
+            <view class="appt-format-badge"><text class="appt-format-text">{{ tr('apptFormats.' + (ap.getString('format') ?? '')) }}</text></view>
+            <view class="appt-info">
+              <text class="appt-title">{{ ap.getString('title') }}</text>
+              <text class="appt-client">{{ ap.getString('nickname') }}</text>
+              <text class="appt-time">{{ ap.getString('_timeFmt') }}</text>
+            </view>
+          </view>
+
+          <view class="crm-section-header"><text class="crm-section-title">{{ tr('crmActivity') }}</text></view>
+          <view v-if="crmActivityFeed.length == 0" class="panel-center-sm"><text class="empty-text-sm">{{ tr('noActivity') }}</text></view>
+          <view v-for="(af, afi) in crmActivityFeed" :key="afi" class="activity-item">
+            <view class="activity-dot"></view>
+            <view class="activity-content">
+              <text class="activity-label">{{ af.getString('nickname') ?? af.getString('client_name') }} · {{ af.getString('_label') }}</text>
+              <text class="activity-time">{{ af.getString('_timeFmt') }}</text>
+            </view>
+          </view>
+
+          <view class="crm-section-header" style="margin-top: 12px;"><text class="crm-section-title">{{ tr('kpiTitle') }}</text></view>
+          <view v-if="kpiLoading" class="panel-center-sm"><text class="loading-text">{{ tr('loading') }}</text></view>
+          <view v-else-if="kpiData != null">
+            <view class="kpi-grid">
+              <view class="kpi-card"><text class="kpi-value">{{ kpiField('total_clients') }}</text><text class="kpi-label">{{ tr('kpiClients') }}</text></view>
+              <view class="kpi-card kpi-card-green"><text class="kpi-value">{{ kpiField('active_clients') }}</text><text class="kpi-label">{{ tr('kpiActive') }}</text></view>
+              <view class="kpi-card kpi-card-orange"><text class="kpi-value">{{ kpiField('at_risk_count') }}</text><text class="kpi-label">{{ tr('kpiAtRisk') }}</text></view>
+              <view class="kpi-card"><text class="kpi-value">¥{{ kpiField('commission_cny') }}</text><text class="kpi-label">{{ tr('kpiCommission') }}</text></view>
+              <view class="kpi-card"><text class="kpi-value">{{ kpiField('scans_facilitated') }}</text><text class="kpi-label">{{ tr('kpiScans') }}</text></view>
+              <view class="kpi-card kpi-card-blue"><text class="kpi-value">{{ kpiField('avg_nps_score') }}</text><text class="kpi-label">{{ tr('kpiNps') }}</text></view>
+            </view>
+            <view class="crm-section-header"><text class="crm-section-title">{{ tr('topImprovers') }}</text></view>
+            <view v-if="topImprovers.length == 0" class="panel-center-sm"><text class="empty-text-sm">—</text></view>
+            <view v-for="(im, imi) in topImprovers" :key="imi" class="improver-row">
+              <view class="improver-avatar"><text class="avatar-letter">{{ im.getString('_avatar') }}</text></view>
+              <text class="improver-name">{{ im.getString('nickname') }}</text>
+              <text class="improver-delta" :class="(im.getNumber('delta') ?? 0) <= 0 ? 'delta-good' : 'delta-bad'">{{ (im.getNumber('delta') ?? 0) > 0 ? '+' : '' }}{{ im.getNumber('delta') }}yr</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+    </scroll-view>
+
+    <!-- Bottom tab bar -->
+    <view class="tab-bar">
+      <view v-for="(tk, tki) in tabKeys" :key="tki" class="tab-btn" :class="tab == tk ? 'tab-active' : ''" v-on:click="switchTab(tk)">
+        <view v-if="tab == tk" class="tab-line"></view>
+        <image class="tab-icon-img" :src="'/static/icons/' + tk + '.svg'" mode="aspectFit" />
+        <text class="tab-label">{{ tr('tabs.' + tk) }}</text>
+      </view>
+    </view>
+
+    <!-- Managed customer form (create / edit) -->
+    <view v-if="mcFormOpen" class="overlay-mask mc-mask">
+      <view class="overlay-panel mc-form-panel" v-on:click.stop="noop">
+        <view class="overlay-header">
+          <text class="overlay-title">{{ mcEditId.length > 0 ? tr('mc.titleEdit') : tr('mc.titleNew') }}</text>
+          <view class="overlay-close" v-on:click="closeManagedForm"><text class="close-x">✕</text></view>
+        </view>
+        <scroll-view direction="vertical" class="overlay-scroll mc-form-scroll">
+          <view class="mc-form-body">
+            <view class="mc-note"><text class="mc-note-text">{{ tr('mc.note') }}</text></view>
+            <view class="mc-name-row">
+              <view class="form-row"><text class="form-label">{{ tr('mc.lastName') }}</text><input class="form-input" v-model="mcLast" /></view>
+              <view class="form-row"><text class="form-label">{{ tr('mc.firstName') }}</text><input class="form-input" v-model="mcFirst" /></view>
+            </view>
+            <view class="form-row"><text class="form-label">{{ tr('mc.nickname') }}</text><input class="form-input" :placeholder="tr('mc.nicknameHint')" v-model="mcNickname" /></view>
+            <picker mode="date" :value="mcBirthDate.length > 0 ? mcBirthDate : '1970-01-01'" v-on:change="onMcBirthDateChange">
+              <view class="form-row">
+                <text class="form-label">{{ tr('mc.birthDate') }} *</text>
+                <view class="mc-picker-control"><text class="form-value">{{ mcBirthDate.length > 0 ? mcBirthDate : tr('mc.selectDate') }}</text><text class="mc-picker-arrow">⌄</text></view>
+              </view>
+            </picker>
+            <view class="form-row" v-on:click="pickMcGender">
+              <text class="form-label">{{ tr('mc.gender') }} *</text>
+              <view class="mc-picker-control"><text class="form-value">{{ mcGender == 'male' ? tr('mc.genders0') : (mcGender == 'female' ? tr('mc.genders1') : tr('mc.selectGender')) }}</text><text class="mc-picker-arrow">⌄</text></view>
+            </view>
+            <view class="form-row"><text class="form-label">{{ tr('mc.phone') }}</text><input class="form-input" type="number" :maxlength="11" v-model="mcPhone" /></view>
+            <view class="form-row"><text class="form-label">{{ tr('mc.ref') }}</text><input class="form-input" :placeholder="tr('mc.refHint')" v-model="mcRef" /></view>
+          </view>
+        </scroll-view>
+        <view class="overlay-footer">
+          <view class="overlay-cancel-btn" v-on:click="closeManagedForm"><text>{{ tr('mc.cancel') }}</text></view>
+          <view class="overlay-confirm-btn" :class="mcBusy ? 'btn-busy' : ''" v-on:click="submitManagedForm"><text>{{ mcBusy ? '…' : tr('mc.save') }}</text></view>
+        </view>
+      </view>
+    </view>
+
+    <!-- Managed customer: order with a redeem code -->
+    <view v-if="redeemOpen" class="overlay-mask mc-mask">
+      <view class="overlay-panel" v-on:click.stop="noop">
+        <view class="overlay-header">
+          <text class="overlay-title">{{ tr('mc.redeemTitle') }}</text>
+          <view class="overlay-close" v-on:click="closeRedeemForm"><text class="close-x">✕</text></view>
+        </view>
+        <scroll-view direction="vertical" class="overlay-scroll">
+          <view class="mc-note"><text class="mc-note-text">{{ tr('mc.redeemHint') }}</text></view>
+          <view class="form-row"><text class="form-label">{{ tr('mc.redeemCode') }}</text><input class="form-input" v-model="redeemCode" /></view>
+          <view class="form-row"><text class="form-label">{{ tr('mc.redeemName') }}</text><input class="form-input" v-model="redeemName" /></view>
+          <view class="form-row"><text class="form-label">{{ tr('mc.redeemPhone') }}</text><input class="form-input" type="number" :maxlength="11" v-model="redeemPhone" /></view>
+          <view class="form-row"><text class="form-label">{{ tr('mc.redeemAddress') }}</text><input class="form-input" v-model="redeemAddress" /></view>
+        </scroll-view>
+        <view class="overlay-footer">
+          <view class="overlay-cancel-btn" v-on:click="closeRedeemForm"><text>{{ tr('mc.cancel') }}</text></view>
+          <view class="overlay-confirm-btn" :class="redeemBusy ? 'btn-busy' : ''" v-on:click="submitRedeem"><text>{{ redeemBusy ? '…' : tr('mc.redeemSubmit') }}</text></view>
+        </view>
+      </view>
+    </view>
+
+    <!-- Client detail sheet -->
+    <view v-if="detailOpen && detailClient != null" class="overlay-mask">
+      <view class="overlay-panel" v-on:click.stop="noop">
+        <view class="overlay-header">
+          <text class="overlay-title">{{ detailClient!.getString('nickname') ?? tr('detailTitle') }}</text>
+          <view v-if="detailIsManaged" class="mc-edit-btn" v-on:click="openManagedFormEdit"><text class="mc-edit-text">{{ tr('mc.edit') }}</text></view>
+          <view class="overlay-close" v-on:click="closeClientDetail"><text class="close-x">✕</text></view>
+        </view>
+
+        <view class="detail-tabs">
+          <view v-for="(dt, dti) in detailTabOrder" :key="dti" class="detail-tab" :class="detailTab == dt ? 'detail-tab-active' : ''" v-on:click="switchDetailTab(dt)">
+            <text class="detail-tab-text">{{ detailTabLabel(dt) }}</text>
+          </view>
+        </view>
+
+        <view v-if="detailTab == 'health'" class="overlay-scroll">
+          <user-health :userId="detailClient!.getString('user_id') ?? ''" :user="detailClient" :lang="lang" mode="coach"
+            :coachId="coachId" :theme="theme" :textScale="textScale" v-on:profileUpdated="onClientProfileUpdated" />
+        </view>
+
+        <scroll-view v-if="detailTab == 'plans'" direction="vertical" class="overlay-scroll">
+          <view v-if="detailPlansLoading" class="panel-center"><text class="loading-text">{{ tr('loading') }}</text></view>
+          <view v-else>
+            <view class="plans-coach-header"><text class="plans-coach-title">{{ tr('clientPlans') }}</text></view>
+            <view v-if="detailPlans.length == 0" class="panel-center"><text class="empty-text">{{ tr('noClientPlans') }}</text></view>
+            <view v-for="(pl, pli) in detailPlans" :key="pli" class="coach-plan-card">
+              <view class="coach-plan-badge" :class="'coach-plan-' + (pl.getString('plan_type') ?? '')">
+                <text>{{ pl.getString('plan_type') == 'primary' ? tr('planPrimary') : tr('planSecondary') }}</text>
+              </view>
+              <text class="coach-plan-name">{{ lang == 'zh' ? (pl.getString('name_zh') ?? pl.getString('custom_name_zh')) : (pl.getString('name_en') ?? pl.getString('custom_name_en')) }}</text>
+              <text class="coach-plan-meta">{{ pl['checkin_count'] ?? 0 }} {{ tr('planCheckins') }} · {{ pl['duration_weeks'] }}{{ tr('planWeeks') }}</text>
+            </view>
+
+            <view class="plans-coach-header"><text class="plans-coach-title">{{ tr('clientPrograms') }}</text></view>
+            <view v-if="detailPrograms.length == 0" class="panel-center"><text class="empty-text">{{ tr('noClientPrograms') }}</text></view>
+            <view v-for="(pg, pgi) in detailPrograms" :key="pgi" class="coach-plan-card coach-program-card">
+              <view class="coach-program-main">
+                <view class="coach-plan-badge" :class="'coach-program-' + (pg.getString('status') ?? '')"><text>{{ pg.getString('statusLabel') }}</text></view>
+                <text class="coach-plan-name">{{ lang == 'zh' ? pg.getString('title_zh') : (pg.getString('title_en') ?? pg.getString('title_zh')) }}</text>
+                <text class="coach-plan-meta" :class="pg.getBoolean('stalled') == true ? 'coach-program-stalled' : ''">{{ pg['duration_days'] }} {{ tr('programDays') }}{{ (pg.getString('progressLabel') ?? '').length > 0 ? ' · ' + pg.getString('progressLabel') : '' }}</text>
+              </view>
+              <view v-if="(pg.getString('action') ?? '').length > 0" class="coach-program-btn" :class="pg.getString('action') == 'pause' ? 'secondary' : ''" v-on:click="handleProgramAction(pg.getNumber('id'), `${pg.getString('action')}`)">
+                <text>{{ programActionBusy ? tr('loading') : pg.getString('actionLabel') }}</text>
+              </view>
+            </view>
+
+            <view class="plans-coach-actions">
+              <view class="coach-action-btn" v-on:click="openPlanRecommend"><text>{{ tr('recommendPlan') }}</text></view>
+              <view class="coach-action-btn secondary" v-on:click="openPlanCustom"><text>{{ tr('createCustomPlan') }}</text></view>
+            </view>
+
+            <view v-if="planRecommendOpen" class="plans-recommend-sheet">
+              <view class="plans-recommend-header">
+                <text class="plans-recommend-title">{{ tr('recommendPlan') }}</text>
+                <view v-on:click="closePlanRecommend" class="close-x-btn"><text>✕</text></view>
+              </view>
+              <view v-for="(tpl, tpi) in planTemplates" :key="tpi" class="recommend-tpl-card" v-on:click="handleRecommendPlan(tpl.getNumber('id'))">
+                <text class="recommend-tpl-name">{{ lang == 'zh' ? tpl.getString('name_zh') : tpl.getString('name_en') }}</text>
+                <text class="recommend-tpl-meta">{{ tpl['duration_weeks'] }}{{ tr('planWeeks') }} · {{ tpl.getString('sub_ages_display') }}</text>
+              </view>
+            </view>
+
+            <view v-if="planCustomOpen" class="plans-custom-form">
+              <view class="plans-recommend-header">
+                <text class="plans-recommend-title">{{ tr('createCustomPlan') }}</text>
+                <view v-on:click="closePlanCustom" class="close-x-btn"><text>✕</text></view>
+              </view>
+              <view class="form-field"><text class="form-label">{{ tr('customPlanName') }}</text><input class="form-input" v-model="planCustomName" :placeholder="tr('customPlanName')" /></view>
+              <view class="form-field"><text class="form-label">{{ tr('customPlanGoal') }}</text><input class="form-input" v-model="planCustomGoal" :placeholder="tr('customPlanGoal')" /></view>
+              <view class="coach-action-btn" v-on:click="handleCreateCustomPlan"><text>{{ planActionBusy ? tr('loading') : tr('createCustomPlan') }}</text></view>
+            </view>
+          </view>
+        </scroll-view>
+
+        <!-- Chat: the web user-app's coach mode of its ChatTab — the main chat's markup and
+             cards (display-only: a coach can't order for the client), the coach actions as
+             pills and the main input bar. -->
+        <view v-if="detailTab == 'chat'" class="chat-panel">
+          <view class="coach-chat-mount">
+            <view class="chat-tab coach-client-chat">
+              <scroll-view direction="vertical" class="chat-messages chat-scroll" :scroll-top="chatScrollTop" :scroll-with-animation="true">
+                <view class="chat-inner">
+                  <view v-if="chatLoading" class="chat-history-load chat-history-loading"><text class="chat-history-text">{{ tr('loading') }}</text></view>
+                  <view v-else-if="chatMessages.length > 0" class="chat-history-start"><text class="chat-history-start-text">{{ mt('chatHistoryStart') }}</text></view>
+                  <view v-else class="chat-history-start"><text class="chat-history-start-text">{{ tr('noChatData') }}</text></view>
+                  <view v-for="(cm, cmi) in chatMessages" :key="cmi">
+                    <view class="msg-row" :class="cm.getString('role') == 'user' ? 'msg-row-user' : 'msg-row-ai'">
+                      <view v-if="cm.getString('role') == 'coach'" class="message-bubble message-coach">
+                        <text class="msg-coach-label">Coach</text>
+                        <text class="msg-text">{{ cm.getString('content') }}</text>
+                      </view>
+                      <view v-else class="message-bubble" :class="cm.getString('role') == 'user' ? 'message-user' : 'message-ai'">
+                        <image v-if="(cm.getString('imageUrl') ?? cm.getString('image_url') ?? '').length > 0" class="msg-image msg-image-inset" :src="cm.getString('imageUrl') ?? cm.getString('image_url')" mode="widthFix" />
+                        <text v-if="cm.getString('role') == 'user' && (cm.getString('content') ?? '').length > 0" class="msg-text">{{ cm.getString('content') }}</text>
+                        <text v-if="cm.getString('source') == 'viva_ag'" class="msg-ag-label">Viva AG</text>
+                        <view v-if="cm.getString('role') != 'user'" v-for="(seg, si) in segsOf(cm)" :key="si" class="msg-seg">
+                          <rich-text v-if="seg.t == 'html'" class="msg-html" :nodes="sh(seg.h)" />
+                          <view v-else-if="seg.t == 'rule'" class="msg-rule"></view>
+                          <view v-else-if="seg.t == 'metric'" class="mcard">
+                            <view v-for="(item, mj) in seg.metricItems" :key="mj" class="mcard-tile" :class="'mcard-' + item.s">
+                              <text class="mcard-label">{{ item.label }}</text>
+                              <view class="mcard-valrow">
+                                <text class="mcard-val">{{ item.value }}</text>
+                                <text v-if="item.unit.length > 0" class="mcard-unit">{{ item.unit }}</text>
+                              </view>
+                              <view v-if="item.sl.length > 0" class="mcard-footrow"><text class="mcard-pill">{{ item.sl }}</text></view>
+                            </view>
+                          </view>
+                          <view v-else-if="seg.t == 'takeaway'" class="tcard">
+                            <text class="tcard-title">{{ seg.takeaway != null && seg.takeaway!.title.length > 0 ? seg.takeaway!.title : mt('mdTakeaway') }}</text>
+                            <rich-text class="msg-html tcard-body" :nodes="sh(seg.takeaway != null ? seg.takeaway!.h : '')" />
+                          </view>
+                          <view v-else-if="seg.t == 'dots'" class="dcard">
+                            <view v-for="(di, dj) in seg.dotItems" :key="dj" class="dcard-chip">
+                              <text class="dcard-id">{{ di.id }}</text>
+                              <text v-if="di.name.length > 0" class="dcard-name">{{ di.name }}</text>
+                              <text v-if="di.note.length > 0" class="dcard-note">{{ di.note }}</text>
+                            </view>
+                          </view>
+                          <view v-else-if="seg.t == 'formula'" class="fcard">
+                            <view class="fcard-head">
+                              <text class="fcard-title">{{ mt('formulaCardTitle') }}</text>
+                              <text class="fcard-note">{{ mt('formulaEvalNote') }}</text>
+                            </view>
+                            <view v-for="(ft, fti) in seg.formulaTiers" :key="fti" class="fcard-tier" :class="ft.open ? 'fcard-tier-open' : ''">
+                              <view v-if="ft.label.length > 0" class="fcard-tier-head" v-on:click="toggleFormulaTier(ft)">
+                                <view class="fcard-tier-name">
+                                  <text class="fcard-tier-label">{{ ft.label }}</text>
+                                  <text v-if="ft.recommended" class="fcard-tier-rec">{{ mt('formulaTierRecommended') }}</text>
+                                </view>
+                                <text class="fcard-tier-chev">{{ ft.open ? '⌃' : '⌄' }}</text>
+                              </view>
+                              <view v-if="ft.note.length > 0" class="fcard-tier-note" v-on:click="toggleFormulaTier(ft)"><text>{{ ft.note }}</text></view>
+                              <view v-if="!ft.open" class="fcard-legend fcard-tier-dots" v-on:click="toggleFormulaTier(ft)">
+                                <view v-for="(fd, fdk) in ft.dots" :key="fdk" class="fcard-leg">
+                                  <view class="fcard-swatch" :style="'background:' + fd.color"></view>
+                                  <text class="fcard-leg-name">{{ fd.name }}</text>
+                                </view>
+                              </view>
+                              <view v-if="ft.open">
+                                <view v-for="(fg, fgi) in ft.groups" :key="fgi" class="fcard-group">
+                                  <view v-if="fg.days.length > 0" class="fcard-days">
+                                    <text class="fcard-daylabel">{{ mt('formulaDayWord') }} {{ fg.days }}</text>
+                                    <text v-if="fg.kind == 'n7'" class="fcard-daytag">{{ mt('formulaResetDay') }}</text>
+                                  </view>
+                                  <view class="fcard-row">
+                                    <text class="fcard-slot">{{ mt('formulaAm') }}</text>
+                                    <view class="fcard-track"><view v-for="(fi, fk) in fg.items" :key="fk" class="fcard-seg" :style="'width:' + fi.amPct + '%;background:' + fi.color"></view></view>
+                                    <text class="fcard-num">{{ fg.am }}</text>
+                                  </view>
+                                  <view class="fcard-row">
+                                    <text class="fcard-slot">{{ mt('formulaPm') }}</text>
+                                    <view class="fcard-track"><view v-for="(fi, fk) in fg.items" :key="fk" class="fcard-seg" :style="'width:' + fi.pmPct + '%;background:' + fi.color"></view></view>
+                                    <text class="fcard-num">{{ fg.pm }}</text>
+                                  </view>
+                                  <view class="fcard-legend">
+                                    <view v-for="(fi, fk) in fg.items" :key="fk" class="fcard-leg">
+                                      <view class="fcard-swatch" :style="'background:' + fi.color"></view>
+                                      <text class="fcard-leg-name">{{ fi.name }}</text>
+                                      <text class="fcard-leg-num">{{ fi.am }}·{{ fi.pm }}</text>
+                                    </view>
+                                  </view>
+                                  <text class="fcard-foot">{{ mt('formulaTotalLabel') }} {{ fg.total }}</text>
+                                </view>
+                                <text v-if="ft.pitch.length > 0" class="fcard-tier-pitch">{{ ft.pitch }}</text>
+                              </view>
+                            </view>
+                            <text v-if="seg.cycleDays > 0" class="fcard-cycle">{{ seg.cycleDays }}{{ mt('formulaDaysUnit') }} · {{ seg.cycleCapsules }}{{ mt('formulaCapsulesUnit') }}</text>
+                          </view>
+                          <view v-else-if="seg.t == 'product'" class="pcard">
+                            <text class="pcard-title">{{ mt('productCardTitle') }}</text>
+                            <view v-for="(pi, pk) in seg.productItems" :key="pk" class="pcard-row">
+                              <view class="pcard-main">
+                                <text class="pcard-name">{{ pi.name }}</text>
+                                <text v-if="pi.reason.length > 0" class="pcard-reason">{{ pi.reason }}</text>
+                              </view>
+                              <text class="pcard-price">{{ pi.price }}</text>
+                            </view>
+                          </view>
+                          <view v-else-if="seg.t == 'grocery'" class="gcard">
+                            <text class="gcard-title">{{ mt('groceryCardTitle') }}</text>
+                            <view v-for="(gi, gk) in seg.groceryItems" :key="gk" class="gcard-row">
+                              <image v-if="gi.image.length > 0" class="gcard-img" :src="gi.image" mode="aspectFill" />
+                              <view v-else class="gcard-img gcard-img-empty"></view>
+                              <view class="gcard-main">
+                                <text class="gcard-name">{{ gi.name }}</text>
+                                <text v-if="gi.reason.length > 0" class="gcard-reason">{{ gi.reason }}</text>
+                                <text class="gcard-supplier">{{ gi.supplierName }}</text>
+                              </view>
+                              <text v-if="gi.price.length > 0" class="gcard-price">{{ gi.price }}</text>
+                            </view>
+                            <text v-if="seg.groceryNote.length > 0" class="gcard-note">{{ seg.groceryNote }}</text>
+                          </view>
+                          <view v-else-if="seg.t == 'lesson'" class="lcard">
+                            <view class="lcard-meta"><text class="lcard-title">{{ seg.lessonTitle }}</text></view>
+                          </view>
+                          <view v-else-if="seg.t == 'checkin'" class="ccard">
+                            <view class="ccard-cta ccard-cta-off"><text>{{ seg.checkinLabel.length > 0 ? seg.checkinLabel : mt('programCheckinCta') }}</text></view>
+                          </view>
+                        </view>
+                      </view>
+                    </view>
+                  </view>
+                  <view v-if="vivaThinking || chatToolBusy" class="msg-row msg-row-ai">
+                    <view class="message-bubble message-ai typing-indicator">
+                      <view class="typing-dot"></view><view class="typing-dot"></view><view class="typing-dot"></view>
+                      <text v-if="vivaThinking" class="typing-status-text">{{ tr('mc.thinking') }}</text>
+                    </view>
+                  </view>
+                  <view style="height: 8px"></view>
+                </view>
+              </scroll-view>
+
+              <view class="ai-disclaimer"><text class="ai-disclaimer-text">{{ mt('aiDisclaimer') }}</text></view>
+              <view class="coach-chat-actions">
+                <view class="coach-chat-action" v-on:click="openReminderComposer"><text>{{ tr('setReminder') }}</text></view>
+                <view v-if="detailIsManaged" class="coach-chat-action" v-on:click="openRedeemForm"><text>{{ tr('mc.redeem') }}</text></view>
+                <view v-if="detailIsManaged" class="coach-chat-action" v-on:click="scanBoxForCustomer"><text>{{ tr('mc.boxScan') }}</text></view>
+              </view>
+              <view class="input-container">
+                <toolbox v-if="chatToolboxOpen" :tools="chatToolList" :disabled="chatToolBusy" v-on:toolaction="handleChatToolAction" />
+                <view class="input-area">
+                  <view class="plus-btn" :class="chatToolboxOpen ? 'plus-btn-open' : ''" v-on:click="toggleChatToolbox"><text class="plus-icon">+</text></view>
+                  <textarea class="chat-textarea" :placeholder="detailIsManaged ? tr('mc.askPh') : tr('msgPh')" v-model="msgText" :maxlength="500" />
+                  <view class="send-btn" :class="msgText.length > 0 ? 'send-active' : ''" v-on:click="sendMessage"><text class="send-icon">↑</text></view>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <view v-if="detailTab == 'notes'" class="overlay-scroll-full">
+          <view v-if="clientNotesLoading" class="panel-center"><text class="loading-text">{{ tr('loading') }}</text></view>
+          <view v-else>
+            <view v-if="clientNotes.length == 0" class="panel-center"><text class="empty-text">{{ tr('noNotes') }}</text></view>
+            <view v-for="(nt, nti) in clientNotes" :key="nti" class="note-item" :class="nt.getBoolean('is_pinned') == true ? 'note-pinned' : ''">
+              <text class="note-content">{{ nt.getString('content') }}</text>
+              <view class="note-footer">
+                <text class="note-date">{{ nt.getString('created_at') }}</text>
+                <view class="note-actions">
+                  <text class="note-action-btn" v-on:click.stop="toggleNotePin(nti)">{{ nt.getBoolean('is_pinned') == true ? tr('noteUnpin') : tr('notePin') }}</text>
+                  <text class="note-action-btn note-delete-btn" v-on:click.stop="deleteNote(nti)">{{ tr('noteDelete') }}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+          <view class="note-compose">
+            <textarea class="note-input" :placeholder="tr('addNotePh')" v-model="noteText" :maxlength="1000" :auto-height="true" />
+            <view class="note-save-btn" :class="notesBusy ? 'btn-busy' : ''" v-on:click="saveNote"><text class="note-save-text">{{ notesBusy ? '…' : tr('saveNote') }}</text></view>
+          </view>
+        </view>
+
+        <view v-if="detailTab == 'facts'" class="overlay-scroll-full">
+          <view v-if="clientFactsLoading" class="panel-center"><text class="loading-text">{{ tr('loading') }}</text></view>
+          <view v-else>
+            <view v-if="clientFacts.length == 0" class="panel-center"><text class="empty-text">{{ tr('noFacts') }}</text></view>
+            <view v-for="(fc, fci) in clientFacts" :key="fci" class="note-item">
+              <text class="note-content">[{{ factCatLabel(fc.getString('category')) }}] {{ fc.getString('fact_zh') }}</text>
+              <view class="note-footer">
+                <text class="note-date">{{ fc.getString('last_mentioned_at') }}</text>
+                <view class="note-actions"><text class="note-action-btn note-delete-btn" v-on:click.stop="deleteFact(fci)">{{ tr('factDelete') }}</text></view>
+              </view>
+            </view>
+          </view>
+          <view class="note-compose">
+            <view class="note-action-btn" style="display:inline-block;margin-bottom:8px;" v-on:click="pickFactCategory">{{ factCategoryLabel(factCategoryIndex) }} ▾</view>
+            <textarea class="note-input" :placeholder="tr('addFactPh')" v-model="factText" :maxlength="500" :auto-height="true" />
+            <view class="note-save-btn" :class="factsBusy ? 'btn-busy' : ''" v-on:click="saveFact"><text class="note-save-text">{{ factsBusy ? '…' : tr('saveFact') }}</text></view>
+          </view>
+        </view>
+
+        <view v-if="detailTab == 'goals'" class="overlay-scroll-full">
+          <view v-if="clientGoalsLoading" class="panel-center"><text class="loading-text">{{ tr('loading') }}</text></view>
+          <view v-else>
+            <view class="goals-header"><view class="set-goal-btn" v-on:click="openGoalSheet"><text class="set-goal-text">{{ tr('setGoal') }}</text></view></view>
+            <view v-if="clientGoals.length == 0" class="panel-center"><text class="empty-text">{{ tr('noGoals') }}</text></view>
+            <view v-for="(gl, gli) in clientGoals" :key="gli" class="goal-item" :class="'goal-' + (gl.getString('status') ?? '')">
+              <view class="goal-header-row">
+                <text class="goal-title">{{ gl.getString('title_zh') }}</text>
+                <text class="goal-status-badge" :class="'goal-status-' + (gl.getString('status') ?? '')">{{ gl.getString('status') == 'achieved' ? tr('goalAchieved') : (gl.getString('status') == 'missed' ? tr('goalMissed') : tr('goalActive')) }}</text>
+              </view>
+              <view v-if="gl['baseline_value'] != null && gl['target_value'] != null" class="goal-progress-row">
+                <text class="goal-baseline">{{ gl['baseline_value'] }}</text>
+                <view class="goal-bar-bg"><view class="goal-bar-fill" :style="'width: ' + (gl['_pct'] ?? 0) + '%;'"></view></view>
+                <text class="goal-target">{{ gl['target_value'] }}</text>
+              </view>
+              <view class="goal-meta-row">
+                <text v-if="gl['current_value'] != null" class="goal-current">{{ lang == 'zh' ? '当前' : 'Current' }}: {{ gl['current_value'] }}</text>
+                <text v-if="(gl.getString('target_date') ?? '').length > 0" class="goal-date">{{ lang == 'zh' ? '截止' : 'Due' }}: {{ gl.getString('target_date') }}</text>
+              </view>
+            </view>
+          </view>
+          <view v-if="goalFormOpen" class="goal-form-overlay">
+            <view class="goal-form-card">
+              <view class="goal-form-row" v-on:click="pickGoalType">
+                <text class="goal-form-label">{{ tr('goalTypeLabel') }}</text>
+                <text class="goal-form-value">{{ tr('goalTypes.' + goalType) }}</text>
+              </view>
+              <view class="goal-form-row">
+                <text class="goal-form-label">{{ tr('goalTargetLabel') }}</text>
+                <input class="goal-form-input" type="digit" placeholder="0" v-model="goalTargetValue" />
+              </view>
+              <picker mode="date" :value="goalTargetDate" v-on:change="onGoalDateChange">
+                <view class="goal-form-row">
+                  <text class="goal-form-label">{{ tr('goalDateLabel') }}</text>
+                  <text class="goal-form-value">{{ goalTargetDate.length > 0 ? goalTargetDate : '—' }}</text>
+                </view>
+              </picker>
+              <view class="goal-form-btns">
+                <view class="goal-cancel-btn" v-on:click="closeGoalForm"><text>{{ lang == 'zh' ? '取消' : 'Cancel' }}</text></view>
+                <view class="goal-submit-btn" :class="goalBusy ? 'btn-busy' : ''" v-on:click="submitGoal"><text>{{ goalBusy ? '…' : (lang == 'zh' ? '保存' : 'Save') }}</text></view>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- Assign questionnaire -->
+    <view v-if="qAssignOpen" class="overlay-mask">
+      <view class="overlay-panel" v-on:click.stop="noop">
+        <view class="overlay-header">
+          <text class="overlay-title">{{ tr('questionnaires.assignTitle') }}</text>
+          <view class="overlay-close" v-on:click="closeQAssign"><text class="close-x">✕</text></view>
+        </view>
+        <view v-if="qAssignQuestionnaire != null" class="q-assign-quest-banner">
+          <text class="q-assign-quest-text">{{ lang == 'zh' ? (qAssignQuestionnaire!.getString('name_zh') ?? qAssignQuestionnaire!.getString('name')) : qAssignQuestionnaire!.getString('name') }}</text>
+        </view>
+        <scroll-view direction="vertical" class="overlay-scroll">
+          <view v-if="clients.length == 0" class="panel-center"><text class="empty-text">{{ tr('questionnaires.noClients') }}</text></view>
+          <view v-else class="q-assign-list">
+            <view v-for="(qc, qci) in clients" :key="qci" class="q-assign-row" v-on:click="toggleQUser(qc.getString('user_id'))">
+              <view class="q-check" :class="qAssignSelectedIds.indexOf(qc.getString('user_id') ?? '') >= 0 ? 'q-check-on' : ''">
+                <text v-if="qAssignSelectedIds.indexOf(qc.getString('user_id') ?? '') >= 0" class="q-check-mark">✓</text>
+              </view>
+              <text class="q-assign-name">{{ qc.getString('nickname') ?? qc.getString('user_id') }}</text>
+            </view>
+          </view>
+        </scroll-view>
+        <view class="q-assign-footer">
+          <view class="instr-send-btn" :class="qAssignBusy ? 'btn-busy' : ''" v-on:click="submitQAssign"><text class="instr-send-text">{{ qAssignBusy ? tr('loading') : tr('questionnaires.assign') }}</text></view>
+        </view>
+      </view>
+    </view>
+
+    <!-- Questionnaire responses (per client) -->
+    <view v-if="qResponsesOpen" class="overlay-mask">
+      <view class="overlay-panel" v-on:click.stop="noop">
+        <view class="overlay-header">
+          <text class="overlay-title">{{ qResponsesUser != null ? (qResponsesUser!.getString('nickname') ?? '') + ' · ' : '' }}{{ tr('questionnaires.responsesTitle') }}</text>
+          <view class="overlay-close" v-on:click="closeQResponses"><text class="close-x">✕</text></view>
+        </view>
+        <scroll-view direction="vertical" class="overlay-scroll">
+          <view v-if="qResponsesLoading" class="panel-center"><text class="loading-text">{{ tr('loading') }}</text></view>
+          <view v-else-if="qResponsesList.length == 0" class="panel-center"><text class="empty-text">{{ tr('questionnaires.noResponses') }}</text></view>
+          <view v-else class="q-resp-list">
+            <view v-for="(grp, gri) in qResponsesList" :key="gri" class="q-resp-group">
+              <text class="section-label">{{ grp.getString('name') }}</text>
+              <view v-for="(rsp, rsi) in (grp.getArray<UTSJSONObject>('items') ?? [])" :key="rsi" class="q-resp-item">
+                <text class="q-resp-prompt">{{ rsp.getString('prompt') }}</text>
+                <text class="q-resp-answer">{{ rsp.getString('answer_fmt') }}</text>
+                <text class="q-resp-time">{{ rsp.getString('answered_at') }}</text>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+    </view>
+
+    <!-- Reminder composer -->
+    <view v-if="reminderOpen" class="overlay-mask">
+      <view class="overlay-panel" v-on:click.stop="noop">
+        <view class="overlay-header">
+          <text class="overlay-title">{{ tr('reminderTitle') }}</text>
+          <view class="overlay-close" v-on:click="closeReminderComposer"><text class="close-x">✕</text></view>
+        </view>
+        <scroll-view direction="vertical" class="overlay-scroll">
+          <view class="reminder-body">
+            <textarea class="instr-textarea" :placeholder="tr('reminderContentPh')" v-model="reminderText" :maxlength="300" :auto-height="true" />
+            <view class="picker-row">
+              <text class="picker-label">{{ tr('reminderDate') }}</text>
+              <picker mode="date" :value="reminderDate" v-on:change="onReminderDateChange">
+                <view class="picker-value"><text class="picker-value-text">{{ reminderDate.length > 0 ? reminderDate : tr('selectDate') }}</text></view>
+              </picker>
+            </view>
+            <view class="picker-row">
+              <text class="picker-label">{{ tr('reminderTime') }}</text>
+              <picker mode="time" :value="reminderTime" v-on:change="onReminderTimeChange">
+                <view class="picker-value"><text class="picker-value-text">{{ reminderTime.length > 0 ? reminderTime : tr('selectTime') }}</text></view>
+              </picker>
+            </view>
+            <view class="picker-row">
+              <text class="picker-label">{{ tr('recurrence') }}</text>
+              <view class="recurrence-opts">
+                <view class="recurrence-opt" :class="reminderRecurrence == 'none' ? 'recurrence-active' : ''" v-on:click="setRecurrence('none')"><text class="recurrence-opt-text">{{ tr('recurrenceNone') }}</text></view>
+                <view class="recurrence-opt" :class="reminderRecurrence == 'daily' ? 'recurrence-active' : ''" v-on:click="setRecurrence('daily')"><text class="recurrence-opt-text">{{ tr('recurrenceDaily') }}</text></view>
+                <view class="recurrence-opt" :class="reminderRecurrence == 'weekly' ? 'recurrence-active' : ''" v-on:click="setRecurrence('weekly')"><text class="recurrence-opt-text">{{ tr('recurrenceWeekly') }}</text></view>
+              </view>
+            </view>
+            <view class="instr-send-btn" :class="reminderBusy ? 'btn-busy' : ''" v-on:click="submitReminder"><text class="instr-send-text">{{ reminderBusy ? tr('sending') : tr('send') }}</text></view>
+          </view>
+        </scroll-view>
+      </view>
+    </view>
+  </view>
+
+  <view class="coach-refresh" v-on:click="handleRefresh"><text>↻</text></view>
+
+  <!-- Appointment form — the web user-app's CoachPanel AppointmentForm -->
+  <view v-if="apptFormOpen" class="coach-appointment overlay-mask" :class="theme == 'light' ? 'theme-light' : ''">
+    <view class="overlay-panel" v-on:click.stop="noop">
+      <view class="overlay-header">
+        <text class="overlay-title">{{ tr('newAppt') }}</text>
+        <view class="overlay-close" v-on:click="closeApptForm"><text class="close-x">✕</text></view>
+      </view>
+      <view class="overlay-scroll coach-appointment-body">
+        <view class="form-row" v-on:click="pickApptClient"><text>{{ tr('tabs.clients') }}</text><view class="form-input"><text>{{ apptClientName.length > 0 ? apptClientName : '—' }}</text></view></view>
+        <view class="form-row"><text>{{ tr('apptTitle') }}</text><input class="form-input" v-model="apptTitleText" /></view>
+        <picker mode="date" :value="apptDate" v-on:change="onApptDateChange"><view class="form-row"><text>{{ tr('apptDate') }}</text><view class="form-input"><text>{{ apptDate }}</text></view></view></picker>
+        <picker mode="time" :value="apptTime" v-on:change="onApptTimeChange"><view class="form-row"><text>{{ tr('apptTime') }}</text><view class="form-input"><text>{{ apptTime }}</text></view></view></picker>
+        <view class="form-row"><text>{{ lang == 'zh' ? '链接' : 'Link' }}</text><input class="form-input" v-model="apptLink" /></view>
+        <view class="form-input" v-on:click="pickApptFormat"><text>{{ tr('apptFormats.' + apptFormat) }}</text></view>
+      </view>
+      <view class="overlay-footer">
+        <view class="overlay-cancel-btn" v-on:click="closeApptForm"><text>{{ tr('apptCancel') }}</text></view>
+        <view class="overlay-confirm-btn" :class="apptBusy || apptClientId.length == 0 || apptTitleText.trim().length == 0 ? 'btn-busy' : ''" v-on:click="submitAppt"><text>{{ apptBusy ? tr('loading') : tr('apptCreate') }}</text></view>
+      </view>
+    </view>
+  </view>
+  </view>
+  <!-- #endif -->
+  <!-- #ifndef WEB -->
   <view class="co-screen">
     <view class="co-header" :style="'padding-top:' + statusBarHeight + 'px'">
       <view class="co-back" v-on:click="handleBack"><text class="co-back-text">‹ {{ tr('back') }}</text></view>
@@ -63,13 +809,13 @@
         <view v-for="(v, i) in invites" :key="i" class="co-invite">
           <view class="co-client-top">
             <text class="co-code">{{ v.getString('code') }}</text>
-            <text class="co-badge">{{ v.getString('status') == 'active' ? tr('invite.active') : tr('invite.inactive') }}</text>
+            <text class="co-badge">{{ v.getBoolean('is_active') == true ? tr('invite.active') : tr('invite.inactive') }}</text>
           </view>
-          <text class="co-kv">{{ tr('invite.uses') }}: {{ v.getNumber('used_count') }}</text>
+          <text class="co-kv">{{ tr('invite.uses') }}: {{ v.getNumber('use_count') }}</text>
           <text class="co-note" v-on:click="editInviteNote(i)">{{ v.getString('note') != null && v.getString('note')!.length > 0 ? v.getString('note') : tr('invite.noNote') }}</text>
           <view class="co-row-actions">
             <text class="co-act" v-on:click="copyInvite(i)">{{ tr('invite.copy') }}</text>
-            <text v-if="v.getString('status') == 'active'" class="co-act co-act-danger" v-on:click="deactivateInvite(i)">{{ tr('invite.deactivate') }}</text>
+            <text v-if="v.getBoolean('is_active') == true" class="co-act co-act-danger" v-on:click="deactivateInvite(i)">{{ tr('invite.deactivate') }}</text>
           </view>
         </view>
       </view>
@@ -103,8 +849,8 @@
         <text class="co-section">{{ tr('kpiTitle') }}</text>
         <view class="co-kpi-row">
           <view class="co-kpi"><text class="co-kpi-label">{{ tr('kpiClients') }}</text><text class="co-kpi-val">{{ kpiField('total_clients') }}</text></view>
-          <view class="co-kpi"><text class="co-kpi-label">{{ tr('kpiActive') }}</text><text class="co-kpi-val">{{ kpiField('active') }}</text></view>
-          <view class="co-kpi"><text class="co-kpi-label">{{ tr('kpiAtRisk') }}</text><text class="co-kpi-val">{{ kpiField('at_risk') }}</text></view>
+          <view class="co-kpi"><text class="co-kpi-label">{{ tr('kpiActive') }}</text><text class="co-kpi-val">{{ kpiField('active_clients') }}</text></view>
+          <view class="co-kpi"><text class="co-kpi-label">{{ tr('kpiAtRisk') }}</text><text class="co-kpi-val">{{ kpiField('at_risk_count') }}</text></view>
         </view>
         <text class="co-section">{{ tr('crmPipeline') }}</text>
         <scroll-view direction="horizontal" class="co-kanban">
@@ -351,6 +1097,7 @@
       </view>
     </view>
   </view>
+  <!-- #endif -->
 </template>
 
 <script>
@@ -365,12 +1112,18 @@
 // the assignable-questionnaires allowlist (dynamic/viva_ag never assignable), and every
 // endpoint/payload shape.
 
-import { BASE, VERSION } from '../../utils/config.uts'
+import { BASE, API_ORIGIN, VERSION } from '../../utils/config.uts'
+import { idOf } from '../../utils/json-id.uts'
+import { mdToSegments, inlineTagStyles, Segment, FormulaTier } from '../../utils/markdown.uts'
+import { T_MAIN_ZH, T_MAIN_EN } from '../../utils/main-t.uts'
+import { tr as trPath } from '../../utils/i18n.uts'
+import { scanQr, setScanTitle, syncRootClasses } from '../../utils/web-ui.uts'
 import { state } from '../../utils/state.uts'
 import { saveSession, clearSession, checkAuthStatus } from '../../utils/session.uts'
 import { maskPhone } from '../../utils/phone.uts'
-import { RespEnvelope, ToolCtx, ToolOpts, runTestChip, runFormulaDs, runHealthAdvice, doUpload } from '../../utils/tool-actions.uts'
+import { RespEnvelope, ToolCtx, ToolOpts, ToolItem, getToolList, runTestChip, runFormulaDs, runHealthAdvice, runUploadImage, doUpload } from '../../utils/tool-actions.uts'
 import UserHealth from '../../components/user-health/user-health.uvue'
+import Toolbox from '../../components/toolbox/toolbox.uvue'
 
 const ASSIGNABLE_TYPES : string[] = ['onboarding', 'custom']
 
@@ -397,7 +1150,7 @@ const T_ZH : UTSJSONObject = {
   invite: { generate: '生成邀请码', deactivate: '停用', copy: '复制链接', uses: '已使用', active: '有效', inactive: '已停用',
     noInvites: '暂无邀请码', deactivateWarning: '停用此邀请码？已复制的链接将失效。', copied: '链接已复制',
     notePlaceholder: '例如：微信A群、春季活动', editNote: '备注', noNote: '点击添加备注', noteSaved: '备注已保存' } as UTSJSONObject,
-  earnings: { thisMonth: '本月待结算', available: '可提现余额', noPayouts: '暂无结算记录', payoutHistory: '结算记录',
+  earnings: { amount: '金额', thisMonth: '本月待结算', available: '可提现余额', noPayouts: '暂无结算记录', payoutHistory: '结算记录',
     draft: '待审批', approved: '已审批', transferred: '已转账' } as UTSJSONObject,
   questionnaires: { noQuestionnaires: '暂无可用问卷', assign: '指派', assignTitle: '指派问卷给客户', noUsers: '请选择至少一名客户',
     assigned: '指派成功', assignError: '指派失败，请重试', responsesTitle: '问卷回答', noResponses: '暂无回答记录' } as UTSJSONObject,
@@ -423,7 +1176,7 @@ const T_ZH : UTSJSONObject = {
   kinoScanAlreadyLinked: '此芯片已绑定到该客户账户，正在等待检测结果。', kinoScanUsed: '此芯片已完成检测，无法重复登记。',
   kinoScanClaimedByOther: '此芯片已被其他账户登记，正在等待检测结果。如需重新使用，请联系管理员重置该芯片。',
   kinoScanInvalidChip: '此二维码不是有效的 Kino 芯片，请扫描芯片上的二维码。', kinoScanError: '登记失败，请重试。',
-  mc: { add: '+ 新建托管客户', edit: '编辑资料', badge: '托管', titleNew: '新建托管客户', titleEdit: '编辑客户资料',
+  mc: { birthDate: '出生日期', nicknameHint: '留空则用姓名', refHint: '贵机构系统中的编号（可选）', selectGender: '请选择性别', add: '+ 新建托管客户', edit: '编辑资料', badge: '托管', titleNew: '新建托管客户', titleEdit: '编辑客户资料',
     lastName: '姓', firstName: '名', nickname: '显示名称', selectDate: '请选择出生日期', genders0: '男', genders1: '女',
     phone: '联系电话', ref: '客户编号', save: '保存', cancel: '取消', created: '已创建', saved: '已保存',
     note: '托管客户不会登录小程序，由您代为检测、配方与咨询。',
@@ -433,6 +1186,8 @@ const T_ZH : UTSJSONObject = {
     redeemHint: '使用渠道购买的原粒兑换码，为该客户最新的配方下单，无需付款。请先为客户完成营养定制。',
     redeemDone: '已下单', redeemPending: '已兑换，订单确认中',
     boxScan: '扫码激活盒子', boxOk: '已激活，客户的 28 天周期从今天开始', boxAlready: '这盒已经激活过了', boxFail: '无法激活' } as UTSJSONObject,
+  // pages/coach keys the web template (the miniapp's markup) reads
+  ai: 'AI', coachLabel: '教练', detailTitle: '客户详情', goalDateLabel: '目标日期', goalTargetLabel: '目标值', goalTypeLabel: '目标类型', joined: '注册时间', kpiCommission: '本月佣金', kpiNps: 'NPS 评分', kpiScans: '促成检测', noChatData: '暂无对话记录', openMessages: '发消息', planCheckins: '打卡', programDays: '天', retryLoad: '重试', selectTime: '选择时间', you: '用户',
 } as UTSJSONObject
 
 const T_EN : UTSJSONObject = {
@@ -458,7 +1213,7 @@ const T_EN : UTSJSONObject = {
   invite: { generate: 'Generate Code', deactivate: 'Deactivate', copy: 'Copy Link', uses: 'Uses', active: 'Active', inactive: 'Inactive',
     noInvites: 'No invite codes yet', deactivateWarning: 'Deactivate this invite code? Shared links will stop working.', copied: 'Link copied',
     notePlaceholder: 'e.g. WeChat group A, Spring promo', editNote: 'Note', noNote: 'Tap to add a note', noteSaved: 'Note saved' } as UTSJSONObject,
-  earnings: { thisMonth: 'This Month (Pending)', available: 'Available Balance', noPayouts: 'No payout history', payoutHistory: 'Payout History',
+  earnings: { amount: 'Amount', thisMonth: 'This Month (Pending)', available: 'Available Balance', noPayouts: 'No payout history', payoutHistory: 'Payout History',
     draft: 'Pending Approval', approved: 'Approved', transferred: 'Transferred' } as UTSJSONObject,
   questionnaires: { noQuestionnaires: 'No questionnaires available', assign: 'Assign', assignTitle: 'Assign to Clients', noUsers: 'Please select at least one client',
     assigned: 'Assigned successfully', assignError: 'Assignment failed, please retry', responsesTitle: 'Questionnaire Responses', noResponses: 'No responses yet' } as UTSJSONObject,
@@ -486,7 +1241,7 @@ const T_EN : UTSJSONObject = {
   kinoScanClaimedByOther: 'This chip is already registered to another account and is awaiting analysis. Ask an admin to reset it if you need to reuse it.',
   kinoScanInvalidChip: 'This QR code is not a valid Kino chip. Please scan the QR code on the chip.',
   kinoScanError: 'Registration failed. Please try again.',
-  mc: { add: '+ New managed customer', edit: 'Edit profile', badge: 'Managed', titleNew: 'New managed customer', titleEdit: 'Edit customer',
+  mc: { birthDate: 'Date of birth', nicknameHint: 'Defaults to the full name', refHint: 'Their ID in your own system (optional)', selectGender: 'Select sex', add: '+ New managed customer', edit: 'Edit profile', badge: 'Managed', titleNew: 'New managed customer', titleEdit: 'Edit customer',
     lastName: 'Last name', firstName: 'First name', nickname: 'Display name', selectDate: 'Select date of birth', genders0: 'Male', genders1: 'Female',
     phone: 'Contact phone', ref: 'Customer ID', save: 'Save', cancel: 'Cancel', created: 'Created', saved: 'Saved',
     note: 'Managed customers never sign in; you scan, formulate and consult for them.',
@@ -496,6 +1251,8 @@ const T_EN : UTSJSONObject = {
     redeemHint: "Spend a Dots code your channel bought to order this customer's latest formula — no payment. Run Formulate Dots for them first.",
     redeemDone: 'Ordered', redeemPending: 'Code redeemed — order being confirmed',
     boxScan: 'Scan box to activate', boxOk: "Activated — the customer's 28-day cycle starts today", boxAlready: 'This box was already activated', boxFail: "Couldn't activate" } as UTSJSONObject,
+  // pages/coach keys the web template (the miniapp's markup) reads
+  ai: 'AI', coachLabel: 'Coach', detailTitle: 'Client Detail', goalDateLabel: 'Target Date', goalTargetLabel: 'Target Value', goalTypeLabel: 'Goal Type', joined: 'Joined', kpiCommission: 'Commission', kpiNps: 'NPS Score', kpiScans: 'Scans', noChatData: 'No chat history yet.', openMessages: 'Message', planCheckins: 'check-ins', programDays: 'days', retryLoad: 'Retry', selectTime: 'Select time', you: 'User',
 } as UTSJSONObject
 
 function _tr(t : UTSJSONObject, path : string) : string {
@@ -633,7 +1390,7 @@ async function _envelopeRun(url : string, method : RequestMethod, data : UTSJSON
 
 export default {
   name: 'CoachPage',
-  components: { UserHealth },
+  components: { UserHealth, Toolbox },
   data() {
     return {
       lang: 'zh',
@@ -645,6 +1402,7 @@ export default {
       tab: 'clients',
       tabKeys: ['clients', 'invites', 'earnings', 'questionnaires', 'crm'] as string[],
       detailTabs: ['health', 'chat', 'plans', 'notes', 'goals', 'facts'] as string[],
+      detailTabOrder: ['health', 'plans', 'chat', 'notes', 'goals', 'facts'] as string[],
       statusBarHeight: 0,
       theme: 'dark',
       sandboxMode: false,
@@ -737,6 +1495,33 @@ export default {
       redeemPhone: '',
       redeemAddress: '',
       redeemBusy: false,
+      // ── pages/coach parity (the miniapp's own state; the web template renders all of it) ──
+      loading: true,
+      channelName: 'NANO',
+      channelLogo: '/static/waven-logo-icon.png',
+      reminderTarget: null as UTSJSONObject | null,
+      qResponsesUser: null as UTSJSONObject | null,
+      qResponsesLoading: false,
+      goalFormOpen: false,
+      goalType: 'bio_age',
+      goalTypeKeys: ['bio_age', 'sub_age', 'weight', 'steps', 'sleep_score', 'hrv', 'custom'] as string[],
+      goalTargetValue: '',
+      goalTargetDate: '',
+      goalBusy: false,
+      factCategoryKeys: ['dietary_restriction', 'allergy', 'preference', 'goal', 'other'] as string[],
+      factCategoryIndex: 2,
+      chatToolboxOpen: false,
+      chatToolList: [] as ToolItem[],
+      topImprovers: [] as UTSJSONObject[],
+      chatLoading: false,
+      detailPlansLoading: false,
+      clientNotesLoading: false,
+      clientFactsLoading: false,
+      clientGoalsLoading: false,
+      crmLoading: false,
+      kpiLoading: false,
+      earningsLoading: false,
+      questionnairesLoading: false,
     }
   },
   computed: {
@@ -763,7 +1548,7 @@ export default {
       return
     }
     const coach = state.coach
-    this._coachId = coach != null ? (coach!.getString('id') ?? '') : ''
+    this._coachId = idOf(coach, 'id')
     this.coachId = this._coachId
     this._coachChannelId = coach != null ? (coach!.getNumber('channel_id') ?? 0) : 0
     this._coachUserId = user!.getString('user_id') ?? ''
@@ -778,7 +1563,15 @@ export default {
     if (this.sandboxMode) {
       this.sandboxBannerText = _tr(this.t, 'sandboxBanner').split('{name}').join(this.nickname.length > 0 ? this.nickname : '—')
     }
-    this._loadAll()
+    const channel = state.channel
+    if (channel != null) {
+      this.channelName = channel!.getString('name') ?? 'NANO'
+      const logo = channel!.getString('logo_url')
+      if (logo != null && logo!.length > 0) this.channelLogo = logo!
+    }
+    this.chatToolList = getToolList(this.t)
+    this._loadAll().then(() => { this.loading = false })
+    syncRootClasses(this.theme, this.textScale)
   },
   // A backgrounded coach must not keep a stale client list indefinitely (2026-08-30):
   // onShow refetches. onLoad already ran once, so guard on the resolved user id.
@@ -786,6 +1579,11 @@ export default {
     if (this._coachUserId.length > 0 && this.clients.length > 0) this._loadAll()
   },
   onUnload() { this._stopVivaPoll() },
+  // Web: theme / text scale tokens live on <html> (utils/web-ui.uts syncRootClasses).
+  watch: {
+    theme(v : string) { syncRootClasses(v, this.textScale) },
+    textScale(v : number) { syncRootClasses(this.theme, v) },
+  },
   methods: {
     tr(path : string) : string { return _tr(this.t, path) },
     detailTabLabel(dt : string) : string {
@@ -859,6 +1657,13 @@ export default {
         row['_lastScanFmt'] = u.getString('last_scan_at') != null ? fmtDate(u['last_scan_at']) : '—'
         const nick = u.getString('nickname') ?? 'U'
         row['_avatar'] = nick!.length > 0 ? nick!.substring(0, 1).toUpperCase() : 'U'
+        row['_hasScan'] = u.getString('last_scan_at') != null
+        row['_joinedFmt'] = fmtDate(u['created_at'])
+        row['_lastMsgTimeFmt'] = u.getString('last_user_msg_at') != null ? fmtTime(u['last_user_msg_at']) : null
+        const tagObjs = u.getArray<UTSJSONObject>('crm_tag_objects')
+        const tags : UTSJSONObject[] = []
+        if (tagObjs != null) { for (const tg of tagObjs!) { if (tg != null && tags.length < 4) tags.push(tg) } }
+        row['_crmTags'] = tags
         const subs : UTSJSONObject[] = []
         const bioData = u.getJSON('bio_data')
         const profile = bioData != null ? bioData!.getJSON('bioage_profile') : null
@@ -905,17 +1710,17 @@ export default {
       const res = await this._req(`${BASE}/api/my-coach?user_id=${encodeURIComponent(this._coachUserId)}`, 'GET', null, 0)
       if (res.data == null || res.data!.getBoolean('success') != true) return false
       const coach = res.data!.getJSON('coach')
-      if (coach == null || coach!.getString('id') == null) return false
+      if (coach == null || idOf(coach, 'id').length == 0) return false
       state.coach = coach
-      uni.setStorageSync('nano_coach', coach)
-      this._coachId = coach!.getString('id') ?? ''
+      uni.setStorageSync('nano_coach', coach!)
+      this._coachId = idOf(coach, 'id')
       this.coachId = this._coachId
       this._coachChannelId = coach!.getNumber('channel_id') ?? 0
       return true
     },
 
     _diagText(statusCode : number, err : string | null) : string {
-      const host = BASE.replace('https://', '').replace('http://', '')
+      const host = API_ORIGIN.replace('https://', '').replace('http://', '')
       const parts : string[] = [`${host} · coach=${this._coachId.length == 0 ? 'null' : this._coachId}`, `v${VERSION}`]
       if (statusCode > 0) parts.push(`HTTP ${statusCode}`)
       if (err != null) parts.push(err!.substring(0, Math.min(40, err!.length)))
@@ -925,9 +1730,9 @@ export default {
     onClientsRefresh() { this._loadAll() },
     switchTab(tk : string) {
       this.tab = tk
-      if (tk == 'earnings' && this.earningsThisMonth == '—') this._loadEarnings()
-      if (tk == 'questionnaires' && this.questionnaires.length == 0) this._loadQuestionnaires()
-      if (tk == 'crm') this._loadCRM()
+      if (tk == 'earnings' && this.earningsThisMonth == '—') { this.earningsLoading = true; this._loadEarnings().then(() => { this.earningsLoading = false }) }
+      if (tk == 'questionnaires' && this.questionnaires.length == 0) { this.questionnairesLoading = true; this._loadQuestionnaires().then(() => { this.questionnairesLoading = false }) }
+      if (tk == 'crm') { this.crmLoading = true; this._loadCRM().then(() => { this.crmLoading = false }) }
     },
     handleBack() { uni.navigateBack() },
     toggleMenu() { this.menuOpen = !this.menuOpen },
@@ -1036,6 +1841,9 @@ export default {
     openClientDetail(index : number, tabKey : string) {
       const c = this.filteredClients[index]
       if (c == null) return
+      this.openClientDetailFor(c, tabKey)
+    },
+    openClientDetailFor(c : UTSJSONObject, tabKey : string) {
       this.detailOpen = true
       this.detailClient = c
       this.detailTab = tabKey == 'messages' ? 'chat' : tabKey
@@ -1058,14 +1866,34 @@ export default {
       this.detailClient = null
       this.chatMessages = [] as UTSJSONObject[]
       this.msgText = ''
+      this.chatToolboxOpen = false
+      this.goalFormOpen = false
     },
     switchDetailTab(tab : string) {
       this.detailTab = tab
       if (tab == 'chat' && this.chatMessages.length == 0) this._loadClientChat()
-      if (tab == 'plans') this._loadClientPlans()
-      if (tab == 'notes') this._loadClientNotes()
-      if (tab == 'goals') this._loadClientGoals()
-      if (tab == 'facts') this._loadClientFacts()
+      if (tab == 'plans') { this.detailPlansLoading = true; this._loadClientPlans().then(() => { this.detailPlansLoading = false }) }
+      if (tab == 'notes') { this.clientNotesLoading = true; this._loadClientNotes().then(() => { this.clientNotesLoading = false }) }
+      if (tab == 'goals') { this.clientGoalsLoading = true; this._loadClientGoals().then(() => { this.clientGoalsLoading = false }) }
+      if (tab == 'facts') { this.clientFactsLoading = true; this._loadClientFacts().then(() => { this.clientFactsLoading = false }) }
+    },
+    // pages/coach handleRefresh — the header refresh.
+    handleRefresh() {
+      this._loadAll()
+      if (this.tab == 'earnings') this._loadEarnings()
+      if (this.tab == 'questionnaires') this._loadQuestionnaires()
+    },
+    noop() {},
+    // Chat (web): the main chat's dictionary, segments and tag styles — see the chat panel.
+    mt(key : string) : string { return trPath(this.lang == 'en' ? T_MAIN_EN : T_MAIN_ZH, key) },
+    sh(h : string) : string { return inlineTagStyles(h) },
+    segsOf(m : UTSJSONObject) : Segment[] {
+      const v = m['_segs']
+      return v != null ? (v as Segment[]) : ([] as Segment[])
+    },
+    toggleFormulaTier(ft : FormulaTier) {
+      ft.open = !ft.open
+      this.chatMessages = this.chatMessages.slice(0)
     },
     _scrollChatBottom() {
       setTimeout(() => { this.chatScrollTop = (this.chatMessages.length + 1) * 100000 }, 60)
@@ -1075,7 +1903,9 @@ export default {
       const client = this.detailClient
       if (client == null) return
       const params = `user_id=${encodeURIComponent(client!.getString('user_id') ?? '')}${this._coachId.length > 0 ? '&coach_id=' + this._coachId : ''}`
+      this.chatLoading = true
       const res = await this._req(`${BASE}/api/coach-user-chat?${params}`, 'GET', null, 0)
+      this.chatLoading = false
       const msgs = res.data != null ? res.data!.getArray<UTSJSONObject>('messages') : null
       const out : UTSJSONObject[] = []
       if (msgs != null) {
@@ -1088,6 +1918,9 @@ export default {
             row['content'] = content!.split('\n').join(' ') // coach messages are single-line bubbles (miniapp rule)
           }
           row['_time'] = fmtTime(m['created_at'])
+          row['_isUser'] = role == 'user'
+          row['_isCoach'] = role == 'coach'
+          if (role != 'user' && role != 'coach') row['_segs'] = mdToSegments(m.getString('content') ?? '')
           out.push(row)
         }
       }
@@ -1095,6 +1928,23 @@ export default {
       if (out.length > 0) this._scrollChatBottom()
     },
 
+    toggleChatToolbox() {
+      if (this.chatToolBusy && !this.chatToolboxOpen) return
+      this.chatToolboxOpen = !this.chatToolboxOpen
+    },
+    // From the toolbox component: { action, tempFilePath? } (it picks the image itself).
+    handleChatToolAction(e : any | null) {
+      if (e == null || this.detailClient == null || this.chatToolBusy) return
+      const detail = e as UTSJSONObject
+      const action = detail.getString('action') ?? ''
+      this.chatToolboxOpen = false
+      if (action == 'upload_image') {
+        const path = detail.getString('tempFilePath')
+        if (path != null) runUploadImage(this.detailClient!.getString('user_id') ?? '', this.t, this._makeCtx(), path!)
+        return
+      }
+      this.runTool(action)
+    },
     runTool(action : string) {
       const client = this.detailClient
       if (client == null || this.chatToolBusy) return
@@ -1131,6 +1981,7 @@ export default {
         id: `${role}-${Date.now()}`, role: persistRole, content: content,
         imageUrl: null as string | null, _time: '',
       } as UTSJSONObject
+      if (persistRole != 'user' && persistRole != 'coach') msg['_segs'] = mdToSegments(content)
       this.chatMessages.push(msg)
       this._scrollChatBottom()
       const client = this.detailClient
@@ -1149,7 +2000,7 @@ export default {
     _updateChatImageMsg(id : string, permanentUrl : string | null) {
       const out : UTSJSONObject[] = []
       for (const m of this.chatMessages) {
-        if (m.getString('id') == id) m['imageUrl'] = permanentUrl
+        if (idOf(m, 'id') == id) m['imageUrl'] = permanentUrl
         out.push(m)
       }
       this.chatMessages = out
@@ -1239,7 +2090,12 @@ export default {
       this._vivaPollTimer = 0
     },
 
+    openReminderFor(client : UTSJSONObject) {
+      this.openReminderComposer()
+      this.reminderTarget = client
+    },
     openReminderComposer() {
+      this.reminderTarget = null
       this.reminderOpen = true
       this.reminderText = ''
       this.reminderDate = todayStr()
@@ -1255,7 +2111,7 @@ export default {
     onReminderTimeChange(e : UniPickerChangeEvent) { this.reminderTime = e.detail.value as string },
     setRecurrence(val : string) { this.reminderRecurrence = val },
     async submitReminder() {
-      const client = this.detailClient
+      const client = this.reminderTarget ?? this.detailClient
       if (client == null) return
       const text = this.reminderText.trim()
       if (text.length == 0 || this.reminderDate.length == 0 || this.reminderTime.length == 0) return
@@ -1393,7 +2249,7 @@ export default {
       if (q == null) return
       this.qAssignBusy = true
       const res = await this._req(`${BASE}/api/questionnaire-assignments`, 'POST', {
-        questionnaire_id: q!.getString('id'), user_ids: this.qAssignSelectedIds, assigned_by: this._coachUserId,
+        questionnaire_id: q!['id'], user_ids: this.qAssignSelectedIds, assigned_by: this._coachUserId,
       } as UTSJSONObject, 0)
       this.qAssignBusy = false
       if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -1408,10 +2264,13 @@ export default {
       if (q == null) return
       this.qResponsesOpen = true
       this.qResponsesList = [] as UTSJSONObject[]
-      this._loadResponsesFor(q.getString('id') ?? '')
+      this._loadResponsesFor(idOf(q, 'id'))
     },
     async _loadResponsesFor(qid : string) {
-      const res = await this._req(`${BASE}/api/questionnaire-responses?questionnaire_id=${encodeURIComponent(qid)}`, 'GET', null, 0)
+      await this._loadResponsesBy(`questionnaire_id=${encodeURIComponent(qid)}`)
+    },
+    async _loadResponsesBy(query : string) {
+      const res = await this._req(`${BASE}/api/questionnaire-responses?${query}`, 'GET', null, 0)
       const arr = res.data != null ? res.data!.getArray<UTSJSONObject>('responses') : null
       const grouped = new Map<string, UTSJSONObject[]>()
       const names : string[] = []
@@ -1429,6 +2288,14 @@ export default {
       const out : UTSJSONObject[] = []
       for (const n of names) out.push({ name: n, items: grouped.get(n) } as UTSJSONObject)
       this.qResponsesList = out
+    },
+    async openQResponsesFor(client : UTSJSONObject) {
+      this.qResponsesOpen = true
+      this.qResponsesUser = client
+      this.qResponsesList = [] as UTSJSONObject[]
+      this.qResponsesLoading = true
+      await this._loadResponsesBy(`user_id=${encodeURIComponent(client.getString('user_id') ?? '')}`)
+      this.qResponsesLoading = false
     },
     closeQResponses() {
       this.qResponsesOpen = false
@@ -1627,6 +2494,65 @@ export default {
       }
       this.clientGoals = out
     },
+    openGoalSheet() {
+      this.goalFormOpen = true
+      this.goalType = 'bio_age'
+      this.goalTargetValue = ''
+      this.goalTargetDate = ''
+    },
+    closeGoalForm() { this.goalFormOpen = false },
+    pickGoalType() {
+      const labels : string[] = []
+      for (const k of this.goalTypeKeys) labels.push(_tr(this.t, 'goalTypes.' + k))
+      uni.showActionSheet({ itemList: labels, success: (res) => { this.goalType = this.goalTypeKeys[res.tapIndex] } })
+    },
+    pickFactCategory() {
+      const labels : string[] = []
+      for (let i = 0; i < this.factCategoryKeys.length; i++) labels.push(this.factCategoryLabel(i))
+      uni.showActionSheet({ itemList: labels, success: (res) => { this.factCategoryIndex = res.tapIndex } })
+    },
+    pickMcGender() {
+      uni.showActionSheet({ itemList: [this.tr('mc.genders0'), this.tr('mc.genders1')], success: (res) => { this.mcGender = res.tapIndex == 0 ? 'male' : 'female' } })
+    },
+    pickApptFormat() {
+      const labels : string[] = []
+      for (const f of this.apptFormats) labels.push(this.tr('apptFormats.' + f))
+      uni.showActionSheet({ itemList: labels, success: (res) => { this.apptFormat = this.apptFormats[res.tapIndex] } })
+    },
+    pickApptClient() {
+      const labels : string[] = []
+      for (const c of this.clients) labels.push(c.getString('nickname') ?? '—')
+      if (labels.length == 0) return
+      uni.showActionSheet({ itemList: labels, success: (res) => {
+        const c = this.clients[res.tapIndex]
+        this.apptClientId = c.getString('user_id') ?? ''
+        this.apptClientName = c.getString('nickname') ?? ''
+      } })
+    },
+    onGoalTypeChange(e : UniPickerChangeEvent) {
+      const i = parseInt(`${e.detail.value}`)
+      if (!isNaN(i) && i >= 0 && i < this.goalTypeKeys.length) this.goalType = this.goalTypeKeys[i]
+    },
+    onGoalDateChange(e : UniPickerChangeEvent) { this.goalTargetDate = `${e.detail.value}` },
+    async submitGoal() {
+      const client = this.detailClient
+      const target = parseFloat(this.goalTargetValue)
+      if (client == null || isNaN(target) || this._coachId.length == 0 || this.goalBusy) return
+      this.goalBusy = true
+      const baseline = this.goalType == 'bio_age' ? client!.getNumber('bio_age') : null
+      const res = await this._req(`${BASE}/api/client-goals`, 'POST', {
+        coach_id: this._coachId, user_id: client!.getString('user_id'), goal_type: this.goalType,
+        title_zh: _tr(this.t, 'goalTypes.' + this.goalType), baseline_value: baseline,
+        target_value: target, target_date: this.goalTargetDate.length > 0 ? this.goalTargetDate : null,
+      } as UTSJSONObject, 0)
+      this.goalBusy = false
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        this.goalFormOpen = false
+        this._loadClientGoals()
+      } else {
+        uni.showToast({ title: this.tr('networkError'), icon: 'none' })
+      }
+    },
     openGoalForm() {
       uni.showModal({
         title: this.tr('setGoal'), editable: true, placeholderText: this.tr('goalTargetLabel'),
@@ -1653,13 +2579,20 @@ export default {
       const arr = res.data != null ? res.data!.getArray<UTSJSONObject>('facts') : null
       this.clientFacts = arr != null ? arr! : ([] as UTSJSONObject[])
     },
+    onFactCategoryChange(e : UniPickerChangeEvent) {
+      const i = parseInt(`${e.detail.value}`)
+      if (!isNaN(i)) this.factCategoryIndex = i
+    },
+    factCategoryLabel(i : number) : string {
+      return _tr(this.t, 'factCategories.' + (this.factCategoryKeys[i] ?? 'other'))
+    },
     async saveFact() {
       const client = this.detailClient
       const text = this.factText.trim()
       if (client == null || text.length == 0 || this.factsBusy) return
       this.factsBusy = true
       await this._req(`${BASE}/api/user-facts`, 'POST', {
-        openid: client!.getString('user_id'), category: 'preference', fact_zh: text,
+        openid: client!.getString('user_id'), category: this.factCategoryKeys[this.factCategoryIndex] ?? 'other', fact_zh: text,
       } as UTSJSONObject, 0)
       this.factText = ''
       this.factsBusy = false
@@ -1761,8 +2694,19 @@ export default {
     },
     async _loadKPIs() {
       if (this._coachId.length == 0) return
+      this.kpiLoading = true
       const res = await this._req(`${BASE}/api/coach-kpis?coach_id=${this._coachId}`, 'GET', null, 0)
       this.kpiData = res.data != null ? res.data!.getJSON('kpis') : null
+      const ranked : UTSJSONObject[] = []
+      for (const c of this.clients) {
+        const cAge = c.getNumber('_cAge')
+        const bio = c.getNumber('bio_age')
+        if (cAge == null || bio == null || cAge == 0 || bio == 0) continue
+        ranked.push({ nickname: c.getString('nickname') ?? '', delta: parseFloat((bio! - cAge!).toFixed(1)), _avatar: c.getString('_avatar') ?? 'U' } as UTSJSONObject)
+      }
+      ranked.sort((a, b) : number => (a.getNumber('delta') ?? 0) - (b.getNumber('delta') ?? 0))
+      this.topImprovers = ranked.slice(0, 5)
+      this.kpiLoading = false
     },
 
     openApptForm(client : UTSJSONObject | null) {
@@ -1919,7 +2863,8 @@ export default {
     scanBoxForCustomer() {
       const client = this.detailClient
       if (client == null) return
-      uni.scanCode({
+      setScanTitle(this.tr('mc.boxScan'))
+      scanQr({
         onlyFromCamera: false,
         success: (res) => { (async () : Promise<void> => {
           uni.showLoading({ title: '…', mask: true })
@@ -1965,6 +2910,8 @@ export default {
 </script>
 
 <style>
+/* Native only — the web build renders the miniapp markup above, styled by static/web/. */
+/* #ifndef WEB */
 .co-screen { flex: 1; background-color: #0B1C2E; }
 .co-header { flex-direction: row; align-items: center; padding: 10px 16px; }
 .co-back { margin-right: 8px; }
@@ -2048,4 +2995,5 @@ export default {
 .btn-text { color: #FFFFFF; font-size: 14px; }
 .btn-text-sm { color: #EAF2FB; font-size: 12px; }
 .co-btn { height: 44px; background-color: #2E7CF6; border-radius: 12px; align-items: center; justify-content: center; margin-top: 8px; }
+/* #endif */
 </style>

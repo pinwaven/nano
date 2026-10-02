@@ -9,7 +9,7 @@
      the ::: card render chain (metric/takeaway/dots/formula/product/grocery/lesson/checkin),
      the async two-channel chat delivery UI (§22), the pinch text-scale, and the 100px
      chat-inner bottom padding that fixes the clipped-last-message bug (AGENTS §23 — 200rpx ≈ 100px). -->
-  <view class="main" :class="theme == 'light' ? 'theme-light' : ''" v-on:touchstart="onTouchStart" v-on:touchend="onTouchEnd">
+  <view class="main" :class="[theme == 'light' ? 'theme-light' : '', 'fs-' + textScale]" v-on:touchstart="onTouchStart" v-on:touchend="onTouchEnd">
 
     <!-- ── Status bar spacer ── -->
     <view class="status-bar-spacer" :style="'height:' + statusBarHeight + 'px'"></view>
@@ -39,24 +39,44 @@
 
     <!-- ── Logo menu ── -->
     <view v-if="menuOpen" class="menu-mask" v-on:click="closeMenu">
-      <view class="menu-dropdown" :style="'top:' + (statusBarHeight + 44) + 'px'" v-on:click.stop="noop">
+      <view class="menu-dropdown" :style="menuDropdownStyle" v-on:click.stop="noop">
         <view v-if="!isGuest && isAeviva && personaType == 'viva' && !vivaSubscriptionExpired && vivaSubscriptionExpiresAtDisplay.length > 0" class="menu-credit-row" v-on:click="openVivaRedeemSheet">
           <text class="menu-credit-label">{{ lang == 'zh' ? 'Viva 订阅至' : 'Viva subscribed until' }}</text>
           <text class="menu-credit-value">{{ vivaSubscriptionExpiresAtDisplay }}</text>
         </view>
+        <!-- #ifdef WEB -->
+        <view v-if="!isGuest && isAeviva && personaType == 'viva' && !vivaSubscriptionExpired && vivaSubscriptionExpiresAtDisplay.length > 0 && creditBalance <= 0" class="menu-divider"></view>
+        <!-- #endif -->
         <view v-if="!isGuest && creditBalance > 0" class="menu-credit-row" v-on:click="openReferral">
           <text class="menu-credit-label">{{ lang == 'zh' ? '积分余额' : 'Credits' }}</text>
           <text class="menu-credit-value">{{ creditBalance }} pts</text>
         </view>
+        <!-- #ifdef WEB -->
+        <view v-if="!isGuest && creditBalance > 0" class="menu-divider"></view>
+        <!-- #endif -->
         <view v-if="isCoach" class="menu-item" v-on:click="openCoach">
           <text class="menu-item-icon">👨‍⚕️</text>
           <text class="menu-item-label">{{ tr('coachMenu') }}</text>
         </view>
+        <!-- #ifdef WEB -->
+        <view v-if="isAdmin" class="menu-divider"></view>
+        <view v-if="isAdmin" class="menu-item" v-on:click="openAdminPanel">
+          <text class="menu-item-icon">⚙</text>
+          <text class="menu-item-label">{{ lang == 'zh' ? '渠道管理' : 'Channel Admin' }}</text>
+        </view>
+        <view v-if="isSuperadmin" class="menu-divider"></view>
+        <view v-if="isSuperadmin" class="menu-item" v-on:click="openAdminPanel">
+          <text class="menu-item-icon">🖥</text>
+          <text class="menu-item-label">{{ tr('webAdminMenu') }}</text>
+        </view>
+        <!-- #endif -->
+        <!-- #ifndef WEB -->
         <view v-if="isAdmin" class="menu-divider"></view>
         <view v-if="isAdmin" class="menu-item" v-on:click="openWebAdmin">
           <text class="menu-item-icon">🖥</text>
           <text class="menu-item-label">{{ tr('webAdminMenu') }}</text>
         </view>
+        <!-- #endif -->
         <view v-if="!isGuest" class="menu-divider"></view>
         <view v-if="!isGuest" class="menu-item" v-on:click="openReferral">
           <text class="menu-item-icon">★</text>
@@ -74,11 +94,13 @@
           <text class="menu-item-icon">✧</text>
           <text class="menu-item-label">{{ tr('vivaRedeemMenu') }}</text>
         </view>
+        <!-- #ifndef WEB -->
         <view v-if="isAdmin || isSuperadmin" class="menu-divider"></view>
         <view v-if="isAdmin || isSuperadmin" class="menu-item" v-on:click="openKinoSim">
           <text class="menu-item-icon">⬡</text>
           <text class="menu-item-label">{{ tr('kinoSimMenu') }}</text>
         </view>
+        <!-- #endif -->
         <view class="menu-divider"></view>
         <view class="menu-item" v-on:click="toggleTheme">
           <text class="menu-item-icon">{{ theme == 'dark' ? '☀' : '🌑' }}</text>
@@ -421,14 +443,27 @@
              non-guest) but only toasts; recording needs a native ASR plugin. -->
         <view v-if="obStep == 'done' || isGuest" class="input-container">
           <toolbox v-if="toolboxOpen" :tools="toolList" :disabled="typing" v-on:toolaction="handleToolAction" />
+          <view v-if="micRecording" class="mic-recording-banner">
+            <view class="mic-recording-dot"></view>
+            <text class="mic-recording-text">{{ tr('micRecording') }}</text>
+          </view>
           <view class="input-area">
             <view class="plus-btn" :class="toolboxOpen ? 'plus-btn-open' : ''" v-on:click="toggleToolbox">
               <text class="plus-icon">+</text>
             </view>
             <textarea class="chat-textarea" :style="chatInputH" :placeholder="tr('inputPh')" placeholder-style="color: rgba(166, 196, 229, 0.4)" v-model="chatInput" maxlength="500" />
+            <!-- #ifdef WEB -->
+            <view v-if="chatInput.length == 0 && !isGuest && webSpeech" class="mic-btn" :class="micRecording ? 'mic-btn-active' : (typing ? 'mic-btn-disabled' : '')"
+              v-on:touchstart="onMicStart" v-on:touchend="onMicEnd" v-on:touchcancel="onMicEnd"
+              v-on:mousedown="onMicStart" v-on:mouseup="onMicEnd" v-on:mouseleave="onMicEnd">
+              <image class="mic-icon-img" src="/static/icons/mic.svg" mode="aspectFit" />
+            </view>
+            <!-- #endif -->
+            <!-- #ifndef WEB -->
             <view v-if="chatInput.length == 0 && !isGuest" class="mic-btn" v-on:click="onMicTap">
               <image class="mic-icon-img" src="/static/icons/mic.svg" mode="aspectFit" />
             </view>
+            <!-- #endif -->
             <view v-else-if="chatInput.length == 0 && isGuest" class="mic-btn guest-signup-btn" v-on:click="openGuestSheet">
               <text class="guest-signup-btn-text">{{ tr('guestSignupBtn') }}</text>
             </view>
@@ -775,7 +810,7 @@
                   <text class="plan-reminder-time">{{ r.getString('timeDisplay') }}</text>
                   <text class="plan-reminder-content">{{ r.getString('content') }}</text>
                 </view>
-                <view class="plan-reminder-toggle" :class="r.getString('status') == 'paused' ? 'reminder-paused' : 'reminder-active'" v-on:click="handleTogglePlanReminder(`${r.getString('id')}`, `${r.getString('status')}`)">
+                <view class="plan-reminder-toggle" :class="r.getString('status') == 'paused' ? 'reminder-paused' : 'reminder-active'" v-on:click="handleTogglePlanReminder(idStr(r, 'id'), `${r.getString('status')}`)">
                   <text class="plan-reminder-toggle-label">{{ r.getString('status') == 'paused' ? tr('planReminderResume') : tr('planReminderPause') }}</text>
                 </view>
               </view>
@@ -989,7 +1024,7 @@
                 </view>
               </view>
               <view v-if="o.getString('status') == 'pending'" class="order-actions">
-                <view class="cancel-order-btn" v-on:click="handleCancelOrder(`${o.getString('id')}`)"><text>{{ lang == 'zh' ? '取消订单' : 'Cancel Order' }}</text></view>
+                <view class="cancel-order-btn" v-on:click="handleCancelOrder(idStr(o, 'id'))"><text>{{ lang == 'zh' ? '取消订单' : 'Cancel Order' }}</text></view>
               </view>
             </view>
             <view style="height:16px"></view>
@@ -1013,9 +1048,9 @@
                   <text class="cart-item-price">{{ (`${citem.getString('partnerPrice')}`.length) > 0 ? citem.getString('partnerPrice') : citem.getString('price') }} / {{ citem.getString('unit') }}</text>
                 </view>
                 <view class="cart-stepper cart-stepper-sm">
-                  <view class="stepper-btn" v-on:click="handleCartQtyChange(`${citem.getString('id')}`, -1)"><text class="stepper-sym">－</text></view>
+                  <view class="stepper-btn" v-on:click="handleCartQtyChange(idStr(citem, 'id'), -1)"><text class="stepper-sym">－</text></view>
                   <text class="stepper-qty">{{ citem.getNumber('quantity') }}</text>
-                  <view class="stepper-btn" v-on:click="handleCartQtyChange(`${citem.getString('id')}`, 1)"><text class="stepper-sym">＋</text></view>
+                  <view class="stepper-btn" v-on:click="handleCartQtyChange(idStr(citem, 'id'), 1)"><text class="stepper-sym">＋</text></view>
                 </view>
               </view>
               <view v-if="cart.length > 0" class="checkout-addr-form">
@@ -1246,7 +1281,7 @@
                     <view v-for="(q, qi) in trainingQuizQuestions" :key="qi" class="training-quiz-question">
                       <text v-if="q.getString('scenario') != null" class="training-quiz-scenario">{{ q.getString('scenario') }}</text>
                       <text class="training-quiz-q-text">{{ qi + 1 }}. {{ q.getString('question') }}</text>
-                      <view v-for="(opt, oi2) in arrOf(q, 'options')" :key="oi2" class="training-quiz-option" :class="quizAnswerFor(q) == oi2 ? 'training-quiz-option-selected' : ''" v-on:click="trainingSelectAnswer(`${q.getString('id')}`, oi2)">
+                      <view v-for="(opt, oi2) in arrOf(q, 'options')" :key="oi2" class="training-quiz-option" :class="quizAnswerFor(q) == oi2 ? 'training-quiz-option-selected' : ''" v-on:click="trainingSelectAnswer(idStr(q, 'id'), oi2)">
                         <view class="training-quiz-option-radio" :class="quizAnswerFor(q) == oi2 ? 'training-quiz-option-radio-checked' : ''"></view>
                         <text class="training-quiz-option-text">{{ opt.getString('text') }}</text>
                       </view>
@@ -1312,6 +1347,17 @@
                 <view class="media-asset-btn"><text class="media-asset-btn-text">{{ tr('wellnessOpenLink') }}</text></view>
               </view>
             </view>
+
+            <!-- #ifdef WEB -->
+            <!-- The web user-app's Kino APK card (LearnTab) — copy the download link. -->
+            <view v-if="deviceApkUrl.length > 0" class="wellness-section" style="padding-bottom: 0">
+              <view class="media-asset-card" v-on:click="copyApkUrl">
+                <view class="media-asset-icon media-asset-icon--doc"><text class="media-asset-glyph">↓</text></view>
+                <view class="media-asset-info"><text class="media-asset-name">Kino APK {{ deviceApkVersion }}</text></view>
+                <view class="media-asset-btn"><text class="media-asset-btn-text">{{ tr('wellnessOpenLink') }}</text></view>
+              </view>
+            </view>
+            <!-- #endif -->
 
             <view v-if="sleepCurrentTrack != null" class="sleep-now-playing">
               <view class="sleep-np-info">
@@ -1624,7 +1670,11 @@
 //    equivalent yet. // TODO(port): link-tap copy + settle-scroll for long replies; the timer ladder
 //    in _scrollBottom still covers the common case.
 
-import { BASE, VERSION, IS_DEV } from '../../utils/config.uts'
+import { BASE, API_ORIGIN, VERSION, IS_DEV } from '../../utils/config.uts'
+import { openInNewTab } from '../../utils/web-open.uts'
+import { idOf } from '../../utils/json-id.uts'
+import { speechSupported, startSpeech, stopSpeech } from '../../utils/web-speech.uts'
+import { scanQr, setScanTitle, syncRootClasses } from '../../utils/web-ui.uts'
 import { state } from '../../utils/state.uts'
 import { clearSession, checkAuthStatus } from '../../utils/session.uts'
 import { maskPhone } from '../../utils/phone.uts'
@@ -1636,12 +1686,16 @@ import { mdToSegments, Segment, MD_TAG_STYLE, inlineTagStyles } from '../../util
 // node styles come from MD_TAG_STYLE. Nudging it page-side keeps markdown.uts byte-identical to
 // the miniapp for the differential harness. TODO(port): dark-theme literal — revisit with the
 // light-theme pass.
+// Native only — on the web rich-text inherits its bubble's color from the shared stylesheet
+// (light theme included).
+// #ifndef WEB
 const _HTML_COLOR = 'color:#EEF2FF'
 const _colorTags : string[] = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'strong', 'em', 'blockquote', 'code', 'pre', 'th', 'td', 'del']
 for (const tg of _colorTags) {
   const cur = MD_TAG_STYLE.get(tg)
   if (cur != null) MD_TAG_STYLE.set(tg, cur + ';' + _HTML_COLOR)
 }
+// #endif
 import { buildSeriesIndex, sparkForLabel, appendReading, Point, Spark } from '../../utils/biomarker-series.uts'
 import { RespEnvelope, ToolCtx, ToolOpts, getToolList, runTestChip, runFormulaDs, runHealthAdvice, doUpload } from '../../utils/tool-actions.uts'
 import {
@@ -2141,7 +2195,7 @@ function mapStoreItems(rawItems : UTSJSONObject[], lang : string) : UTSJSONObjec
 function mapStoreOrders(rawOrders : UTSJSONObject[], lang : string) : UTSJSONObject[] {
   const out : UTSJSONObject[] = []
   for (const o of rawOrders) {
-    const idStr = o.getString('id') ?? ''
+    const idStr = idOf(o, 'id')
     out.push({
       id: idStr,
       shortId: idStr.substring(0, Math.min(8, idStr.length)),
@@ -2475,6 +2529,8 @@ export default {
       _aiDedupeSeq: 0 as number,
       _aiRowFloor: null as number | null,
       _chatWaitStartedAt: 0 as number,   // 0 == null
+      micRecording: false,
+      webSpeech: speechSupported(),
       _chatWaitBudgetMs: 0 as number,
       _touchX: 0 as number,
       _touchY: 0 as number,
@@ -2499,6 +2555,15 @@ export default {
     }
   },
   computed: {
+    // Native: below the status bar + header. Web: the user-app's .menu-dropdown { top: 54px }.
+    menuDropdownStyle() : string {
+      // #ifdef WEB
+      return ''
+      // #endif
+      // #ifndef WEB
+      return 'top:' + (this.statusBarHeight + 44) + 'px'
+      // #endif
+    },
     // uni-app x <textarea> has no auto-height (miniapp auto-height="true"): the box starts as
     // one line and grows to 4 (the miniapp's 80→200rpx), then scrolls internally.
     chatInputH() : string {
@@ -2695,6 +2760,9 @@ export default {
     this.gcnStoreSlug = slug != null ? slug! : ''
     this.isAeviva = slug != null
     this.emailLoginAllowed = channelRoot == null || channelRoot == 'waven'
+    // #ifdef WEB
+    this.emailLoginAllowed = true // the web user-app offers email login on every channel
+    // #endif
 
     this.toolList = getToolList(mergedT)
     this.sandboxMode = state.sandboxMode
@@ -2734,6 +2802,7 @@ export default {
   // onShow refetches so a backgrounded user never keeps a stale view (2026-08-30 incident class);
   // onLoad's async init may not have resolved the user id yet — guarded below.
   onShow() {
+    syncRootClasses(this.theme, this.textScale);
     (async () : Promise<void> => {
     const user = this.user
     if (user != null && !this.isGuest) {
@@ -2802,6 +2871,11 @@ export default {
     })()
   },
 
+  // Web: theme / text scale tokens live on <html> (utils/web-ui.uts syncRootClasses).
+  watch: {
+    theme(v : string) { syncRootClasses(v, this.textScale) },
+    textScale(v : number) { syncRootClasses(this.theme, v) },
+  },
   methods: {
     // Store-scroll refresher (a Page method in the source, not a lifecycle hook).
     async onStoreRefresh() {
@@ -2820,7 +2894,7 @@ export default {
       return a != null ? a : ([] as UTSJSONObject[])
     },
     arrLen(obj : UTSJSONObject, key : string) : number {
-      return obj.getArray<UTSJSONObject>(key)?.size ?? 0
+      return obj.getArray<UTSJSONObject>(key)?.length ?? 0
     },
     trackActive(a : UTSJSONObject) : boolean {
       const cur = this.sleepCurrentTrack
@@ -2906,7 +2980,8 @@ export default {
       if (user == null) return
       const uid = user!.getString('user_id') ?? ''
       if (uid.length == 0) return
-      uni.scanCode({
+      setScanTitle(this.tr('scanBoxTitle'))
+      scanQr({
         onlyFromCamera: false,
         success: (res) => { (async () : Promise<void> => {
           uni.showLoading({ title: this.tr('scanBoxWorking'), mask: true })
@@ -3859,13 +3934,13 @@ export default {
     // coordinates, not events (utils/pinch.uts).
     onTabTouchStart(e : UniTouchEvent) {
       const ts = e.touches
-      if (ts.size >= 2) this._tabPinch().start(2, ts[0].clientX, ts[0].clientY, ts[1].clientX, ts[1].clientY)
-      else this._tabPinch().start(ts.size, 0, 0, 0, 0)
+      if (ts.length >= 2) this._tabPinch().start(2, ts[0].clientX, ts[0].clientY, ts[1].clientX, ts[1].clientY)
+      else this._tabPinch().start(ts.length, 0, 0, 0, 0)
     },
     onTabTouchMove(e : UniTouchEvent) {
       const ts = e.touches
-      if (ts.size >= 2) this._tabPinch().move(2, ts[0].clientX, ts[0].clientY, ts[1].clientX, ts[1].clientY)
-      else this._tabPinch().move(ts.size, 0, 0, 0, 0)
+      if (ts.length >= 2) this._tabPinch().move(2, ts[0].clientX, ts[0].clientY, ts[1].clientX, ts[1].clientY)
+      else this._tabPinch().move(ts.length, 0, 0, 0, 0)
     },
     onTabTouchEnd(_e : UniTouchEvent | null) { this._tabPinch().end() },
 
@@ -3896,7 +3971,7 @@ export default {
     // edge swipe — latched in touchstart because touchend fires once per finger.
     onTouchStart(e : UniTouchEvent) {
       const ts = e.touches
-      if (ts.size > 1) { this._multiTouch = true; return }
+      if (ts.length > 1) { this._multiTouch = true; return }
       this._multiTouch = false
       this._touchX = ts[0].clientX
       this._touchY = ts[0].clientY
@@ -3908,7 +3983,7 @@ export default {
       if (this.menuOpen || this.kinoSimOpen || this.guestSheetOpen) return
       if (this._touchX < this._screenW - 40) return // only swipes starting at the right edge
       const ct = e.changedTouches
-      if (ct.size < 1) return
+      if (ct.length < 1) return
       const dx = ct[0].clientX - this._touchX
       const dy = ct[0].clientY - this._touchY
       if (dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
@@ -3923,6 +3998,13 @@ export default {
     // The native admin / superadmin pages were removed (2026-09-23): both panels run on the web
     // admin panel, which has its own login.
     openWebAdmin() { this.menuOpen = false; uni.navigateTo({ url: '/pages/webadmin/webadmin' }) },
+    // Web: the admin panel in a new tab, like the user-app's LogoMenu links.
+    openAdminPanel() {
+      this.menuOpen = false
+      // #ifdef WEB
+      window.open(`${API_ORIGIN}/admin/`, '_blank', 'noopener')
+      // #endif
+    },
 
     // ── Viva subscription redeem sheet ──
     // Subscription codes are 16+ crypto-random alphanumeric chars, so a plain text input, not the
@@ -3987,16 +4069,20 @@ export default {
     // back after the SSO exchange (webview_tokens.context, AGENTS §31).
     openUserApp(path : string = '/app', context : UTSJSONObject | null = null) {
       this.menuOpen = false
+      // #ifdef WEB
+      openInNewTab(path, context) // a browser can't frame GCN — see utils/web-open.uts
+      return
+      // #endif
       let contextParam = ''
       if (context != null) contextParam = `&context=${encodeURIComponent(JSON.stringify(context))}`
       uni.navigateTo({ url: `/pages/appview/appview?url=${encodeURIComponent(path)}${contextParam}` })
     },
 
-    // GCN storefront host: mirror BASE's own develop-vs-release split, not IS_DEV (which also
+    // GCN storefront host: mirror API_ORIGIN's develop-vs-release split, not IS_DEV (which also
     // covers trial). The slug is the channel root's GCN sector (AGENTS §33).
     _openAevivaStore(context : UTSJSONObject | null) {
       const slug = this.gcnStoreSlug.length > 0 ? this.gcnStoreSlug : 'aeviva'
-      const host = BASE.includes('-dev.') ? `https://${slug}-dev.gcn.net` : `https://${slug}.gcn.net`
+      const host = API_ORIGIN.includes('-dev.') ? `https://${slug}-dev.gcn.net` : `https://${slug}.gcn.net`
       this.openUserApp(`${host}/dashboard.html`, context)
     },
 
@@ -4121,7 +4207,7 @@ export default {
         this.kinoSimChipId = ''
         return
       }
-      uni.scanCode({
+      scanQr({
         onlyFromCamera: false,
         success: (scanRes) => { (async () : Promise<void> => {
           const chipId = scanRes.result
@@ -4900,6 +4986,21 @@ export default {
       // A turn in flight can still CLOSE the sheet, not open it.
       if (this.typing && !this.toolboxOpen) return
       this.toolboxOpen = !this.toolboxOpen
+    },
+
+    // Web: press-and-hold Web Speech (utils/web-speech.uts); merged into the input like
+    // main.js:_onMicStop. Native keeps the onMicTap toast until an ASR plugin exists.
+    onMicStart(e : any) {
+      if (this.typing || this.micRecording) return
+      this.micRecording = startSpeech(this.lang, (text : string) => {
+        this.micRecording = false
+        if (text.length == 0) return
+        const cur = this.chatInput
+        this.chatInput = cur.length > 0 ? `${cur}${/\s$/.test(cur) ? '' : ' '}${text}` : text
+      })
+    },
+    onMicEnd(e : any) {
+      if (this.micRecording) stopSpeech()
     },
 
     onMicTap() {
@@ -6197,7 +6298,7 @@ export default {
           const recurrence = r.getString('recurrence') ?? ''
           const row = this._copyRow(r)
           row['dateLabel'] = dateLabel
-          row['isCoach'] = (r.getString('coach_id') ?? '').length > 0
+          row['isCoach'] = idOf(r, 'coach_id').length > 0
           row['recurrenceLabel'] = recurrence == 'daily' ? tMainTr(t, 'reminderRecurDaily') : (recurrence == 'weekly' ? tMainTr(t, 'reminderRecurWeekly') : '')
           out.push(row)
         }
@@ -6269,7 +6370,7 @@ export default {
         const d = this.planDetailData
         if (d != null) {
           const reminders = (d!.getArray<UTSJSONObject>('reminders') ?? ([] as UTSJSONObject[])).map((r : UTSJSONObject) : UTSJSONObject => {
-            if (`${r.getString('id')}` == reminderId || `${r.getNumber('id')}` == reminderId) {
+            if (idOf(r, 'id') == reminderId) {
               const row = this._copyRow(r)
               row['status'] = newStatus
               return row
@@ -6931,7 +7032,7 @@ export default {
       return this.trainingCompletedIds.indexOf(id!) >= 0
     },
     quizAnswerFor(q : UTSJSONObject) : number {
-      const v = this.trainingQuizAnswers.getNumber(`${q.getString('id')}`)
+      const v = this.trainingQuizAnswers.getNumber(idOf(q, 'id'))
       return v != null ? v! : -1
     },
 
@@ -7234,6 +7335,8 @@ export default {
 </script>
 
 <style>
+/* Native only — the web build is styled by static/web/ (the web user-app's own CSS). */
+/* #ifndef WEB */
 /* STRUCTURAL port of main.wxss (5592 lines of WebView CSS → the uvue subset). Palette and layout
    lifted; gradients, keyframes, safe-area env() and the --fs-* variable cascade are NOT expressed
    here. TODO(port): a real-device styling pass; the miniapp's .theme-light overrides and the
@@ -8114,6 +8217,12 @@ export default {
 .guest-sheet-btn-disabled { background-color: #475569; }
 .viva-redeem-input { height: 44px; background-color: #162E4A; color: #EEF2FF; border-radius: 10px; padding-left: 12px; margin-top: 10px; width: 100%; }
 .code-wx-addr { color: #A0B4FF; font-size: 12px; margin-top: 8px; }
+.mic-btn-active { background-image: linear-gradient(135deg, #E25858 0%, #FF7A7A 100%); border-color: transparent; box-shadow: 0 2px 10px rgba(226, 88, 88, 0.45); }
+.mic-btn-disabled { opacity: 0.4; }
+.mic-recording-banner { flex-direction: row; align-items: center; background-color: rgba(226, 88, 88, 0.12); border-top-width: 0.5px; border-top-style: solid; border-top-color: rgba(226, 88, 88, 0.3); padding: 7px 12px; }
+.mic-recording-dot { width: 7px; height: 7px; border-radius: 4px; background-color: #E25858; margin-right: 6px; }
+.mic-recording-text { font-size: 12px; color: #FFB3B3; }
+/* #endif */
 </style>
 
 

@@ -145,6 +145,7 @@
 //  - <picker mode="date"> → uni.showDatePicker (coach.uvue pattern).
 //  - catchtap → v-on:click.stop (uni-app x supports the .stop modifier).
 
+import { readFileBytes } from '../../utils/file-bytes.uts'
 import { BASE } from '../../utils/config.uts'
 import { state } from '../../utils/state.uts'
 import { getBody, postBody, deleteBody } from '../../utils/request.uts'
@@ -504,14 +505,6 @@ class UploadFile {
     this.name = name
     this.size = size
   }
-}
-
-// TODO(port): native file read per platform — wx.getFileSystemManager().readFile has no uni-app x
-// equivalent. Same stub convention as utils/tool-actions.uts's readFileBytes: wire FileInputStream
-// (Android) / NSData (iOS) during the device-testing pass. Returning null makes the upload fail
-// with the honest 上传失败 toast instead of silently PUTting garbage.
-function readFileBytes(path : string) : ArrayBuffer | null {
-  return null
 }
 
 // TODO(port): request.uts ships getBody/postBody/putBody/deleteBody but no patchBody (and
@@ -971,7 +964,7 @@ export default {
         const putContentType = pre!.getString('put_content_type') ?? ''
         if (key.length == 0 || putUrl.length == 0) throw new Error('presign incomplete')
 
-        const bytes = readFileBytes(file.path)
+        const bytes = await readFileBytes(file.path)
         if (bytes == null) throw new Error('read failed')
 
         this.uploadStatus = _tr(t, 'uploading')
@@ -1081,6 +1074,8 @@ function todayStr() : string {
 </script>
 
 <style>
+/* Native only — the web build is styled by static/web/ (the web user-app's own CSS). */
+/* #ifndef WEB */
 /* Structural pass of health-documents.wxss — rpx halved to px, the CSS custom properties
    (--fs-*, --wave-rgb, --blue-rgb, --wave, --steel) resolved to their dark-theme literals the
    same way the rest of src/xapp does it (blue #2E7CF6, wave #A6C4E5, steel #7A9ABF). The source
@@ -1160,4 +1155,5 @@ function todayStr() : string {
 .hd-table-row { flex-direction: row; }
 .hd-table-cell { font-size: 11px; line-height: 17px; color: #A6C4E5; min-width: 60px; padding-right: 6px; }
 .hd-table-cell-head { color: rgba(166, 196, 229, 0.75); font-weight: bold; }
+/* #endif */
 </style>

@@ -83,6 +83,7 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 | System | Doc |
 |---|---|
 | Web Coach Panel | [web-coach-panel.md](web-coach-panel.md) |
+| xapp web build (uni-app x port as HTML5, styled as the web user-app) | [xapp-web.md](xapp-web.md) |
 | Managed Customers (SuperiorMed) | [managed-customers.md](managed-customers.md) |
 | Kino Hardware | [kino-system.md](kino-system.md) |
 | Questionnaire System | [questionnaire-system.md](questionnaire-system.md) |

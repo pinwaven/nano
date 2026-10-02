@@ -6107,7 +6107,7 @@ export default {
         if (!hasRealBinding) this.wearableId = '__server__'
         this.wearableConnected = recentSync
         this.ringData = ringData
-        this.mood = computeMood(_moodRaw(ringData))
+        this.mood = computeMood(this._moodRaw(ringData))
         this.twinLoading = false
         this._applyBandToHrvBars()
       } catch (e : any) {
@@ -6569,7 +6569,7 @@ export default {
       this.wearableConnected = true
       this.wearableBattery = batteryLevel
       this.ringData = ringData
-      this.mood = computeMood(_moodRaw(ringData))
+      this.mood = computeMood(this._moodRaw(ringData))
       this.hasTwinData = aget(visuals, 'vitalGauges').length > 0
       this.twinLoading = false
       this.healthScore = visuals.getNumber('healthScore')
@@ -6717,6 +6717,8 @@ export default {
 </script>
 
 <style>
+/* Native only — the web build is styled by static/web/ (the web user-app's own CSS). */
+/* #ifndef WEB */
 /* Structural port of user-health.wxss (3620 lines → the rules that carry layout and the
    dark-navy palette: screen #0B1C2E, cards #12283F / rgba(15,37,64,0.5), text #EAF2FB,
    muted #A6C4E5, accent #6375EC). Light-theme variants keep the miniapp's
@@ -7196,4 +7198,5 @@ export default {
 .privacy-agree-txt { color: #FFFFFF; font-size: 14px; }
 .privacy-cancel-btn { align-items: center; padding: 10px; margin-top: 6px; }
 .privacy-cancel-txt { color: rgba(166, 196, 229, 0.6); font-size: 13px; }
+/* #endif */
 </style>

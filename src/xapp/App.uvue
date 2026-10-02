@@ -2,7 +2,7 @@
 // Ported from miniapp app.js onLaunch. Dropped as WeChat-only: the update-manager modal
 // (uni-app x ships its own wgt OTA path), wx.onNeedPrivacyAuthorization (native apps use OS
 // permission prompts), and wx.login silent re-auth (login page does phone/email OTP).
-import { BASE, BUILD_ENV } from './utils/config.uts'
+import { API_ORIGIN, BUILD_ENV } from './utils/config.uts'
 import { state } from './utils/state.uts'
 import { restoreSession } from './utils/session.uts'
 
@@ -10,8 +10,11 @@ function _storedJSON(key : string) : UTSJSONObject | null {
   const raw = uni.getStorageSync(key)
   if (raw == null) return null
   if (raw instanceof UTSJSONObject) return raw as UTSJSONObject
+  // A missing key reads back as '' on web (null on Android); JSON.parse('') throws on web.
   if (typeof raw == 'string') {
-    return JSON.parse<UTSJSONObject>(raw as string)
+    const s = raw as string
+    if (s.length == 0) return null
+    try { return JSON.parse<UTSJSONObject>(s) } catch (e : any) { return null }
   }
   return null
 }
@@ -22,13 +25,13 @@ export default {
     // miniapp's nano_base check (live incident 2026-09-19, app.js comment).
     const storedRaw = uni.getStorageSync('nano_base')
     const storedBase = storedRaw == null ? '' : `${storedRaw}`
-    if (storedBase != BASE) {
+    if (storedBase != API_ORIGIN) {
       if (storedBase.length > 0 || BUILD_ENV == 'develop') {
         for (const k of ['nano_user', 'nano_channel', 'nano_coach', 'nano_last_session', 'nano_session', 'nano_session_at']) {
           uni.removeStorageSync(k)
         }
       }
-      uni.setStorageSync('nano_base', BASE)
+      uni.setStorageSync('nano_base', API_ORIGIN)
     }
 
     const user = _storedJSON('nano_user')

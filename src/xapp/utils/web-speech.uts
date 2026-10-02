@@ -1,0 +1,62 @@
+// Web build only — press-and-hold voice input through the browser's Web Speech API, the twin of
+// the web user-app's chat/VoiceInput.jsx (the native app's WechatSI replacement is still a
+// TODO(port) ASR plugin). Holds under 500 ms are ignored as accidental taps, like
+// main.js:_onMicStop. Browsers without SpeechRecognition get no mic button at all.
+
+let _rec : any | null = null
+let _startTs : number = 0
+let _text : string = ''
+
+export function speechSupported() : boolean {
+  // #ifdef WEB
+  const w = window as any
+  return w.SpeechRecognition != null || w.webkitSpeechRecognition != null
+  // #endif
+  // #ifndef WEB
+  return false
+  // #endif
+}
+
+// onEnd fires once per hold with the recognized text ('' when too short / silent / failed).
+export function startSpeech(lang : string, onEnd : (text : string) => void) : boolean {
+  // #ifdef WEB
+  const w = window as any
+  const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition
+  if (SR == null) return false
+  try {
+    const r = new SR()
+    r.lang = lang == 'zh' ? 'zh-CN' : 'en-US'
+    r.continuous = true
+    r.interimResults = true
+    _text = ''
+    r.onresult = (ev : any) => {
+      let s = ''
+      for (let i = 0; i < ev.results.length; i++) s += ev.results[i][0].transcript
+      _text = s
+    }
+    r.onend = () => {
+      const held = Date.now() - _startTs
+      const result = _text.trim()
+      _rec = null
+      onEnd(held >= 500 ? result : '')
+    }
+    r.onerror = () => {}
+    _rec = r
+    _startTs = Date.now()
+    r.start()
+    return true
+  } catch (e : any) {
+    _rec = null
+    return false
+  }
+  // #endif
+  // #ifndef WEB
+  return false
+  // #endif
+}
+
+export function stopSpeech() {
+  // #ifdef WEB
+  try { if (_rec != null) (_rec as any).stop() } catch (e : any) {}
+  // #endif
+}

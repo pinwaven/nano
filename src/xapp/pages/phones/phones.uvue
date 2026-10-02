@@ -1,4 +1,64 @@
 <template>
+  <!-- #ifdef WEB -->
+  <!-- Web: the miniapp's pages/phones markup (the web user-app's IdentityPage), styled by the
+       shared stylesheet in static/web/. Native keeps its own layout below. -->
+  <view class="phones-page route-page" :class="theme == 'light' ? 'theme-light' : ''">
+    <view class="app-header">
+      <view class="back-btn" v-on:click="goBack"><text class="back-icon">‹</text><text class="back-label">{{ t('back') }}</text></view>
+      <text class="header-title">{{ t('title') }}</text>
+    </view>
+    <view class="phones-content tab-scroll">
+      <view v-if="loading" class="center-msg"><text class="dim-text">{{ t('loading') }}</text></view>
+      <view v-else class="card">
+        <view v-for="(p, i) in phones" :key="i" class="phone-row">
+          <view class="phone-row-main">
+            <text class="phone-value">{{ p.getString('masked') }}</text>
+            <text v-if="p.getBoolean('is_primary') == true" class="phone-badge">{{ t('primaryBadge') }}</text>
+          </view>
+          <view class="phone-row-actions">
+            <text v-if="p.getBoolean('is_primary') != true" class="phone-action" v-on:click="setPrimary(`${p.getString('phone')}`)">{{ t('setPrimaryAction') }}</text>
+            <text class="phone-action phone-action-danger" v-on:click="removePhone(`${p.getString('phone')}`)">{{ t('removeAction') }}</text>
+          </view>
+        </view>
+        <view class="btn btn-outline add-phone-btn" v-on:click="openAddPhone"><text>{{ t('addPhoneBtn') }}</text></view>
+      </view>
+    </view>
+    <view v-if="addMode" class="withdraw-overlay" v-on:click="closeAddPhone">
+      <view class="withdraw-modal" v-on:click.stop="noop">
+        <text class="withdraw-modal-title">{{ t('addPhoneBtn') }}</text>
+        <view v-if="addStep == 'phone'">
+          <view class="form-field">
+            <text class="form-label">{{ t('phoneLabel') }}</text>
+            <input class="form-input" v-model="newPhone" :placeholder="t('phonePlaceholder')" :maxlength="11" type="number" :focus="true" v-on:confirm="sendCode" />
+          </view>
+          <text v-if="addError.length > 0" class="error-text">{{ addError }}</text>
+          <view class="withdraw-btns">
+            <view class="btn btn-outline" v-on:click="closeAddPhone"><text>{{ t('cancelBtn') }}</text></view>
+            <view class="btn btn-primary" :class="addLoading ? 'disabled' : ''" v-on:click="sendCode"><text>{{ addLoading ? t('sending') : t('sendCodeBtn') }}</text></view>
+          </view>
+        </view>
+        <view v-else>
+          <view class="form-field">
+            <text class="form-label">{{ t('codeLabel') }}</text>
+            <text class="phone-step-desc">{{ codeSentToText }}</text>
+            <input class="form-input" v-model="code" placeholder="——————" :maxlength="6" type="number" :focus="true" />
+          </view>
+          <text v-if="addError.length > 0" class="error-text">{{ addError }}</text>
+          <view class="phones-links">
+            <text v-if="resendCooldown > 0" class="dim-text">{{ t('resendCooldown').split('{n}').join(`${resendCooldown}`) }}</text>
+            <text v-else class="phones-link" v-on:click="sendCode">{{ t('resendCode') }}</text>
+            <text class="phones-link" v-on:click="changeNumber">{{ t('changeNumber') }}</text>
+          </view>
+          <view class="withdraw-btns">
+            <view class="btn btn-outline" v-on:click="closeAddPhone"><text>{{ t('cancelBtn') }}</text></view>
+            <view class="btn btn-primary" :class="addLoading ? 'disabled' : ''" v-on:click="manualVerify"><text>{{ addLoading ? t('verifying') : t('verifyBtn') }}</text></view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+  <!-- #endif -->
+  <!-- #ifndef WEB -->
   <view class="ph-screen">
     <view class="ph-header" :style="'padding-top:' + statusBarHeight + 'px'">
       <view class="ph-back" v-on:click="goBack"><text class="ph-back-text">‹ {{ t('back') }}</text></view>
@@ -43,6 +103,7 @@
       </view>
     </view>
   </view>
+  <!-- #endif -->
 </template>
 
 <script>
@@ -63,7 +124,7 @@ const T_ZH : UTSJSONObject = {
   setPrimaryAction: '设为主号码', removeAction: '移除', addPhoneBtn: '+ 添加手机号',
   phoneLabel: '手机号', phonePlaceholder: '请输入手机号', sendCodeBtn: '发送验证码', sending: '发送中…',
   codeLabel: '输入验证码', codeSentTo: '验证码已发送至 {phone}', verifyBtn: '验证并添加', verifying: '验证中…',
-  changeNumber: '更换手机号', cancelBtn: '取消',
+  changeNumber: '更换手机号', cancelBtn: '取消', resendCode: '重新发送验证码', resendCooldown: '{n}秒后可重新发送',
   confirmRemoveTitle: '移除手机号', confirmRemoveContent: '确定要移除 {phone} 吗？',
   confirmSetPrimaryTitle: '设为主号码', confirmSetPrimaryContent: '将 {phone} 设为主号码？',
   errorInvalidPhone: '请输入正确的手机号', errorSendFailed: '验证码发送失败，请重试',
@@ -75,7 +136,7 @@ const T_EN : UTSJSONObject = {
   setPrimaryAction: 'Set Primary', removeAction: 'Remove', addPhoneBtn: '+ Add Phone Number',
   phoneLabel: 'Phone Number', phonePlaceholder: 'Enter phone number', sendCodeBtn: 'Send Code', sending: 'Sending…',
   codeLabel: 'Enter Verification Code', codeSentTo: 'Code sent to {phone}', verifyBtn: 'Verify & Add', verifying: 'Verifying…',
-  changeNumber: 'Change Number', cancelBtn: 'Cancel',
+  changeNumber: 'Change Number', cancelBtn: 'Cancel', resendCode: 'Resend Code', resendCooldown: 'Resend in {n}s',
   confirmRemoveTitle: 'Remove Phone Number', confirmRemoveContent: 'Remove {phone}?',
   confirmSetPrimaryTitle: 'Set Primary', confirmSetPrimaryContent: 'Set {phone} as your primary number?',
   errorInvalidPhone: 'Please enter a valid phone number', errorSendFailed: 'Failed to send code, please try again',
@@ -99,10 +160,15 @@ export default {
       addLoading: false,
       addError: '',
       codeSentToText: '',
+      theme: 'dark',
+      resendCooldown: 0,
+      _cooldownTimer: 0 as number,
     }
   },
+  onUnload() { this._stopCooldown() },
   onLoad(_options : OnLoadOptions) {
     this.lang = state.lang
+    this.theme = state.theme
     const info = uni.getWindowInfo()
     this.statusBarHeight = info.statusBarHeight
     this.fetchPhones()
@@ -149,6 +215,7 @@ export default {
     },
     closeAddPhone() {
       this.addMode = false
+      this._stopCooldown()
     },
     _digitsOnly(s : string) : string {
       let out = ''
@@ -161,6 +228,7 @@ export default {
     async sendCode() {
       const phone = this._digitsOnly(this.newPhone.trim())
       if (!PHONE_RE.test(phone)) { this.addError = this.t('errorInvalidPhone'); return }
+      if (this.resendCooldown > 0 || this.addLoading) return
       this.newPhone = phone
       this.addLoading = true
       this.addError = ''
@@ -170,7 +238,23 @@ export default {
       this.addStep = 'code'
       this.code = ''
       this.codeSentToText = this._fmt(this.t('codeSentTo'), phone)
+      this._startCooldown()
     },
+    // pages/phones/phones.js: 60s before "resend" is offered again.
+    _startCooldown() {
+      this._stopCooldown()
+      this.resendCooldown = 60
+      this._cooldownTimer = setInterval(() => {
+        if (this.resendCooldown <= 1) this._stopCooldown()
+        else this.resendCooldown = this.resendCooldown - 1
+      }, 1000)
+    },
+    _stopCooldown() {
+      if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+      this._cooldownTimer = 0
+      this.resendCooldown = 0
+    },
+    noop() {},
     manualVerify() {
       this.verifyCode()
     },
@@ -206,6 +290,7 @@ export default {
       this.addStep = 'phone'
       this.code = ''
       this.addError = ''
+      this._stopCooldown()
     },
     setPrimary(phone : string) {
       uni.showModal({
@@ -289,6 +374,8 @@ export default {
 </script>
 
 <style>
+/* Native only — the web build renders the miniapp markup above, styled by static/web/. */
+/* #ifndef WEB */
 .ph-screen { flex: 1; background-color: #0B1C2E; }
 .ph-header { flex-direction: row; align-items: center; padding: 12px 16px; }
 .ph-back { margin-right: 8px; }
@@ -366,4 +453,5 @@ export default {
 .ph-link { margin-top: 12px; align-items: center; }
 .ph-link-text { color: #A6C4E5; font-size: 14px; }
 .ph-error { color: #FF6B6B; font-size: 12px; margin-bottom: 6px; }
+/* #endif */
 </style>

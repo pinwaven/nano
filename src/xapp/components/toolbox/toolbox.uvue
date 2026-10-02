@@ -87,6 +87,8 @@ export default {
 </script>
 
 <style>
+/* Native only — the web build is styled by static/web/ (the web user-app's own CSS). */
+/* #ifndef WEB */
 /* Structural port of toolbox.wxss (the source used page-level CSS vars — var(--bg-input),
    var(--blue), var(--navy-border) — which do not cross the component boundary here).
    Palette: #0B1C2E panel, #12283F card, #2E7CF6 accent, #EAF2FB text. */
@@ -125,4 +127,5 @@ export default {
 .tool-item-disabled {
   opacity: 0.35;
 }
+/* #endif */
 </style>

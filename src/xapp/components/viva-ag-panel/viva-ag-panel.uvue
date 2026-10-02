@@ -752,6 +752,8 @@ export default {
 </script>
 
 <style>
+/* Native only — the web build is styled by static/web/ (the web user-app's own CSS). */
+/* #ifndef WEB */
 /* Structural pass of viva-ag-panel.wxss — rpx halved to px, the CSS custom properties
    (--fs-*, --wave-rgb, --blue-rgb, --wave, --steel, --gold, --text, --text-muted, --text-sub,
    --success, --danger) resolved to their dark-theme literals the way the rest of src/xapp does it
@@ -866,4 +868,5 @@ export default {
    and nothing else — the em-based sizes in MD_TAG_STYLE are not applied. */
 .ag-md { font-size: 13px; color: #7A9ABF; }
 .ag-viewer-trunc { font-size: 11px; line-height: 18px; color: rgba(166, 196, 229, 0.4); margin-top: 12px; }
+/* #endif */
 </style>

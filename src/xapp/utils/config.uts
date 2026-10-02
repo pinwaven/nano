@@ -4,11 +4,23 @@
 // before shipping a store build; 'develop' points at the dev backend, never prod data.
 export const BUILD_ENV : string = 'develop'
 
-export const BASE : string = BUILD_ENV == 'develop' ? 'https://nano-dev.gcn.net' : 'https://nano.gcn.net'
+// The backend this build talks to — use for dev-vs-prod decisions and absolute links.
+export const API_ORIGIN : string = BUILD_ENV == 'develop' ? 'https://nano-dev.gcn.net' : 'https://nano.gcn.net'
+
+// Request prefix. Native: the absolute backend. Web: same-origin ('' → `/api/...`), like the web
+// user-app — the worker's preflight answers with two Access-Control-Allow-Origin values, which
+// browsers reject, so a cross-origin build cannot call it. The page is served next to /api (a
+// dev proxy locally, the worker in a deployment).
+// #ifdef WEB
+export const BASE : string = ''
+// #endif
+// #ifndef WEB
+export const BASE : string = API_ORIGIN
+// #endif
 
 // Same marker rule as the miniapp (AGENTS.md "Miniapp VERSION Marker"): bump on every
 // change under src/xapp/. Format MMDD-N.
-export const VERSION : string = '1001-7'
+export const VERSION : string = '1001-8'
 
 export const IS_DEV : boolean = BUILD_ENV != 'release'
 
