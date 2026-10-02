@@ -104,7 +104,7 @@
 // validate-on-send (v-model); phone/email toggles always offered (EMAIL_LOGIN_AVAILABLE is
 // true for the root identity, config.uts).
 
-import { BASE, API_ORIGIN, VERSION, IS_DEV, EMAIL_LOGIN_AVAILABLE, CHANNEL_SLUG } from '../../utils/config.uts'
+import { BASE, API_ORIGIN, VERSION, IS_DEV, EMAIL_LOGIN_AVAILABLE, CHANNEL_SLUG, CHANNEL_DISPLAY } from '../../utils/config.uts'
 import { state } from '../../utils/state.uts'
 import { saveSession, clearSession } from '../../utils/session.uts'
 import { maskPhone, maskEmail } from '../../utils/phone.uts'
@@ -142,8 +142,10 @@ export default {
       phoneLoading: false,
       resendCooldown: 0,
       countryIndex: 0,
-      channelName: 'NANO',
-      channelLogo: '',
+      // The build's brand (xapp-mini: SuperiorMed) paints first, splash included; a stored or
+      // scanned channel replaces it in onLoad.
+      channelName: CHANNEL_DISPLAY != null ? (CHANNEL_DISPLAY!.getString('name') ?? 'NANO') : 'NANO',
+      channelLogo: CHANNEL_DISPLAY != null ? (CHANNEL_DISPLAY!.getString('logo_url') ?? '') : '',
       countryOptions: [
         new CountryOption('+86', '中国 +86', true),
         new CountryOption('+1', '美国 +1', false),

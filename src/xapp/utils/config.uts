@@ -20,12 +20,23 @@ export const BASE : string = API_ORIGIN
 
 // Same marker rule as the miniapp (AGENTS.md "Miniapp VERSION Marker"): bump on every
 // change under src/xapp/. Format MMDD-N.
-export const VERSION : string = '1002-31'
+export const VERSION : string = '1002-33'
 
 export const IS_DEV : boolean = BUILD_ENV != 'release'
 
 // The miniapp maps WeChat appid → channel (aeviva-branded build disables email login).
 // A native app has no appid; it is always the root Waven identity.
 export const CHANNEL_SLUG : string | null = null
+// #ifdef MP-WEIXIN
+// xapp-mini wears SuperiorMed's brand (channel id 7) on the splash, login and guest screens.
+// Branding only: CHANNEL_SLUG stays null, because naming a channel on /wx-login turns guest
+// mode off (handlers/login.js), and mini-program review needs guest browsing.
+export const CHANNEL_DISPLAY : UTSJSONObject | null = {
+  name: 'SuperiorMed',
+  logo_url: 'https://waven-nano.oss-cn-shanghai.aliyuncs.com/channels/logo/368f144cae242fc5.png?OSSAccessKeyId=LTAI5t6bJNW5XQyeiNr2MUp4&Expires=2105519768&Signature=u%2BlbIAGyZ6SbPEF7uSXNFyLR6Hk%3D',
+} as UTSJSONObject
+// #endif
+// #ifndef MP-WEIXIN
 export const CHANNEL_DISPLAY : UTSJSONObject | null = null
+// #endif
 export const EMAIL_LOGIN_AVAILABLE : boolean = true

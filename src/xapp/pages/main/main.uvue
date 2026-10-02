@@ -1670,7 +1670,7 @@
 //    equivalent yet. // TODO(port): link-tap copy + settle-scroll for long replies; the timer ladder
 //    in _scrollBottom still covers the common case.
 
-import { BASE, API_ORIGIN, VERSION, IS_DEV } from '../../utils/config.uts'
+import { BASE, API_ORIGIN, VERSION, IS_DEV, CHANNEL_DISPLAY } from '../../utils/config.uts'
 import { openInNewTab } from '../../utils/web-open.uts'
 import { idOf } from '../../utils/json-id.uts'
 import { speechSupported, startSpeech, stopSpeech } from '../../utils/web-speech.uts'
@@ -2586,7 +2586,8 @@ export default {
       return u != null ? (u!.getString('user_id') ?? '') : ''
     },
     channelLogo() : string {
-      const c = this.channel
+      // A guest has no channel; it wears the build's brand (xapp-mini: SuperiorMed).
+      const c = this.channel != null ? this.channel : (this.isGuest ? CHANNEL_DISPLAY : null)
       if (c != null) {
         const l = c!.getString('logo_url')
         if (l != null && l!.length > 0) return l!
@@ -2594,7 +2595,7 @@ export default {
       return '/static/waven-logo-icon.png'
     },
     channelName() : string {
-      const c = this.channel
+      const c = this.channel != null ? this.channel : (this.isGuest ? CHANNEL_DISPLAY : null)
       if (c != null) {
         const n = c!.getString('name')
         if (n != null && n!.length > 0) return n!
