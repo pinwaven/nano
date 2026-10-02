@@ -301,10 +301,16 @@ const POLL_MS : number = 15000
 // untyped-JSON accessors (same idiom as the coach page / health-documents port)
 function _objOf(v : any | null) : UTSJSONObject | null { return v != null && v instanceof UTSJSONObject ? (v as UTSJSONObject) : null }
 
-// TODO(port): reading a downloaded file's text has no uni-app x equivalent of
-// wx.getFileSystemManager().readFile — same stub convention as utils/tool-actions.uts. Returning
-// null routes the caller through the honest 无法打开该文件 toast instead of an empty viewer.
+// xapp-mini reads the file through WeChat's file-system manager, as the miniapp does.
+// TODO(port): native has no equivalent yet — same stub convention as utils/tool-actions.uts.
+// Returning null routes the caller through the honest 无法打开该文件 toast instead of an empty viewer.
 function readFileText(path : string) : string | null {
+  // #ifdef MP-WEIXIN
+  try {
+    const txt = wx.getFileSystemManager().readFileSync(path, 'utf8')
+    return txt != null ? `${txt}` : null
+  } catch (e : any) { return null }
+  // #endif
   return null
 }
 
@@ -688,10 +694,13 @@ export default {
           this.downloadingResult = false
           if (dl.statusCode != 200) { this._toast(_tr(t, 'errGeneric')); return }
           if (RESULT_TEXT_EXTENSIONS.indexOf(ft) != -1) { this._showTextReport(`${dl.tempFilePath}`, ft, filename); return }
-          // TODO(port): no uni.openDocument on uni-app x — a PDF/Word artifact has to wait for a
-          // UTS document-viewer plugin; the miniapp sent it to the system viewer with
-          // fileType = DOC_EXTENSIONS.includes(ft) ? ft : 'pdf'.
+          // xapp-mini: WeChat's document viewer, as the miniapp. TODO(port): native has none yet —
+          // a PDF/Word artifact waits for a UTS document-viewer plugin.
           const viewerType = DOC_EXTENSIONS.indexOf(ft) != -1 ? ft : 'pdf'
+          // #ifdef MP-WEIXIN
+          wx.openDocument({ filePath: `${dl.tempFilePath}`, fileType: viewerType, showMenu: true, fail: () => { this._toast(_tr(t, 'errOpen')) } } as any)
+          return
+          // #endif
           console.log(JSON.stringify({ level: 'WARN', msg: 'document viewer not available on uni-app x yet', data: { fileType: viewerType } }))
           this._toast(_tr(t, 'errOpen'))
         },

@@ -854,12 +854,46 @@ export default {
     // the call outright (errno 112) with no runtime consent flow to rescue it, so the miniapp
     // surfaced that plainly and pointed the user at the photo path.
     //
-    // TODO(port): WeChat chat-file picker has no native equivalent — device testing to confirm.
+    // xapp-mini uses wx.chooseMessageFile (below). TODO(port): native has no chat-file picker —
+    // device testing to confirm.
     // uni.chooseFile reads the device filesystem, not a conversation, so the empty-state hint
     // ("send the file to 文件传输助手 first") is WeChat-only wording; the privacy-scope branch
     // below (errno 112) can never fire outside WeChat and is kept for parity.
     _choosePdf() {
       const t = this.t
+      // #ifdef MP-WEIXIN
+      // xapp-mini: the miniapp's wx.chooseMessageFile — a file from a WeChat conversation, which is
+      // what the empty-state hint describes. Results are plain WeChat objects.
+      wx.chooseMessageFile({
+        type: 'all',
+        count: 1,
+        success: (res : any) => {
+          const files = res.tempFiles as any[]
+          if (files == null || files.length == 0) return
+          const f = files[0]
+          const path = `${f.path}`
+          const name = f.name != null && `${f.name}`.length > 0 ? `${f.name}` : `record.${extOf(path).length > 0 ? extOf(path) : 'jpg'}`
+          const sizeBytes = f.size != null ? (f.size as number) : 0
+          if (ALLOWED_EXTENSIONS.indexOf(extOf(name)) == -1) {
+            uni.showModal({ title: _tr(t, 'unsupportedTitle'), content: _tr(t, 'unsupportedBody'), showCancel: false, confirmText: _tr(t, 'gotIt') })
+            return
+          }
+          if (sizeBytes > MAX_BYTES) { this._toast(_tr(t, 'errTooLarge')); return }
+          this._uploadDocument(new UploadFile(path, name, sizeBytes))
+        },
+        fail: (err : any) => {
+          const errMsg = err != null && err.errMsg != null ? `${err.errMsg}` : ''
+          console.log(JSON.stringify({ level: 'WARN', msg: 'wx.chooseMessageFile failed', data: { errMsg } }))
+          if (/cancel|deny/i.test(errMsg)) return
+          if (/privacy|scope/i.test(errMsg)) {
+            uni.showModal({ title: _tr(t, 'pdfUnavailableTitle'), content: _tr(t, 'pdfUnavailableBody'), showCancel: false, confirmText: _tr(t, 'gotIt') })
+            return
+          }
+          this._toast(_tr(t, 'errPickFile'))
+        },
+      } as any)
+      return
+      // #endif
       uni.chooseFile({
         // 'all' rather than 'file': a lab report someone forwarded as an IMAGE would be invisible
         // under type:'file'. The extension filter only applies to type:'file' anyway, so
@@ -1002,7 +1036,7 @@ export default {
     // Two viewers, because documents do not render inline in a template and images do not open
     // in a document viewer. The extension has to drive the choice.
     //
-    // TODO(port): wx.openDocument has no uni-app x equivalent on Android/iOS — opening a PDF or
+    // xapp-mini opens documents with wx.openDocument. TODO(port): Android/iOS have no equivalent — opening a PDF or
     // Word file needs a UTS document-viewer plugin (or a web-view on the presigned URL). The
     // download step is kept so the file is local once a viewer is wired; until then a
     // non-image document reports 无法打开该文件 instead of pretending to succeed.
@@ -1035,6 +1069,11 @@ export default {
             if (dl.statusCode != 200) { this._toast(_tr(t, 'errOpen')); return }
             const filePath = dl.tempFilePath
             const _fileType = DOC_EXTENSIONS.indexOf(ext) != -1 ? ext : 'pdf'
+            // #ifdef MP-WEIXIN
+            // xapp-mini: WeChat's own document viewer, as the miniapp (showMenu: forward/save).
+            wx.openDocument({ filePath: filePath, fileType: _fileType, showMenu: true, fail: () => { this._toast(_tr(t, 'errOpen')) } } as any)
+            return
+            // #endif
             // uni.openDocument({ filePath, fileType: _fileType }) — see the TODO(port) above.
             console.log(JSON.stringify({ level: 'WARN', msg: 'document viewer not available on uni-app x yet', data: { filePath, fileType: _fileType } }))
             this._toast(_tr(t, 'errOpen'))

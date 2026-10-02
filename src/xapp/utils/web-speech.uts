@@ -1,13 +1,24 @@
-// Web build only — press-and-hold voice input through the browser's Web Speech API, the twin of
-// the web user-app's chat/VoiceInput.jsx (the native app's WechatSI replacement is still a
-// TODO(port) ASR plugin). Holds under 500 ms are ignored as accidental taps, like
+// Press-and-hold voice input. Web: the browser's Web Speech API, the twin of the web user-app's
+// chat/VoiceInput.jsx. xapp-mini: the miniapp's WechatSI plugin (declared in manifest.json
+// mp-weixin.plugins), with its scope.record authorization flow. Native Android/iOS: still a
+// TODO(port) ASR plugin. Holds under 500 ms are ignored as accidental taps, like
 // main.js:_onMicStop. Browsers without SpeechRecognition get no mic button at all.
 
 let _rec : any | null = null
 let _startTs : number = 0
 let _text : string = ''
 
+// xapp-mini state: the WechatSI recognition manager (one per app), the pending onEnd, and whether
+// the finger is already up — the scope.record check is async, and a quick tap can end before it.
+let _mpMgr : any | null = null
+let _mpOnEnd : ((text : string) => void) | null = null
+let _mpReleased = false
+let _mpRecording = false
+
 export function speechSupported() : boolean {
+  // #ifdef MP-WEIXIN
+  return true
+  // #endif
   // #ifdef WEB
   const w = window as any
   return w.SpeechRecognition != null || w.webkitSpeechRecognition != null
@@ -19,6 +30,30 @@ export function speechSupported() : boolean {
 
 // onEnd fires once per hold with the recognized text ('' when too short / silent / failed).
 export function startSpeech(lang : string, onEnd : (text : string) => void) : boolean {
+  // #ifdef MP-WEIXIN
+  if (_mpMgr == null) {
+    _mpMgr = requirePlugin('WechatSI').getRecordRecognitionManager()
+    _mpMgr.onStop = (res : any) => {
+      const held = Date.now() - _startTs
+      const result = res != null && res.result != null ? `${res.result}`.trim() : ''
+      _mpFinish(held >= 500 ? result : '')
+    }
+    _mpMgr.onError = (res : any) => {
+      console.log(JSON.stringify({ level: 'WARN', msg: '[mic] recognition error', data: res }))
+      _mpFinish('')
+    }
+  }
+  _mpOnEnd = onEnd
+  _mpReleased = false
+  _startTs = Date.now()
+  _checkRecordAuth(lang, (granted : boolean) => {
+    // Denied, or the finger already lifted while the authorization check ran.
+    if (!granted || _mpReleased) { _mpFinish(''); return }
+    _mpRecording = true
+    _mpMgr.start({ duration: 60000, lang: lang == 'zh' ? 'zh_CN' : 'en_US' })
+  })
+  return true
+  // #endif
   // #ifdef WEB
   const w = window as any
   const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition
@@ -56,7 +91,49 @@ export function startSpeech(lang : string, onEnd : (text : string) => void) : bo
 }
 
 export function stopSpeech() {
+  // #ifdef MP-WEIXIN
+  _mpReleased = true
+  if (_mpRecording && _mpMgr != null) _mpMgr.stop()
+  // #endif
   // #ifdef WEB
   try { if (_rec != null) (_rec as any).stop() } catch (e : any) {}
   // #endif
 }
+
+// #ifdef MP-WEIXIN
+function _mpFinish(text : string) {
+  _mpRecording = false
+  const cb = _mpOnEnd
+  _mpOnEnd = null
+  if (cb != null) cb(text)
+}
+
+// The miniapp's main.js _checkRecordAuth: granted → go; denied before → only Settings can undo it;
+// never asked → WeChat's one-time prompt.
+function _checkRecordAuth(lang : string, done : (granted : boolean) => void) {
+  wx.getSetting({
+    success: (res : any) => {
+      const v = res.authSetting['scope.record']
+      if (v == true) { done(true); return }
+      if (v == false) { _promptOpenSetting(lang); done(false); return }
+      wx.authorize({
+        scope: 'scope.record',
+        success: () => { done(true) },
+        fail: () => { _promptOpenSetting(lang); done(false) },
+      } as any)
+    },
+    fail: () => { done(false) },
+  } as any)
+}
+
+function _promptOpenSetting(lang : string) {
+  const zh = lang == 'zh'
+  uni.showModal({
+    title: zh ? '需要麦克风权限' : 'Microphone access needed',
+    content: zh ? '请在设置中开启麦克风权限，以使用语音输入功能' : 'Please enable microphone access in Settings to use voice input.',
+    confirmText: zh ? '去设置' : 'Settings',
+    cancelText: zh ? '取消' : 'Cancel',
+    success: (r) => { if (r.confirm) wx.openSetting({} as any) },
+  })
+}
+// #endif

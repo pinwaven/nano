@@ -2,8 +2,8 @@
   <!-- Ported from miniapp pages/main/main.wxml. Deviations, deliberate (see utils/../README decision table):
      - mp-html → <rich-text> for prose segments (markdown.uts emits the same html strings);
      - the mic (WechatSI ASR) button is REMOVED — TODO(port): ASR plugin — the send button still works;
-     - wx.chooseAddress (WeChat address book) has no native equivalent — TODO(port): manual entry only;
-     - privacy modal (wx.onNeedPrivacyAuthorization) dropped — OS permission prompts cover it;
+     - wx.chooseAddress (使用微信地址) and the privacy modal (wx.onNeedPrivacyAuthorization) are
+       xapp-mini only; native has manual address entry and OS permission prompts;
      - capsule geometry / edge-swipe animation args dropped where native doesn't need them.
      Kept verbatim: all five tabs, the Kino overlay flow, onboarding gating, every modal/sheet,
      the ::: card render chain (metric/takeaway/dots/formula/product/grocery/lesson/checkin),
@@ -439,8 +439,8 @@
 
         <!-- Normal chat input — guests get the mic slot replaced by a Sign-up CTA and send routed
              to the sign-up sheet instead of _req'ing chat.
-             TODO(port): ASR plugin — the WechatSI press-to-talk mic button renders (empty input,
-             non-guest) but only toasts; recording needs a native ASR plugin. -->
+             Press-to-talk: web (Web Speech) and xapp-mini (WechatSI) share the hold button;
+             TODO(port): native needs an ASR plugin — its mic button only toasts. -->
         <view v-if="obStep == 'done' || isGuest" class="input-container">
           <toolbox v-if="toolboxOpen" :tools="toolList" :disabled="typing" v-on:toolaction="handleToolAction" />
           <view v-if="micRecording" class="mic-recording-banner">
@@ -452,14 +452,14 @@
               <text class="plus-icon">+</text>
             </view>
             <textarea class="chat-textarea" :style="chatInputH" :placeholder="tr('inputPh')" placeholder-style="color: rgba(166, 196, 229, 0.4)" v-model="chatInput" maxlength="500" />
-            <!-- #ifdef WEB -->
+            <!-- #ifdef WEB || MP-WEIXIN -->
             <view v-if="chatInput.length == 0 && !isGuest && webSpeech" class="mic-btn" :class="micRecording ? 'mic-btn-active' : (typing ? 'mic-btn-disabled' : '')"
               v-on:touchstart="onMicStart" v-on:touchend="onMicEnd" v-on:touchcancel="onMicEnd"
               v-on:mousedown="onMicStart" v-on:mouseup="onMicEnd" v-on:mouseleave="onMicEnd">
               <image class="mic-icon-img" src="/static/icons/mic.svg" mode="aspectFit" />
             </view>
             <!-- #endif -->
-            <!-- #ifndef WEB -->
+            <!-- #ifdef APP -->
             <view v-if="chatInput.length == 0 && !isGuest" class="mic-btn" v-on:click="onMicTap">
               <image class="mic-icon-img" src="/static/icons/mic.svg" mode="aspectFit" />
             </view>
@@ -736,9 +736,10 @@
 
       <!-- Weight entry modal -->
       <view v-if="planWeightOpen" class="modal-overlay">
-        <view class="modal-sheet">
+        <view class="modal-sheet" :style="planWeightKeyboard > 0 ? 'margin-bottom: ' + planWeightKeyboard + 'px;' : ''">
           <text class="modal-title">{{ tr('taskWeightTitle') }}</text>
-          <input class="modal-input" type="digit" :placeholder="tr('taskWeightPlaceholder')" v-model="planWeightInput" />
+          <input class="modal-input" type="digit" :placeholder="tr('taskWeightPlaceholder')" v-model="planWeightInput"
+            :adjust-position="false" v-on:focus="handleWeightFocus" v-on:blur="handleWeightBlur" />
           <view class="modal-actions">
             <view class="modal-btn modal-btn-cancel" v-on:click="closeWeightTask"><text class="modal-btn-cancel-label">{{ tr('taskWeightCancel') }}</text></view>
             <view class="modal-btn modal-btn-confirm" v-on:click="handleWeightSubmit"><text class="modal-btn-confirm-label">{{ tr('taskWeightConfirm') }}</text></view>
@@ -1056,8 +1057,13 @@
               <view v-if="cart.length > 0" class="checkout-addr-form">
                 <view class="checkout-addr-hdr">
                   <text class="checkout-addr-title">{{ tr('checkoutShippingTitle') }}</text>
-                  <!-- TODO(port): WeChat address book (wx.chooseAddress) has no native equivalent;
-                       manual entry only. -->
+                  <!-- WeChat address book: xapp-mini only (native has none — manual entry). -->
+                  <!-- #ifdef MP-WEIXIN -->
+                  <view class="checkout-wx-addr-btn" v-on:click="fetchWechatAddress('checkout')">
+                    <text class="checkout-wx-addr-icon">📍</text>
+                    <text class="checkout-wx-addr-text">{{ tr('checkoutWxAddress') }}</text>
+                  </view>
+                  <!-- #endif -->
                 </view>
                 <view class="checkout-addr-row">
                   <text class="checkout-addr-label">{{ tr('checkoutName') }}</text>
@@ -1578,7 +1584,7 @@
     <!-- ── Guest Join Sheet ── invite-code entry only; a valid code hands off to login,
          which owns account creation + the phone/email OTP gate. -->
     <view v-if="guestSheetOpen" class="guest-sheet-mask" v-on:click="closeGuestSheet">
-      <view class="guest-sheet" v-on:click.stop="noop">
+      <view class="guest-sheet" :style="guestKeyboardHeight > 0 ? 'padding-bottom: ' + guestKeyboardHeight + 'px;' : ''" v-on:click.stop="noop">
         <view class="guest-sheet-handle"></view>
         <text class="guest-sheet-title">{{ tr('guestJoinTitle') }}</text>
         <text class="guest-sheet-desc">{{ tr('guestJoinDesc') }}</text>
@@ -1588,7 +1594,8 @@
               <text class="pin-digit">{{ dg }}</text>
             </view>
           </view>
-          <input class="pin-capture" type="number" v-model="guestInviteCode" maxlength="6" v-on:input="onGuestInviteTyped()" />
+          <input class="pin-capture" type="number" v-model="guestInviteCode" maxlength="6" v-on:input="onGuestInviteTyped()"
+            :focus="guestSheetOpen" :adjust-position="false" v-on:keyboardheightchange="onGuestKeyboardHeightChange" />
         </view>
         <view v-if="guestInviteError.length > 0" class="guest-sheet-error"><text class="guest-sheet-error-text">{{ guestInviteError }}</text></view>
         <view class="guest-sheet-btn" :class="guestInviteBusy ? 'guest-sheet-btn-disabled' : ''" v-on:click="submitGuestInvite">
@@ -1608,7 +1615,9 @@
         <input class="viva-redeem-input" type="text" v-model="codeShipName" :placeholder="tr('codeNamePlaceholder')" />
         <input class="viva-redeem-input" type="text" v-model="codeShipPhone" :placeholder="tr('codePhonePlaceholder')" />
         <input class="viva-redeem-input" type="text" v-model="codeShipAddress" :placeholder="tr('codeAddrPlaceholder')" />
-        <!-- TODO(port): WeChat address book (使用微信地址) has no native equivalent — manual entry. -->
+        <!-- #ifdef MP-WEIXIN -->
+        <text class="code-wx-addr" v-on:click.stop="fetchWechatAddress('codeShip')">{{ tr('codeWxAddrBtn') }}</text>
+        <!-- #endif -->
         <view v-if="codeSheetError.length > 0" class="guest-sheet-error"><text class="guest-sheet-error-text">{{ codeSheetError }}</text></view>
         <view class="guest-sheet-btn" :class="codeSheetBusy ? 'guest-sheet-btn-disabled' : ''" v-on:click="submitFormulationRedeem">
           <text class="guest-sheet-label">{{ codeSheetBusy ? '…' : tr('codeSubmitBtn') }}</text>
@@ -1673,10 +1682,10 @@
 //    differ (uni-app x wgt path), nothing to port.
 //  - WechatSI mic → removed. // TODO(port): ASR plugin
 //  - wx.login/_getCode → skipped; xapp login is phone/email OTP (already ported, AGENTS §33).
-//  - wx.chooseAddress → TODO(port): no native address book; manual entry only.
-//  - wx.requestSubscribeMessage (weight-reminder subscribe) → TODO(port): push equivalents; the
-//    flag it set (_weightSubAccepted) stays false so the API shape (send_weight_reminder:false) holds.
-//  - getApp().globalData → utils/state.uts singleton; privacy-resolve hooks dropped (WeChat-only).
+//  - wx.chooseAddress → xapp-mini only (fetchWechatAddress); native: manual entry.
+//  - wx.requestSubscribeMessage (weight-reminder subscribe) → xapp-mini only. TODO(port): native
+//    push equivalents; there _weightSubAccepted stays false (send_weight_reminder:false).
+//  - getApp().globalData → utils/state.uts singleton; privacy-resolve hooks → utils/privacy.uts (xapp-mini).
 //  - selectComponent('#health-comp') method calls → $refs cast to UserHealthComponentPublicInstance (the generated per-component type; a hand-written interface cast throws at runtime).
 //  - mp-html → <rich-text>; its bindlinktap/bindready (_onMdLinkTap/_onSegReady) have no rich-text
 //    equivalent yet. // TODO(port): link-tap copy + settle-scroll for long replies; the timer ladder
@@ -2296,6 +2305,32 @@ async function _envelopeRun(url : string, method : RequestMethod, data : UTSJSON
 }
 
 
+// WeChat address → one line (miniapp main.js _joinAddress): skip a part the line already ends with,
+// so 北京市 + 北京市 + 朝阳区 does not repeat the municipality.
+function _joinAddress(parts : any[]) : string {
+  let out = ''
+  for (const part of parts) {
+    const p = part != null ? `${part}`.trim() : ''
+    if (p.length > 0 && !out.endsWith(p)) out += p
+  }
+  return out
+}
+
+// The soft keyboard's height from a focus / keyboardheightchange event (detail.height), or 0.
+function _kbHeight(e : any) : number {
+  // #ifdef MP-WEIXIN
+  const d = e != null ? e.detail : null
+  const h = d != null ? d.height : null
+  return h != null ? (h as number) : 0
+  // #endif
+  // #ifndef MP-WEIXIN
+  return 0 // native and web keep their default keyboard behaviour
+  // #endif
+}
+
+// The weight-reminder subscription template (miniapp main.js openWeightTask).
+const WEIGHT_TMPL_ID = 'EMj8N9HC4_a2dYyUxDR87AF0nRvme8uB7IPhOi56Zl4'
+
 export default {
   name: 'MainPage',
   components: { UserHealth, Toolbox },
@@ -2565,11 +2600,12 @@ export default {
       _lessonWatch: new Map<string, LessonWatch>(),
       _pendingHealthReport: null as UTSJSONObject | null,
       _formulaSubmitting: false,
-      _weightSubAccepted: false, // TODO(port): wx.requestSubscribeMessage has no native equivalent
+      _weightSubAccepted: false, // xapp-mini: wx.requestSubscribeMessage; native: always false
       _dotsAllDays: [] as UTSJSONObject[],
       _pinch: null as PinchStepper | null,
       // TODO(port): confirm InnerAudioContext type name at compile (wellness audio, see _initBgAudio).
       _audio: null as InnerAudioContext | null,
+      _bgm: null as any | null, // xapp-mini: wx.getBackgroundAudioManager()
     }
   },
   computed: {
@@ -3125,7 +3161,9 @@ export default {
       this.codeSheetBusy = false
       this.codeShipName = this.codeShipName.length > 0 ? this.codeShipName : (user != null ? (user!.getString('nickname') ?? '') : '')
       this.codeShipPhone = this.codeShipPhone.length > 0 ? this.codeShipPhone : (user != null ? (user!.getString('phone') ?? '') : '')
-      // TODO(port): WeChat address book prefill (fetchWechatAddress('codeShip')) — manual entry.
+      // Offer the address book only when there is nothing to keep — re-opening the picker over an
+      // address the user already typed would be the one thing they cannot undo here.
+      if (this.codeShipAddress.trim().length == 0) this.fetchWechatAddress('codeShip')
     },
 
     closeCodeSheet() {
@@ -5023,8 +5061,9 @@ export default {
       this.toolboxOpen = !this.toolboxOpen
     },
 
-    // Web: press-and-hold Web Speech (utils/web-speech.uts); merged into the input like
-    // main.js:_onMicStop. Native keeps the onMicTap toast until an ASR plugin exists.
+    // Web and xapp-mini: press-and-hold voice input (utils/web-speech.uts — Web Speech / WechatSI);
+    // merged into the input like main.js:_onMicStop. Native keeps the onMicTap toast until an ASR
+    // plugin exists.
     onMicStart(e : any) {
       if (this.typing || this.micRecording) return
       this.micRecording = startSpeech(this.lang, (text : string) => {
@@ -6180,16 +6219,46 @@ export default {
         await submitBatchOrder(name, phone, address)
         return
       }
-      // Address incomplete — open cart, pre-fill name/phone.
-      // TODO(port): wx.chooseAddress prefill — native has no address book; manual entry only.
+      // Address incomplete — open cart, pre-fill name/phone, then try the WeChat address book.
       this.cartOpen = true
       this.checkoutName = name.length > 0 ? name : (user!.getString('nickname') ?? '')
       this.checkoutPhone = phone.length > 0 ? phone : (user!.getString('phone') ?? '')
+      if (address.length == 0) this.fetchWechatAddress('checkout')
     },
 
-    // TODO(port): WeChat address book (wx.chooseAddress) has no native equivalent; the picker is a
-    // silent no-op so both call sites (checkout / code sheet) stay wired and simply manual-fill.
-    fetchWechatAddress(prefix : string = 'checkout') {},
+    // WeChat address book (xapp-mini): fills name, phone and address of the checkout or the
+    // code-ship form. Needs "chooseAddress" in requiredPrivateInfos (manifest.json) and in the
+    // appid's privacy guide. Native has no address book, so it is a no-op there: manual entry.
+    fetchWechatAddress(prefix : string) {
+      // #ifdef MP-WEIXIN
+      wx.chooseAddress({
+        // WeChat hands back plain objects, not UTSJSONObject — read fields directly (as
+        // utils/wearable/transport-mp.uts does).
+        success: (a : any) => {
+          const name = a.userName != null ? `${a.userName}` : ''
+          const tel = a.telNumber != null ? `${a.telNumber}` : ''
+          const full = _joinAddress([a.provinceName, a.cityName, a.countyName, a.detailInfo])
+          if (prefix == 'codeShip') {
+            if (name.length > 0) this.codeShipName = name
+            if (tel.length > 0) this.codeShipPhone = tel
+            this.codeShipAddress = full
+          } else {
+            if (name.length > 0) this.checkoutName = name
+            if (tel.length > 0) this.checkoutPhone = tel
+            this.checkoutAddress = full
+          }
+        },
+        fail: (err : any) => {
+          const errMsg = err != null && err.errMsg != null ? `${err.errMsg}` : ''
+          console.log(JSON.stringify({ level: 'WARN', msg: 'wx.chooseAddress failed', data: { errMsg } }))
+          // Dismissed or denied — stay silent, the manual form is right there.
+          if (/cancel|deny/i.test(errMsg)) return
+          // A real failure (e.g. the privacy declaration missing) — say to fill it in by hand.
+          uni.showToast({ title: this.tr('checkoutWxAddressFail'), icon: 'none', duration: 2500 })
+        },
+      } as any)
+      // #endif
+    },
 
     async handleCancelOrder(orderId : string) {
       const user = this.user
@@ -6483,10 +6552,17 @@ export default {
       this.planWeightOpen = true
       this.planWeightInput = ''
       this.planWeightPlanId = planId
-      // TODO(port): wx.requestSubscribeMessage (WeChat template message opt-in for weight
-      // reminders) has no native equivalent; _weightSubAccepted stays false and the flag rides
-      // the API unchanged (send_weight_reminder: false).
       this._weightSubAccepted = false
+      // xapp-mini: WeChat's template-message opt-in for the weight reminder, as the miniapp. The
+      // template id belongs to an appid — this is the miniapp's (wx84bd7d00a6fd626e); under
+      // another appid WeChat rejects it and the reminder stays off (send_weight_reminder: false).
+      // Native has no equivalent.
+      // #ifdef MP-WEIXIN
+      wx.requestSubscribeMessage({
+        tmplIds: [WEIGHT_TMPL_ID],
+        success: (res : any) => { this._weightSubAccepted = res[WEIGHT_TMPL_ID] == 'accept' },
+      } as any)
+      // #endif
     },
 
     async handleWeightSubmit() {
@@ -6519,10 +6595,13 @@ export default {
       }
     },
 
-    // TODO(port): WeChat keyboard-height offsetting (handleWeightFocus/Blur and
-    // onGuestKeyboardHeightChange shifted the sheet above the soft keyboard); the xapp sheets
-    // rely on the platform's default scroll-into-view behavior instead.
-    closeWeightTask() { this.planWeightOpen = false },
+    // The sheets sit at the bottom with adjust-position off, so they lift themselves by the
+    // keyboard's height — the miniapp's handleWeightFocus/Blur and onGuestKeyboardHeightChange.
+    // (A platform without the height in the event leaves 0: no lift, default behaviour.)
+    closeWeightTask() { this.planWeightOpen = false; this.planWeightKeyboard = 0 },
+    handleWeightFocus(e : any) { this.planWeightKeyboard = _kbHeight(e) },
+    handleWeightBlur(_e : any) { this.planWeightKeyboard = 0 },
+    onGuestKeyboardHeightChange(e : any) { this.guestKeyboardHeight = _kbHeight(e) },
 
     openQuestionsTask(planId : string) {
       this.planQuestionsOpen = true
@@ -6758,7 +6837,7 @@ export default {
       this.menuOpen = false
     },
 
-    closeGuestSheet() { this.guestSheetOpen = false },
+    closeGuestSheet() { this.guestSheetOpen = false; this.guestKeyboardHeight = 0 },
 
     // 6-digit code; auto-submits on the 6th digit (main.js onGuestInviteInput).
     onGuestInviteTyped() {
@@ -6843,8 +6922,8 @@ export default {
     },
 
     // ── Wellness tab ──
-    // TODO(port): wx.getBackgroundAudioManager has no uni-app x equivalent yet —
-    // uni.createInnerAudioContext keeps playing only while the app is foregrounded. Wiring kept
+    // xapp-mini plays through wx.getBackgroundAudioManager, as the miniapp. TODO(port): native has
+    // no equivalent yet — uni.createInnerAudioContext keeps playing only while foregrounded. Wiring kept
     // identical in shape (onPlay/onPause/onStop/onEnded/onTimeUpdate).
     async _loadWellness() {
       this.wellnessLoading = true
@@ -6875,6 +6954,23 @@ export default {
     },
 
     _initBgAudio() {
+      // #ifdef MP-WEIXIN
+      // xapp-mini: WeChat's background audio manager, as the miniapp — playback carries on with
+      // the screen off or the app in the background (requiredBackgroundModes: audio).
+      if (this._bgm != null) return
+      const bgm = wx.getBackgroundAudioManager()
+      bgm.onPlay(() => { this.sleepPlaying = true })
+      bgm.onPause(() => { this.sleepPlaying = false })
+      bgm.onStop(() => { this.sleepPlaying = false; this.sleepPosition = 0 })
+      bgm.onEnded(() => { this.sleepPlaying = false; this.sleepPosition = 0 })
+      bgm.onTimeUpdate(() => {
+        this.sleepPosition = Math.floor(bgm.currentTime as number)
+        const dur = Math.floor(bgm.duration as number)
+        if (dur > 0) this.sleepDuration = dur
+      })
+      this._bgm = bgm
+      return
+      // #endif
       if (this._audio != null) return
       const ctx = uni.createInnerAudioContext()
       ctx.onPlay(() => { this.sleepPlaying = true })
@@ -6894,6 +6990,24 @@ export default {
       if (track == null) return
       const cur = this.sleepCurrentTrack
       this._initBgAudio()
+      // #ifdef MP-WEIXIN
+      const bgm = this._bgm
+      if (bgm == null) return
+      if (cur != null && cur!.getNumber('id') == track!.getNumber('id') && this.sleepPlaying) {
+        bgm.pause()
+        return
+      }
+      const src = track!.getString('url')
+      if (src == null) return
+      // title is required by the background manager (it shows on the lock screen); src starts it.
+      bgm.title = track!.getString('title_zh') ?? (track!.getString('title') ?? '')
+      bgm.coverImgUrl = ''
+      bgm.src = src!
+      this.sleepCurrentTrack = track
+      this.sleepPosition = 0
+      this.sleepDuration = track!.getNumber('duration_seconds') ?? 0
+      return
+      // #endif
       const ctx = this._audio
       if (ctx == null) return
       if (cur != null && cur!.getNumber('id') == track!.getNumber('id') && this.sleepPlaying) {
@@ -6910,6 +7024,9 @@ export default {
     },
 
     stopAudioAsset() {
+      // #ifdef MP-WEIXIN
+      if (this._bgm != null) this._bgm.stop()
+      // #endif
       const ctx = this._audio
       if (ctx != null) ctx.stop()
       this.sleepCurrentTrack = null
@@ -7289,8 +7406,16 @@ export default {
         const url = res.data != null ? res.data!.getString('url') : null
         if (url == null || url!.length == 0) throw new Error('No URL')
         uni.hideLoading()
-        // TODO(port): wx.downloadFile + wx.openDocument — no in-app PDF viewer is wired on the
-        // native side yet; pay-qr's save-to-album precedent doesn't fit a PDF. Copy link for now.
+        // #ifdef MP-WEIXIN
+        // xapp-mini: download and hand to WeChat's document viewer, as the miniapp.
+        const filePath = await new Promise<string>((resolve, reject) => {
+          uni.downloadFile({ url: url!, success: (r) => { if (r.statusCode == 200) resolve(r.tempFilePath); else reject(new Error(`http ${r.statusCode}`)) }, fail: (e) => { reject(e) } })
+        })
+        wx.openDocument({ filePath: filePath, showMenu: true } as any)
+        return
+        // #endif
+        // TODO(port): no in-app PDF viewer is wired on the native side yet; pay-qr's
+        // save-to-album precedent doesn't fit a PDF. Copy link for now.
         uni.setClipboardData({ data: url!, success: () => { uni.showToast({ title: '链接已复制，请在浏览器打开', icon: 'none', duration: 2500 }) } })
       } catch (e : any) {
         uni.hideLoading()
