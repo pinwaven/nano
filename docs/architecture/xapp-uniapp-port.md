@@ -27,7 +27,8 @@ Backend selection is a `BUILD_ENV` constant in `utils/config.uts` (dev → `nano
 and `VERSION` there follows the same MMDD-N marker rule as the miniapp — bump on every change
 under `src/xapp/`, it is the only way to prove a device build is current.
 
-Auth differs by design: **no `wx.login`** — phone/email OTP only (server already supports it,
+Auth differs by design: **no `wx.login`** on native (the mp-weixin build, xapp-mini, keeps the
+miniapp's `wx.login` and guest mode — `tools/xapp-mini/README.md`) — phone/email OTP only (server already supports it,
 §33); `/phone-otp/verify` works without `miniapp_code`. See README for the two server-side gaps
 this exposed (plain-text QR for `/qr-login`, `ref` param for signup referrals).
 
@@ -111,6 +112,21 @@ Classes learned across the compile pass and two device passes (full log in READM
   the miniapp's `position: fixed` one.
 - `<rich-text>` has no intrinsic width (give it explicit px) and **no `tag-style` prop** —
   mp-html's tag styles were merged into inline styles via `inlineTagStyles()` (markdown.uts).
+
+## Web (H5) build
+
+`tools/xapp-web/build.sh` + `serve.js` build and serve `src/xapp` for the browser, styled
+by the web user-app's own CSS so it looks like the user-app. Architecture, styling model,
+web-only behaviour and verification: [xapp-web.md](xapp-web.md); commands:
+[tools/xapp-web/README.md](../../tools/xapp-web/README.md). The Android compile also runs on the
+Linux box (`~/HBuilderX/cli launch app-android --project … --compile true`), but only alone: run
+together with headless browsers it exhausts the 4 GB of memory.
+
+## WeChat mini-program export (xapp-mini)
+
+`tools/xapp-mini/build.sh` compiles the same tree for `mp-weixin` into `src/xapp-mini`
+(git-ignored), for WeChat DevTools. It runs the native branches (`#ifndef WEB`). How to open it
+and what differs from the miniapp: [tools/xapp-mini/README.md](../../tools/xapp-mini/README.md).
 
 ## Offline gates (run both after every change)
 

@@ -122,6 +122,28 @@ tab by tab. Fixed in this pass:
 Known remaining gaps: light theme (the miniapp's ~690 `.theme-light` rules have no uvue
 equivalent yet — a dynamic-class pass), BLE transport, binary file I/O, ASR mic (see list above).
 
+## WeChat mini-program export (2026-10-01, VERSION 1001-9)
+
+`tools/xapp-mini/build.sh` → `src/xapp-mini`, a WeChat DevTools project. Uploads read files
+through `getFileSystemManager` (`utils/file-bytes.uts`). Bluetooth (Halo/V8) runs over WeChat's API through
+`utils/wearable/transport-mp.uts`, installed from `App.uvue` (VERSION 1002-1); Android/iOS still have no
+transport. Login on mp-weixin is the miniapp's `wx.login` flow, including guest mode for mini-program
+review (VERSION 1002-4); native keeps phone/email OTP and has no guest mode. Details and gaps: [`tools/xapp-mini/README.md`](../../tools/xapp-mini/README.md).
+
+## Web (H5) build (2026-10-01, VERSION 1001-8)
+
+The same tree now builds for the browser and is styled to match the web user-app. Build, serve
+and review recipe, styling model, web-only behaviour and traps: [`tools/xapp-web/README.md`](../../tools/xapp-web/README.md).
+Bugs found on the way that affect native too:
+- the coach id is numeric, and `getString('id')` returned null, so the coach panel could never
+  load clients. Fixed with `utils/json-id.uts` `idOf()` and the other numeric-id reads;
+- invite and KPI fields were read under the wrong names (`status`/`used_count`,
+  `active`/`at_risk`; the API returns `is_active`/`use_count`, `active_clients`/`at_risk_count`);
+- coach questionnaire responses were queried by questionnaire, not per client. Reminders can now
+  target the tapped client, and the goal form, fact category and coach chat toolbox now match the miniapp;
+- `user-health` called the `_moodRaw` method without `this.`;
+- `main.uvue` `arrLen()` and the touch handlers used Kotlin `.size` (wrong on web).
+
 ## Review fixes (2026-10-01, VERSION 1001-7)
 
 - **Legacy shared bearer removed** from `utils/session.uts` (it was shipped in the APK for a
