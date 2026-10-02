@@ -8,7 +8,7 @@ source as the native app, running inside WeChat.
 
 ```bash
 tools/xapp-mini/build.sh                             # → src/xapp-mini (git-ignored), appid touristappid
-APPID=wx84bd7d00a6fd626e tools/xapp-mini/build.sh    # the nano miniapp's appid
+APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools project on i9 uses (WX_APPID)
 ```
 
 - **`build.sh`** runs HBuilderX's compiler in build mode (minified), with the command and
@@ -27,6 +27,9 @@ The build runs on the EC2 box, and WeChat DevTools runs on the Mac:
 
 ```bash
 rsync -a --delete <ec2-host>:waven/nano/src/xapp-mini/ ~/waven/xapp-mini/   # on the Mac
+# or push from the EC2 box through the reverse tunnel to i9 (see the i9 notes in ~/.claude/CLAUDE.md):
+rsync -a --delete --exclude project.private.config.json -e "ssh -i ~/.ssh/us1_to_i9 -p 2222" \
+  src/xapp-mini/ pin@localhost:waven/xapp-mini/
 ```
 
 Then import `~/waven/xapp-mini` in WeChat DevTools.
@@ -64,7 +67,7 @@ It is the native port's behaviour (`#ifndef WEB` branches), not the miniapp's, e
   (the calls the miniapp's `ble-manager.js` makes) to the shared `BleTransport`, and `App.uvue`
   installs it at launch. There is no `app.json` permission entry for Bluetooth: WeChat's `permission` only accepts location-type scopes, and DevTools flags `scope.bluetooth` as invalid.
   - Only the connector is mini-program-specific: the protocols, parsing, sync and capture code is
-    the same code the native app will use.
+    the same code the Android app runs over its own connector (`uni_modules/waven-ble`).
   - It calls `wx.*`, not `uni.*`: uni-app x does not declare the discovery calls.
   - It needs a real phone and the real appid. The DevTools simulator has no radio.
 - **Missing from the port everywhere:**
@@ -75,6 +78,6 @@ It is the native port's behaviour (`#ifndef WEB` branches), not the miniapp's, e
 - **Styling:** the uvue `<style>` blocks, as on native. The web build's user-app stylesheet is
   web-only.
 - **The privacy popup:** WeChat shows its default one; the miniapp's custom one is not ported.
-- **Not verified at runtime:** there is no WeChat DevTools on the EC2 box. Checks so far:
-  - the compile;
-  - a static scan of the output (no `window`/`document`, no array `.size`, size budget).
+- **Verified (2026-10-02):** booted in WeChat DevTools on i9 (driven over the reverse tunnel with
+  `miniprogram-automator`); guest mode, the invite sheet and the health/plans locks checked there;
+  on a phone, a V8 band bound and synced, and its rows on dev matched the miniapp's.

@@ -83,7 +83,9 @@ See [FC Logging Setup](../fc-logging-setup.md) for provisioning steps.
 | System | Doc |
 |---|---|
 | Web Coach Panel | [web-coach-panel.md](web-coach-panel.md) |
+| xapp — uni-app x native port of the miniapp (runbook, porting rules, status) | [xapp-uniapp-port.md](xapp-uniapp-port.md) |
 | xapp web build (uni-app x port as HTML5, styled as the web user-app) | [xapp-web.md](xapp-web.md) |
+| xapp-mini — the port exported as a WeChat mini-program (login, guest mode, Bluetooth) | [../../tools/xapp-mini/README.md](../../tools/xapp-mini/README.md) |
 | Managed Customers (SuperiorMed) | [managed-customers.md](managed-customers.md) |
 | Kino Hardware | [kino-system.md](kino-system.md) |
 | Questionnaire System | [questionnaire-system.md](questionnaire-system.md) |

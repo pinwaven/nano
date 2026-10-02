@@ -157,13 +157,21 @@ The harness shims `UTSJSONObject`/`uni`/`wx` and validates LOGIC only — the HB
 still the type gate. Keep `utils/markdown.uts`'s existing exports byte-identical when adding
 page-side helpers (the harness diffs against the miniapp original).
 
-## Status (2026-10-01, VERSION 1001-6)
+## Status (2026-10-02, VERSION 1002-9)
 
 Full tree compiles to Kotlin; runs on a OnePlus PJZ110 over the hot-push debug base; login →
 chat (§22 async round-trip verified) → health → plans → learn → toolbox/menu popups are
-**visually at parity with the miniapp in the DARK theme** (Pin's server theme on dev).
+**visually at parity with the miniapp in the DARK theme** (Pin's server theme on dev, 2026-10-01).
+**Halo/V8 Bluetooth works on Android** (2026-10-02): `uni_modules/waven-ble`, tested with the V8 —
+bind, sync, ECG. Rendering mode is VDOM (`manifest.json` `"uni-app-x": {}`); HBuilderX 5.26 also
+offers vapor mode (蒸汽模式), not tried — switching would need the CSS rules above re-verified. Vapor
+does not apply to the mp-weixin build.
+
+Also built from the same tree: the web build (`xapp-web.md`) and xapp-mini (WeChat login, guest
+mode, Bluetooth over WeChat's API — `tools/xapp-mini/README.md`).
 
 Open gaps, each `TODO(port)`-tagged in code: **light theme** (the miniapp's ~690 `.theme-light`
 WXSS rules have no uvue equivalent — needs a dynamic-class or per-rule port pass; the 浅色模式
-toggle flips state but barely restyles), BLE transport plugin, binary file I/O (`readFileBytes`),
-WechatSI ASR mic (button renders, toasts), NFC Kino emulation, custom avatar §20, background audio.
+toggle flips state but barely restyles), iOS Bluetooth (no transport), native binary file I/O
+(`utils/file-bytes.uts` returns null on Android/iOS — uploads fail there), WechatSI ASR mic
+(button renders, toasts), NFC Kino emulation, custom avatar §20, background audio.

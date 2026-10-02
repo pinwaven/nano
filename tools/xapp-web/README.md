@@ -60,6 +60,7 @@ node tools/web-review/review.js http://localhost:5180/ --viewport mobile,desktop
 | `uni.getWindowInfo()` clamped to the desktop frame | `main.uts` | width math assumed a phone |
 | Theme / text-scale classes mirrored onto `<html>` | `utils/web-ui.uts` `syncRootClasses()` | the tokens live on `:root` |
 | Email login on every channel; admin links open `/admin/` | `pages/main` | as in the user-app |
+| No Bluetooth: binding a ring shows the connection-failure toast | `App.uvue` installs no transport on web | no Web Bluetooth path (Android: `uni_modules/waven-ble`; xapp-mini: `transport-mp.uts`) |
 
 ## Traps found the hard way
 

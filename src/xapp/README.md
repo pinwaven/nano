@@ -67,14 +67,13 @@ Verification state of the whole tree (no device run yet):
 
 ### What to do first on a device (the remaining known-work list)
 
-1. **Launch on the phone + `logcat`** — the compile pass is done; the first real boot (§23 chat
-   scroll, picker UI, canvas draws, `uni.scanCode`) still needs a connected device
-   (`adb devices` was empty at the time of writing — re-enable wireless debugging first).
+1. **Launch on the phone + `logcat`** — done (2026-10-01 parity sweep, 2026-10-02 Bluetooth test;
+   runbook in `docs/architecture/xapp-uniapp-port.md`).
 2. **BLE**: done for Android (2026-10-02, `uni_modules/waven-ble`, see the section below);
    iOS still has no transport.
-3. **Binary file I/O**: `readFileBytes()` stubs in `tool-actions.uts` /
-   `health-documents.uts` + `viva-ag-panel` text reads + `openDocument` — native UTS calls, one
-   pass together.
+3. **Binary file I/O**: `utils/file-bytes.uts` `readFileBytes()` works on web (`fetch(blobURL)`) and
+   xapp-mini (`getFileSystemManager`); its native (`#ifdef APP`) branch still returns null, so image
+   and document uploads fail on Android/iOS. Also `viva-ag-panel` text reads and `openDocument`.
 4. Feature parity gaps (each `TODO(port)`-tagged): WechatSI ASR mic, wx.chooseAddress, NFC tag
    emulation in the Kino sim, subscribe-message weight reminders, mp-html link-tap, custom
    avatar generation (§20), background audio, light-theme styling pass.
@@ -120,9 +119,9 @@ tab by tab. Fixed in this pass:
 - **Text-on-view warnings**: `ring-lc-smoothed-note` ×3 are now `<text>`.
 
 Known remaining gaps: light theme (the miniapp's ~690 `.theme-light` rules have no uvue
-equivalent yet — a dynamic-class pass), iOS BLE transport, binary file I/O, ASR mic (see list above).
+equivalent yet — a dynamic-class pass), iOS BLE transport, native binary file I/O, ASR mic (see list above).
 
-## Android Bluetooth — `uni_modules/waven-ble` (2026-10-02, VERSION 1002-5)
+## Android Bluetooth — `uni_modules/waven-ble` (2026-10-02, VERSION 1002-5 → 1002-8)
 
 uni-app x has no Bluetooth API on Android, so the native app gets a hand-written UTS plugin over
 Android's `BluetoothLeScanner` and `BluetoothGatt`. `utils/wearable/transport-android.uts` adapts it
