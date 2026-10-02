@@ -7421,7 +7421,7 @@ export default {
 .message-user { background-color: #6375EC; }
 .msg-text-user { color: #FFFFFF; font-size: 14px; line-height: 22px; }
 .msg-text { color: rgb(255, 255, 255); font-size: 14px; line-height: 22px; }
-.message-ai { max-width: 100%; padding: 11px 13px; background-color: #162E4A; border: 1px solid rgba(99, 117, 236, 0.18); }
+.message-ai { padding: 11px 13px; background-color: #162E4A; border: 1px solid rgba(99, 117, 236, 0.18); }
 .message-coach { background-color: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); }
 .msg-coach-label { color: #34D399; font-size: 10px; font-weight: bold; }
 .msg-ag-label { color: #A0B4FF; font-size: 10px; font-weight: bold; }
@@ -7477,19 +7477,19 @@ export default {
 
 /* formula card */
 .fcard { background-color: rgba(99, 117, 236, 0.06); border-radius: 10px; color: rgb(238, 242, 255); padding: 12px 13px 10px 13px; margin: 7px 0px 9px 0px; border-style: solid; border-width: 1px; border-color: rgba(99, 117, 236, 0.26); }
-.fcard-head { flex-direction: row; justify-content: space-between; margin: 0px 0px 10px 0px; align-items: baseline; }
+.fcard-head { flex-direction: row; justify-content: space-between; margin: 0px 0px 10px 0px; align-items: flex-end; }
 .fcard-title { color: rgb(160, 180, 255); font-size: 13px; font-weight: bold; letter-spacing: 1px; }
 .fcard-note { color: #A6C4E5; font-size: 9px; text-align: right; }
 .fcard-tier { border-top: 1px solid rgba(99, 117, 236, 0.15); color: rgb(238, 242, 255); border-radius: 7px; background-color: rgba(127, 127, 127, 0.08); padding: 8px 9px 8px 9px; margin: 9px 0px 0px 0px; border-width: 0px; }
-.fcard-tier-head { flex-direction: row; align-items: baseline; justify-content: space-between; padding: 3px 0px 3px 0px; }
-.fcard-tier-name { flex-direction: row; align-items: baseline; }
+.fcard-tier-head { flex-direction: row; align-items: flex-end; justify-content: space-between; padding: 3px 0px 3px 0px; }
+.fcard-tier-name { flex-direction: row; align-items: flex-end; }
 .fcard-tier-label { color: #EEF2FF; font-size: 12px; font-weight: bold; letter-spacing: 1px; }
 .fcard-tier-rec { color: rgb(160, 180, 255); font-size: 9px; background-color: rgba(99, 117, 236, 0.18); border-radius: 519px; padding: 1px 6px; margin-left: 6px; }
 .fcard-tier-chev { color: #A6C4E5; font-size: 11px; padding: 0px 0px 0px 4px; }
 .fcard-tier-note { font-size: 10px; color: rgb(166, 196, 229); margin: 4px 0px 0px 0px; }
 .fcard-tier-note-text { color: #A6C4E5; font-size: 11px; }
 .fcard-tier-pitch { color: #A6C4E5; font-size: 11px; margin: 6px 0px 0px 0px; }
-.fcard-days { flex-direction: row; align-items: baseline; margin-top: 4px; margin-bottom: 6px; }
+.fcard-days { flex-direction: row; align-items: flex-end; margin-top: 4px; margin-bottom: 6px; }
 .fcard-daylabel { color: #EEF2FF; font-size: 11px; font-weight: bold; letter-spacing: 1px; }
 .fcard-daytag { color: #A0B4FF; font-size: 9px; padding: 1px 6px; border-radius: 519px; background-color: rgba(99, 117, 236, 0.18); margin-left: 6px; }
 .fcard-row { flex-direction: row; align-items: center; margin: 3px 0px 6px 0px; }
@@ -7722,7 +7722,7 @@ export default {
 .scan-box-title { color: #EEF2FF; font-size: 13px; font-weight: bold; }
 .scan-box-detail { color: rgba(166, 196, 229, 0.4); font-size: 11px; margin-top: 3px; }
 .scan-box-icon { width: 22px; height: 22px; margin-left: 12px; opacity: 0.9; }
-.dots-header { flex-direction: row; align-items: baseline; justify-content: space-between; margin-top: 14px; padding: 14px 18px 10px 18px; }
+.dots-header { flex-direction: row; align-items: flex-end; justify-content: space-between; margin-top: 14px; padding: 14px 18px 10px 18px; }
 .dots-title { color: rgba(166, 196, 229, 0.4); font-size: 13px; font-weight: bold; letter-spacing: 1px; }
 /* #ifdef MP-WEIXIN */
 .dots-title { text-transform: uppercase; }

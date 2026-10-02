@@ -144,8 +144,8 @@ export default {
       countryIndex: 0,
       // The build's brand (xapp-mini: SuperiorMed) paints first, splash included; a stored or
       // scanned channel replaces it in onLoad.
-      channelName: CHANNEL_DISPLAY != null ? (CHANNEL_DISPLAY!.getString('name') ?? 'NANO') : 'NANO',
-      channelLogo: CHANNEL_DISPLAY != null ? (CHANNEL_DISPLAY!.getString('logo_url') ?? '') : '',
+      channelName: (CHANNEL_DISPLAY != null ? (CHANNEL_DISPLAY!.getString('name') ?? 'NANO') : 'NANO') as string,
+      channelLogo: (CHANNEL_DISPLAY != null ? (CHANNEL_DISPLAY!.getString('logo_url') ?? '') : '') as string,
       countryOptions: [
         new CountryOption('+86', '中国 +86', true),
         new CountryOption('+1', '美国 +1', false),
