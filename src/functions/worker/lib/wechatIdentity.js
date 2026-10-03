@@ -144,10 +144,25 @@ async function linkVerifiedMiniappLogin(userId, code, appId) {
         ...(exactId ? [await canonicalUser(exactId)] : []),
         ...(await unionOwners(identity.unionid)),
     ];
+    const others = [];
     for (const originalCandidate of possibleOwners) {
         const candidate = originalCandidate ? await canonicalUser(originalCandidate.user_id) : null;
+        if (candidate && candidate.user_id !== target.user_id) others.push(candidate);
+    }
+    // The phone + code proved the account, not the WeChat. A WeChat that already belongs to
+    // another phone account (or an account bound to another WeChat) keeps its owner: the login
+    // goes ahead without a link, as phone login did before identities were stored.
+    const phoneOwner = others.find(c => c.phone);
+    const unionMismatch = target.wx_unionid && identity.unionid && target.wx_unionid !== identity.unionid;
+    if (phoneOwner || unionMismatch) {
+        console.log(JSON.stringify({ level: 'INFO', msg: 'miniapp-login-link-skipped', data: {
+            user_id: target.user_id, owner_user_id: phoneOwner?.user_id || null,
+            reason: phoneOwner ? 'bound_to_other_phone_account' : 'unionid_mismatch' } }));
+        return target.user_id;
+    }
+    for (const other of others) {
+        const candidate = await canonicalUser(other.user_id);
         if (!candidate || candidate.user_id === target.user_id) continue;
-        if (candidate.phone) throw new Error('wechat_identity_already_bound');
         const older = new Date(target.created_at) <= new Date(candidate.created_at) ? target : candidate;
         const newer = older.user_id === target.user_id ? candidate : target;
         await mergeUsers(older.user_id, newer.user_id, 'phone_otp', {

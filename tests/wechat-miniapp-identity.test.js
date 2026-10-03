@@ -120,3 +120,30 @@ test('verified login binds an unfamiliar AppID and preserves the existing phone 
     assert.equal(identities.get('second:openid-second').user_id, 'old');
     assert.equal(users.get('old').phone, '+8613800000000');
 });
+
+test('a WeChat bound to another phone account: the login goes ahead without a link', async () => {
+    users.set('pin', row('pin', '2026-01-01T00:00:00Z', '+8613700000000'));
+    identities.set('second:openid-second', { user_id: 'pin', unionid: null });
+    wxResponse = { openid: 'openid-second' };
+    const owner = await identity.linkVerifiedMiniappLogin('old', 'code', 'second');
+    assert.equal(owner, 'old');
+    assert.equal(identities.get('second:openid-second').user_id, 'pin');
+    assert.equal(merges.length, 0);
+});
+
+test('an account bound to another UnionID signs in without a link', async () => {
+    users.get('old').wx_unionid = 'union-other';
+    const owner = await identity.linkVerifiedMiniappLogin('old', 'code', 'second');
+    assert.equal(owner, 'old');
+    assert.equal(identities.size, 0);
+});
+
+test('a phone-less WeChat stub is still merged into the signed-in account', async () => {
+    users.set('stub', row('stub', '2026-01-01T00:00:00Z'));
+    identities.set('second:openid-second', { user_id: 'stub', unionid: null });
+    wxResponse = { openid: 'openid-second' };
+    const owner = await identity.linkVerifiedMiniappLogin('old', 'code', 'second');
+    assert.equal(owner, 'old');
+    assert.deepEqual(merges.map(m => [m.winner, m.loser]), [['old', 'stub']]);
+    assert.equal(identities.get('second:openid-second').user_id, 'old');
+});
