@@ -44,7 +44,7 @@ const USER_ROUTES = [
     // Profile fields only: handlePutUser also writes roles / channel_id / coach_id / phone /
     // email for the admin panel. Phone and email change through the OTP binds.
     ['PUT', '/users/:user', { body: ['nickname', 'gender', 'birth_date', 'language', 'bio_data', 'avatar_url', 'avatar_character'] }],
-    ['PATCH', '/users/:user', { body: ['theme', 'text_scale', 'wearable'] }],
+    ['PATCH', '/users/:user', { body: ['theme', 'text_scale', 'wearable', 'language'] }],
     // verify-phone: cancelling a brand-new signup deletes it — never an established account.
     ['DELETE', '/users/:user', { newAccountMinutes: 60 }],
     ['POST', '/heartbeat'],
