@@ -28,7 +28,7 @@ stays the production frontend untouched.
 
 | miniapp | xapp | why |
 |---|---|---|
-| `envVersion` → `BASE` in `utils/config.js` | `BUILD_ENV` constant in `utils/config.uts` | no WeChat channels natively; flip to `release` before a store build (dev/prod per AGENTS §2) |
+| `envVersion` → `BASE` in `utils/config.js` | `BUILD_ENV` in `utils/config.uts` | xapp-mini reads `envVersion` at runtime like the miniapp; native/web: a constant, flip to `release` before a store build (dev/prod per AGENTS §2) |
 | `wx.login` + openid | phone/email OTP (server already supports, AGENTS §33) | WeChat login doesn't exist outside WeChat; `EMAIL_LOGIN_AVAILABLE = true` (root Waven) |
 | `App().globalData` | module singleton `utils/state.uts` | uni-app x convention |
 | `wx.setStorageSync('nano_base')` guard | kept verbatim in `App.uvue` onLaunch | same cross-backend session-leak incident (2026-09-19) |

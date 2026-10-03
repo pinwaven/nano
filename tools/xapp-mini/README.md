@@ -18,8 +18,9 @@ APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools pr
     produces an unminified dev compile in `src/xapp/unpackage/dist/dev/mp-weixin`.
   - `xcli publish mp-weixin` needs an appid and an upload key, and uploads.
 - **Size:** about 1.6 MB, under WeChat's 2 MB main-package limit, with no subpackages.
-- **Backend:** `utils/config.uts` `BUILD_ENV` (`develop` → nano-dev). The mini-program has no
-  `envVersion` switch like the miniapp's.
+- **Backend:** chosen at runtime from `envVersion`, as the miniapp does (`utils/config.uts`): the
+  DevTools build talks to nano-dev, an uploaded 体验版 or the released build to nano (prod). The
+  version marker shows in DevTools and 体验版, not in release.
 
 ## Open it
 
