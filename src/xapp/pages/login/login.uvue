@@ -235,6 +235,7 @@ export default {
       _refCode: '',
       _channelSlug: '',
       _pendingNewUser: null as UTSJSONObject | null,
+      _signIn: false, // opened from the guest menu's 登录: existing accounts only, 返回 goes back
       _netErr: '', // errMsg of the last failed _postReq (e.g. a domain not on the appid's request list)
     }
   },
@@ -369,6 +370,10 @@ export default {
 
     backToLoggedOut() {
       if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+      if (this._signIn) {
+        uni.navigateBack()
+        return
+      }
       if (this._pendingNewUser != null) {
         this.step = 'accountChoice'
         this.phoneError = ''
@@ -420,7 +425,7 @@ export default {
       try { miniappCode = await this._getWxCode() } catch (e : any) { miniappCode = '' }
       body['miniapp_code'] = miniappCode
       body['app_id'] = wx.getAccountInfoSync().miniProgram.appId
-      body['existing_only'] = this._pendingNewUser != null || this.canRecoverByPhone
+      body['existing_only'] = this._pendingNewUser != null || this.canRecoverByPhone || this._signIn
       // #endif
       const res = await this._postReq(`${BASE}/api/phone-otp/verify`, body)
       this.phoneLoading = false
@@ -428,7 +433,7 @@ export default {
       if (res.getBoolean('success') != true) {
         const err = res.getString('error')
         this.phoneError = err == 'invalid_code' ? '验证码不正确'
-          : err == 'account_not_found' ? '该手机号没有已有账号，请返回创建新账号'
+          : err == 'account_not_found' ? (this._signIn ? '该手机号没有已有账号，请返回注册' : '该手机号没有已有账号，请返回创建新账号')
           : '验证失败，请重试'
         this.code = ''
         return
@@ -468,14 +473,16 @@ export default {
       if (code.length == 0 || this.phoneLoading) return
       this.phoneLoading = true
       this.phoneError = ''
-      const res = await this._postReq(`${BASE}/api/email-otp/verify`, {
-        email: this.email, code: code, language: state.lang,
-      } as UTSJSONObject)
+      const body = { email: this.email, code: code, language: state.lang } as UTSJSONObject
+      // Guest sign-in: an unknown address gets invite_required back instead of a new account.
+      if (this._signIn) body['require_invite'] = true
+      const res = await this._postReq(`${BASE}/api/email-otp/verify`, body)
       this.phoneLoading = false
       if (res == null) { this.phoneError = this._networkError(); return }
       if (res.getBoolean('success') != true) {
         const err = res.getString('error')
-        this.phoneError = err == 'invalid_code' ? '验证码不正确'
+        this.phoneError = res.getBoolean('invite_required') == true ? '该邮箱没有已有账号，请返回注册'
+          : err == 'invalid_code' ? '验证码不正确'
           : err == 'too_many_attempts' ? '错误次数过多，请重新获取验证码'
           : err == 'channel_not_supported' ? '该账号暂不支持邮箱登录，请使用手机号'
           : '验证失败，请重试'
@@ -558,6 +565,13 @@ export default {
       const opt = (k : string) : string => { const v = options[k]; return v != null ? `${v}` : '' }
       this._coachId = opt('coach_id')
       this._inviteCode = opt('invite')
+      // From the guest menu's 登录 (main.uvue openSignIn): straight to phone/email entry. Signing
+      // in reaches an existing account only — a new one goes through 注册账户's invite sheet.
+      if (opt('signin').length > 0) {
+        this._signIn = true
+        this.useOtherNumber()
+        return
+      }
       // A 小程序码 from GET /channels/:id/miniapp-qrcode lands with scene `ch:<id>` (URL-encoded
       // from a real scan); `?channel=<id>` covers share links and compile-mode testing.
       const scene = decodeURIComponent(opt('scene'))

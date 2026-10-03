@@ -129,6 +129,10 @@
           <text class="menu-item-icon">↪</text>
           <text class="menu-item-label">{{ sandboxMode ? tr('exitSandbox') : tr('logout') }}</text>
         </view>
+        <view v-if="isGuest" class="menu-item" v-on:click="openSignIn">
+          <text class="menu-item-icon">↩</text>
+          <text class="menu-item-label">{{ tr('guestMenuSignIn') }}</text>
+        </view>
         <view v-if="isGuest" class="menu-item" v-on:click="openGuestSheet">
           <text class="menu-item-icon">✦</text>
           <text class="menu-item-label">{{ tr('guestMenuSignUp') }}</text>
@@ -4442,6 +4446,13 @@ export default {
       uni.removeStorageSync('nano_user')
       state.user = null
       uni.reLaunch({ url: '/pages/login/login' })
+    },
+
+    // A guest with an account signs in with phone or email on the login page's entry form;
+    // 返回 there comes back to this page (navigateTo, not reLaunch).
+    openSignIn() {
+      this.menuOpen = false
+      uni.navigateTo({ url: '/pages/login/login?signin=1' })
     },
 
     handleLogout() {
