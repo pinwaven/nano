@@ -7,6 +7,7 @@ const { getNowShanghai } = require('../lib/time-utils');
 const { getCurrentSolarTerm } = require('../lib/solarTerms');
 const { getEssentialBlock } = require('../lib/knowledgeBase');
 const { saveChatMessage } = require('./chat');
+const { normalizeBrandName } = require('../lib/channels');
 const systemDailyCheckinTemplate = require('../prompts/nano/systemDailyCheckin');
 const vivaSystemDailyCheckinTemplate = require('../prompts/viva/systemDailyCheckin');
 const OpenAI = require('openai');
@@ -70,7 +71,7 @@ async function handleDailyCheckinEvent({ user_id, period, persona_type }) {
 
     try {
         const [userResult, bioResult, dotsResult, scheduleResult, activePlansResult, healthTwinResult] = await Promise.all([
-            pool.query('SELECT user_id, nickname, language FROM users WHERE user_id = $1', [user_id]),
+            pool.query("SELECT user_id, nickname, language, effective_channel_config(channel_id, 'brand_name') AS brand_name FROM users WHERE user_id = $1", [user_id]),
             pool.query(
                 `SELECT data FROM biomarkers
                  WHERE user_id = $1 AND test_type = 'kino_chip' AND (data->'validated') IS NOT NULL
@@ -177,6 +178,7 @@ async function handleDailyCheckinEvent({ user_id, period, persona_type }) {
             health_twin: healthTwin,
             current_solar_term: currentSolarTerm,
             essential_knowledge: essentialKnowledge,
+            brand_name: normalizeBrandName(user.brand_name),
         });
 
         const llmClient = getLlmClient();

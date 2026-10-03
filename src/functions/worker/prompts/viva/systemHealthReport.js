@@ -1,3 +1,4 @@
+const { vivaBrand } = require('./brand');
 const { withResponseLanguage } = require('./response-language');
 /**
  * Health Image / Document Analysis Prompt — Precision Longevity Advisor for Oriental populations
@@ -44,14 +45,14 @@ module.exports = withResponseLanguage((context) => {
 \`\`\`
 
 **然后**，用温暖、专业的语言写一段解读（2-3段）：
-- 对于体检报告：总体状况概述、异常值分析（结合 Aeviva 四大生物年龄维度：${labels.ResilienceAge}、${labels.CellularAge}、${labels.MetabolicAge}、${labels.MicroVascularAge}），以及华人专属改善建议（如有代谢问题，联系精制碳水饮食背景）
+- 对于体检报告：总体状况概述、异常值分析（结合 ${vivaBrand(context.brand_name)} 四大生物年龄维度：${labels.ResilienceAge}、${labels.CellularAge}、${labels.MetabolicAge}、${labels.MicroVascularAge}），以及华人专属改善建议（如有代谢问题，联系精制碳水饮食背景）
 - 对于其他健康内容：描述观察到的情况、提供专业的健康见解和建议
 - 对于食物：识别食物、从长寿视角分析其健康价值、给出饮食建议
 - 干净收尾，不要在结尾邀请用户提问或引导追问
 
 使用 Markdown 格式，不要用用户名称开头打招呼，直接进入内容。`;
 
-  return `你是 Viva——Aeviva 的精准长寿顾问，专为东方人群设计的精准健康生态系统中的核心 AI。你在临床检验医学、生物衰老、华人代谢特征、功能健康和综合健康领域有深厚积累。
+  return `你是 Viva——${vivaBrand(context.brand_name)} 的精准长寿顾问，专为东方人群设计的精准健康生态系统中的核心 AI。你在临床检验医学、生物衰老、华人代谢特征、功能健康和综合健康领域有深厚积累。
 
 ━━━ 用户档案 ━━━
 姓名：${nickname || '用户'}

@@ -14,7 +14,7 @@ The platform supports multiple AI personas, routed at the **channel level** via 
 | Persona | Brand | LLM | Prompt language | Domain |
 |---|---|---|---|---|
 | `nano` | Waven Nano | DashScope (Qwen) | Bilingual (zh/en via `user.language`) | Kino biomarkers, BioAge, Dots nutrition |
-| `viva` | Aeviva | Alibaba Qwen Plus | Bilingual (zh/en via user language) | Developer-defined — prompts in `prompts/viva/` |
+| `viva` | Aeviva, or the channel's `brand_name` | Alibaba Qwen Plus | Bilingual (zh/en via user language) | Developer-defined — prompts in `prompts/viva/` |
 
 ### How routing works
 
@@ -23,6 +23,15 @@ The platform supports multiple AI personas, routed at the **channel level** via 
 3. `personaType` defaults to `'nano'` if the field is absent or the channel lookup fails.
 4. The active prompt set (`nanoPrompts` or `vivaPrompts`) and LLM context are selected accordingly.
 5. Every `chat_messages` row stores `persona_type` — conversation history is scoped per persona so histories never bleed across personas.
+
+### Per-channel brand (`brand_name`, 2026-10-03)
+
+Viva says which company she belongs to; a channel can override it with `channels.config.brand_name`
+(`{zh, en}` or a string; inherited like `sub_age_display_names`; set from the admin panel's channel
+form). `lib/channels.js` `resolveChannelBrand` → `llmContext.brand_name` → `prompts/viva/brand.js`
+`vivaBrand()`, Aeviva when unset. SuperiorMed sets it; Viva keeps her own name everywhere. **Never
+write a company name as a literal in a Viva template** — use `vivaBrand`; business lines (customer
+service, the store) stay neutral. `tests/viva-brand.test.js` renders every template with a brand.
 
 ### Prompt directory layout
 

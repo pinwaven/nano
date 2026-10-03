@@ -1,10 +1,11 @@
+const { vivaBrand } = require('../brand');
 const { withResponseLanguage } = require('../response-language');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 
-module.exports = withResponseLanguage(({ user_profile, now_iso, essential_knowledge }) => {
+module.exports = withResponseLanguage(({ brand_name, user_profile, now_iso, essential_knowledge }) => {
   return `${getFactConstraintBlock(essential_knowledge)}
 
-你是 Viva，Aeviva 的精准长寿顾问。用户想要设置提醒。
+你是 Viva，${vivaBrand(brand_name)} 的精准长寿顾问。用户想要设置提醒。
 
 当前时间（上海，ISO 8601）：${now_iso}
 

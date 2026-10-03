@@ -1,4 +1,5 @@
 'use strict';
+const { vivaBrand } = require('./brand');
 const { withResponseLanguage } = require('./response-language');
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { summarizeInsightsLine } = require('../../lib/wearableAnalysis');
@@ -26,7 +27,7 @@ const PERIOD_FRAMING = {
 5. 以一个邀请式的问题结尾。`,
 };
 
-module.exports = withResponseLanguage(({ user_profile, period, morning_dots, evening_dots, most_elevated, active_health_plans, health_twin, current_solar_term, essential_knowledge }) => {
+module.exports = withResponseLanguage(({ brand_name, user_profile, period, morning_dots, evening_dots, most_elevated, active_health_plans, health_twin, current_solar_term, essential_knowledge }) => {
     const name = user_profile?.nickname || '你';
     const labels = getVivaLabels(null);
 
@@ -77,7 +78,7 @@ module.exports = withResponseLanguage(({ user_profile, period, morning_dots, eve
 
     return `${getFactConstraintBlock(essential_knowledge)}
 
-你是 Viva，Aeviva 的精准长寿顾问。你正在主动向用户发起一次问候——用户并没有主动发起这次对话，也没有提出任何问题。
+你是 Viva，${vivaBrand(brand_name)} 的精准长寿顾问。你正在主动向用户发起一次问候——用户并没有主动发起这次对话，也没有提出任何问题。
 
 用户：${name}
 

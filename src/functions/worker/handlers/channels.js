@@ -1,4 +1,5 @@
 const { pool } = require('../lib/db');
+const { normalizeBrandName } = require('../lib/channels');
 const {
     requirePermission,
     verifySubchannelOwnership,
@@ -93,7 +94,7 @@ async function handleGetChannels(adminCtx) {
                     JOIN subtree s ON c.parent_channel_id = s.id
                     WHERE s.depth < 20
                 )
-                SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, effective_persona_type(c.id) AS effective_persona_type, effective_channel_config(c.id, 'admin_tabs') AS effective_admin_tabs, effective_channel_config(c.id, 'sub_age_display_names') AS effective_sub_age_display_names, effective_channel_config(c.id, 'locale') #>> '{}' AS effective_locale,
+                SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, effective_persona_type(c.id) AS effective_persona_type, effective_channel_config(c.id, 'brand_name') AS effective_brand_name, effective_channel_config(c.id, 'admin_tabs') AS effective_admin_tabs, effective_channel_config(c.id, 'sub_age_display_names') AS effective_sub_age_display_names, effective_channel_config(c.id, 'locale') #>> '{}' AS effective_locale,
                        c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers, c.can_customize_partner_system, c.can_customize_store, c.can_manage_warehouses, c.autonomous,
                        st.depth,
                        COUNT(DISTINCT u.user_id) AS user_count,
@@ -113,7 +114,7 @@ async function handleGetChannels(adminCtx) {
             return { success: true, channels: result.rows };
         }
         const result = await pool.query(`
-            SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, effective_persona_type(c.id) AS effective_persona_type, effective_channel_config(c.id, 'admin_tabs') AS effective_admin_tabs, effective_channel_config(c.id, 'sub_age_display_names') AS effective_sub_age_display_names, effective_channel_config(c.id, 'locale') #>> '{}' AS effective_locale, c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers, c.can_customize_store, c.can_manage_warehouses, c.autonomous,
+            SELECT c.id, c.key_name, c.name, c.logo_url, c.config, c.created_at, effective_persona_type(c.id) AS effective_persona_type, effective_channel_config(c.id, 'brand_name') AS effective_brand_name, effective_channel_config(c.id, 'admin_tabs') AS effective_admin_tabs, effective_channel_config(c.id, 'sub_age_display_names') AS effective_sub_age_display_names, effective_channel_config(c.id, 'locale') #>> '{}' AS effective_locale, c.parent_channel_id, c.can_manage_subchannels, c.can_customize_rewards, c.can_customize_partner_tiers, c.can_customize_store, c.can_manage_warehouses, c.autonomous,
                    COUNT(DISTINCT u.user_id) AS user_count,
                    COUNT(DISTINCT p.id) AS coach_count,
                    COUNT(DISTINCT kd.id) AS kino_device_count,
@@ -173,7 +174,7 @@ async function handlePutChannel(channelId, body, adminCtx) {
             if (!owns) return { statusCode: 403, success: false, error: 'Forbidden' };
         }
     }
-    const { name, logo_url, commission_config, persona_type, credit_exchange_rate, currency, locale } = body;
+    const { name, logo_url, commission_config, persona_type, credit_exchange_rate, currency, locale, brand_name } = body;
     if (!name) return { success: false, error: 'name is required', statusCode: 400 };
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
@@ -191,6 +192,17 @@ async function handlePutChannel(channelId, body, adminCtx) {
                 `UPDATE channels SET config = config || $1 WHERE id = $2`,
                 [JSON.stringify(configPatch), channelId]
             );
+        }
+        // The company Viva names as hers (lib/channels.js resolveChannelBrand). Blank removes the
+        // key, so the channel inherits its parent's again.
+        if (brand_name !== undefined) {
+            const brand = normalizeBrandName(brand_name);
+            if (brand) {
+                await pool.query(`UPDATE channels SET config = COALESCE(config, '{}') || jsonb_build_object('brand_name', $1::jsonb) WHERE id = $2`,
+                    [JSON.stringify(brand), channelId]);
+            } else {
+                await pool.query(`UPDATE channels SET config = COALESCE(config, '{}') - 'brand_name' WHERE id = $1`, [channelId]);
+            }
         }
         return { success: true };
     } catch (err) {

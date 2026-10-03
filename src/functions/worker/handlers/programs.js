@@ -575,6 +575,7 @@ async function completeProgramDayCheckin(assignment_id) {
             lesson_done: !row.lesson_id || !!row.lesson_completed_at,
             is_last_day: row.day_index >= row.duration_days,
             essential_knowledge: essentialKnowledge,
+            brand_name: who?.brand_name || null,
         });
         const completion = await getLlmClient().chat.completions.create({
             model: process.env.MODEL || 'qwen-plus-latest',

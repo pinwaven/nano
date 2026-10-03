@@ -12,7 +12,7 @@
 // 2026-09-16 — the rules in CLAUDE.md §28 still describe one system, they just now name four files.
 
 const { pool } = require('../lib/db');
-const { resolveGcnSector } = require('../lib/channels');
+const { resolveGcnSector, resolveChannelBrand } = require('../lib/channels');
 const { humanizeDotCodes } = require('../lib/dotNames');
 const { humanizeSubAgeKeys } = require('../lib/subAgeLabels');
 const { scrubToolNames, dropForeignLines, localizeStatusWords } = require('../lib/toolNameScrub');
@@ -1136,6 +1136,7 @@ async function _handleFormulaDotsAgentic({ user, biomarkers, bioageProfile, dots
             total_weeks: p.duration_weeks,
         })),
         sub_age_display_names: null,
+        brand_name: await resolveChannelBrand(user.channel_id),
         // The focus's recommended dots, resolved ONCE here to key_names. Both
         // systemFormulaGenerate.js prompts read this rather than re-deriving it from
         // active_health_plans + dots — three copies of that resolution is how one of them gets

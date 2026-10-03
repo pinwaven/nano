@@ -11,6 +11,7 @@
  */
 
 const { pool } = require('./db');
+const { normalizeBrandName } = require('./channels');
 const { sanitizeDisplayText } = require('./agQuestionnaire');
 const { resolveEffectivePersona } = require('./persona');
 
@@ -216,7 +217,8 @@ async function resolveProgramPersona(user_id) {
     const { rows } = await pool.query(
         `SELECT u.user_id, u.nickname, u.language,
                 u.persona_override_type, u.persona_override_expires_at,
-                effective_persona_type(c.id) AS channel_persona_type
+                effective_persona_type(c.id) AS channel_persona_type,
+                effective_channel_config(c.id, 'brand_name') AS brand_name
          FROM users u LEFT JOIN channels c ON c.id = u.channel_id
          WHERE u.user_id = $1`,
         [user_id]
@@ -227,6 +229,7 @@ async function resolveProgramPersona(user_id) {
         user_id: u.user_id,
         nickname: u.nickname,
         language: u.language || 'zh',
+        brand_name: normalizeBrandName(u.brand_name),
         persona: resolveEffectivePersona({
             channelPersonaType: u.channel_persona_type,
             personaOverrideType: u.persona_override_type,
