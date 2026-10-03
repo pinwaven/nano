@@ -27,7 +27,7 @@ export const BASE : string = API_ORIGIN
 
 // Same marker rule as the miniapp (AGENTS.md "Miniapp VERSION Marker"): bump on every
 // change under src/xapp/. Format MMDD-N.
-export const VERSION : string = '1003-7'
+export const VERSION : string = '1003-9'
 
 // The version marker shows in development builds — and, on the mini-program, in a 体验版 too, as the
 // miniapp's IS_DEV does (develop || trial).
