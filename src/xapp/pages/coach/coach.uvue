@@ -5,7 +5,10 @@
   <!-- Web: the miniapp's pages/coach markup (the web user-app's generated coach View), styled by
        the shared stylesheet in static/web/ (.web-coach scope). Native keeps its layout below. -->
   <view class="web-coach">
-  <view class="coach-page" :class="['fs-' + textScale, theme == 'light' ? 'theme-light' : '']">
+  <view class="coach-page" :class="['fs-' + textScale, theme == 'light' ? 'theme-light' : '']" v-on:touchstart="onTouchStart" v-on:touchend="onTouchEnd">
+    <!-- #ifdef MP-WEIXIN -->
+    <view class="swipe-back-hint">›</view>
+    <!-- #endif -->
     <view class="status-bar-spacer" :style="statusBarStyle"></view>
 
     <view class="app-header" :style="capsuleRightPad > 0 ? 'padding-right: ' + capsuleRightPad + 'px;' : ''" v-on:click="openUserPanel">
@@ -1459,6 +1462,10 @@ export default {
       // mp-weixin: room for WeChat's ••• capsule at the header's right (miniapp's capsuleRightPad)
       capsuleRightPad: 0,
       theme: 'dark',
+      // left-edge swipe back (miniapp onTouchStart/onTouchEnd); xapp-mini only
+      touchX0: 0,
+      touchY0: 0,
+      multiTouch: false,
       sandboxMode: false,
       sandboxBannerText: '',
       menuOpen: false,
@@ -1657,6 +1664,29 @@ export default {
   },
   methods: {
     tr(path : string) : string { return _tr(this.t, path) },
+    // The miniapp's left-edge swipe back. A two-finger pinch must not also read as one, and only a
+    // swipe that starts at the edge counts, which leaves interior gestures (the CRM kanban) alone.
+    // xapp-mini only: the web build has the browser's own back.
+    onTouchStart(e : UniTouchEvent) {
+      // #ifdef MP-WEIXIN
+      if (e.touches.length > 1) { this.multiTouch = true; return }
+      this.multiTouch = false
+      this.touchX0 = e.touches[0].clientX
+      this.touchY0 = e.touches[0].clientY
+      // #endif
+    },
+    onTouchEnd(e : UniTouchEvent) {
+      // #ifdef MP-WEIXIN
+      if (this.multiTouch) return
+      if (this.menuOpen || this.detailOpen || this.reminderOpen || this.qAssignOpen || this.qResponsesOpen) return
+      if (this.touchX0 > 40) return
+      const dx = e.changedTouches[0].clientX - this.touchX0
+      const dy = e.changedTouches[0].clientY - this.touchY0
+      if (dx > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        uni.navigateBack({ delta: 1, animationType: 'slide-out-right', animationDuration: 280 })
+      }
+      // #endif
+    },
     detailTabLabel(dt : string) : string {
       if (dt == 'health') return this.tr('tabHealth')
       if (dt == 'plans') return this.tr('tabPlans')
@@ -2997,7 +3027,7 @@ export default {
    tag selectors to them), and the WXSS compiler rejects both :not() and a :where() list (the
    whole app then renders blank). It sits before every miniapp rule, so at equal specificity
    those still win. */
-.action-btn, .active, .activity-content, .activity-dot, .activity-item, .age-chip, .ai-disclaimer, .app-header, .appt-card, .appt-format-badge, .appt-info, .btn-busy, .bubble-ai, .bubble-coach, .bubble-user, .ccard, .ccard-cta, .ccard-cta-off, .chat-bubble, .chat-history, .chat-history-load, .chat-history-loading, .chat-history-start, .chat-inner, .chat-list, .chat-messages, .chat-panel, .chat-plus-btn, .chat-plus-open, .chat-role-label, .chat-row, .chat-row-ai, .chat-row-coach, .chat-row-user, .chat-scroll, .chat-section, .chat-tab, .client, .client-actions, .client-ages, .client-avatar, .client-card, .client-info, .client-list, .client-name-row, .client-row, .clients-search-bar, .clients-search-wrap, .close-x-btn, .cm, .coach-action-btn, .coach-appointment, .coach-appointment-body, .coach-chat-action, .coach-chat-actions, .coach-chat-mount, .coach-client-chat, .coach-content, .coach-page, .coach-plan-, .coach-plan-badge, .coach-plan-card, .coach-program-, .coach-program-card, .coach-program-main, .coach-refresh, .compose-row, .compose-send-btn, .crm-section-btn, .crm-section-header, .crm-tab, .daily, .dcard, .dcard-chip, .deact-btn, .detail, .detail-tab, .detail-tab-active, .detail-tabs, .dt, .earnings-card, .earnings-card-green, .earnings-cards, .ecurrence, .empty-state, .ext, .facts, .fcard, .fcard-group, .fcard-head, .fcard-leg, .fcard-legend, .fcard-row, .fcard-seg, .fcard-swatch, .fcard-tier, .fcard-tier-dots, .fcard-tier-name, .fcard-tier-open, .fcard-track, .form-field, .form-row, .fs-, .ft, .gcard, .gcard-img, .gcard-img-empty, .gcard-main, .gcard-row, .goal, .goal-, .goal-bar-bg, .goal-bar-fill, .goal-cancel-btn, .goal-form-btns, .goal-form-card, .goal-form-overlay, .goal-form-row, .goal-header-row, .goal-item, .goal-meta-row, .goal-progress-row, .goal-submit-btn, .goals-header, .header-divider, .header-logo-btn, .ilter, .improver-avatar, .improver-row, .input-area, .input-container, .instr-send-btn, .invite-active, .invite-code-row, .invite-generate-btn, .invite-inactive, .invite-note-row, .invite-status, .is, .item, .itle, .iv, .kpi-card, .kpi-card-blue, .kpi-card-green, .kpi-card-orange, .kpi-grid, .last-msg-strip, .lcard, .lcard-meta, .length, .lient, .loading-row, .mc, .mc-badge, .mc-edit-btn, .mc-form-body, .mc-form-panel, .mc-form-scroll, .mc-mask, .mc-name-row, .mc-note, .mc-picker-control, .mc-thinking, .mc-trigger-row, .mcard, .mcard-, .mcard-tile, .mcard-valrow, .message-ai, .message-bubble, .message-coach, .message-user, .msg, .msg-btn, .msg-compose, .msg-row, .msg-row-ai, .msg-row-user, .msg-rule, .msg-seg, .none, .note-actions, .note-compose, .note-footer, .note-item, .note-pinned, .note-save-btn, .notes, .nt, .oach, .oolbox, .open, .overlay-cancel-btn, .overlay-close, .overlay-confirm-btn, .overlay-footer, .overlay-header, .overlay-mask, .overlay-panel, .overlay-scroll, .overlay-scroll-full, .panel-center, .panel-center-sm, .pcard, .pcard-main, .pcard-row, .pen, .picker-row, .picker-value, .pinned, .pipeline-col, .pipeline-col-badge, .pipeline-col-header, .pipeline-kanban, .pl, .plan, .plans-coach-actions, .plans-coach-header, .plans-custom-form, .plans-recommend-header, .plans-recommend-sheet, .plus-btn, .plus-btn-open, .po, .q-assign-btn, .q-assign-footer, .q-assign-list, .q-assign-quest-banner, .q-assign-row, .q-card-header, .q-card-info, .q-check, .q-resp-group, .q-resp-list, .q-type-badge, .recommend-tpl-card, .recurrence-active, .recurrence-opt, .recurrence-opts, .redeem, .remind-icon-btn, .reminder, .reminder-body, .reminder-trigger, .role, .sandbox-banner, .secondary, .send-btn, .ser, .set-goal-btn, .ssign, .st, .stage, .stage-chip, .stage-chip-active, .stage-chip-colored, .stage-filter-inner, .stage-pill, .status-bar-spacer, .tab, .tab-active, .tab-bar, .tab-btn, .tab-line, .tage, .tcard, .text, .theme-light, .tk, .transferred, .trim, .type, .typing-dot, .typing-indicator, .user, .usy, .web-coach, .weekly { display: block; position: static; flex-direction: row; flex-shrink: 1; align-items: normal; align-content: normal; justify-content: normal; min-height: auto; min-width: auto; }
+.action-btn, .active, .activity-content, .activity-dot, .activity-item, .age-chip, .ai-disclaimer, .app-header, .appt-card, .appt-format-badge, .appt-info, .btn-busy, .bubble-ai, .bubble-coach, .bubble-user, .ccard, .ccard-cta, .ccard-cta-off, .chat-bubble, .chat-history, .chat-history-load, .chat-history-loading, .chat-history-start, .chat-inner, .chat-list, .chat-messages, .chat-panel, .chat-plus-btn, .chat-plus-open, .chat-role-label, .chat-row, .chat-row-ai, .chat-row-coach, .chat-row-user, .chat-scroll, .chat-section, .chat-tab, .client, .client-actions, .client-ages, .client-avatar, .client-card, .client-info, .client-list, .client-name-row, .client-row, .clients-search-bar, .clients-search-wrap, .close-x-btn, .cm, .coach-action-btn, .coach-appointment, .coach-appointment-body, .coach-chat-action, .coach-chat-actions, .coach-chat-mount, .coach-client-chat, .coach-content, .coach-page, .coach-plan-, .coach-plan-badge, .coach-plan-card, .coach-program-, .coach-program-btn, .coach-program-card, .coach-program-main, .coach-refresh, .compose-row, .compose-send-btn, .crm-meta-row, .crm-section-btn, .crm-section-header, .crm-tab, .daily, .dcard, .dcard-chip, .deact-btn, .detail, .detail-tab, .detail-tab-active, .detail-tabs, .dt, .earnings-card, .earnings-card-green, .earnings-cards, .ecurrence, .empty-retry, .empty-state, .ext, .facts, .fcard, .fcard-group, .fcard-head, .fcard-leg, .fcard-legend, .fcard-row, .fcard-seg, .fcard-swatch, .fcard-tier, .fcard-tier-dots, .fcard-tier-name, .fcard-tier-open, .fcard-track, .form-field, .form-row, .fs-, .ft, .gcard, .gcard-img, .gcard-img-empty, .gcard-main, .gcard-row, .goal, .goal-, .goal-bar-bg, .goal-bar-fill, .goal-cancel-btn, .goal-form-btns, .goal-form-card, .goal-form-overlay, .goal-form-row, .goal-header-row, .goal-item, .goal-meta-row, .goal-progress-row, .goal-submit-btn, .goals-header, .header-divider, .header-logo-btn, .ilter, .improver-avatar, .improver-row, .input-area, .input-container, .instr-send-btn, .invite-active, .invite-code-row, .invite-generate-btn, .invite-inactive, .invite-note-row, .invite-status, .is, .item, .itle, .iv, .kpi-card, .kpi-card-blue, .kpi-card-green, .kpi-card-orange, .kpi-grid, .last-msg-strip, .lcard, .lcard-meta, .length, .lient, .loading-row, .mc, .mc-badge, .mc-edit-btn, .mc-form-body, .mc-form-panel, .mc-form-scroll, .mc-mask, .mc-name-row, .mc-note, .mc-picker-control, .mc-thinking, .mc-trigger-row, .mcard, .mcard-, .mcard-tile, .mcard-valrow, .message-ai, .message-bubble, .message-coach, .message-user, .msg, .msg-btn, .msg-compose, .msg-row, .msg-row-ai, .msg-row-user, .msg-rule, .msg-seg, .none, .note-action-btn, .note-actions, .note-compose, .note-footer, .note-item, .note-pinned, .note-save-btn, .notes, .nt, .oach, .oolbox, .open, .overlay-cancel-btn, .overlay-close, .overlay-confirm-btn, .overlay-footer, .overlay-header, .overlay-mask, .overlay-panel, .overlay-scroll, .overlay-scroll-full, .panel-center, .panel-center-sm, .pcard, .pcard-main, .pcard-row, .pen, .picker-row, .picker-value, .pinned, .pipeline-card, .pipeline-col, .pipeline-col-badge, .pipeline-col-header, .pipeline-kanban, .pl, .plan, .plans-coach-actions, .plans-coach-header, .plans-custom-form, .plans-recommend-header, .plans-recommend-sheet, .plus-btn, .plus-btn-open, .po, .q-assign-btn, .q-assign-footer, .q-assign-list, .q-assign-quest-banner, .q-assign-row, .q-card-header, .q-card-info, .q-check, .q-resp-group, .q-resp-item, .q-resp-list, .q-type-badge, .recommend-tpl-card, .recurrence-active, .recurrence-opt, .recurrence-opts, .redeem, .remind-icon-btn, .reminder, .reminder-body, .reminder-trigger, .role, .sandbox-banner, .search-clear-btn, .search-result-row, .secondary, .send-btn, .ser, .set-goal-btn, .ssign, .st, .stage, .stage-chip, .stage-chip-active, .stage-chip-colored, .stage-filter-inner, .stage-pill, .status-bar-spacer, .swipe-back-hint, .tab, .tab-active, .tab-bar, .tab-btn, .tab-line, .tag-chip, .tage, .tcard, .text, .theme-light, .tk, .transferred, .trim, .type, .typing-dot, .typing-indicator, .user, .usy, .web-coach, .weekly { display: block; position: static; flex-direction: row; flex-shrink: 1; align-items: normal; align-content: normal; justify-content: normal; min-height: auto; min-width: auto; }
 .coach-page {
   height: 100vh;
   display: flex;

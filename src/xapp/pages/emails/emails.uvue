@@ -411,7 +411,7 @@ export default {
    tag selectors to them), and the WXSS compiler rejects both :not() and a :where() list (the
    whole app then renders blank). It sits before every miniapp rule, so at equal specificity
    those still win. */
-.add-email-btn, .app-header, .back-btn, .btn, .btn-outline, .btn-primary, .card, .center-msg, .email-row, .email-row-actions, .email-row-main, .emails-content, .emails-links, .emails-page, .form-field, .route-page, .status-bar-spacer, .tab-scroll, .theme-light, .withdraw-btns, .withdraw-modal, .withdraw-overlay { display: block; position: static; flex-direction: row; flex-shrink: 1; align-items: normal; align-content: normal; justify-content: normal; min-height: auto; min-width: auto; }
+.add-email-btn, .app-header, .back-btn, .bottom-safe, .btn, .btn-outline, .btn-primary, .card, .center-msg, .email-row, .email-row-actions, .email-row-main, .emails-content, .emails-links, .emails-page, .form-field, .route-page, .status-bar-spacer, .tab-scroll, .theme-light, .withdraw-btns, .withdraw-modal, .withdraw-overlay { display: block; position: static; flex-direction: row; flex-shrink: 1; align-items: normal; align-content: normal; justify-content: normal; min-height: auto; min-width: auto; }
 /* inlined from the miniapp's ../referral/referral.wxss (its @import) */
 .referral-page {
   height: 100vh;

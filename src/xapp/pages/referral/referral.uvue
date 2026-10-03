@@ -202,7 +202,7 @@ export default {
    tag selectors to them), and the WXSS compiler rejects both :not() and a :where() list (the
    whole app then renders blank). It sits before every miniapp rule, so at equal specificity
    those still win. */
-.app-header, .back-btn, .bottom-safe, .btn-outline, .btn-row, .card, .code-row, .how-card, .how-row, .referral-page, .status-bar-spacer, .theme-light { display: block; position: static; flex-direction: row; flex-shrink: 1; align-items: normal; align-content: normal; justify-content: normal; min-height: auto; min-width: auto; }
+.app-header, .back-btn, .bottom-safe, .btn, .btn-outline, .btn-primary, .btn-row, .card, .code-row, .how-card, .how-row, .referral-page, .status-bar-spacer, .theme-light { display: block; position: static; flex-direction: row; flex-shrink: 1; align-items: normal; align-content: normal; justify-content: normal; min-height: auto; min-width: auto; }
 .referral-page {
   height: 100vh;
   display: flex;
