@@ -3958,6 +3958,18 @@ export default {
         this._loadCartridges(user, lang)
       }
       if (this.tab == 'plans' && user != null) this._loadReminders(user)
+      // Viva replies in users.language, so the switch is saved too — UI-only, she kept
+      // answering in Chinese. Guests have no account to save it on.
+      if (user != null && !this.isGuest) {
+        const updated = new UTSJSONObject()
+        user!.toMap().forEach((v : any | null, k : string) => { updated[k] = v })
+        updated['language'] = lang
+        uni.setStorageSync('nano_user', updated)
+        this.user = updated
+        state.user = updated
+        const uid = this.userIdStr
+        if (uid.length > 0) this._req(`${BASE}/api/users/${uid}`, 'PATCH', { language: lang } as UTSJSONObject, 0)
+      }
     },
 
     async toggleTheme() {
