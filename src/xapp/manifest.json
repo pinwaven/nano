@@ -33,9 +33,6 @@
   },
   "mp-weixin": {
     "__usePrivacyCheck__": true,
-    "requiredPrivateInfos": [
-      "chooseAddress"
-    ],
     "requiredBackgroundModes": [
       "audio"
     ],

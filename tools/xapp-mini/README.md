@@ -20,7 +20,8 @@ APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools pr
 - **Size:** about 1.6 MB, under WeChat's 2 MB main-package limit, with no subpackages.
 - **Backend:** chosen at runtime from `envVersion`, as the miniapp does (`utils/config.uts`): the
   DevTools build talks to nano-dev, an uploaded 体验版 or the released build to nano (prod). The
-  version marker shows in DevTools and 体验版, not in release.
+  header and login screen show the VERSION marker in DevTools and 体验版, and in release the
+  published version number (`miniProgram.version`), as the miniapp does.
 
 ## Open it
 

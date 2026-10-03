@@ -175,7 +175,7 @@
 // validate-on-send (v-model); phone/email toggles always offered (EMAIL_LOGIN_AVAILABLE is
 // true for the root identity, config.uts).
 
-import { BASE, API_ORIGIN, VERSION, IS_DEV, EMAIL_LOGIN_AVAILABLE, CHANNEL_SLUG, CHANNEL_DISPLAY } from '../../utils/config.uts'
+import { BASE, API_ORIGIN, DISPLAY_VERSION, IS_DEV, EMAIL_LOGIN_AVAILABLE, CHANNEL_SLUG, CHANNEL_DISPLAY } from '../../utils/config.uts'
 import { state } from '../../utils/state.uts'
 import { saveSession, clearSession } from '../../utils/session.uts'
 import { maskPhone, maskEmail } from '../../utils/phone.uts'
@@ -244,7 +244,7 @@ export default {
       return this.countryOptions[this.countryIndex].otpSupported
     },
     version() : string {
-      return IS_DEV ? VERSION : ''
+      return DISPLAY_VERSION
     },
     logoSrc() : string {
       return this.channelLogo.length > 0 ? this.channelLogo : '/static/waven-logo-icon.png'
@@ -325,9 +325,9 @@ export default {
       saveSession(token!)
       uni.setStorageSync('nano_user', user)
       const chn2 = lastSession.getJSON('channel')
-      if (chn2 != null) uni.setStorageSync('nano_channel', chn2)
+      if (chn2 != null) uni.setStorageSync('nano_channel', chn2); else uni.removeStorageSync('nano_channel')
       const co2 = lastSession.getJSON('coach')
-      if (co2 != null) uni.setStorageSync('nano_coach', co2)
+      if (co2 != null) uni.setStorageSync('nano_coach', co2); else uni.removeStorageSync('nano_coach')
       uni.setStorageSync('nano_base', API_ORIGIN)
       uni.reLaunch({ url: '/pages/main/main' })
     },
@@ -554,8 +554,10 @@ export default {
       trimmed['maskedPhone'] = masked
 
       uni.setStorageSync('nano_user', trimmed)
-      if (channel != null) uni.setStorageSync('nano_channel', channel!)
-      if (coach != null) uni.setStorageSync('nano_coach', coach!)
+      // Written or cleared, never left: an account with no coach identity kept the previous
+      // account's (Pin's coach on 轻逍, dev 2026-10-03). The miniapp stores both unconditionally.
+      if (channel != null) uni.setStorageSync('nano_channel', channel!); else uni.removeStorageSync('nano_channel')
+      if (coach != null) uni.setStorageSync('nano_coach', coach!); else uni.removeStorageSync('nano_coach')
       uni.setStorageSync('nano_base', API_ORIGIN) // backend the session is valid against — App.uvue checks on launch
       return true
     },

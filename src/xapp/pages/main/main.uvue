@@ -1063,7 +1063,7 @@
                   <text class="checkout-addr-title">{{ tr('checkoutShippingTitle') }}</text>
                   <!-- WeChat address book: xapp-mini only (native has none — manual entry). -->
                   <!-- #ifdef MP-WEIXIN -->
-                  <view class="checkout-wx-addr-btn" v-on:click="fetchWechatAddress('checkout')">
+                  <view v-if="wxAddressEnabled" class="checkout-wx-addr-btn" v-on:click="fetchWechatAddress('checkout')">
                     <text class="checkout-wx-addr-icon">📍</text>
                     <text class="checkout-wx-addr-text">{{ tr('checkoutWxAddress') }}</text>
                   </view>
@@ -1620,7 +1620,7 @@
         <input class="viva-redeem-input" type="text" v-model="codeShipPhone" :placeholder="tr('codePhonePlaceholder')" />
         <input class="viva-redeem-input" type="text" v-model="codeShipAddress" :placeholder="tr('codeAddrPlaceholder')" />
         <!-- #ifdef MP-WEIXIN -->
-        <text class="code-wx-addr" v-on:click.stop="fetchWechatAddress('codeShip')">{{ tr('codeWxAddrBtn') }}</text>
+        <text v-if="wxAddressEnabled" class="code-wx-addr" v-on:click.stop="fetchWechatAddress('codeShip')">{{ tr('codeWxAddrBtn') }}</text>
         <!-- #endif -->
         <view v-if="codeSheetError.length > 0" class="guest-sheet-error"><text class="guest-sheet-error-text">{{ codeSheetError }}</text></view>
         <view class="guest-sheet-btn" :class="codeSheetBusy ? 'guest-sheet-btn-disabled' : ''" v-on:click="submitFormulationRedeem">
@@ -1695,7 +1695,7 @@
 //    equivalent yet. // TODO(port): link-tap copy + settle-scroll for long replies; the timer ladder
 //    in _scrollBottom still covers the common case.
 
-import { BASE, API_ORIGIN, VERSION, IS_DEV, CHANNEL_DISPLAY } from '../../utils/config.uts'
+import { BASE, API_ORIGIN, DISPLAY_VERSION, IS_DEV, CHANNEL_DISPLAY, WX_ADDRESS_ENABLED } from '../../utils/config.uts'
 import { openInNewTab } from '../../utils/web-open.uts'
 import { idOf } from '../../utils/json-id.uts'
 import { speechSupported, startSpeech, stopSpeech } from '../../utils/web-speech.uts'
@@ -2345,11 +2345,12 @@ export default {
       t: T_MAIN_ZH as UTSJSONObject,
       textScale: 0,
       tab: 'chat',
-      version: VERSION as string, // function-initializer data fields need an explicit type in uvue (else Any)
+      version: DISPLAY_VERSION as string, // function-initializer data fields need an explicit type in uvue (else Any)
       statusBarHeight: 0,
       // mp-weixin: room for WeChat's ••• capsule at the header's right (miniapp's capsuleRightPad)
       capsuleRightPad: 0,
       theme: 'dark',
+      wxAddressEnabled: WX_ADDRESS_ENABLED,
       sandboxMode: false,
       sandboxBannerText: '',
       menuOpen: false,
@@ -2912,6 +2913,7 @@ export default {
           updated['phone'] = phone
           this.user = updated
         }
+        if (res.data != null) this._applyServerSession(res.data!)
       }).catch((e : any | null) => {})
     }
     })()
@@ -2976,6 +2978,23 @@ export default {
     typingDotOn(i : number) : boolean {
       const d = (this.typingPhase - i + 6) % 6
       return d == 1 || d == 2
+    },
+    // The heartbeat carries the account's current channel and own coach identity (worker
+    // handlePostHeartbeat). Stored at sign-in and never re-read before, so a user moved to another
+    // channel in the admin panel kept the old one (dev 2026-10-03). On a change: store it and relaunch
+    // once — the channel drives labels, locale, the store host and the coach entry, all set in onLoad.
+    _applyServerSession(data : UTSJSONObject) {
+      if (state.sandboxMode || !data.toMap().has('channel')) return
+      const channel = data.getJSON('channel')
+      const coach = data.getJSON('coach')
+      const key = (o : UTSJSONObject | null, k : string) : string => o != null ? `${o!.get(k) ?? ''}` : ''
+      const changed = key(channel, 'key_name') != key(state.channel, 'key_name')
+        || key(coach, 'id') != key(state.coach, 'id')
+      state.channel = channel
+      state.coach = coach
+      if (channel != null) uni.setStorageSync('nano_channel', channel!); else uni.removeStorageSync('nano_channel')
+      if (coach != null) uni.setStorageSync('nano_coach', coach!); else uni.removeStorageSync('nano_coach')
+      if (changed) uni.reLaunch({ url: '/pages/main/main' })
     },
     // ── dictionary access ──
     tr(path : string) : string { return tMainTr(this.t, path) },
@@ -6283,6 +6302,8 @@ export default {
     // code-ship form. Needs "chooseAddress" in requiredPrivateInfos (manifest.json) and in the
     // appid's privacy guide. Native has no address book, so it is a no-op there: manual entry.
     fetchWechatAddress(prefix : string) {
+      // Off until the chooseAddress privacy interface is approved (WX_ADDRESS_ENABLED, config.uts).
+      if (!WX_ADDRESS_ENABLED) return
       // #ifdef MP-WEIXIN
       wx.chooseAddress({
         // WeChat hands back plain objects, not UTSJSONObject — read fields directly (as
@@ -7921,11 +7942,11 @@ export default {
 .pkg-hint { color: #7F97B5; font-size: 11px; margin-top: 6px; }
 .code-section { margin-top: 16px; padding: 12px 18px 2px 18px; }
 .code-chip { color: #6EE7B7; font-size: 11px; background-color: rgba(16, 185, 129, 0.12); border-radius: 8px; padding: 2px 8px; }
-.order-dots-card { background-color: #12283F; border: 1px solid rgba(99, 117, 236, 0.3); border-radius: 12px; padding: 14px; margin-top: 12px; }
-.order-dots-title { color: #EEF2FF; font-size: 14px; font-weight: bold; }
-.order-dots-detail { color: #A6C4E5; font-size: 12px; margin-top: 4px; }
-.order-dots-btn { background-color: #6375EC; border-radius: 10px; padding: 9px 14px; margin-top: 10px; align-items: center; }
-.order-dots-btn-text { color: #FFFFFF; font-size: 13px; }
+.order-dots-card { background-color: rgba(245, 197, 106, 0.08); border: 1px solid rgba(245, 197, 106, 0.3); border-radius: 12px; padding: 16px; margin: 12px 18px 10px 18px; align-items: center; }
+.order-dots-title { color: rgba(245, 197, 106, 0.95); font-size: 13px; font-weight: bold; text-align: center; }
+.order-dots-detail { color: rgba(245, 197, 106, 0.6); font-size: 11px; margin-top: 5px; text-align: center; }
+.order-dots-btn { background-color: rgba(245, 197, 106, 0.18); border: 1px solid rgba(245, 197, 106, 0.5); border-radius: 50px; height: 34px; padding: 0 20px; margin-top: 12px; align-items: center; justify-content: center; }
+.order-dots-btn-text { color: #F5C56A; font-size: 12px; font-weight: bold; letter-spacing: 0.5px; }
 .scan-box-card { background-color: rgba(166, 196, 229, 0.08); border: 1px solid rgba(166, 196, 229, 0.28); border-radius: 12px; padding: 14px 16px; flex-direction: row; align-items: center; justify-content: space-between; margin: 12px 18px 10px 18px; }
 .scan-box-main { flex: 1; }
 .scan-box-title { color: #EEF2FF; font-size: 13px; font-weight: bold; }
@@ -8573,6 +8594,12 @@ export default {
 /* Header menu, measured against the miniapp. */
 .menu-credit-label, .menu-credit-value { flex-shrink: 0; white-space: nowrap; }
 .header-user { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* The channel name in the header: SuperiorMed is long, and at the miniapp's 4px tracking it left the
+   user's name no room beside the version pill. A condensed face with no tracking (iOS Avenir Next
+   Condensed, Android's sans-serif-condensed) keeps it to about two-thirds the width. */
+.header-title { font-family: "Avenir Next Condensed", "AvenirNextCondensed-DemiBold", "Roboto Condensed", "sans-serif-condensed", "Arial Narrow", sans-serif; letter-spacing: 0; flex-shrink: 0; white-space: nowrap; }
+.header-divider { flex-shrink: 0; }
+.header-logo-btn { flex-shrink: 0; }
 .menu-item-icon { line-height: 19px; }
 .menu-item-label { font-weight: 500; }
 .menu-fs-step:first-child { margin-left: 0; }

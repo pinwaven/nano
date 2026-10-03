@@ -27,7 +27,13 @@ export const BASE : string = API_ORIGIN
 
 // Same marker rule as the miniapp (AGENTS.md "Miniapp VERSION Marker"): bump on every
 // change under src/xapp/. Format MMDD-N.
-export const VERSION : string = '1003-9'
+export const VERSION : string = '1003-14'
+
+// xapp-mini: wx.chooseAddress (使用微信地址) stays off until the appid's chooseAddress privacy
+// interface is approved. While false, the buttons are hidden, nothing opens the picker on its own,
+// and manifest.json's mp-weixin.requiredPrivateInfos leaves "chooseAddress" out — add it back
+// there when flipping this.
+export const WX_ADDRESS_ENABLED : boolean = false
 
 // The version marker shows in development builds — and, on the mini-program, in a 体验版 too, as the
 // miniapp's IS_DEV does (develop || trial).
@@ -37,6 +43,19 @@ export const IS_DEV : boolean = MP_ENV_VERSION != 'release'
 // #ifndef MP-WEIXIN
 export const IS_DEV : boolean = BUILD_ENV != 'release'
 // #endif
+
+// What the header and login screen show, as the miniapp does: the VERSION marker in development
+// builds, and in a released mini-program the version number it was published under in the WeChat
+// console (miniProgram.version; empty in develop/trial). Native and web have none, so a release
+// build there shows nothing.
+// #ifdef MP-WEIXIN
+const WX_VERSION_RAW : string = `${wx.getAccountInfoSync().miniProgram.version}`
+const WX_VERSION : string = WX_VERSION_RAW == 'undefined' ? '' : WX_VERSION_RAW
+// #endif
+// #ifndef MP-WEIXIN
+const WX_VERSION : string = ''
+// #endif
+export const DISPLAY_VERSION : string = IS_DEV ? VERSION : WX_VERSION
 
 // The miniapp maps WeChat appid → channel (aeviva-branded build disables email login).
 // A native app has no appid; it is always the root Waven identity.
