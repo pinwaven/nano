@@ -8570,6 +8570,210 @@ export default {
    (the colour variables they read come from App.uvue's copy of app.wxss). Two-class selectors,
    so they win over this file's own rules. Regenerate from the miniapp when its light theme
    changes; Android keeps its own minimal light rules above. */
+/* Every colour declaration of the miniapp's main.wxss that reads a CSS variable, restated under
+   .theme-light (tools/xapp-mini/style-gen/lightvars.js --derived-only), with the literal-coloured
+   modifiers of those classes. The miniapp's flip with its theme variables; xapp's base rules carry
+   the dark literals. Before the miniapp's own .theme-light rules below, which win where both apply. */
+.theme-light .sandbox-banner-text { color: var(--warn); }
+.theme-light .sandbox-banner-exit { color: var(--warn); }
+.theme-light .viva-expired-banner-text { color: var(--info-pale); }
+.theme-light .viva-expired-banner-btn { color: var(--info-pale); }
+.theme-light .inner-tab-text { color: var(--steel); }
+.theme-light .msg-coach-label { color: var(--success-deep); }
+.theme-light .msg-daysep-text { color: var(--chat-sep-fg); }
+.theme-light .mcard-tile { background: rgba(var(--blue-rgb), 0.08); border: 1rpx solid rgba(var(--blue-rgb), 0.20); border-left-color: var(--steel); }
+.theme-light .mcard-label { color: var(--text-sub); }
+.theme-light .mcard-unit { color: var(--text-sub); }
+.theme-light .mcard-pill { color: var(--chat-pill-fg); }
+.theme-light .mcard-good { border-left-color: var(--success); }
+.theme-light .mcard-good .mcard-pill { color: var(--chat-good); }
+.theme-light .mcard-normal { border-left-color: var(--steel); }
+.theme-light .mcard-watch { border-left-color: var(--warn); }
+.theme-light .mcard-watch .mcard-pill { color: var(--chat-warn); }
+.theme-light .mcard-high { border-left-color: var(--danger); }
+.theme-light .mcard-high .mcard-pill { color: var(--chat-high); }
+.theme-light .mcard-low { border-left-color: var(--info); }
+.theme-light .mcard-low .mcard-pill { color: var(--chat-low); }
+.theme-light .spark-t-good .spark-bar-last { background: var(--chat-good); }
+.theme-light .spark-t-bad .spark-bar-last { background: var(--chat-high); }
+.theme-light .spark-d-good { color: var(--chat-good); }
+.theme-light .spark-d-bad { color: var(--chat-high); }
+.theme-light .tcard { background: rgba(var(--blue-rgb), 0.10); border: 1rpx solid rgba(var(--blue-rgb), 0.28); border-left: 6rpx solid var(--blue); }
+.theme-light .tcard-title { color: var(--chat-accent); }
+.theme-light .dcard-chip { background: rgba(var(--blue-rgb), 0.12); border: 1rpx solid rgba(var(--blue-rgb), 0.30); }
+.theme-light .dcard-id { color: var(--chat-accent); }
+.theme-light .dcard-note { color: var(--text-sub); }
+.theme-light .fcard { background: rgba(var(--blue-rgb), 0.10); border: 1rpx solid rgba(var(--blue-rgb), 0.26); }
+.theme-light .fcard-title { color: var(--chat-accent); }
+.theme-light .fcard-note { color: var(--text-sub); }
+.theme-light .fcard-slot { color: var(--text-sub); }
+.theme-light .fcard-track { background: rgba(127, 127, 127, 0.16); }
+.theme-light .fcard-num { color: var(--chat-accent); }
+.theme-light .fcard-leg-name { color: var(--text); }
+.theme-light .fcard-leg-num { color: var(--text-sub); }
+.theme-light .fcard-foot { border-top: 1rpx solid rgba(127, 127, 127, 0.18); color: var(--text-sub); }
+.theme-light .fcard-daylabel { color: var(--text); }
+.theme-light .fcard-daytag { color: var(--chat-accent); background: rgba(var(--blue-rgb), 0.18); }
+.theme-light .fcard-cycle { color: var(--text-sub); }
+.theme-light .fcard-tier { background: rgba(127, 127, 127, 0.08); }
+.theme-light .fcard-tier-open { background: rgba(127, 127, 127, 0.12); border: 1rpx solid rgba(var(--blue-rgb), 0.22); }
+.theme-light .fcard-tier-chev { color: var(--text-sub); }
+.theme-light .fcard-tier-label { color: var(--text); }
+.theme-light .fcard-tier-rec { color: var(--chat-accent); background: rgba(var(--blue-rgb), 0.18); }
+.theme-light .fcard-tier-note { color: var(--text-sub); }
+.theme-light .fcard-tier-pitch { color: var(--text-sub); }
+.theme-light .fcard-tier-hint { color: var(--text-sub); }
+.theme-light .fcard-upgrades { border-top: 1rpx solid rgba(var(--blue-rgb), 0.26); }
+.theme-light .fcard-uphead { color: var(--chat-accent); }
+.theme-light .fcard-rung { background: rgba(127, 127, 127, 0.10); }
+.theme-light .fcard-rung-label { color: var(--text); }
+.theme-light .fcard-rung-add { color: var(--chat-accent); background: rgba(var(--blue-rgb), 0.18); }
+.theme-light .fcard-leg-weeks { color: var(--text-sub); background: rgba(127, 127, 127, 0.14); }
+.theme-light .fcard-rung-pitch { color: var(--text-sub); }
+.theme-light .fcard-rung-hint { color: var(--text-sub); }
+.theme-light .fcard-owned { color: var(--chat-accent); }
+.theme-light .fcard-cta { color: var(--chat-accent); background: rgba(var(--blue-rgb), 0.16); border: 1rpx solid rgba(var(--blue-rgb), 0.40); }
+.theme-light .fcard-agnote { color: var(--text-sub); background: rgba(127, 127, 127, 0.10); }
+.theme-light .plus-btn-open .plus-icon { color: var(--info-pale); }
+.theme-light .mic-recording-text { color: var(--danger-pale); }
+.theme-light .pkg-section-title { color: var(--text); }
+.theme-light .pkg-card { background: rgba(var(--wave-rgb), 0.08); border: 2rpx solid rgba(var(--wave-rgb), 0.28); }
+.theme-light .pkg-name { color: var(--text); }
+.theme-light .pkg-stage { color: var(--text-sub); background: rgba(var(--wave-rgb), 0.16); }
+.theme-light .pkg-stage-awaiting_formulation, .theme-light .pkg-stage-shipped, .theme-light .pkg-stage-delivered { color: var(--gold); background: rgba(245, 197, 106, 0.16); }
+.theme-light .pkg-stage-active { color: var(--success); background: rgba(52, 211, 153, 0.14); }
+.theme-light .pkg-stage-cancelled, .theme-light .pkg-stage-refunded { color: var(--text-muted); background: rgba(var(--wave-rgb), 0.1); }
+.theme-light .pkg-meta { color: var(--text-muted); }
+.theme-light .pkg-track { background: rgba(var(--wave-rgb), 0.12); }
+.theme-light .pkg-track-text { color: var(--text-sub); }
+.theme-light .pkg-track-copy { color: var(--steel); }
+.theme-light .pkg-cta-ghost { background: rgba(var(--wave-rgb), 0.12); border-color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .pkg-cta-text { color: var(--gold); }
+.theme-light .pkg-cta-ghost .pkg-cta-text { color: var(--steel); }
+.theme-light .code-chip { color: var(--steel); }
+.theme-light .code-wx-addr { color: var(--steel); }
+.theme-light .pkg-hint { color: var(--gold); }
+.theme-light .order-dots-btn-text { color: var(--gold); }
+.theme-light .store-partner-badge-text { color: var(--info-pale); }
+.theme-light .store-price-partner { color: var(--info-pale); }
+.theme-light .order-status-pending { color: var(--warn); }
+.theme-light .order-status-delivered { color: var(--success); }
+.theme-light .cancel-order-btn text { color: var(--danger); }
+.theme-light .checkout-wx-addr-text { color: var(--info-pale); }
+.theme-light .kpass-error { color: var(--danger-muted); }
+.theme-light .ksm-face-status-failed { color: var(--danger-muted); }
+.theme-light .ksm-debug-label { color: var(--danger-muted); }
+.theme-light .ksm-debug-msg { color: var(--danger-pale); }
+.theme-light .plans-browse-btn-text { color: var(--info-pale); }
+.theme-light .plan-type-primary   .plan-type-text { color: var(--info-pale); }
+.theme-light .plan-type-secondary .plan-type-text { color: var(--success); }
+.theme-light .plan-checkin-done .plan-checkin-text { color: var(--success); }
+.theme-light .close-x { color: var(--steel); }
+.theme-light .detail-tab-text { color: var(--steel); }
+.theme-light .plan-chip-text { color: var(--info-pale); }
+.theme-light .plan-chip-dot .plan-chip-text { color: var(--success); }
+.theme-light .plan-action-switch  text { color: var(--info-pale); }
+.theme-light .plan-action-abandon text { color: var(--danger-soft); }
+.theme-light .plan-action-buy text { color: var(--gold); }
+.theme-light .browse-enrolled-badge { color: var(--info-pale); }
+.theme-light .browse-join-secondary text { color: var(--info-pale); }
+.theme-light .reminder-active text { color: var(--info-pale); }
+.theme-light .reminder-paused text { color: var(--steel); }
+.theme-light .reminder-source-coach .reminder-source-text { color: var(--success); }
+.theme-light .reminder-source-ai    .reminder-source-text { color: var(--info-pale); }
+.theme-light .reminder-recur-text { color: var(--warn); }
+.theme-light .plan-task-chip.plan-task-done .plan-task-label { color: var(--success); }
+.theme-light .plan-task-chip.plan-task-done .plan-task-check { color: var(--success); }
+.theme-light .event-badge-signed text { color: var(--success); }
+.theme-light .event-btn-cancel text { color: var(--info-pale); }
+.theme-light .training-section-title { color: var(--steel); }
+.theme-light .training-lesson-badge-text { color: var(--info-pale); }
+.theme-light .training-course-desc { color: var(--steel); }
+.theme-light .training-course-prereq-hint { color: var(--warn); }
+.theme-light .training-course-header-desc { color: var(--steel); }
+.theme-light .training-lesson-num-text { color: var(--info-pale); }
+.theme-light .training-lesson-desc { color: var(--steel); }
+.theme-light .training-lesson-done-text { color: var(--success-deep); }
+.theme-light .training-video-loading-text { color: var(--steel); }
+.theme-light .training-lesson-detail-desc { color: var(--steel); }
+.theme-light .training-completed-badge-text { color: var(--success-deep); }
+.theme-light .training-path-card { background: var(--navy-lift); border: 1rpx solid var(--navy-border); }
+.theme-light .training-path-title { color: var(--text); }
+.theme-light .training-path-tier { color: var(--info); }
+.theme-light .training-path-desc { color: var(--text-muted); }
+.theme-light .training-path-progress-label { color: var(--text-muted); }
+.theme-light .training-course-level { color: var(--info); }
+.theme-light .training-course-credits { color: var(--success-deep); }
+.theme-light .training-lesson-credits-label { color: var(--success-deep); }
+.theme-light .training-lesson-quiz-badge { color: var(--warn); }
+.theme-light .training-text-content { background: var(--navy-lift); }
+.theme-light .training-quiz-section { border-top: 1rpx solid var(--navy-border); }
+.theme-light .training-quiz-title { color: var(--text); }
+.theme-light .training-quiz-question { background: var(--navy-lift); }
+.theme-light .training-quiz-scenario { border-bottom: 1rpx solid var(--navy-border); }
+.theme-light .training-quiz-q-text { color: var(--text); }
+.theme-light .training-quiz-option-text { color: var(--text); }
+.theme-light .training-quiz-result-score { color: var(--text); }
+.theme-light .training-quiz-result-label { color: var(--text-muted); }
+.theme-light .training-quiz-result-credits { color: var(--success-deep); }
+.theme-light .training-quiz-review-correct .training-quiz-review-icon { color: var(--success-deep); }
+.theme-light .training-quiz-review-wrong .training-quiz-review-icon { color: var(--danger); }
+.theme-light .training-quiz-review-your-ans { color: var(--danger); }
+.theme-light .training-quiz-review-correct-ans { color: var(--success-deep); }
+.theme-light .training-cert-card { background: var(--navy-lift); }
+.theme-light .training-cert-title { color: var(--text); }
+.theme-light .training-cert-tier { color: var(--warn); }
+.theme-light .training-cert-chevron { color: var(--text-muted); }
+.theme-light .cert-detail-card { background: var(--navy-card); }
+.theme-light .cert-status-check { color: var(--success-deep); }
+.theme-light .cert-status-text { color: var(--success-deep); }
+.theme-light .cert-close-btn { color: var(--text-muted); }
+.theme-light .cert-label { color: var(--text-muted); }
+.theme-light .cert-value { color: var(--text); }
+.theme-light .cert-valid { color: var(--success-deep) !important; }
+.theme-light .wellness-section-title { color: var(--text); }
+.theme-light .wellness-empty-text { color: var(--text-muted); }
+.theme-light .sleep-track-card { background: var(--navy-lift); }
+.theme-light .sleep-track-name { color: var(--text); }
+.theme-light .sleep-track-dur { color: var(--text-muted); }
+.theme-light .sleep-np-title { color: var(--text); }
+.theme-light .media-asset-card { background: var(--navy-lift); }
+.theme-light .media-asset-icon--video .media-asset-glyph { color: var(--danger); }
+.theme-light .media-asset-icon--doc .media-asset-glyph { color: var(--warn); }
+.theme-light .media-asset-name { color: var(--text); }
+.theme-light .media-asset-sub { color: var(--text-muted); }
+.theme-light .media-asset-btn-text { color: var(--text-sub); }
+.theme-light .device-apk-card { background: var(--navy-lift); }
+.theme-light .device-apk-name { color: var(--text); }
+.theme-light .device-apk-version { color: var(--text-muted); }
+.theme-light .device-apk-btn-text { color: var(--success-deep); }
+.theme-light .scan-box-card { background: rgba(var(--wave-rgb), 0.08); border: 2rpx solid rgba(var(--wave-rgb), 0.28); }
+.theme-light .scan-box-title { color: var(--text); }
+.theme-light .scan-box-detail { color: var(--text-muted); }
+.theme-light .pcard { background: rgba(var(--blue-rgb), 0.10); border: 1rpx solid rgba(var(--blue-rgb), 0.26); }
+.theme-light .pcard-title { color: var(--chat-accent); }
+.theme-light .pcard-row { border-top: 1rpx solid rgba(var(--blue-rgb), 0.18); }
+.theme-light .pcard-row:first-of-type { border-top: none; }
+.theme-light .pcard-reason { color: var(--text-sub); }
+.theme-light .pcard-price { color: var(--chat-accent); }
+.theme-light .pcard-arrow { color: var(--text-sub); }
+.theme-light .gcard { background: rgba(var(--blue-rgb), 0.10); border: 1rpx solid rgba(var(--blue-rgb), 0.26); }
+.theme-light .gcard-title { color: var(--chat-accent); }
+.theme-light .gcard-row { border-top: 1rpx solid rgba(var(--blue-rgb), 0.18); }
+.theme-light .gcard-row:first-of-type { border-top: none; }
+.theme-light .gcard-img { background: rgba(var(--blue-rgb), 0.08); }
+.theme-light .gcard-reason { color: var(--text-sub); }
+.theme-light .gcard-supplier { color: var(--chat-accent); }
+.theme-light .gcard-price { color: var(--chat-accent); }
+.theme-light .gcard-note { color: var(--text-sub); }
+.theme-light .lcard { background: rgba(var(--blue-rgb), 0.10); border: 1rpx solid rgba(var(--blue-rgb), 0.26); }
+.theme-light .lcard-video { background: #000; }
+.theme-light .lcard-cover { background: rgba(var(--blue-rgb), 0.14); }
+.theme-light .lcard-play { color: var(--chat-accent); }
+.theme-light .lcard-done { color: var(--chat-accent); }
+.theme-light .ccard-cta { color: var(--chat-accent); background: rgba(var(--blue-rgb), 0.16); border: 1rpx solid rgba(var(--blue-rgb), 0.40); }
+.theme-light .ccard-done { color: var(--chat-accent); background: rgba(var(--blue-rgb), 0.08); border: 1rpx dashed rgba(var(--blue-rgb), 0.30); }
+/* The miniapp's own .theme-light rules: */
 .theme-light { --chat-accent: #7A4A28; --chat-good: #0B5C3E; --chat-warn: #6E4805; --chat-high: #A32A1E; --chat-low: #3730A3; --chat-pill-fg: #5A4630; --chat-sep-fg: #6B5947; }
 .theme-light .sandbox-banner { background: rgba(245, 158, 11, 0.12); border-bottom-color: rgba(245, 158, 11, 0.35); }
 .theme-light .viva-expired-banner { background: rgba(99, 117, 236, 0.1); border-bottom-color: rgba(99, 117, 236, 0.3); }
@@ -9007,7 +9211,6 @@ export default {
 .theme-light .pkg-name { color: rgb(44, 44, 44); }
 .theme-light .pkg-section { color: rgb(44, 44, 44); }
 .theme-light .pkg-section-title { color: rgb(44, 44, 44); }
-.theme-light .pkg-stage { color: rgb(121, 96, 68); }
 .theme-light .plan-card { color: rgb(44, 44, 44); }
 .theme-light .plan-type-badge { background-color: rgba(99, 117, 236, 0.2); }
 .theme-light .plans-browse-btn { color: rgb(44, 44, 44); }
@@ -9024,6 +9227,30 @@ export default {
 .theme-light .training-path-card { background-color: rgb(245, 237, 227); border-top-color: rgba(152, 95, 51, 0.22); border-left-color: rgba(152, 95, 51, 0.22); border-bottom-color: rgba(152, 95, 51, 0.22); border-right-color: rgba(152, 95, 51, 0.22); }
 .theme-light .training-path-progress-label { color: rgb(133, 108, 71); }
 .theme-light .training-path-title { color: rgb(44, 44, 44); }
+/* Text the miniapp colours by inheritance, which xapp's <text> does not do: each child the port gave
+   its own class and a dark literal takes its nearest ancestor's light colour
+   (tools/xapp-mini/style-gen/lightinherit.js; .pkg-cta-text-ghost set by hand to the miniapp's
+   .pkg-cta-ghost .pkg-cta-text). */
+.theme-light .msg-text { color: var(--text); }
+.theme-light .fcard-tier-note-text { color: rgb(121, 96, 68); }
+.theme-light .fcard-cta-label { color: rgb(122, 74, 40); }
+.theme-light .ccard-cta-label { color: var(--chat-accent); }
+.theme-light .typing-dots { color: var(--text); }
+.theme-light .typing-status-text { color: var(--text); }
+.theme-light .quick-btn-label { color: var(--text); }
+.theme-light .cond-chip-label { color: var(--text-muted); }
+.theme-light .cart-empty-label { color: var(--text-muted); }
+.theme-light .pkg-cta-text-ghost { color: var(--steel); }
+.theme-light .dots-empty-label { color: var(--text-muted); }
+.theme-light .modal-btn-cancel-label { color: #656462; }
+.theme-light .browse-enrolled-label { color: #4f5fcc; }
+.theme-light .copy-badge-label { color: var(--blue); }
+.theme-light .csim-cancel-label { color: var(--text-muted); }
+.theme-light .kpass-key-label { color: var(--text); }
+.theme-light .kpass-cancel-label { color: var(--text-muted); }
+.theme-light .ksm-close-label { color: var(--text-sub); }
+.theme-light .ksm-quit-label { color: var(--text-muted); }
+.theme-light .guest-sheet-error-text { color: #dc2626; }
 /* #endif */
 /* #ifdef MP-WEIXIN */
 /* Text size (菜单 › 字体大小), from the miniapp's stylesheet: every rule of its whose font-size reads
@@ -9385,6 +9612,23 @@ export default {
 /* …and the miniapp text that sets no size of its own but inherits one (xapp's <text> inherits nothing). */
 .delivery-label { font-size: var(--fs-22, 22rpx); }
 .delivery-val { font-size: var(--fs-22, 22rpx); }
+/* #endif */
+/* #ifdef MP-WEIXIN */
+/* Header menu geometry in the miniapp's rpx (pages/main/main.wxss .menu-*): with px padding and gaps
+   but rpx text, the menu did not grow with the screen — on a 430pt phone 字体大小 ran into its A
+   buttons. Gaps replace the px margins between icon/label and between the A steps. */
+.menu-dropdown { left: 24rpx; border-radius: 20rpx; min-width: 240rpx; }
+.menu-item { gap: 20rpx; padding: 28rpx 32rpx; }
+.menu-item-icon { margin-right: 0; }
+.menu-divider { margin: 0 24rpx; }
+.menu-fs-row { gap: 20rpx; padding: 20rpx 32rpx; }
+.menu-fs-steps { gap: 10rpx; }
+.menu-fs-step { width: 56rpx; height: 56rpx; margin-left: 0; border-radius: 12rpx; }
+.menu-fs-a0 { font-size: 20rpx; }
+.menu-fs-a1 { font-size: 26rpx; }
+.menu-fs-a2 { font-size: 32rpx; }
+.menu-fs-a3 { font-size: 38rpx; }
+.menu-credit-row { padding: 24rpx 32rpx; }
 /* #endif */
 </style>
 

@@ -530,6 +530,10 @@ export default {
 .theme-light .ap-btn-ghost { background: rgba(0, 0, 0, 0.06); color: #1a2744; }
 .theme-light .ap-spinner { border-color: rgba(0, 0, 0, 0.12); border-top-color: var(--blue); }
 .theme-light .ap-preview-label { color: #4a5568; }
+/* Modifiers and variable colours the first lightvars.js pass left out (they sit after the base rules they refine): */
+.theme-light .ap-item-selected { border-color: var(--blue); box-shadow: 0 0 0 4rpx rgba(var(--blue-rgb), 0.25); }
+.theme-light .ap-item-custom-badge { background: var(--blue); }
+.theme-light .ap-btn-primary { background: var(--blue); }
 /* #endif */
 /* #ifndef MP-WEIXIN */
 .picker-backdrop {

@@ -94,6 +94,8 @@ M=src/mini/nano-miniapp; X=src/xapp
 node tools/xapp-mini/style-gen/fsvars.js    $M/pages/main/main.wxss $X/pages/main/main.uvue          # text size
 node tools/xapp-mini/style-gen/fsinherit.js $M/pages/main/main.wxss $M/pages/main/main.wxml $X/pages/main/main.uvue
 node tools/xapp-mini/style-gen/lightvars.js $M/components/viva-ag-panel/viva-ag-panel.wxss          # light theme
+node tools/xapp-mini/style-gen/lightvars.js $M/pages/main/main.wxss --derived-only                  # …own rules already ported
+node tools/xapp-mini/style-gen/lightinherit.js $M/pages/main/main.wxss $X/pages/main/main.uvue      # after lightvars' rules are in
 ```
 
 - **`fsvars.js`** emits every miniapp rule whose `font-size` reads `var(--fs-N)` (and the
@@ -101,7 +103,14 @@ node tools/xapp-mini/style-gen/lightvars.js $M/components/viva-ag-panel/viva-ag-
 - **`fsinherit.js`** adds the miniapp text that sets no size and inherits one: xapp's `<text>`
   inherits nothing.
 - **`lightvars.js`** emits the miniapp's own `.theme-light` rules plus each colour declaration
-  that reads a variable, restated under `.theme-light`.
+  that reads a variable, restated under `.theme-light` — and the literal-coloured modifiers of
+  those classes (`.wd-dot-on`), which the extra class of specificity would otherwise hide. Put the
+  restated half before the own rules. `--derived-only` leaves the own rules out.
+- **`lightinherit.js`** is the colour counterpart of `fsinherit.js`, over xapp's own template: a
+  `<text>` class the miniapp never colours but xapp gives a dark literal (`.fcard-cta-label`)
+  gets its nearest ancestor's light colour. Classes that would inherit two different colours are
+  skipped. Without these three, light-theme values stayed near-white (the health tab's metric
+  row, 2026-10-03).
 
 The variables themselves come from the miniapp's `app.wxss`, which `App.uvue` carries under
 MP-WEIXIN; they rescale under the page root's `.fs-1/2/3` and flip under `.theme-light`.

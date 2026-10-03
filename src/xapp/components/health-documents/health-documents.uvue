@@ -1259,6 +1259,12 @@ function todayStr() : string {
 .theme-light .hd-struct-head .hd-struct-key { color: #14243D; }
 .theme-light .hd-struct-val { color: #14243D; }
 .theme-light .hd-doc-fix-hint { color: #B8741E; }
+/* The miniapp colours .hd-expand-control and its text inherits; xapp's <text> inherits nothing, so the
+   label and chevron carried their dark-theme colour (faint 展开 on light). */
+.theme-light .hd-expand-label, .theme-light .hd-expand-chevron { color: #607090; }
+/* `lines: 1` is uni-app x only — WeChat ignores it and the meta line wrapped. The miniapp's own clamp: */
+.hd-compact-name, .hd-compact-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hd-compact-meta { max-width: 360rpx; }
 /* #endif */
 /* #ifdef MP-WEIXIN */
 /* Text size (菜单 › 字体大小), from the miniapp's stylesheet: every rule of its whose font-size reads

@@ -983,6 +983,12 @@ export default {
 .theme-light .ag-fm-committed { border-left-color: var(--success); }
 .theme-light .ag-fm-invalid { border-left-color: var(--danger); }
 .theme-light .ag-fm-rejected { border-left-color: var(--danger); }
+/* Text the miniapp colours by inheritance (xapp's <text> inherits nothing): tools/xapp-mini/style-gen/lightinherit.js */
+.theme-light .ag-sheet-btn-txt-ghost { color: rgba(var(--wave-rgb), 0.6); }
+/* Modifiers and variable colours the first lightvars.js pass left out (they sit after the base rules they refine): */
+.theme-light .ag-doc-del { color: #E05C5C; }
+.theme-light .ag-sheet-btn-ghost { background: transparent; border: 1rpx solid rgba(var(--wave-rgb), 0.2); color: rgba(var(--wave-rgb), 0.6); }
+.theme-light .ag-ask-cta { background: rgba(var(--blue-rgb), 0.85); color: #fff; }
 /* #endif */
 /* #ifdef MP-WEIXIN */
 /* Text size (菜单 › 字体大小), from the miniapp's stylesheet: every rule of its whose font-size reads
