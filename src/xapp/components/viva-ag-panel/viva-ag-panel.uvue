@@ -766,21 +766,21 @@ export default {
 /* Structural pass of viva-ag-panel.wxss — rpx halved to px, the CSS custom properties
    (--fs-*, --wave-rgb, --blue-rgb, --wave, --steel, --gold, --text, --text-muted, --text-sub,
    --success, --danger) resolved to their dark-theme literals the way the rest of src/xapp does it
-   (blue rgba(46,124,246,α), wave #A6C4E5, steel #7A9ABF, gold #F5C56A, text #EEF2FF).
-   // TODO(port): the .theme-light descendant rules in the source cannot be expressed as flat
-   classes in uni-app x, so the light theme is not carried over in this pass. */
+   (blue rgba(99,117,236,α), wave #A6C4E5, steel #7A9ABF, gold #F5C56A, text #EEF2FF).
+   The light theme exists on xapp-mini only (the MP-WEIXIN block at the end).
+   // TODO(port): native has no light theme for this panel — uni-app x has no descendant rules. */
 .ag-root { flex: 1; flex-direction: column; }
 .ag-scroll { flex: 1; }
 
 /* ── Hero ── */
-.ag-hero { padding: 18px; border-bottom-width: 1px; border-bottom-color: rgba(46, 124, 246, 0.08); border-bottom-style: solid; flex-direction: column; }
-.ag-hero-badge { align-self: flex-start; padding: 3px 9px; border-radius: 4px; background-color: rgba(46, 124, 246, 0.16); margin-bottom: 9px; }
-.ag-hero-badge-txt { font-size: 10px; font-weight: bold; letter-spacing: 2px; color: #A0B4FF; }
+.ag-hero { padding: 18px; border-bottom-width: 1px; border-bottom-color: rgba(99, 117, 236, 0.08); border-bottom-style: solid; flex-direction: column; }
+.ag-hero-badge { align-self: flex-start; padding: 3px 9px; border-radius: 4px; background-color: rgba(99, 117, 236, 0.16); margin-bottom: 9px; }
+.ag-hero-badge-txt { font-size: 10px; line-height: 19px; font-weight: bold; letter-spacing: 1.5px; color: #A0B4FF; }
 .ag-hero-desc { font-size: 13px; line-height: 21px; color: #7A9ABF; }
 .ag-hero-expiry { font-size: 11px; color: rgba(166, 196, 229, 0.5); margin-top: 7px; }
 
 /* ── Sections ── */
-.ag-section { padding: 16px 18px; border-bottom-width: 1px; border-bottom-color: rgba(46, 124, 246, 0.08); border-bottom-style: solid; flex-direction: column; }
+.ag-section { padding: 16px 18px; border-bottom-width: 1px; border-bottom-color: rgba(99, 117, 236, 0.08); border-bottom-style: solid; flex-direction: column; }
 .ag-section-title { font-size: 10px; font-weight: bold; letter-spacing: 2px; color: rgba(166, 196, 229, 0.4); margin-bottom: 12px; }
 .ag-muted { font-size: 12px; color: rgba(166, 196, 229, 0.45); padding-top: 6px; padding-bottom: 6px; }
 
@@ -788,11 +788,11 @@ export default {
    Amber, matching .ag-fm-valid: both mean "stalled until a human acts". This one is the only card
    on the panel with a call to action, so it also carries a filled button. */
 .ag-ask { flex-direction: column; margin-top: 8px; padding: 12px 14px; border-radius: 9px; background-color: rgba(166, 196, 229, 0.10); border-left-width: 3px; border-left-color: #F5C56A; border-left-style: solid; }
-.ag-ask-title { font-size: 14px; font-weight: bold; color: #EEF2FF; }
-.ag-ask-body { font-size: 12px; color: rgba(166, 196, 229, 0.4); line-height: 19px; margin-top: 5px; }
-.ag-ask-deadline { font-size: 11px; color: rgba(166, 196, 229, 0.4); margin-top: 4px; }
-.ag-ask-cta { padding-top: 9px; padding-bottom: 9px; border-radius: 7px; background-color: rgba(46, 124, 246, 0.85); align-items: center; margin-top: 10px; }
-.ag-ask-cta-txt { font-size: 13px; font-weight: bold; color: #FFFFFF; }
+.ag-ask-title { font-size: 14px; font-weight: 600; color: #EEF2FF; }
+.ag-ask-body { font-size: 11px; color: rgba(166, 196, 229, 0.4); line-height: 17.5px; margin-top: 5px; }
+.ag-ask-deadline { font-size: 10px; color: rgba(166, 196, 229, 0.4); margin-top: 4px; }
+.ag-ask-cta { padding-top: 9px; padding-bottom: 9px; border-radius: 7px; background-color: rgba(99, 117, 236, 0.85); align-items: center; margin-top: 10px; }
+.ag-ask-cta-txt { font-size: 13px; font-weight: 600; color: #FFFFFF; }
 
 /* ── Formulation progress ─────────────────────────────────────────────────────────────
    Colour-coded by where the formula is, so a glance answers "is anything happening?":
@@ -800,10 +800,10 @@ export default {
    capsule-spec check or the expert rejected it. */
 .ag-fm { flex-direction: column; margin-top: 8px; padding: 12px 14px; border-radius: 9px; background-color: rgba(255, 255, 255, 0.04); border-left-width: 3px; border-left-color: rgba(255, 255, 255, 0.2); border-left-style: solid; }
 .ag-fm-head { flex-direction: row; align-items: flex-end; justify-content: space-between; }
-.ag-fm-status { font-size: 14px; font-weight: bold; color: #EEF2FF; }
+.ag-fm-status { font-size: 14px; font-weight: 600; color: #EEF2FF; }
 .ag-fm-dots { font-size: 11px; color: rgba(166, 196, 229, 0.4); }
-.ag-fm-hint { font-size: 12px; color: rgba(166, 196, 229, 0.4); line-height: 19px; margin-top: 5px; }
-.ag-fm-rationale { font-size: 12px; color: #A6C4E5; line-height: 19px; margin-top: 7px; padding-top: 7px; border-top-width: 1px; border-top-color: rgba(255, 255, 255, 0.08); border-top-style: solid; }
+.ag-fm-hint { font-size: 11px; color: rgba(166, 196, 229, 0.4); line-height: 17.5px; margin-top: 5px; }
+.ag-fm-rationale { font-size: 11px; color: #A6C4E5; line-height: 17.5px; margin-top: 7px; padding-top: 7px; border-top-width: 1px; border-top-color: rgba(255, 255, 255, 0.08); border-top-style: solid; }
 .ag-fm-valid { border-left-color: #F5C56A; }
 .ag-fm-approved { border-left-color: #34d399; }
 .ag-fm-committed { border-left-color: #34d399; }
@@ -812,20 +812,20 @@ export default {
 
 /* ── Command ── */
 .ag-chips { flex-direction: row; flex-wrap: wrap; margin-bottom: 10px; }
-.ag-chip { padding: 6px 12px; border-radius: 15px; border-width: 1px; border-style: solid; border-color: rgba(46, 124, 246, 0.22); margin-right: 7px; margin-bottom: 7px; }
-.ag-chip-txt { font-size: 12px; color: #7A9ABF; }
-.ag-chip-on { background-color: rgba(46, 124, 246, 0.18); border-color: rgba(46, 124, 246, 0.5); }
+.ag-chip { padding: 6px 12px; border-radius: 15px; border-width: 1px; border-style: solid; border-color: rgba(99, 117, 236, 0.22); margin-right: 7px; margin-bottom: 7px; }
+.ag-chip-txt { font-size: 11px; color: #7A9ABF; }
+.ag-chip-on { background-color: rgba(99, 117, 236, 0.18); border-color: rgba(99, 117, 236, 0.5); }
 .ag-chip-txt-on { color: #A0B4FF; font-weight: bold; }
-.ag-input { width: 100%; min-height: 60px; padding: 10px; border-radius: 7px; background-color: rgba(46, 124, 246, 0.07); font-size: 13px; line-height: 21px; color: #A6C4E5; margin-bottom: 10px; }
-.ag-submit { padding-top: 12px; padding-bottom: 12px; border-radius: 7px; background-color: rgba(46, 124, 246, 0.85); align-items: center; }
-.ag-submit-txt { font-size: 14px; font-weight: bold; color: #FFFFFF; }
+.ag-input { width: 100%; min-height: 60px; padding: 10px; border-radius: 7px; background-color: rgba(99, 117, 236, 0.07); font-size: 13px; line-height: 21px; color: #A6C4E5; margin-bottom: 10px; }
+.ag-submit { padding-top: 12px; padding-bottom: 12px; border-radius: 7px; background-color: rgba(99, 117, 236, 0.85); align-items: center; }
+.ag-submit-txt { font-size: 14px; font-weight: 600; color: #FFFFFF; }
 .ag-submit-off { opacity: 0.35; }
-.ag-note { font-size: 11px; color: rgba(166, 196, 229, 0.42); margin-top: 7px; }
+.ag-note { font-size: 10px; color: rgba(166, 196, 229, 0.42); margin-top: 7px; }
 
 /* ── Jobs ── */
-.ag-job { flex-direction: column; padding-top: 11px; padding-bottom: 11px; border-bottom-width: 1px; border-bottom-color: rgba(46, 124, 246, 0.06); border-bottom-style: solid; }
+.ag-job { flex-direction: column; padding-top: 11px; padding-bottom: 11px; border-bottom-width: 1px; border-bottom-color: rgba(99, 117, 236, 0.06); border-bottom-style: solid; }
 .ag-job-head { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-.ag-pill { font-size: 10px; font-weight: bold; padding: 2px 7px; border-radius: 10px; background-color: rgba(46, 124, 246, 0.14); color: #A0B4FF; }
+.ag-pill { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; background-color: rgba(99, 117, 236, 0.14); color: #A0B4FF; }
 .ag-pill-processing { background-color: rgba(245, 158, 11, 0.16); color: #F59E0B; }
 .ag-pill-claimed { background-color: rgba(245, 158, 11, 0.16); color: #F59E0B; }
 .ag-pill-completed { background-color: rgba(16, 185, 129, 0.16); color: #10B981; }
@@ -833,7 +833,7 @@ export default {
 .ag-pill-cancelled { background-color: rgba(166, 196, 229, 0.12); color: rgba(166, 196, 229, 0.5); }
 /* Parked on the user — gold, and unlike its siblings above it needed no light-theme override. */
 .ag-pill-awaiting_input { background-color: rgba(166, 196, 229, 0.18); color: #F5C56A; }
-.ag-job-date { font-size: 11px; color: rgba(166, 196, 229, 0.4); }
+.ag-job-date { font-size: 10px; color: rgba(166, 196, 229, 0.4); }
 .ag-job-cmd { font-size: 13px; color: #A6C4E5; margin-bottom: 4px; }
 .ag-job-note { font-size: 11px; line-height: 17px; color: rgba(166, 196, 229, 0.45); }
 /* Who produced a finished job's result (lib/reportAttribution.js, AGENTS §48). */
@@ -844,11 +844,11 @@ export default {
 .ag-sheet { width: 100%; max-height: 420px; padding: 17px 18px 30px; border-top-left-radius: 13px; border-top-right-radius: 13px; background-color: #0A1F36; flex-direction: column; }
 .ag-sheet-head { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 7px; }
 .ag-sheet-close { font-size: 15px; color: rgba(166, 196, 229, 0.5); padding-left: 3px; padding-right: 3px; }
-.ag-sheet-date { font-size: 11px; color: rgba(166, 196, 229, 0.4); margin-bottom: 8px; }
-.ag-sheet-cmd { font-size: 13px; font-weight: bold; color: #A6C4E5; margin-bottom: 10px; }
+.ag-sheet-date { font-size: 10px; color: rgba(166, 196, 229, 0.4); margin-bottom: 8px; }
+.ag-sheet-cmd { font-size: 13px; font-weight: 600; color: #A6C4E5; margin-bottom: 10px; }
 .ag-sheet-body { font-size: 13px; line-height: 23px; color: #7A9ABF; margin-bottom: 13px; }
 .ag-sheet-err { color: #E05C5C; }
-.ag-sheet-btn { padding-top: 11px; padding-bottom: 11px; border-radius: 7px; background-color: rgba(46, 124, 246, 0.85); align-items: center; margin-bottom: 8px; }
+.ag-sheet-btn { padding-top: 11px; padding-bottom: 11px; border-radius: 7px; background-color: rgba(99, 117, 236, 0.85); align-items: center; margin-bottom: 8px; }
 .ag-sheet-btn-txt { font-size: 13px; color: #FFFFFF; }
 .ag-sheet-btn-ghost { background-color: rgba(0, 0, 0, 0); border-width: 1px; border-style: solid; border-color: rgba(166, 196, 229, 0.2); }
 /* flat-class stand-in for the source's `.ag-sheet-btn-ghost .ag-sheet-btn-txt` */
@@ -856,20 +856,20 @@ export default {
 
 /* ── Result artifacts ── */
 .ag-file-chips { flex-direction: row; flex-wrap: wrap; margin-top: 7px; }
-.ag-file-chip { flex-direction: row; align-items: center; padding: 4px 8px; border-radius: 5px; background-color: rgba(46, 124, 246, 0.14); margin-right: 6px; margin-bottom: 6px; }
+.ag-file-chip { flex-direction: row; align-items: center; padding: 4px 8px; border-radius: 5px; background-color: rgba(99, 117, 236, 0.14); margin-right: 6px; margin-bottom: 6px; }
 .ag-file-ext { font-size: 9px; font-weight: bold; letter-spacing: 1px; color: #A0B4FF; margin-right: 5px; }
-.ag-file-name { font-size: 11px; color: rgba(166, 196, 229, 0.7); lines: 1; text-overflow: ellipsis; }
+.ag-file-name { font-size: 10px; color: rgba(166, 196, 229, 0.7); lines: 1; text-overflow: ellipsis; }
 .ag-filelist { flex-direction: column; margin-bottom: 11px; }
-.ag-filelist-title { font-size: 11px; letter-spacing: 1px; color: rgba(166, 196, 229, 0.45); margin-bottom: 6px; }
-.ag-file-row { flex-direction: row; align-items: center; padding: 10px 11px; border-radius: 7px; background-color: rgba(46, 124, 246, 0.1); margin-bottom: 6px; }
+.ag-filelist-title { font-size: 10px; letter-spacing: 1px; color: rgba(166, 196, 229, 0.45); margin-bottom: 6px; }
+.ag-file-row { flex-direction: row; align-items: center; padding: 10px 11px; border-radius: 7px; background-color: rgba(99, 117, 236, 0.1); margin-bottom: 6px; }
 .ag-file-row-main { flex: 1; flex-direction: column; }
 .ag-file-row-name { font-size: 13px; color: #A6C4E5; lines: 1; text-overflow: ellipsis; }
-.ag-file-row-size { font-size: 10px; color: rgba(166, 196, 229, 0.4); }
+.ag-file-row-size { font-size: 10px; line-height: 20px; color: rgba(166, 196, 229, 0.4); }
 .ag-file-row-go { font-size: 11px; color: #A0B4FF; }
 
 /* ── In-app report viewer (.md/.txt) ── */
 .ag-viewer { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 70; flex-direction: column; background-color: #061426; }
-.ag-viewer-head { flex-direction: row; align-items: center; justify-content: space-between; padding: 14px 16px 10px; border-bottom-width: 1px; border-bottom-color: rgba(46, 124, 246, 0.12); border-bottom-style: solid; }
+.ag-viewer-head { flex-direction: row; align-items: center; justify-content: space-between; padding: 14px 16px 10px; border-bottom-width: 1px; border-bottom-color: rgba(99, 117, 236, 0.12); border-bottom-style: solid; }
 .ag-viewer-title { flex: 1; font-size: 13px; font-weight: bold; color: #A6C4E5; lines: 1; text-overflow: ellipsis; }
 .ag-viewer-close { font-size: 15px; color: rgba(166, 196, 229, 0.5); padding-left: 3px; padding-right: 3px; }
 .ag-viewer-body { flex: 1; padding: 14px 16px; font-size: 13px; line-height: 23px; color: #7A9ABF; }
@@ -877,5 +877,161 @@ export default {
    and nothing else — the em-based sizes in MD_TAG_STYLE are not applied. */
 .ag-md { font-size: 13px; color: #7A9ABF; }
 .ag-viewer-trunc { font-size: 11px; line-height: 18px; color: rgba(166, 196, 229, 0.4); margin-top: 12px; }
+/* #endif */
+/* #ifdef MP-WEIXIN */
+/* Android's CSS has no baseline alignment or flex gap; WeChat matches the miniapp. */
+.ag-fm-head { align-items: baseline; }
+.ag-file-chips { margin-bottom: -6px; }
+/* xapp puts these labels in their own <text>, which does not inherit the miniapp's parent colour. */
+.theme-light .ag-chip-txt { color: #607090; }
+/* Light theme, from the miniapp's stylesheet: its own .theme-light rules, plus each of its colour
+   declarations that reads a CSS variable restated under .theme-light. The variables come from the
+   miniapp's app.wxss in App.uvue and flip under the page's .theme-light; xapp's rules above carry
+   dark literals, which never would. */
+.theme-light .ag-hero { border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.08); }
+.theme-light .ag-hero-badge { background: rgba(var(--blue-rgb), 0.16); }
+.theme-light .ag-hero-desc { color: var(--steel); }
+.theme-light .ag-hero-expiry { color: rgba(var(--wave-rgb), 0.5); }
+.theme-light .ag-section { border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.08); }
+.theme-light .ag-section-title { color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .ag-section-count { color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .ag-muted { color: rgba(var(--wave-rgb), 0.45); }
+.theme-light .ag-upload-btn { border: 1rpx dashed rgba(var(--blue-rgb), 0.35); }
+.theme-light .ag-empty-title { color: var(--steel); }
+.theme-light .ag-empty-hint { color: rgba(var(--wave-rgb), 0.45); }
+.theme-light .ag-doc { border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.06); }
+.theme-light .ag-doc-name { color: var(--wave, #A6C4E5); }
+.theme-light .ag-doc-badge { background: rgba(var(--blue-rgb), 0.14); }
+.theme-light .ag-doc-sub { color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .ag-chip { border: 1rpx solid rgba(var(--blue-rgb), 0.22); color: var(--steel); }
+.theme-light .ag-chip-on { background: rgba(var(--blue-rgb), 0.18); border-color: rgba(var(--blue-rgb), 0.5); }
+.theme-light .ag-input { background: rgba(var(--blue-rgb), 0.07); color: var(--wave, #A6C4E5); }
+.theme-light .ag-input-ph { color: rgba(var(--wave-rgb), 0.35); }
+.theme-light .ag-submit { background: rgba(var(--blue-rgb), 0.85); }
+.theme-light .ag-note { color: rgba(var(--wave-rgb), 0.42); }
+.theme-light .ag-job { border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.06); }
+.theme-light .ag-pill { background: rgba(var(--blue-rgb), 0.14); }
+.theme-light .ag-pill-cancelled { background: rgba(var(--wave-rgb), 0.12); color: rgba(var(--wave-rgb), 0.5); }
+.theme-light .ag-pill-awaiting_input { background: rgba(var(--wave-rgb), 0.18); color: var(--gold); }
+.theme-light .ag-job-date { color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .ag-job-cmd { color: var(--wave, #A6C4E5); }
+.theme-light .ag-job-note { color: rgba(var(--wave-rgb), 0.45); }
+.theme-light .ag-sheet-close { color: rgba(var(--wave-rgb), 0.5); }
+.theme-light .ag-sheet-date { color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .ag-sheet-cmd { color: var(--wave, #A6C4E5); }
+.theme-light .ag-sheet-body { color: var(--steel); }
+.theme-light .ag-sheet-btn { background: rgba(var(--blue-rgb), 0.85); }
+.theme-light .ag-sheet-btn-ghost { border: 1rpx solid rgba(var(--wave-rgb), 0.2); color: rgba(var(--wave-rgb), 0.6); }
+.theme-light .ag-file-chip { background: rgba(var(--blue-rgb), 0.14); }
+.theme-light .ag-file-name { color: rgba(var(--wave-rgb), 0.7); }
+.theme-light .ag-filelist-title { color: rgba(var(--wave-rgb), 0.45); }
+.theme-light .ag-file-row { background: rgba(var(--blue-rgb), 0.1); }
+.theme-light .ag-file-row-name { color: var(--wave, #A6C4E5); }
+.theme-light .ag-file-row-size { color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .ag-viewer-head { border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.12); }
+.theme-light .ag-viewer-title { color: var(--wave, #A6C4E5); }
+.theme-light .ag-viewer-close { color: rgba(var(--wave-rgb), 0.5); }
+.theme-light .ag-viewer-body { color: var(--steel); }
+.theme-light .ag-viewer-trunc { color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .ag-ask { background: rgba(var(--wave-rgb), 0.10); border-left: 6rpx solid var(--gold); }
+.theme-light .ag-ask-title { color: var(--text); }
+.theme-light .ag-ask-body { color: var(--text-muted); }
+.theme-light .ag-ask-deadline { color: var(--text-muted); }
+.theme-light .ag-ask-cta { background: rgba(var(--blue-rgb), 0.85); }
+.theme-light .ag-fm-status { color: var(--text); }
+.theme-light .ag-fm-dots { color: var(--text-muted); }
+.theme-light .ag-fm-hint { color: var(--text-muted); }
+.theme-light .ag-fm-rationale { color: var(--text-sub); }
+.theme-light .ag-fm-valid { border-left-color: var(--gold); }
+.theme-light .ag-fm-approved { border-left-color: var(--success); }
+.theme-light .ag-fm-committed { border-left-color: var(--success); }
+.theme-light .ag-fm-invalid { border-left-color: var(--danger); }
+.theme-light .ag-fm-rejected { border-left-color: var(--danger); }
+.theme-light .ag-job-origin { color: rgba(var(--wave-rgb), 0.7); }
+.theme-light .ag-hero-badge { background: rgba(41, 66, 229, 0.1); }
+.theme-light .ag-hero-badge text,
+.theme-light .ag-doc-badge,
+.theme-light .ag-chip-on,
+.theme-light .ag-upload-btn,
+.theme-light .ag-pill { color: #2942E5; }
+.theme-light .ag-hero-desc,
+.theme-light .ag-chip,
+.theme-light .ag-empty-title,
+.theme-light .ag-sheet-body { color: #607090; }
+.theme-light .ag-doc-name,
+.theme-light .ag-job-cmd,
+.theme-light .ag-sheet-cmd { color: #14243D; }
+.theme-light .ag-input { background: #f0f4ff; color: #14243D; }
+.theme-light .ag-sheet { background: #FBF8F2; }
+.theme-light .ag-pill-processing, .theme-light .ag-pill-claimed { color: #B45309; }
+.theme-light .ag-pill-completed { color: #0A7350; }
+.theme-light .ag-pill-failed { color: #C0392B; }
+.theme-light .ag-file-chip,
+.theme-light .ag-file-row { background: rgba(41, 66, 229, 0.08); }
+.theme-light .ag-file-ext,
+.theme-light .ag-file-row-go { color: #2942E5; }
+.theme-light .ag-file-name,
+.theme-light .ag-file-row-name { color: #14243D; }
+.theme-light .ag-viewer { background: #FBF8F2; }
+.theme-light .ag-viewer-title { color: #14243D; }
+.theme-light .ag-viewer-body { color: #35485F; }
+.theme-light .ag-ask { background: rgba(var(--wave-rgb), 0.08); border-left-color: var(--gold); }
+.theme-light .ag-fm { background: rgba(0, 0, 0, 0.03); border-left-color: rgba(0, 0, 0, 0.15); }
+.theme-light .ag-fm-rationale { border-top-color: rgba(0, 0, 0, 0.08); }
+.theme-light .ag-fm-valid { border-left-color: var(--gold); }
+.theme-light .ag-fm-approved { border-left-color: var(--success); }
+.theme-light .ag-fm-committed { border-left-color: var(--success); }
+.theme-light .ag-fm-invalid { border-left-color: var(--danger); }
+.theme-light .ag-fm-rejected { border-left-color: var(--danger); }
+/* #endif */
+/* #ifdef MP-WEIXIN */
+/* Text size (菜单 › 字体大小), from the miniapp's stylesheet: every rule of its whose font-size reads
+   var(--fs-N), with the line-height it declares. The variables come from App.uvue's copy of app.wxss,
+   rescaled under the page's .fs-1/.fs-2/.fs-3, and inherit into components; this file's own px sizes
+   never would. Regenerate (tools/xapp-mini/style-gen: fsvars.js, then fsinherit.js) when the miniapp's sizes change. */
+.ag-hero-badge text { font-size: var(--fs-20, 20rpx); }
+.ag-hero-desc { font-size: var(--fs-25, 25rpx); line-height: 1.6; }
+.ag-hero-expiry { font-size: var(--fs-22, 22rpx); }
+.ag-section-title { font-size: var(--fs-20, 20rpx); }
+.ag-section-count { font-size: var(--fs-22, 22rpx); }
+.ag-muted { font-size: var(--fs-24, 24rpx); }
+.ag-upload-btn { font-size: var(--fs-25, 25rpx); }
+.ag-empty-title { font-size: var(--fs-25, 25rpx); }
+.ag-empty-hint { font-size: var(--fs-22, 22rpx); line-height: 1.6; }
+.ag-doc-name { font-size: var(--fs-26, 26rpx); }
+.ag-doc-badge { font-size: var(--fs-20, 20rpx); }
+.ag-doc-sub { font-size: var(--fs-21, 21rpx); }
+.ag-doc-del { font-size: var(--fs-23, 23rpx); }
+.ag-chip, .ag-chip-txt { font-size: var(--fs-23, 23rpx); }
+.ag-input { font-size: var(--fs-25, 25rpx); line-height: 1.6; }
+.ag-submit, .ag-submit-txt { font-size: var(--fs-27, 27rpx); }
+.ag-note { font-size: var(--fs-21, 21rpx); }
+.ag-pill { font-size: var(--fs-20, 20rpx); }
+.ag-job-date { font-size: var(--fs-21, 21rpx); }
+.ag-job-cmd { font-size: var(--fs-25, 25rpx); }
+.ag-job-note { font-size: var(--fs-22, 22rpx); line-height: 1.5; }
+.ag-sheet-close { font-size: var(--fs-30, 30rpx); }
+.ag-sheet-date { font-size: var(--fs-21, 21rpx); }
+.ag-sheet-cmd { font-size: var(--fs-26, 26rpx); }
+.ag-sheet-body { font-size: var(--fs-25, 25rpx); line-height: 1.75; }
+.ag-sheet-btn, .ag-sheet-btn-txt { font-size: var(--fs-26, 26rpx); }
+.ag-file-ext { font-size: var(--fs-18, 18rpx); }
+.ag-file-name { font-size: var(--fs-21, 21rpx); }
+.ag-filelist-title { font-size: var(--fs-21, 21rpx); }
+.ag-file-row-name { font-size: var(--fs-25, 25rpx); }
+.ag-file-row-size { font-size: var(--fs-20, 20rpx); }
+.ag-file-row-go { font-size: var(--fs-22, 22rpx); }
+.ag-viewer-title { font-size: var(--fs-26, 26rpx); }
+.ag-viewer-close { font-size: var(--fs-30, 30rpx); }
+.ag-viewer-body { font-size: var(--fs-26, 26rpx); line-height: 1.75; }
+.ag-viewer-trunc { font-size: var(--fs-21, 21rpx); line-height: 1.6; }
+.ag-ask-title { font-size: var(--fs-27, 27rpx); }
+.ag-ask-body { font-size: var(--fs-23, 23rpx); line-height: 1.6; }
+.ag-ask-deadline { font-size: var(--fs-21, 21rpx); }
+.ag-ask-cta, .ag-ask-cta-txt { font-size: var(--fs-26, 26rpx); }
+.ag-fm-status { font-size: var(--fs-27, 27rpx); }
+.ag-fm-dots { font-size: var(--fs-22, 22rpx); }
+.ag-fm-hint { font-size: var(--fs-23, 23rpx); line-height: 1.6; }
+.ag-fm-rationale { font-size: var(--fs-23, 23rpx); line-height: 1.6; }
 /* #endif */
 </style>

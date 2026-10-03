@@ -1117,13 +1117,13 @@ function todayStr() : string {
 /* #ifndef WEB */
 /* Structural pass of health-documents.wxss — rpx halved to px, the CSS custom properties
    (--fs-*, --wave-rgb, --blue-rgb, --wave, --steel) resolved to their dark-theme literals the
-   same way the rest of src/xapp does it (blue #2E7CF6, wave #A6C4E5, steel #7A9ABF). The source
-   file's .theme-light descendant rules cannot be expressed as flat classes here, so light theme
-   is not carried over in this pass.
+   same way the rest of src/xapp does it (blue rgba(99,117,236,α), wave #A6C4E5, steel #7A9ABF).
+   The light theme exists on xapp-mini only (the MP-WEIXIN block at the end); native has none,
+   since uni-app x has no descendant rules.
    // TODO(port): the miniapp's indeterminate upload bar is a translateX @keyframes animation —
    uni-app x CSS carries no keyframe animation for this; the bar renders as a static stripe. */
 .hd-root { flex-direction: column; }
-.hd-section { padding: 16px 18px; border-bottom-width: 1px; border-bottom-color: rgba(46, 124, 246, 0.08); border-bottom-style: solid; }
+.hd-section { padding: 16px 18px; border-bottom-width: 1px; border-bottom-color: rgba(99, 117, 236, 0.08); border-bottom-style: solid; }
 .hd-section-head { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .hd-section-head-toggle { min-height: 44px; margin-bottom: 0; }
 .hd-expanded-body { margin-top: 12px; }
@@ -1136,34 +1136,34 @@ function todayStr() : string {
 .hd-compact-name { font-size: 12px; color: #A6C4E5; lines: 1; text-overflow: ellipsis; }
 .hd-compact-summary { font-size: 12px; color: #A6C4E5; lines: 1; text-overflow: ellipsis; margin-top: 4px; }
 .hd-compact-meta { font-size: 10px; color: rgba(166, 196, 229, 0.45); lines: 1; text-overflow: ellipsis; }
-.hd-upload-compact { padding-left: 9px; padding-right: 9px; height: 44px; flex-direction: row; align-items: center; justify-content: center; border-radius: 7px; border-width: 1px; border-color: rgba(46, 124, 246, 0.35); border-style: solid; margin-left: 7px; }
+.hd-upload-compact { padding-left: 9px; padding-right: 9px; height: 44px; flex-direction: row; align-items: center; justify-content: center; border-radius: 7px; border-width: 1px; border-color: rgba(99, 117, 236, 0.35); border-style: solid; margin-left: 7px; }
 .hd-upload-compact-txt { font-size: 11px; color: #A0B4FF; }
 .hd-expand-control { min-width: 34px; flex-direction: column; align-items: center; justify-content: center; margin-left: 7px; }
 .hd-expand-label { font-size: 9px; color: rgba(166, 196, 229, 0.55); }
 .hd-expand-chevron { font-size: 13px; color: rgba(166, 196, 229, 0.55); }
 .hd-muted { font-size: 12px; color: rgba(166, 196, 229, 0.45); padding-top: 6px; padding-bottom: 6px; }
-.hd-upload-btn { padding-top: 11px; padding-bottom: 11px; border-radius: 7px; border-width: 1px; border-style: dashed; border-color: rgba(46, 124, 246, 0.35); align-items: center; margin-bottom: 11px; }
+.hd-upload-btn { padding-top: 11px; padding-bottom: 11px; border-radius: 7px; border-width: 1px; border-style: dashed; border-color: rgba(99, 117, 236, 0.35); align-items: center; margin-bottom: 11px; }
 .hd-upload-btn-txt { font-size: 13px; color: #A0B4FF; }
 .hd-btn-busy { opacity: 0.55; }
-.hd-progress { height: 2px; border-radius: 2px; background-color: rgba(46, 124, 246, 0.12); overflow: hidden; margin-bottom: 11px; }
+.hd-progress { height: 2px; border-radius: 2px; background-color: rgba(99, 117, 236, 0.12); overflow: hidden; margin-bottom: 11px; }
 .hd-progress-bar { width: 40%; height: 2px; border-radius: 2px; background-color: #A0B4FF; }
 .hd-empty { padding: 10px 2px; flex-direction: column; }
 .hd-empty-title { font-size: 13px; color: #7A9ABF; margin-bottom: 5px; }
 .hd-empty-hint { font-size: 11px; line-height: 18px; color: rgba(166, 196, 229, 0.45); }
 /* The wrapper owns the row separator, because a document now spans two rows: the file itself and
  * an optional actions strip. Putting the border on .hd-doc would draw a line between them. */
-.hd-doc-wrap { border-bottom-width: 1px; border-bottom-color: rgba(46, 124, 246, 0.06); border-bottom-style: solid; flex-direction: column; }
+.hd-doc-wrap { border-bottom-width: 1px; border-bottom-color: rgba(99, 117, 236, 0.06); border-bottom-style: solid; flex-direction: column; }
 .hd-doc { flex-direction: row; align-items: center; padding-top: 10px; padding-bottom: 10px; }
 .hd-doc-main { flex: 1; flex-direction: column; }
 .hd-doc-name { font-size: 13px; color: #A6C4E5; margin-bottom: 4px; lines: 1; text-overflow: ellipsis; }
 .hd-doc-meta { flex-direction: row; align-items: center; }
-.hd-doc-badge { font-size: 10px; padding-top: 2px; padding-bottom: 2px; padding-left: 6px; padding-right: 6px; border-radius: 3px; background-color: rgba(46, 124, 246, 0.14); color: #A0B4FF; margin-right: 7px; }
+.hd-doc-badge { font-size: 10px; padding-top: 2px; padding-bottom: 2px; padding-left: 6px; padding-right: 6px; border-radius: 3px; background-color: rgba(99, 117, 236, 0.14); color: #A0B4FF; margin-right: 7px; }
 .hd-doc-badge-tap { padding-right: 5px; }
-.hd-doc-sub { font-size: 11px; color: rgba(166, 196, 229, 0.4); margin-right: 7px; }
+.hd-doc-sub { font-size: 10px; color: rgba(166, 196, 229, 0.4); margin-right: 7px; }
 .hd-doc-ext { font-size: 11px; color: #7FBF9F; margin-top: 4px; }
 .hd-doc-ext-busy { color: rgba(166, 196, 229, 0.45); }
 .hd-doc-summary { font-size: 11px; line-height: 17px; color: rgba(166, 196, 229, 0.5); margin-top: 4px; }
-.hd-doc-del { font-size: 12px; color: #E05C5C; padding-left: 12px; padding-top: 5px; padding-bottom: 5px; }
+.hd-doc-del { font-size: 11px; color: #E05C5C; padding-left: 12px; padding-top: 5px; padding-bottom: 5px; }
 .hd-doc-actions { flex-direction: row; padding-bottom: 9px; }
 .hd-doc-action { font-size: 11px; color: #A0B4FF; margin-right: 14px; }
 .hd-doc-action-warn { color: #E05C5C; }
@@ -1174,14 +1174,14 @@ function todayStr() : string {
 /* Tags: what the document states about the person. A fact is solid, a descriptor is outlined. */
 .hd-tags { flex-direction: row; flex-wrap: wrap; margin-bottom: 7px; }
 .hd-tag { flex-direction: row; align-items: center; padding-top: 3px; padding-bottom: 3px; padding-left: 7px; padding-right: 7px; border-radius: 20px; border-width: 1px; border-style: solid; border-color: rgba(166, 196, 229, 0.25); margin-right: 4px; margin-bottom: 4px; }
-.hd-tag-fact { background-color: rgba(46, 124, 246, 0.16); border-color: rgba(46, 124, 246, 0.35); }
+.hd-tag-fact { background-color: rgba(99, 117, 236, 0.16); border-color: rgba(99, 117, 236, 0.35); }
 .hd-tag-desc { background-color: rgba(0, 0, 0, 0); }
 .hd-tag-inactive { opacity: 0.55; }
 .hd-tag-cat { font-size: 10px; color: rgba(166, 196, 229, 0.5); margin-right: 4px; }
-.hd-tag-label { font-size: 10px; font-weight: bold; color: #A6C4E5; margin-right: 4px; }
+.hd-tag-label { font-size: 10px; font-weight: 600; color: #A6C4E5; margin-right: 4px; }
 .hd-tag-status { font-size: 10px; color: rgba(166, 196, 229, 0.5); }
 /* The structured block: a key/value tree indented by depth. Generic by design. */
-.hd-struct { flex-direction: column; margin-bottom: 9px; padding: 7px 9px; border-radius: 6px; background-color: rgba(46, 124, 246, 0.06); }
+.hd-struct { flex-direction: column; margin-bottom: 9px; padding: 7px 9px; border-radius: 6px; background-color: rgba(99, 117, 236, 0.06); }
 .hd-struct-sec { flex-direction: column; }
 .hd-struct-row { flex-direction: row; padding-top: 2px; padding-bottom: 2px; }
 .hd-struct-head { margin-top: 3px; }
@@ -1194,5 +1194,104 @@ function todayStr() : string {
 .hd-table-row { flex-direction: row; }
 .hd-table-cell { font-size: 11px; line-height: 17px; color: #A6C4E5; min-width: 60px; padding-right: 6px; }
 .hd-table-cell-head { color: rgba(166, 196, 229, 0.75); font-weight: bold; }
+/* #endif */
+/* #ifdef MP-WEIXIN */
+/* Android's CSS has no baseline alignment; WeChat matches the miniapp's title row. */
+.hd-section-title-row { align-items: baseline; }
+/* xapp puts these labels in their own <text>, which does not inherit the miniapp's parent colour. */
+.theme-light .hd-upload-btn-txt, .theme-light .hd-upload-compact-txt { color: #2942E5; }
+.theme-light .hd-tag-label { color: #14243D; }
+/* Light theme, from the miniapp's stylesheet: its own .theme-light rules, plus each of its colour
+   declarations that reads a CSS variable restated under .theme-light. The variables come from the
+   miniapp's app.wxss in App.uvue and flip under the page's .theme-light; xapp's rules above carry
+   dark literals, which never would. */
+.theme-light .hd-section { border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.08); }
+.theme-light .hd-section-title { color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .hd-section-count { color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .hd-compact-name, .theme-light .hd-compact-summary { color: var(--wave, #A6C4E5); }
+.theme-light .hd-compact-meta { color: rgba(var(--wave-rgb), 0.45); }
+.theme-light .hd-upload-compact { border: 1rpx solid rgba(var(--blue-rgb), 0.35); }
+.theme-light .hd-expand-control { color: rgba(var(--wave-rgb), 0.55); }
+.theme-light .hd-muted { color: rgba(var(--wave-rgb), 0.45); }
+.theme-light .hd-upload-btn { border: 1rpx dashed rgba(var(--blue-rgb), 0.35); }
+.theme-light .hd-progress { background: rgba(var(--blue-rgb), 0.12); }
+.theme-light .hd-progress-bar { background: linear-gradient(90deg, rgba(var(--blue-rgb), 0.15), #A0B4FF, rgba(var(--blue-rgb), 0.15)); }
+.theme-light .hd-empty-title { color: var(--steel); }
+.theme-light .hd-empty-hint { color: rgba(var(--wave-rgb), 0.45); }
+.theme-light .hd-doc-wrap { border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.06); }
+.theme-light .hd-doc-ext-busy { color: rgba(var(--wave-rgb), 0.45); }
+.theme-light .hd-doc-summary { color: rgba(var(--wave-rgb), 0.5); }
+.theme-light .hd-doc-name { color: var(--wave, #A6C4E5); }
+.theme-light .hd-doc-badge { background: rgba(var(--blue-rgb), 0.14); }
+.theme-light .hd-doc-sub { color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .hd-footnote { color: rgba(var(--wave-rgb), 0.35); }
+.theme-light .hd-struct { background: rgba(var(--blue-rgb), 0.06); }
+.theme-light .hd-struct-head .hd-struct-key { color: rgba(var(--wave-rgb), 0.75); }
+.theme-light .hd-struct-key { color: rgba(var(--wave-rgb), 0.5); }
+.theme-light .hd-struct-val { color: var(--wave, #A6C4E5); }
+.theme-light .hd-table-header .hd-table-cell { color: rgba(var(--wave-rgb), 0.75); border-bottom: 1rpx solid rgba(var(--wave-rgb), 0.18); }
+.theme-light .hd-table-cell { color: var(--wave, #A6C4E5); }
+.theme-light .hd-tag { border: 1rpx solid rgba(var(--wave-rgb), 0.25); color: var(--wave, #A6C4E5); }
+.theme-light .hd-tag-fact { background: rgba(var(--blue-rgb), 0.16); border-color: rgba(var(--blue-rgb), 0.35); }
+.theme-light .hd-tag-desc { color: rgba(var(--wave-rgb), 0.65); }
+.theme-light .hd-tag-cat { color: rgba(var(--wave-rgb), 0.5); }
+.theme-light .hd-tag-status { color: rgba(var(--wave-rgb), 0.5); }
+.theme-light .hd-doc-badge,
+.theme-light .hd-upload-btn,
+.theme-light .hd-upload-compact { color: #2942E5; }
+.theme-light .hd-compact-name, .theme-light .hd-compact-summary { color: #14243D; }
+.theme-light .hd-compact-meta, .theme-light .hd-expand-control { color: #607090; }
+.theme-light .hd-progress { background: rgba(41, 66, 229, 0.10); }
+.theme-light .hd-progress-bar { background: linear-gradient(90deg, rgba(41, 66, 229, 0.12), #2942E5, rgba(41, 66, 229, 0.12)); }
+.theme-light .hd-empty-title { color: #607090; }
+.theme-light .hd-doc-name { color: #14243D; }
+.theme-light .hd-doc-ext { color: #2E8B57; }
+.theme-light .hd-doc-summary { color: #607090; }
+.theme-light .hd-doc-action { color: #2942E5; }
+.theme-light .hd-struct { background: rgba(41, 66, 229, 0.05); }
+.theme-light .hd-table-cell { color: #14243D; }
+.theme-light .hd-table-header .hd-table-cell { color: #14243D; border-bottom-color: rgba(20, 36, 61, 0.15); }
+.theme-light .hd-tag { color: #14243D; border-color: rgba(20, 36, 61, 0.2); }
+.theme-light .hd-tag-fact { background: rgba(41, 66, 229, 0.1); border-color: rgba(41, 66, 229, 0.3); }
+.theme-light .hd-tag-desc { color: #607090; }
+.theme-light .hd-tag-cat, .theme-light .hd-tag-status { color: #607090; }
+.theme-light .hd-struct-key { color: #607090; }
+.theme-light .hd-struct-head .hd-struct-key { color: #14243D; }
+.theme-light .hd-struct-val { color: #14243D; }
+.theme-light .hd-doc-fix-hint { color: #B8741E; }
+/* #endif */
+/* #ifdef MP-WEIXIN */
+/* Text size (菜单 › 字体大小), from the miniapp's stylesheet: every rule of its whose font-size reads
+   var(--fs-N), with the line-height it declares. The variables come from App.uvue's copy of app.wxss,
+   rescaled under the page's .fs-1/.fs-2/.fs-3, and inherit into components; this file's own px sizes
+   never would. Regenerate (tools/xapp-mini/style-gen: fsvars.js, then fsinherit.js) when the miniapp's sizes change. */
+.hd-section-title { font-size: var(--fs-20, 20rpx); }
+.hd-section-count { font-size: var(--fs-22, 22rpx); }
+.hd-compact-name, .hd-compact-summary { font-size: var(--fs-23, 23rpx); }
+.hd-compact-meta { font-size: var(--fs-20, 20rpx); }
+.hd-upload-compact, .hd-upload-compact-txt { font-size: var(--fs-21, 21rpx); }
+.hd-expand-label { font-size: var(--fs-18, 18rpx); }
+.hd-muted { font-size: var(--fs-24, 24rpx); }
+.hd-upload-btn, .hd-upload-btn-txt { font-size: var(--fs-25, 25rpx); }
+.hd-empty-title { font-size: var(--fs-25, 25rpx); }
+.hd-empty-hint { font-size: var(--fs-22, 22rpx); line-height: 1.6; }
+.hd-doc-ext { font-size: var(--fs-22, 22rpx); }
+.hd-doc-summary { font-size: var(--fs-22, 22rpx); line-height: 1.55; }
+.hd-doc-action { font-size: var(--fs-22, 22rpx); }
+.hd-doc-name { font-size: var(--fs-26, 26rpx); }
+.hd-doc-badge { font-size: var(--fs-20, 20rpx); }
+.hd-doc-sub { font-size: var(--fs-21, 21rpx); }
+.hd-doc-del { font-size: var(--fs-23, 23rpx); }
+.hd-footnote { font-size: var(--fs-20, 20rpx); line-height: 1.6; }
+.hd-doc-fix-hint { font-size: var(--fs-21, 21rpx); line-height: 1.55; }
+.hd-struct-row { font-size: var(--fs-22, 22rpx); line-height: 1.5; }
+.hd-table-cell { font-size: var(--fs-22, 22rpx); line-height: 1.5; }
+.hd-tag { font-size: var(--fs-20, 20rpx); line-height: 1.4; }
+/* …and the miniapp text that sets no size of its own but inherits one (xapp's <text> inherits nothing). */
+.hd-tag-cat { font-size: var(--fs-20, 20rpx); }
+.hd-tag-label { font-size: var(--fs-20, 20rpx); }
+.hd-tag-status { font-size: var(--fs-20, 20rpx); }
+.hd-struct-key { font-size: var(--fs-22, 22rpx); }
+.hd-struct-val { font-size: var(--fs-22, 22rpx); }
 /* #endif */
 </style>
