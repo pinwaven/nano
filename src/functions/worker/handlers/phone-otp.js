@@ -59,6 +59,22 @@ const USER_SELECT = `
 // channel.root_key_name is the top of the channel tree (lib/channels.js) — what the miniapp
 // gates the GCN store and email login on, since a waven-china-zj user is a Waven user.
 // Shared with handlers/email-otp.js.
+// The account's current channel and own coach identity, shaped exactly as at login, for
+// /heartbeat (index.js): a client replaces what it stored at sign-in — a user moved to another
+// channel in the admin panel kept the old one until they signed in again (xapp-mini, dev
+// 2026-10-03). null for an unknown or merged-away account. Never throws.
+async function currentSessionShape(user_id) {
+    try {
+        const { rows } = await pool.query(`${USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [user_id]);
+        if (!rows.length || rows[0].merged_into_user_id) return null;
+        const { channel, coach } = await shapeUserRow(rows[0]);
+        return { channel, coach };
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'heartbeat_session_refresh_failed', data: { user_id, err: err.message } }));
+        return null;
+    }
+}
+
 async function shapeUserRow(row) {
     // All phone/email/QR login responses pass through this shaper. Identity tables normally
     // move to the survivor during a merge, but resolving again here also covers a QR session
@@ -584,5 +600,5 @@ module.exports = {
     handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified,
     handlePhoneOtpList, handlePhoneOtpRemove, handlePhoneOtpAdminAdd,
     // Shared with handlers/email-otp.js so both login identities return one user/channel/coach shape.
-    USER_SELECT, shapeUserRow, SUPER_OTP_ENABLED, SUPER_OTP_CODE,
+    USER_SELECT, shapeUserRow, currentSessionShape, SUPER_OTP_ENABLED, SUPER_OTP_CODE,
 };
