@@ -430,7 +430,7 @@
             <text class="kino-scan-icon">⬡</text>
             <text class="kino-scan-label">{{ tr('kinoScanBtn') }}</text>
           </view>
-          <view class="kino-scan-close" v-on:click="cancelKinoScan"><text>✕</text></view>
+          <view class="kino-scan-close" v-on:click="cancelKinoScan"><text class="kino-scan-x">✕</text></view>
         </view>
 
         <view v-if="obStep == 'done' || isGuest" class="ai-disclaimer">
@@ -1385,7 +1385,7 @@
     <!-- ════ 营养定制 focus sheet (page-level, overlays every tab) ════
          Asked before the tool runs, because a focus is not a hint: it decides which dots survive
          the weekly tier cap (AGENTS §31). Never a gate — 不设方向 / Formulate anyway always present. -->
-    <view v-if="formulaFocusOpen" class="overlay-mask" v-on:click="closeFormulaFocus">
+    <view v-if="formulaFocusOpen" class="overlay-mask focus-mask" v-on:click="closeFormulaFocus">
       <view class="focus-sheet" v-on:click.stop="noop">
         <view class="overlay-header">
           <text class="overlay-title">{{ tr('focusTitle') }}</text>
@@ -2968,7 +2968,12 @@ export default {
     },
     // Structural text-scale: uvue has no CSS-variable cascade, so the fs-0..3 ladder is applied
     // inline to the main text runs (TODO(port): full fs-N cascade parity with main.wxss).
+    // xapp-mini has the cascade (the miniapp's --fs-N rules at the end of the style block), and an
+    // inline size would override it.
     fs(size : number) : string {
+      // #ifdef MP-WEIXIN
+      if (size > 0) return ''
+      // #endif
       const mul = 1 + (this.textScale * 0.08)
       return 'font-size:' + Math.round(size * mul) + 'px'
     },
@@ -7738,6 +7743,7 @@ export default {
 .kino-scan-icon { color: #FFFFFF; margin-right: 6px; }
 .kino-scan-label { color: #FFFFFF; font-size: 13px; }
 .kino-scan-close { color: #A6C4E5; font-size: 16px; padding: 6px 10px; }
+.kino-scan-x { color: #A6C4E5; font-size: 16px; }
 .ai-disclaimer { align-items: center; color: rgb(238, 242, 255); text-align: center; padding: 4px 12px 2px 12px; }
 .ai-disclaimer-text { color: rgba(255, 255, 255, 0.3); font-size: 10px; letter-spacing: 1px; text-align: center; }
 .input-container { }
@@ -8460,6 +8466,78 @@ export default {
 /* #endif */
 
 /* #ifdef MP-WEIXIN */
+/* 营养定制 focus sheet as the miniapp draws it. Its type reads var(--fs-body)/var(--fs-small),
+   which app.wxss never defines, so the miniapp renders all of it at the inherited 16px; match
+   that. The mask is fixed above the tab bar, which otherwise covered the sheet's buttons. */
+.focus-mask { position: fixed; z-index: 100; }
+.focus-sheet { background-color: #0F2540; padding: 0 18px calc(20px + env(safe-area-inset-bottom)); }
+.focus-intro { font-size: 16px; line-height: 25.6px; color: #E8EEF7; margin-top: 0; margin-bottom: 10px; }
+.focus-plan-row { align-items: flex-start; padding: 11px 12px; border-radius: 10px; background-color: rgba(99, 117, 236, 0.1); margin-top: 0; margin-bottom: 7px; }
+.focus-plan-body { margin-left: 9px; }
+.focus-plan-name { font-size: 16px; color: #FFFFFF; font-weight: 600; }
+.focus-plan-goal { font-size: 16px; line-height: 24px; color: #8FA3BF; margin-top: 3px; }
+.focus-hint { font-size: 16px; line-height: 25.6px; color: #8FA3BF; margin-top: 8px; margin-bottom: 14px; }
+.focus-btn { padding: 13px 0; border-radius: 999px; margin-top: 0; }
+.focus-btn-label-primary { font-size: 16px; font-weight: 600; }
+.focus-btn-ghost { background-color: transparent; border: 1px solid rgba(143, 163, 191, 0.35); margin-top: 8px; }
+.focus-btn-label-ghost { font-size: 16px; color: #8FA3BF; }
+.focus-btn-row { gap: 8px; }
+.focus-btn-half { margin-right: 0; }
+.theme-light .focus-btn-label-ghost { color: #607090; }
+/* #endif */
+
+/* #ifdef MP-WEIXIN */
+/* 扫描二维码 bar (检测 in the toolbox): the miniapp centres a glowing pill and floats the ✕ at the right. */
+.kino-scan-bar { justify-content: center; padding-top: 12px; padding-bottom: 12px; background-color: rgba(11, 28, 46, 0.92); border-top: 1px solid rgba(99, 117, 236, 0.18); position: relative; }
+.kino-scan-btn { padding: 12px 29px; border-radius: 24px; box-shadow: 0 2px 12px rgba(99, 117, 236, 0.5); }
+.kino-scan-icon { font-size: 18px; font-weight: 600; margin-right: 7px; }
+.kino-scan-label { font-size: 15px; font-weight: 600; }
+.kino-scan-close { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); width: 29px; height: 29px; padding: 0; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.5); }
+.kino-scan-x { color: rgba(255, 255, 255, 0.5); }
+/* AI text: the miniapp's .msg-html is 28rpx with line-height 1.62 — in rpx, so it rounds the same on every phone width. */
+.msg-html { font-size: 28rpx; line-height: 1.62; }
+/* Redeem sheets: the miniapp's .guest-sheet spaces every child 16px apart (flex gap). */
+.viva-redeem-input { margin-top: 16px; font-size: 15px; letter-spacing: 1px; }
+.code-wx-addr { margin: 18px 0 6px; }
+/* Learn tab (学院), measured against the miniapp: soft glows with no tint behind them, its 800/600
+   weights, and its line boxes (inline text inside 16px blocks). */
+.academy-card-glow-tl, .academy-card-glow-br { background-color: transparent; border-radius: 50%; }
+.academy-card-credits-num { font-weight: 800; line-height: 41px; }
+.academy-card-stat-num { font-weight: 800; line-height: 18px; }
+.academy-card-tier-text { line-height: 21px; }
+.training-section-header { margin-top: 12px; margin-bottom: 8px; }
+.training-section-title { line-height: 19px; }
+.training-path-card { margin-top: 0; }
+.training-path-title, .training-course-title { font-weight: 600; }
+.training-path-progress-label { margin-top: 0; line-height: 13px; }
+.training-course-desc { line-height: 18px; margin-top: 0; }
+.training-course-meta-row { margin-top: 6px; }
+.training-lesson-badge-text { line-height: 19px; }
+.training-course-card { background-color: #0F2540; border: 1rpx solid #1E3A5F; border-radius: 10px; margin-top: 0; margin-bottom: 10px; }
+/* 魔盒: the miniapp pads each asset section rather than spacing cards, and its icons are round. */
+.wellness-section { padding: 16px 14px 0; margin-bottom: 0; }
+.media-asset-card { margin-top: 0; }
+.media-asset-icon { border-radius: 999px; }
+.media-asset-name, .media-asset-btn-text { font-weight: 600; }
+.media-asset-btn-text { line-height: 19px; }
+/* Header menu, measured against the miniapp. */
+.menu-credit-label, .menu-credit-value { flex-shrink: 0; white-space: nowrap; }
+.header-user { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.menu-item-icon { line-height: 19px; }
+.menu-item-label { font-weight: 500; }
+.menu-fs-step:first-child { margin-left: 0; }
+/* Plans ▸ Dots: the miniapp's sections sit flush (their padding is the spacing). */
+.pkg-section, .code-section { margin-top: 0; }
+.dots-header { margin-top: 0; }
+.pkg-name, .scan-box-title { font-weight: 600; }
+.pkg-name { margin-right: 8px; }
+.pkg-meta { color: rgba(166, 196, 229, 0.4); line-height: 17px; }
+.scan-box-title { line-height: 20px; }
+.scan-box-detail { line-height: 16.5px; }
+.theme-light .kino-scan-x { color: var(--text-muted); }
+/* #endif */
+
+/* #ifdef MP-WEIXIN */
 /* Light theme on xapp-mini: every top-level .theme-light rule of the miniapp's pages/main/main.wxss, verbatim
    (the colour variables they read come from App.uvue's copy of app.wxss). Two-class selectors,
    so they win over this file's own rules. Regenerate from the miniapp when its light theme
@@ -8918,6 +8996,367 @@ export default {
 .theme-light .training-path-card { background-color: rgb(245, 237, 227); border-top-color: rgba(152, 95, 51, 0.22); border-left-color: rgba(152, 95, 51, 0.22); border-bottom-color: rgba(152, 95, 51, 0.22); border-right-color: rgba(152, 95, 51, 0.22); }
 .theme-light .training-path-progress-label { color: rgb(133, 108, 71); }
 .theme-light .training-path-title { color: rgb(44, 44, 44); }
+/* #endif */
+/* #ifdef MP-WEIXIN */
+/* Text size (菜单 › 字体大小), from the miniapp's stylesheet: every rule of its whose font-size reads
+   var(--fs-N), with the line-height it declares. The variables come from App.uvue's copy of app.wxss,
+   rescaled under the page's .fs-1/.fs-2/.fs-3, and inherit into components; this file's own px sizes
+   never would. Regenerate (tools/xapp-mini/style-gen: fsvars.js, then fsinherit.js) when the miniapp's sizes change. */
+.coach-back-pill { font-size: var(--fs-20, 20rpx); }
+.sandbox-banner-text { font-size: var(--fs-22, 22rpx); }
+.sandbox-banner-exit { font-size: var(--fs-22, 22rpx); }
+.viva-expired-banner-text { font-size: var(--fs-22, 22rpx); }
+.viva-expired-banner-btn { font-size: var(--fs-22, 22rpx); }
+.header-title { font-size: var(--fs-28, 28rpx); }
+.header-user { font-size: var(--fs-28, 28rpx); }
+.header-version { font-size: var(--fs-18, 18rpx); }
+.menu-item-icon { font-size: var(--fs-28, 28rpx); }
+.menu-item-label { font-size: var(--fs-28, 28rpx); }
+.menu-credit-label { font-size: var(--fs-22, 22rpx); }
+.menu-credit-value { font-size: var(--fs-28, 28rpx); }
+.inner-tab-text, .inner-tab-text-on { font-size: var(--fs-26, 26rpx); }
+.tab-label, .tab-label-on { font-size: var(--fs-20, 20rpx); }
+.chat-history-text { font-size: var(--fs-22, 22rpx); }
+.chat-history-start-text { font-size: var(--fs-21, 21rpx); }
+.msg-coach-label { font-size: var(--fs-20, 20rpx); }
+.msg-ag-label { font-size: var(--fs-20, 20rpx); }
+.msg-text { font-size: var(--fs-28, 28rpx); line-height: 1.55; }
+.msg-html { font-size: var(--fs-28, 28rpx); line-height: 1.62; }
+.msg-daysep-text { font-size: var(--fs-22, 22rpx); }
+.mcard-label { font-size: var(--fs-22, 22rpx); }
+.mcard-val { font-size: var(--fs-36, 36rpx); line-height: 1.15; }
+.mcard-unit { font-size: var(--fs-22, 22rpx); }
+.mcard-pill { font-size: var(--fs-20, 20rpx); }
+.spark-delta { font-size: var(--fs-20, 20rpx); }
+.tcard-title { font-size: var(--fs-21, 21rpx); }
+.tcard-body { font-size: var(--fs-27, 27rpx); line-height: 1.6; }
+.dcard-id { font-size: var(--fs-22, 22rpx); }
+.dcard-name { font-size: var(--fs-25, 25rpx); }
+.dcard-note { font-size: var(--fs-21, 21rpx); }
+.fcard-title { font-size: var(--fs-25, 25rpx); }
+.fcard-note { font-size: var(--fs-19, 19rpx); }
+.fcard-slot { font-size: var(--fs-21, 21rpx); }
+.fcard-num { font-size: var(--fs-22, 22rpx); }
+.fcard-leg-name { font-size: var(--fs-21, 21rpx); }
+.fcard-leg-num { font-size: var(--fs-19, 19rpx); }
+.fcard-foot { font-size: var(--fs-21, 21rpx); }
+.fcard-daylabel { font-size: var(--fs-22, 22rpx); }
+.fcard-daytag { font-size: var(--fs-19, 19rpx); }
+.fcard-cycle { font-size: var(--fs-21, 21rpx); }
+.fcard-tier-chev { font-size: var(--fs-22, 22rpx); line-height: 1; }
+.fcard-tier-label { font-size: var(--fs-24, 24rpx); }
+.fcard-tier-rec { font-size: var(--fs-19, 19rpx); }
+.fcard-tier-note, .fcard-tier-note-text { font-size: var(--fs-21, 21rpx); line-height: 1.5; }
+.fcard-tier-pitch { font-size: var(--fs-21, 21rpx); line-height: 1.55; }
+.fcard-tier-hint { font-size: var(--fs-19, 19rpx); line-height: 1.5; }
+.fcard-uphead { font-size: var(--fs-21, 21rpx); }
+.fcard-rung-label { font-size: var(--fs-22, 22rpx); }
+.fcard-rung-add { font-size: var(--fs-19, 19rpx); }
+.fcard-leg-weeks { font-size: var(--fs-19, 19rpx); }
+.fcard-rung-pitch { font-size: var(--fs-21, 21rpx); line-height: 1.55; }
+.fcard-rung-hint { font-size: var(--fs-19, 19rpx); line-height: 1.5; }
+.fcard-owned { font-size: var(--fs-19, 19rpx); }
+.fcard-cta, .fcard-cta-label { font-size: var(--fs-24, 24rpx); }
+.fcard-agnote { font-size: var(--fs-21, 21rpx); line-height: 1.5; }
+.msg-action-label { font-size: var(--fs-28, 28rpx); }
+.msg-action-arrow { font-size: var(--fs-40, 40rpx); line-height: 1; }
+.typing-status-text { font-size: var(--fs-24, 24rpx); }
+.ob-input { font-size: var(--fs-28, 28rpx); line-height: 1.5; }
+.ob-confirm, .ob-confirm-label { font-size: var(--fs-28, 28rpx); }
+.cond-chip, .cond-chip-label { font-size: var(--fs-26, 26rpx); }
+.quick-btn, .quick-btn-label { font-size: var(--fs-28, 28rpx); }
+.picker-val { font-size: var(--fs-28, 28rpx); }
+.picker-arrow { font-size: var(--fs-36, 36rpx); }
+.slider-key { font-size: var(--fs-22, 22rpx); }
+.slider-val { font-size: var(--fs-32, 32rpx); }
+.slider-unit { font-size: var(--fs-22, 22rpx); }
+.slider-val-input { font-size: var(--fs-32, 32rpx); }
+.slider-step-btn { font-size: var(--fs-32, 32rpx); }
+.ai-disclaimer-text { font-size: var(--fs-20, 20rpx); }
+.tool-item-icon { font-size: var(--fs-30, 30rpx); line-height: 1; }
+.tool-item-label { font-size: var(--fs-24, 24rpx); }
+.plus-icon { font-size: var(--fs-40, 40rpx); line-height: 1; }
+.chat-textarea { font-size: var(--fs-28, 28rpx); line-height: 1.45; }
+.send-icon { font-size: var(--fs-36, 36rpx); }
+.mic-recording-text { font-size: var(--fs-24, 24rpx); }
+.cart-section-title { font-size: var(--fs-18, 18rpx); }
+.cart-sim-btn-icon { font-size: var(--fs-22, 22rpx); line-height: 1; }
+.cart-key { font-size: var(--fs-13, 13rpx); }
+.cart-remaining { font-size: var(--fs-11, 11rpx); }
+.cart-empty, .cart-empty-label { font-size: var(--fs-18, 18rpx); line-height: 1.5; }
+.dots-week-label { font-size: var(--fs-22, 22rpx); }
+.dots-week-arrow { font-size: var(--fs-40, 40rpx); }
+.pkg-section-title { font-size: var(--fs-26, 26rpx); }
+.pkg-name { font-size: var(--fs-25, 25rpx); line-height: 1.4; }
+.pkg-stage { font-size: var(--fs-20, 20rpx); }
+.pkg-meta { font-size: var(--fs-22, 22rpx); line-height: 1.5; }
+.pkg-track-text { font-size: var(--fs-21, 21rpx); line-height: 1.45; }
+.pkg-track-copy { font-size: var(--fs-21, 21rpx); }
+.pkg-cta-text, .pkg-cta-text-ghost { font-size: var(--fs-24, 24rpx); }
+.code-chip { font-size: var(--fs-22, 22rpx); }
+.code-wx-addr { font-size: var(--fs-24, 24rpx); }
+.pkg-hint { font-size: var(--fs-21, 21rpx); line-height: 1.5; }
+.order-dots-title { font-size: var(--fs-26, 26rpx); line-height: 1.5; }
+.order-dots-detail { font-size: var(--fs-22, 22rpx); }
+.order-dots-btn-text { font-size: var(--fs-24, 24rpx); }
+.dots-title { font-size: var(--fs-26, 26rpx); }
+.day-label { font-size: var(--fs-24, 24rpx); }
+.meal-name { font-size: var(--fs-20, 20rpx); }
+.dot-key { font-size: var(--fs-18, 18rpx); }
+.dot-count { font-size: var(--fs-18, 18rpx); }
+.dots-empty, .dots-empty-label { font-size: var(--fs-26, 26rpx); line-height: 1.6; }
+.dispense-btn-text { font-size: var(--fs-30, 30rpx); line-height: 1; }
+.store-title { font-size: var(--fs-34, 34rpx); }
+.store-credit-card-num { font-size: var(--fs-52, 52rpx); line-height: 1; }
+.store-credit-card-unit { font-size: var(--fs-18, 18rpx); }
+.store-credit-card-label { font-size: var(--fs-13, 13rpx); }
+.store-tag-text { font-size: var(--fs-18, 18rpx); }
+.store-card-name { font-size: var(--fs-30, 30rpx); }
+.store-card-desc { font-size: var(--fs-24, 24rpx); line-height: 1.5; }
+.store-variant-label { font-size: var(--fs-24, 24rpx); }
+.store-price { font-size: var(--fs-44, 44rpx); line-height: 1; }
+.store-unit { font-size: var(--fs-22, 22rpx); }
+.store-partner-badge-text { font-size: var(--fs-20, 20rpx); }
+.store-price-regular { font-size: var(--fs-24, 24rpx); }
+.store-buy-label { font-size: var(--fs-26, 26rpx); }
+.store-subtab-btn { font-size: var(--fs-24, 24rpx); }
+.order-name { font-size: var(--fs-28, 28rpx); }
+.order-status { font-size: var(--fs-20, 20rpx); }
+.order-price { font-size: var(--fs-32, 32rpx); }
+.order-meta { font-size: var(--fs-22, 22rpx); }
+.order-date { font-size: var(--fs-20, 20rpx); }
+.delivery-row { font-size: var(--fs-22, 22rpx); line-height: 32rpx; }
+.copy-badge, .copy-badge-label { font-size: var(--fs-18, 18rpx); line-height: 24rpx; }
+.cancel-order-btn text { font-size: var(--fs-22, 22rpx); }
+.store-cart-badge { font-size: var(--fs-22, 22rpx); }
+.stepper-sym { font-size: var(--fs-26, 26rpx); line-height: 1; }
+.stepper-qty { font-size: var(--fs-30, 30rpx); }
+.cart-bar-label { font-size: var(--fs-24, 24rpx); }
+.cart-bar-total { font-size: var(--fs-32, 32rpx); }
+.cart-bar-btn-text { font-size: var(--fs-26, 26rpx); }
+.cart-sheet-title { font-size: var(--fs-30, 30rpx); }
+.cart-close-sym { font-size: var(--fs-28, 28rpx); }
+.cart-empty-text { font-size: var(--fs-26, 26rpx); }
+.cart-item-name { font-size: var(--fs-28, 28rpx); }
+.cart-item-price { font-size: var(--fs-24, 24rpx); }
+.cart-total-text { font-size: var(--fs-30, 30rpx); }
+.cart-checkout-text { font-size: var(--fs-28, 28rpx); }
+.checkout-addr-title { font-size: var(--fs-26, 26rpx); }
+.checkout-wx-addr-icon { font-size: var(--fs-22, 22rpx); }
+.checkout-wx-addr-text { font-size: var(--fs-22, 22rpx); }
+.checkout-addr-label { font-size: var(--fs-24, 24rpx); }
+.checkout-addr-input { font-size: var(--fs-26, 26rpx); line-height: 1.4; }
+.checkout-addr-textarea { font-size: var(--fs-26, 26rpx); line-height: 1.4; }
+.kino-scan-close { font-size: var(--fs-32, 32rpx); }
+.kino-scan-btn { font-size: var(--fs-30, 30rpx); }
+.kino-scan-icon { font-size: var(--fs-36, 36rpx); }
+.kino-scan-label { font-size: var(--fs-30, 30rpx); }
+.csim-title { font-size: var(--fs-30, 30rpx); }
+.csim-subtitle { font-size: var(--fs-20, 20rpx); }
+.csim-set-name { font-size: var(--fs-26, 26rpx); }
+.csim-set-desc { font-size: var(--fs-20, 20rpx); }
+.csim-badge-key { font-size: var(--fs-17, 17rpx); }
+.csim-badge-name { font-size: var(--fs-17, 17rpx); }
+.csim-cancel, .csim-cancel-label { font-size: var(--fs-26, 26rpx); }
+.kpass-logo { font-size: var(--fs-72, 72rpx); }
+.kpass-title { font-size: var(--fs-28, 28rpx); }
+.kpass-error { font-size: var(--fs-24, 24rpx); line-height: 36rpx; }
+.kpass-key, .kpass-key-label { font-size: var(--fs-40, 40rpx); }
+.kpass-del-icon { font-size: var(--fs-36, 36rpx); }
+.kpass-cancel, .kpass-cancel-label { font-size: var(--fs-26, 26rpx); }
+.ksm-title { font-size: var(--fs-26, 26rpx); }
+.ksm-serial { font-size: var(--fs-18, 18rpx); }
+.ksm-close, .ksm-close-label { font-size: var(--fs-32, 32rpx); }
+.ksm-face-label { font-size: var(--fs-16, 16rpx); }
+.ksm-face-status { font-size: var(--fs-30, 30rpx); }
+.ksm-debug-toggle-text { font-size: var(--fs-18, 18rpx); }
+.ksm-debug-label { font-size: var(--fs-18, 18rpx); }
+.ksm-debug-msg { font-size: var(--fs-20, 20rpx); line-height: 1.5; }
+.ksm-face-patient-label { font-size: var(--fs-14, 14rpx); }
+.ksm-face-user { font-size: var(--fs-22, 22rpx); }
+.ksm-slide-index { font-size: var(--fs-16, 16rpx); }
+.ksm-slide-label { font-size: var(--fs-18, 18rpx); }
+.ksm-slide-val { font-size: var(--fs-48, 48rpx); line-height: 1; }
+.ksm-slide-unit { font-size: var(--fs-18, 18rpx); }
+.ksm-tab { font-size: var(--fs-24, 24rpx); }
+.ksm-bioage-num { font-size: var(--fs-48, 48rpx); line-height: 1; }
+.ksm-bioage-chip-label { font-size: var(--fs-14, 14rpx); }
+.ksm-sub-label { font-size: var(--fs-24, 24rpx); }
+.ksm-sub-val { font-size: var(--fs-26, 26rpx); }
+.ksm-bm-label { font-size: var(--fs-24, 24rpx); }
+.ksm-bm-val { font-size: var(--fs-26, 26rpx); }
+.ksm-bm-unit { font-size: var(--fs-20, 20rpx); }
+.ksm-btn, .ksm-btn-label { font-size: var(--fs-28, 28rpx); }
+.ksm-quit-btn { font-size: var(--fs-26, 26rpx); }
+.guest-signup-btn-text { font-size: var(--fs-26, 26rpx); }
+.guest-lock-icon { font-size: var(--fs-72, 72rpx); }
+.guest-lock-title { font-size: var(--fs-28, 28rpx); line-height: 1.7; }
+.guest-lock-btn { font-size: var(--fs-28, 28rpx); }
+.neo-bind-card .guest-lock-icon { font-size: var(--fs-32, 32rpx); }
+.neo-bind-card .guest-lock-title { font-size: var(--fs-22, 22rpx); line-height: 1.5; }
+.neo-bind-card .guest-lock-btn { font-size: var(--fs-22, 22rpx); }
+.avatar-pick-icon { font-size: var(--fs-48, 48rpx); line-height: 1; }
+.avatar-pick-hint { font-size: var(--fs-22, 22rpx); }
+.guest-sheet-title { font-size: var(--fs-36, 36rpx); }
+.guest-sheet-desc { font-size: var(--fs-26, 26rpx); line-height: 1.7; }
+.guest-sheet-error, .guest-sheet-error-text { font-size: var(--fs-24, 24rpx); }
+.viva-redeem-input { font-size: var(--fs-30, 30rpx); }
+.guest-sheet-btn { font-size: var(--fs-30, 30rpx); }
+.guest-sheet-skip { font-size: var(--fs-26, 26rpx); }
+.consent-check-icon { font-size: var(--fs-26, 26rpx); line-height: 1; }
+.consent-label { font-size: var(--fs-28, 28rpx); }
+.consent-label-optional { font-size: var(--fs-24, 24rpx); }
+.pin-digit { font-size: var(--fs-36, 36rpx); }
+.msg-phone-btn { font-size: var(--fs-28, 28rpx); line-height: normal; }
+.plans-title { font-size: var(--fs-34, 34rpx); }
+.plans-browse-btn-text { font-size: var(--fs-24, 24rpx); }
+.plans-empty-text { font-size: var(--fs-26, 26rpx); }
+.plans-browse-cta-text { font-size: var(--fs-28, 28rpx); }
+.plan-type-text { font-size: var(--fs-20, 20rpx); }
+.plan-card-name { font-size: var(--fs-28, 28rpx); }
+.plan-meta-item { font-size: var(--fs-22, 22rpx); }
+.plan-checkin-text { font-size: var(--fs-26, 26rpx); }
+.overlay-title { font-size: var(--fs-32, 32rpx); }
+.close-x { font-size: var(--fs-32, 32rpx); }
+.detail-tab-text { font-size: var(--fs-26, 26rpx); }
+.plan-detail-label { font-size: var(--fs-22, 22rpx); }
+.plan-detail-value { font-size: var(--fs-26, 26rpx); line-height: 1.5; }
+.plan-chip-text { font-size: var(--fs-22, 22rpx); }
+.plan-action-btn text { font-size: var(--fs-24, 24rpx); }
+.plan-action-buy text { font-size: var(--fs-26, 26rpx); }
+.browse-tpl-name { font-size: var(--fs-28, 28rpx); }
+.browse-tpl-goal { font-size: var(--fs-24, 24rpx); line-height: 1.4; }
+.browse-tpl-meta { font-size: var(--fs-22, 22rpx); }
+.browse-enrolled-badge { font-size: var(--fs-22, 22rpx); }
+.browse-join-btn text { font-size: var(--fs-24, 24rpx); }
+.plan-reminder-time { font-size: var(--fs-28, 28rpx); }
+.plan-reminder-content { font-size: var(--fs-22, 22rpx); line-height: 1.4; }
+.plan-reminder-toggle, .plan-reminder-toggle-label { font-size: var(--fs-22, 22rpx); }
+.plan-empty-hint text { font-size: var(--fs-24, 24rpx); }
+.reminders-section-title { font-size: var(--fs-26, 26rpx); }
+.reminder-content { font-size: var(--fs-26, 26rpx); line-height: 1.5; }
+.reminder-source-text { font-size: var(--fs-20, 20rpx); }
+.reminder-date { font-size: var(--fs-22, 22rpx); }
+.reminder-recur-text { font-size: var(--fs-20, 20rpx); }
+.plan-task-label { font-size: var(--fs-21, 21rpx); }
+.plan-task-check { font-size: var(--fs-21, 21rpx); }
+.plan-daily-count { font-size: var(--fs-20, 20rpx); }
+.modal-title { font-size: var(--fs-32, 32rpx); }
+.modal-input { font-size: var(--fs-30, 30rpx); line-height: 96rpx; }
+.modal-btn { font-size: var(--fs-28, 28rpx); }
+.q-label { font-size: var(--fs-26, 26rpx); }
+.event-title { font-size: var(--fs-28, 28rpx); }
+.event-badge-signed text { font-size: var(--fs-20, 20rpx); }
+.event-meta { font-size: var(--fs-24, 24rpx); }
+.event-desc { font-size: var(--fs-24, 24rpx); line-height: 1.5; }
+.event-btn text { font-size: var(--fs-24, 24rpx); }
+.training-section-title { font-size: var(--fs-22, 22rpx); }
+.training-course-cover-text { font-size: var(--fs-30, 30rpx); line-height: 1.4; }
+.training-lesson-badge-text { font-size: var(--fs-20, 20rpx); }
+.training-course-lock-icon { font-size: var(--fs-28, 28rpx); }
+.training-course-title { font-size: var(--fs-28, 28rpx); }
+.training-course-desc { font-size: var(--fs-24, 24rpx); line-height: 1.5; }
+.training-course-prereq-hint { font-size: var(--fs-20, 20rpx); }
+.training-library-icon { font-size: var(--fs-32, 32rpx); }
+.training-library-title { font-size: var(--fs-28, 28rpx); }
+.training-library-chevron { font-size: var(--fs-36, 36rpx); }
+.training-back-text { font-size: var(--fs-26, 26rpx); }
+.training-course-header-title { font-size: var(--fs-36, 36rpx); }
+.training-course-header-desc { font-size: var(--fs-26, 26rpx); line-height: 1.5; }
+.training-lesson-num-text { font-size: var(--fs-22, 22rpx); }
+.training-lesson-title { font-size: var(--fs-28, 28rpx); }
+.training-lesson-desc { font-size: var(--fs-24, 24rpx); }
+.training-lesson-no-video { font-size: var(--fs-22, 22rpx); }
+.training-lesson-done-text { font-size: var(--fs-24, 24rpx); }
+.training-lesson-chevron { font-size: var(--fs-36, 36rpx); }
+.training-video-loading-text { font-size: var(--fs-26, 26rpx); }
+.training-lesson-detail-title { font-size: var(--fs-32, 32rpx); }
+.training-lesson-detail-desc { font-size: var(--fs-26, 26rpx); line-height: 1.6; }
+.training-completed-badge-text { font-size: var(--fs-28, 28rpx); }
+.training-mark-btn-text { font-size: var(--fs-30, 30rpx); }
+.training-library-header-title { font-size: var(--fs-36, 36rpx); }
+.library-float-back-arrow { font-size: var(--fs-36, 36rpx); line-height: 1; }
+.library-float-back-label { font-size: var(--fs-26, 26rpx); }
+.training-library-content-text { font-size: var(--fs-26, 26rpx); line-height: 1.8; }
+.academy-card-header-label { font-size: var(--fs-20, 20rpx); }
+.academy-card-tier-text { font-size: var(--fs-20, 20rpx); }
+.academy-card-credits-num { font-size: var(--fs-80, 80rpx); line-height: 1; }
+.academy-card-credits-label { font-size: var(--fs-16, 16rpx); }
+.academy-card-stat-num { font-size: var(--fs-36, 36rpx); line-height: 1; }
+.academy-card-stat-label { font-size: var(--fs-16, 16rpx); }
+.training-path-title { font-size: var(--fs-28, 28rpx); }
+.training-path-tier { font-size: var(--fs-20, 20rpx); }
+.training-path-desc { font-size: var(--fs-24, 24rpx); }
+.training-path-progress-label { font-size: var(--fs-22, 22rpx); }
+.training-course-level { font-size: var(--fs-20, 20rpx); }
+.training-course-credits { font-size: var(--fs-20, 20rpx); }
+.training-lesson-type-badge { font-size: var(--fs-22, 22rpx); }
+.training-lesson-credits-label { font-size: var(--fs-20, 20rpx); }
+.training-lesson-quiz-badge { font-size: var(--fs-20, 20rpx); }
+.training-text-body { font-size: var(--fs-27, 27rpx); line-height: 1.8; }
+.training-quiz-title { font-size: var(--fs-28, 28rpx); }
+.training-quiz-scenario { font-size: var(--fs-24, 24rpx); line-height: 1.7; }
+.training-quiz-q-text { font-size: var(--fs-27, 27rpx); line-height: 1.5; }
+.training-quiz-option-text { font-size: var(--fs-26, 26rpx); line-height: 1.5; }
+.training-quiz-result-score { font-size: var(--fs-52, 52rpx); }
+.training-quiz-result-label { font-size: var(--fs-26, 26rpx); }
+.training-quiz-result-credits { font-size: var(--fs-26, 26rpx); }
+.training-quiz-review-icon { font-size: var(--fs-28, 28rpx); }
+.training-quiz-review-q { font-size: var(--fs-24, 24rpx); line-height: 1.5; }
+.training-quiz-review-your-ans { font-size: var(--fs-22, 22rpx); }
+.training-quiz-review-correct-ans { font-size: var(--fs-22, 22rpx); }
+.training-quiz-review-explanation { font-size: var(--fs-22, 22rpx); line-height: 1.6; }
+.training-cert-icon { font-size: var(--fs-44, 44rpx); }
+.training-cert-title { font-size: var(--fs-27, 27rpx); }
+.training-cert-tier { font-size: var(--fs-22, 22rpx); }
+.training-cert-chevron { font-size: var(--fs-36, 36rpx); }
+.cert-status-check { font-size: var(--fs-28, 28rpx); }
+.cert-status-text { font-size: var(--fs-26, 26rpx); }
+.cert-close-btn { font-size: var(--fs-36, 36rpx); }
+.cert-label { font-size: var(--fs-24, 24rpx); }
+.cert-value { font-size: var(--fs-26, 26rpx); line-height: 1.5; }
+.cert-mono { font-size: var(--fs-23, 23rpx) !important; }
+.cert-download-btn text { font-size: var(--fs-28, 28rpx); }
+.wellness-section-title { font-size: var(--fs-30, 30rpx); }
+.wellness-empty-text { font-size: var(--fs-26, 26rpx); }
+.sleep-icon-glyph { font-size: var(--fs-28, 28rpx); }
+.sleep-track-name { font-size: var(--fs-28, 28rpx); }
+.sleep-track-dur { font-size: var(--fs-22, 22rpx); }
+.sleep-np-label { font-size: var(--fs-20, 20rpx); }
+.sleep-np-title { font-size: var(--fs-26, 26rpx); }
+.sleep-np-btn-icon { font-size: var(--fs-24, 24rpx); }
+.media-asset-glyph { font-size: var(--fs-26, 26rpx); }
+.media-asset-name { font-size: var(--fs-28, 28rpx); }
+.media-asset-sub { font-size: var(--fs-22, 22rpx); }
+.media-asset-btn-text { font-size: var(--fs-22, 22rpx); }
+.device-apk-name { font-size: var(--fs-28, 28rpx); }
+.device-apk-version { font-size: var(--fs-22, 22rpx); }
+.device-apk-btn-text { font-size: var(--fs-22, 22rpx); }
+.page-privacy-title { font-size: var(--fs-32, 32rpx); }
+.page-privacy-body { font-size: var(--fs-26, 26rpx); line-height: 1.6; }
+.page-privacy-agree-btn { font-size: var(--fs-28, 28rpx); }
+.page-privacy-cancel-btn text { font-size: var(--fs-26, 26rpx); }
+.scan-box-title { font-size: var(--fs-26, 26rpx); line-height: 1.5; }
+.scan-box-detail { font-size: var(--fs-22, 22rpx); line-height: 1.5; }
+.pcard-title { font-size: var(--fs-25, 25rpx); }
+.pcard-name { font-size: var(--fs-26, 26rpx); }
+.pcard-reason { font-size: var(--fs-21, 21rpx); }
+.pcard-price { font-size: var(--fs-24, 24rpx); }
+.pcard-arrow { font-size: var(--fs-30, 30rpx); line-height: 1; }
+.gcard-title { font-size: var(--fs-25, 25rpx); }
+.gcard-name { font-size: var(--fs-26, 26rpx); }
+.gcard-reason { font-size: var(--fs-21, 21rpx); }
+.gcard-supplier { font-size: var(--fs-20, 20rpx); }
+.gcard-price { font-size: var(--fs-24, 24rpx); }
+.gcard-note { font-size: var(--fs-20, 20rpx); line-height: 1.4; }
+.lcard-play { font-size: var(--fs-26, 26rpx); }
+.lcard-title { font-size: var(--fs-25, 25rpx); }
+.lcard-done { font-size: var(--fs-21, 21rpx); }
+.ccard-cta, .ccard-cta-label { font-size: var(--fs-24, 24rpx); }
+.ccard-done { font-size: var(--fs-24, 24rpx); }
+/* …and the miniapp text that sets no size of its own but inherits one (xapp's <text> inherits nothing). */
+.delivery-label { font-size: var(--fs-22, 22rpx); }
+.delivery-val { font-size: var(--fs-22, 22rpx); }
 /* #endif */
 </style>
 
