@@ -10,6 +10,7 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **xapp-mini: text size, Viva AG panel, light theme on the AG panel and documents, toolbox sheets (not deployed)** · 2026-10-03: the remaining screens compared side by side with the miniapp in WeChat DevTools. 字体大小 now scales xapp-mini's text the way the miniapp does (it did nothing before); the 营养定制 focus sheet no longer sits under the tab bar; the Viva AG panel and health documents use the miniapp's indigo and have its light theme; the 扫描二维码 bar, redeem sheet, learn tab, 魔盒, header menu (no longer clipped in English), Plans ▸ Dots and the coach CRM pill match; the login page is the miniapp's own markup and stylesheet; coach gets the miniapp's edge swipe-back. Generators in `tools/xapp-mini/style-gen/`. Android and web still compile. xapp VERSION `1002-63`.
 - **xapp-mini: charts, ECG recorder, avatar picker and light theme as in the miniapp (not deployed)** · 2026-10-03: compared screen by screen with the miniapp in WeChat DevTools. Android and web are unchanged. xapp VERSION `1002-48`.
   - **Charts** are drawn on WeChat's canvas from the miniapp's own drawing code (`utils/mp-chart.uts`): the metric, blood-pressure, sub-age and lab charts and the BioAge chart, in the miniapp's bottom sheet. The health page's trend tiles, sleep-chart axis and ECG summary now lay out like the miniapp's.
   - **ECG / pulse-wave recorder** draws its waveforms on WeChat's canvas, in the miniapp's colours.
