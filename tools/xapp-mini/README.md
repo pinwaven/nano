@@ -81,3 +81,27 @@ It is the native port's behaviour (`#ifndef WEB` branches), not the miniapp's, e
 - **Verified (2026-10-02):** booted in WeChat DevTools on i9 (driven over the reverse tunnel with
   `miniprogram-automator`); guest mode, the invite sheet and the health/plans locks checked there;
   on a phone, a V8 band bound and synced, and its rows on dev matched the miniapp's.
+
+## Style generators (`style-gen/`)
+
+xapp's own stylesheets carry dark-theme px literals, so on xapp-mini two things the miniapp gets
+from CSS variables would never happen on their own: the light theme and the 字体大小 text size. Both
+are restated from the miniapp's stylesheets into MP-WEIXIN blocks at the end of each file's
+`<style>`. Re-run them when the miniapp's styles change and paste the output over the block:
+
+```bash
+M=src/mini/nano-miniapp; X=src/xapp
+node tools/xapp-mini/style-gen/fsvars.js    $M/pages/main/main.wxss $X/pages/main/main.uvue          # text size
+node tools/xapp-mini/style-gen/fsinherit.js $M/pages/main/main.wxss $M/pages/main/main.wxml $X/pages/main/main.uvue
+node tools/xapp-mini/style-gen/lightvars.js $M/components/viva-ag-panel/viva-ag-panel.wxss          # light theme
+```
+
+- **`fsvars.js`** emits every miniapp rule whose `font-size` reads `var(--fs-N)` (and the
+  `line-height` it declares), also onto xapp's `<cls>-txt/-text/-label/-on/…` child classes.
+- **`fsinherit.js`** adds the miniapp text that sets no size and inherits one: xapp's `<text>`
+  inherits nothing.
+- **`lightvars.js`** emits the miniapp's own `.theme-light` rules plus each colour declaration
+  that reads a variable, restated under `.theme-light`.
+
+The variables themselves come from the miniapp's `app.wxss`, which `App.uvue` carries under
+MP-WEIXIN; they rescale under the page root's `.fs-1/2/3` and flip under `.theme-light`.
