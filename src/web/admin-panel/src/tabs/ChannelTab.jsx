@@ -41,12 +41,24 @@ function uploadToOSS(url, file, onProgress) {
   });
 }
 
+// The brand a blank 品牌名称 falls back to: the nearest ancestor's own brand_name, else Aeviva
+// (prompts/viva/brand.js) — what Viva says she belongs to when this channel sets none.
+function inheritedBrand(channel, channels) {
+  const byId = new Map((channels || []).map(c => [c.id, c]));
+  for (let c = byId.get(channel?.parent_channel_id), n = 0; c && n < 10; c = byId.get(c.parent_channel_id), n++) {
+    const b = c.config?.brand_name;
+    const v = typeof b === 'string' ? b : b?.zh || b?.en;
+    if (v) return v;
+  }
+  return 'Aeviva';
+}
+
 function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose, onSave }) {
   const { t } = useLang();
   const ch = t.channels;
   const isEdit = !!channel?.id;
   const [form, setForm] = useState(isEdit
-    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '', parent_channel_id: channel.parent_channel_id || '', persona_type: channel.config?.persona_type ?? channel.effective_persona_type ?? 'nano', locale: channel.config?.locale || channel.effective_locale || 'zh', credit_exchange_rate: channel.config?.credit_exchange_rate ?? '1.0', currency: channel.config?.currency ?? 'CNY' }
+    ? { key_name: channel.key_name, name: channel.name || '', logo_url: channel.logo_url || '', parent_channel_id: channel.parent_channel_id || '', persona_type: channel.config?.persona_type ?? channel.effective_persona_type ?? 'nano', locale: channel.config?.locale || channel.effective_locale || 'zh', credit_exchange_rate: channel.config?.credit_exchange_rate ?? '1.0', currency: channel.config?.currency ?? 'CNY', brand_name: (typeof channel.config?.brand_name === 'string' ? channel.config.brand_name : channel.config?.brand_name?.zh) || '' }
     : { ...EMPTY_CHANNEL, parent_channel_id: parentChannel?.id || '', persona_type: parentChannel?.effective_persona_type ?? parentChannel?.config?.persona_type ?? 'nano', locale: parentChannel?.effective_locale || parentChannel?.config?.locale || 'zh' });
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -137,6 +149,13 @@ function ChannelModal({ channel, channels, isSuperadmin, parentChannel, onClose,
                 <option value="en">{t.modal.channelLocaleEn}</option>
               </select>
             </label>
+            {isEdit && (
+              <label className="form-field">
+                <span>{t.modal.channelBrandName}</span>
+                <input value={form.brand_name} onChange={e => set('brand_name', e.target.value)} maxLength={40}
+                  placeholder={inheritedBrand(channel, channels)} />
+              </label>
+            )}
             <label className="form-field">
               <span>{t.modal.channelExchangeRate}</span>
               <input type="number" step="0.01" min="0.01" value={form.credit_exchange_rate}
@@ -686,7 +705,7 @@ function SubchannelsTab_UNUSED({ subchannels, adminAccounts, invitations, sessio
   );
 }
 
-function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchannels, subchannels, onClose, onSave, onRefreshData }) {
+function ChannelConfigModal({ channel, channels, isSuperadmin, canGrantSubch, hasSubchannels, subchannels, onClose, onSave, onRefreshData }) {
   const { t } = useLang();
   const ch = t.channels;
   const [activeTab, setActiveTab] = useState('general');
@@ -699,6 +718,7 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
     persona_type: channel.config?.persona_type ?? channel.effective_persona_type ?? 'nano',
     credit_exchange_rate: channel.config?.credit_exchange_rate ?? '1.0',
     currency: channel.config?.currency ?? 'CNY',
+    brand_name: (typeof channel.config?.brand_name === 'string' ? channel.config.brand_name : channel.config?.brand_name?.zh) || '',
   });
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -1167,6 +1187,11 @@ function ChannelConfigModal({ channel, isSuperadmin, canGrantSubch, hasSubchanne
                   <option value="nano">{t.modal.channelPersonaNano}</option>
                   <option value="viva">{t.modal.channelPersonaViva}</option>
                 </select>
+              </label>
+              <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+                <span>{t.modal.channelBrandName}</span>
+                <input value={form.brand_name} onChange={e => set('brand_name', e.target.value)} maxLength={40}
+                  placeholder={inheritedBrand(channel, channels)} />
               </label>
               <label className="form-field">
                 <span>{t.modal.channelExchangeRate}</span>
@@ -2220,6 +2245,7 @@ function ChannelTab({ channels, onRefresh, isSuperadmin, session }) {
         const liveChildren = channels.filter(c => c.parent_channel_id === modal.channelId);
         return <ChannelConfigModal
           channel={liveChannel}
+          channels={channels}
           isSuperadmin={isSuperadmin}
           canGrantSubch={modal.canGrantSubch}
           hasSubchannels={liveChildren.length > 0}
