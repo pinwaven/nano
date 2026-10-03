@@ -214,6 +214,29 @@ async function handleGetChatHistory(openid, sinceId = null, beforeId = null, rol
     }
 }
 
+// The reply language lives only in the system prompt (prompts/viva/response-language.js), and
+// a history of replies in the other language outweighs it: right after the menu's language
+// switch, Pin's "hi" in English drew the previous Chinese reply back word for word, even with a
+// trailing system reminder (2026-10-03, reproduced against qwen-plus-latest). A note on the
+// current user turn is what the model follows. Only added when the last reply is in the other
+// language — i.e. just after a switch — and only to the in-memory history the model sees,
+// never to chat_messages.
+function _addLanguageSwitchNote(history, language) {
+    const last = history[history.length - 1];
+    if (!last || last.role !== 'user') return history;
+    const prevReply = [...history].reverse().find(m => m.role === 'assistant');
+    if (!prevReply || !prevReply.content) return history;
+    const cjk = (prevReply.content.match(/[\u4e00-\u9fff]/g) || []).length;
+    const latin = (prevReply.content.match(/[A-Za-z]/g) || []).length;
+    const prevZh = cjk > latin;
+    const wantZh = (language || 'zh') !== 'en';
+    if (prevZh === wantZh) return history;
+    last.content = wantZh
+        ? `[用户已把应用切换为中文——从现在起请用简体中文回复。] ${last.content}`
+        : `[The user has switched the app to English — reply in English from now on.] ${last.content}`;
+    return history;
+}
+
 async function resolveOrUpsertUser(body) {
     const { openid, nickname, gender, birth_date, language, phone, email,
             test_type, test_data, tested_at, message, ...rest } = body;
@@ -1963,6 +1986,7 @@ async function handlePostChat(body) {
                 if (lastTurn && lastTurn.role === 'user') lastTurn.content = message;
                 else cleanHistory.push({ role: 'user', content: message });
             }
+            _addLanguageSwitchNote(cleanHistory, user.language);
 
             // The shared grounding-retry check below (verifyBiomarkerGrounding) rebuilds its
             // correction attempt from this plain system+history message list regardless of
@@ -3558,6 +3582,7 @@ module.exports = {
     // exported for tests — pure helpers, no DB/LLM dependency
     stripTrailingQuestion,
     extractDateMentions,
+    _addLanguageSwitchNote,
     _stripActionTails,
     _filterProductsByUserFacts,
     _validateProductRecommendations,
