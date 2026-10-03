@@ -178,8 +178,8 @@
                   <image v-if="m.imageUrl != null" class="msg-image" :class="m.imageOnly ? '' : 'msg-image-inset'" :src="m.imageUrl" mode="widthFix" v-on:load="onChatImageLoad(m.id)" />
                   <text v-if="m.role == 'user' && m.content.length > 0" class="msg-text msg-text-user" :style="fs(14)">{{ m.content }}</text>
                   <text v-if="m.source == 'viva_ag'" class="msg-ag-label">Viva AG</text>
-                  <view v-if="m.role != 'user'" v-for="(seg, si) in m.segments" :key="si" class="msg-seg">
-                    <rich-text v-if="seg.t == 'html'" class="msg-html" :nodes="_sh(seg.h)" />
+                  <view v-if="m.role != 'user'" v-for="(seg, si) in m.segments" :key="si" class="msg-seg" :style="'width: ' + msgTextW + 'px'">
+                    <rich-text v-if="seg.t == 'html'" class="msg-html" :style="'width: ' + msgTextW + 'px'" :nodes="_sh(seg.h)" />
                     <view v-else-if="seg.t == 'rule'" class="msg-rule"></view>
                     <view v-else-if="seg.t == 'metric'" class="mcard">
                       <view v-for="(item, mj) in seg.metricItems" :key="mj" class="mcard-tile" :class="'mcard-' + item.s">
@@ -199,7 +199,7 @@
                     </view>
                     <view v-else-if="seg.t == 'takeaway'" class="tcard">
                       <text class="tcard-title">{{ takeawayTitle(seg) }}</text>
-                      <rich-text class="msg-html tcard-body" :nodes="_sh(seg.takeaway != null ? seg.takeaway!.h : '')" />
+                      <rich-text class="msg-html tcard-body" :style="'width: ' + (msgTextW - 26) + 'px'" :nodes="_sh(seg.takeaway != null ? seg.takeaway!.h : '')" />
                     </view>
                     <view v-else-if="seg.t == 'dots'" class="dcard">
                       <view v-for="(di, dj) in seg.dotItems" :key="dj" class="dcard-chip">
@@ -347,7 +347,7 @@
                       </view>
                     </view>
                   </view>
-                  <rich-text v-if="m.role != 'user' && m.segments.length == 0 && m.content.length > 0" class="msg-html" :nodes="_sh(m.content)" />
+                  <rich-text v-if="m.role != 'user' && m.segments.length == 0 && m.content.length > 0" class="msg-html" :style="'width: ' + msgTextW + 'px'" :nodes="_sh(m.content)" />
                 </view>
               </view>
             </view>
@@ -2593,6 +2593,10 @@ export default {
       _touchY: 0 as number,
       _multiTouch: false,
       _screenW: 375 as number,
+      // AI text width: <rich-text> needs one (see .msg-html), and a fixed 334px only fits a
+      // 390px-wide screen — narrower phones (HUAWEI Mate, OnePlus 13) clipped the right edge.
+      // Screen minus .chat-inner's 14px and .message-ai's 13px padding + 1px border, each side.
+      msgTextW: 334 as number,
       _scrollFlip: false,
       _scrollTimer: 0 as number,
       _scrollTimer2: 0 as number,
@@ -2769,6 +2773,7 @@ export default {
     const info = uni.getWindowInfo()
     this.statusBarHeight = info.statusBarHeight
     this._screenW = info.windowWidth
+    this.msgTextW = info.windowWidth - 56
     // #ifdef MP-WEIXIN
     const capsule = uni.getMenuButtonBoundingClientRect()
     this.capsuleRightPad = info.windowWidth - (capsule.left > 0 ? capsule.left : info.windowWidth - 96) + 8
@@ -7596,7 +7601,7 @@ export default {
 .msg-daysep-text { color: #7F97B5; font-size: 11px; letter-spacing: 0.5px; }
 .message-bubble { max-width: 320px; padding: 9px 12px; border-radius: 14px; }
 /* uni-app x: <rich-text> has no intrinsic width — it collapses to 0 inside a fit-content bubble
-   unless told how wide to lay out. 294px = the 320px bubble max minus .message-ai's 13px padding. */
+   unless told how wide to lay out. 334px is a 390px screen's; the template sets msgTextW per phone. */
 .msg-html { width: 334px; font-size: 14.5px; line-height: 23.5px; color: #EEF2FF; }
 .msg-seg { width: 334px; }
 .message-user { background-color: #6375EC; }
