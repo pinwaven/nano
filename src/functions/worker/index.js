@@ -292,11 +292,13 @@ exports.handler = async (req, resp, context) => {
         return optionsPayload;
     }
 
-    // WeChat business domain verification file — no auth required
-    if (method === 'GET' && rawPath === '/QJaeMN3iR8.txt') {
-        const wxVerifyPayload = { isBase64Encoded: false, statusCode: 200, headers: { 'Content-Type': 'text/plain' }, body: 'e038f3e1651b72fc26feaf9eb6cf30e7' };
-        if (isStandardHttp) { resp.setStatusCode(200); resp.setHeader('Content-Type', 'text/plain'); resp.send('e038f3e1651b72fc26feaf9eb6cf30e7'); return; }
-        return wxVerifyPayload;
+    // WeChat business domain verification files — no auth required. One per mini-program appid:
+    // QJaeMN3iR8 for the miniapp's, 7zkfaknx0A for xapp-mini's (wxecbcf00ce480fcf2).
+    const WX_VERIFY_FILES = { '/QJaeMN3iR8.txt': 'e038f3e1651b72fc26feaf9eb6cf30e7', '/7zkfaknx0A.txt': '89cebc19782abaaafedfeb87130ec176' };
+    if (method === 'GET' && WX_VERIFY_FILES[rawPath]) {
+        const wxVerifyBody = WX_VERIFY_FILES[rawPath];
+        if (isStandardHttp) { resp.setStatusCode(200); resp.setHeader('Content-Type', 'text/plain'); resp.send(wxVerifyBody); return; }
+        return { isBase64Encoded: false, statusCode: 200, headers: { 'Content-Type': 'text/plain' }, body: wxVerifyBody };
     }
 
     // Public certificate verification — no auth required

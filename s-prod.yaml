@@ -458,6 +458,8 @@ resources:
         routes:
           - path: /QJaeMN3iR8.txt
             functionName: nano-worker
+          - path: /7zkfaknx0A.txt
+            functionName: nano-worker
           - path: /api/twin/*
             functionName: twin
           - path: /api/*
