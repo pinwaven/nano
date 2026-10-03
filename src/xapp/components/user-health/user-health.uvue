@@ -7,10 +7,10 @@
          add-on (kept verbatim from the miniapp; see _recomputeShowAgTab). -->
     <view v-if="showAgTab" class="uh-tab-bar">
       <view class="uh-tab" :class="healthSubTab == 'twin' ? 'uh-tab-active' : ''" v-on:click="switchHealthSubTab('twin')">
-        <text class="uh-tab-text">{{ tt('agTabTwin') }}</text>
+        <text class="uh-tab-text" :class="healthSubTab == 'twin' ? 'uh-tab-text-active' : ''">{{ tt('agTabTwin') }}</text>
       </view>
       <view class="uh-tab" :class="healthSubTab == 'ag' ? 'uh-tab-active' : ''" v-on:click="switchHealthSubTab('ag')">
-        <text class="uh-tab-text">{{ tt('agTabAg') }}</text>
+        <text class="uh-tab-text" :class="healthSubTab == 'ag' ? 'uh-tab-text-active' : ''">{{ tt('agTabAg') }}</text>
       </view>
     </view>
 
@@ -6845,8 +6845,8 @@ export default {
 
 .uh-tab-bar { flex-direction: row; border-bottom-style: solid; border-bottom-width: 1px; border-bottom-color: #1E3A5F; background-color: #0A1F36; }
 .uh-tab { flex: 1; align-items: center; padding: 10px; }
-.uh-tab-active { border-bottom-style: solid; border-bottom-width: 2px; border-bottom-color: #6375EC; }
-.uh-tab-text { color: #A6C4E5; font-size: 13px; }
+.uh-tab-text { color: #7A9ABF; font-size: 13px; font-weight: 500; }
+.uh-tab-text-active { color: #A0B4FF; font-weight: 700; }
 
 .center-wrap { flex-direction: row; justify-content: center; padding: 24px; }
 .pulse-dot { width: 8px; height: 8px; border-radius: 4px; background-color: #6375EC; margin-left: 4px; margin-right: 4px; }
@@ -7361,7 +7361,7 @@ export default {
    changes; Android keeps its own minimal light rules above. */
 .theme-light .uh-tab-bar { background: #f0f4ff; border-bottom-color: #dde5f5; }
 .theme-light .uh-tab-text { color: #607090; }
-.theme-light .uh-tab-active .uh-tab-text { color: #2942E5; }
+.theme-light .uh-tab-text-active { color: #2942E5; }
 .theme-light .health-hero { border-bottom-color: rgba(201, 149, 106, 0.1); }
 .theme-light .health-hero-bg { background: var(--bg-hero); }
 .theme-light .health-avatar-wrap { border-color: rgba(201, 149, 106, 0.55); box-shadow: 0 0 28rpx rgba(201, 149, 106, 0.15); }
@@ -7611,5 +7611,205 @@ export default {
 .theme-light .wd-gear-btn { background-color: rgba(152, 95, 51, 0.08); border-top-color: rgba(152, 95, 51, 0.15); border-left-color: rgba(152, 95, 51, 0.15); border-bottom-color: rgba(152, 95, 51, 0.15); border-right-color: rgba(152, 95, 51, 0.15); }
 .theme-light .wd-sync-btn { color: rgb(44, 44, 44); background-color: rgba(152, 95, 51, 0.2); border-top-color: rgba(152, 95, 51, 0.35); border-left-color: rgba(152, 95, 51, 0.35); border-bottom-color: rgba(152, 95, 51, 0.35); border-right-color: rgba(152, 95, 51, 0.35); }
 .theme-light .wd-sync-btn-text { color: rgb(44, 44, 44); }
+/* #endif */
+/* #ifdef MP-WEIXIN */
+/* Text size (菜单 › 字体大小), from the miniapp's stylesheet: every rule of its whose font-size reads
+   var(--fs-N), with the line-height it declares. The variables come from App.uvue's copy of app.wxss,
+   rescaled under the page's .fs-1/.fs-2/.fs-3, and inherit into components; this file's own px sizes
+   never would. Regenerate (tools/xapp-mini/style-gen: fsvars.js, then fsinherit.js) when the miniapp's sizes change. */
+.uh-tab-text, .uh-tab-text-active { font-size: var(--fs-26, 26rpx); }
+.avatar-pill-text { font-size: var(--fs-22, 22rpx); }
+.bio-num { font-size: var(--fs-52, 52rpx); line-height: 1; }
+.bio-num-primary { font-size: var(--fs-88, 88rpx); line-height: 1; }
+.bio-num-chrono { font-size: var(--fs-60, 60rpx); line-height: 1; }
+.bio-unit { font-size: var(--fs-22, 22rpx); }
+.bio-bar-label { font-size: var(--fs-19, 19rpx); }
+.bio-bar-val { font-size: var(--fs-26, 26rpx); line-height: 1; }
+.sub-age-val { font-size: var(--fs-32, 32rpx); line-height: 1.1; }
+.sub-age-label { font-size: var(--fs-20, 20rpx); }
+.sub-age-desc { font-size: var(--fs-17, 17rpx); line-height: 1.35; }
+.section-title { font-size: var(--fs-20, 20rpx); }
+.twin-umbrella-title { font-size: var(--fs-26, 26rpx); }
+.twin-umbrella-count { font-size: var(--fs-20, 20rpx); }
+.twin-layer-label { font-size: var(--fs-20, 20rpx); }
+.twin-layer-date { font-size: var(--fs-18, 18rpx); }
+.fact-cat { font-size: var(--fs-18, 18rpx); }
+.fact-text { font-size: var(--fs-24, 24rpx); }
+.fact-footnote { font-size: var(--fs-20, 20rpx); }
+.section-badge, .section-badge-text { font-size: var(--fs-20, 20rpx); }
+.profile-toggle-text { font-size: var(--fs-22, 22rpx); }
+.info-key { font-size: var(--fs-24, 24rpx); }
+.info-val { font-size: var(--fs-24, 24rpx); }
+.wchart-title { font-size: var(--fs-30, 30rpx); }
+.edit-profile-btn { font-size: var(--fs-22, 22rpx); }
+.edit-label { font-size: var(--fs-24, 24rpx); }
+.edit-input, .edit-input-text { font-size: var(--fs-26, 26rpx); }
+.edit-unit-text { font-size: var(--fs-22, 22rpx); }
+.gender-btn { font-size: var(--fs-26, 26rpx); }
+.edit-picker-val { font-size: var(--fs-26, 26rpx); }
+.edit-section-label { font-size: var(--fs-20, 20rpx); }
+.edit-cond-text { font-size: var(--fs-26, 26rpx); }
+.edit-cancel-btn { font-size: var(--fs-28, 28rpx); }
+.edit-save-btn { font-size: var(--fs-28, 28rpx); }
+.health-cond-chip { font-size: var(--fs-24, 24rpx); }
+.health-empty { font-size: var(--fs-24, 24rpx); }
+.bm-label { font-size: var(--fs-26, 26rpx); }
+.bm-val { font-size: var(--fs-30, 30rpx); }
+.bm-unit { font-size: var(--fs-20, 20rpx); }
+.trend-label { font-size: var(--fs-18, 18rpx); }
+.trend-val { font-size: var(--fs-32, 32rpx); }
+.trend-unit { font-size: var(--fs-18, 18rpx); }
+.guest-lock-title { font-size: var(--fs-28, 28rpx); line-height: 1.7; }
+.guest-lock-btn, .guest-lock-btn-text { font-size: var(--fs-28, 28rpx); }
+.twin-label { font-size: var(--fs-18, 18rpx); }
+.twin-trend { font-size: var(--fs-24, 24rpx); line-height: 1; }
+.twin-val { font-size: var(--fs-44, 44rpx); line-height: 1; }
+.twin-unit { font-size: var(--fs-18, 18rpx); }
+.twin-sub { font-size: var(--fs-17, 17rpx); }
+.twin-sub-deep { font-size: var(--fs-17, 17rpx); }
+.twin-body-label { font-size: var(--fs-17, 17rpx); }
+.twin-body-text { font-size: var(--fs-24, 24rpx); }
+.twin-coverage-title { font-size: var(--fs-17, 17rpx); }
+.twin-source-label { font-size: var(--fs-20, 20rpx); }
+.twin-source-date { font-size: var(--fs-18, 18rpx); }
+.ht-score-num { font-size: var(--fs-52, 52rpx); line-height: 1; }
+.ht-score-title { font-size: var(--fs-14, 14rpx); line-height: 1; }
+.ht-score-grade { font-size: var(--fs-22, 22rpx); }
+.ht-domain-label { font-size: var(--fs-20, 20rpx); }
+.ht-domain-score { font-size: var(--fs-22, 22rpx); }
+.ht-gauge-label { font-size: var(--fs-22, 22rpx); }
+.ht-gauge-val { font-size: var(--fs-36, 36rpx); line-height: 1; }
+.ht-gauge-unit { font-size: var(--fs-18, 18rpx); }
+.ht-gauge-trend { font-size: var(--fs-24, 24rpx); }
+.ht-gauge-sublabel { font-size: var(--fs-17, 17rpx); }
+.ht-body-title { font-size: var(--fs-19, 19rpx); }
+.ht-body-vals { font-size: var(--fs-22, 22rpx); }
+.ht-body-lbl { font-size: var(--fs-21, 21rpx); }
+.dt-age-chips .bio-num-primary, .dt-age-chips .bio-num-chrono { font-size: var(--fs-52, 52rpx); }
+.dt-sa-label { font-size: var(--fs-22, 22rpx); }
+.dt-sa-val { font-size: var(--fs-28, 28rpx); }
+.dt-sa-trend-hint { font-size: var(--fs-18, 18rpx); line-height: 1; }
+.dt-bioage-chart-title { font-size: var(--fs-19, 19rpx); }
+.dt-metric-val { font-size: var(--fs-32, 32rpx); line-height: 1.1; }
+.dt-metric-unit { font-size: var(--fs-20, 20rpx); }
+.dt-metric-label { font-size: var(--fs-20, 20rpx); }
+.dt-metric-trend-hint { font-size: var(--fs-18, 18rpx); line-height: 1; }
+.bp-legend-label { font-size: var(--fs-20, 20rpx); }
+.dt-htag-label { font-size: var(--fs-20, 20rpx); line-height: 1.2; }
+.rpt-institution { font-size: var(--fs-28, 28rpx); }
+.rpt-date { font-size: var(--fs-22, 22rpx); }
+.rpt-type-text { font-size: var(--fs-20, 20rpx); }
+.rpt-sheet-institution { font-size: var(--fs-30, 30rpx); }
+.rpt-sheet-date { font-size: var(--fs-22, 22rpx); }
+.rpt-ev-name { font-size: var(--fs-27, 27rpx); }
+.rpt-ev-ref { font-size: var(--fs-20, 20rpx); }
+.rpt-ev-val { font-size: var(--fs-32, 32rpx); }
+.rpt-ev-unit { font-size: var(--fs-20, 20rpx); }
+.rpt-section-title { font-size: var(--fs-20, 20rpx); }
+.rpt-diag-text { font-size: var(--fs-26, 26rpx); line-height: 1.65; }
+.rpt-advice-text { font-size: var(--fs-26, 26rpx); line-height: 1.65; }
+.rpt-dn-key { font-size: var(--fs-22, 22rpx); }
+.rpt-dn-val { font-size: var(--fs-26, 26rpx); }
+.rpt-vital-key { font-size: var(--fs-20, 20rpx); }
+.rpt-vital-val { font-size: var(--fs-26, 26rpx); }
+.rpt-clinical-label { font-size: var(--fs-22, 22rpx); }
+.rpt-clinical-text { font-size: var(--fs-26, 26rpx); line-height: 1.7; }
+.rpt-followup-label { font-size: var(--fs-22, 22rpx); }
+.rpt-followup-text { font-size: var(--fs-26, 26rpx); line-height: 1.6; }
+.ht-lab-title { font-size: var(--fs-20, 20rpx); }
+.ht-lab-snapshot-title { font-size: var(--fs-20, 20rpx); }
+.ht-lab-date { font-size: var(--fs-22, 22rpx); }
+.ht-lab-alert-text { font-size: var(--fs-20, 20rpx); }
+.ht-lab-ok-text { font-size: var(--fs-20, 20rpx); }
+.ht-lab-name { font-size: var(--fs-18, 18rpx); }
+.ht-lab-val { font-size: var(--fs-30, 30rpx); line-height: 1.1; }
+.ht-lab-unit { font-size: var(--fs-17, 17rpx); }
+.ht-lab-sub { font-size: var(--fs-17, 17rpx); }
+.ht-lab-hint { font-size: var(--fs-19, 19rpx); }
+.wd-bind-label { font-size: var(--fs-26, 26rpx); }
+.wd-bind-sub { font-size: var(--fs-20, 20rpx); }
+.wd-server-hint { font-size: var(--fs-20, 20rpx); }
+.wd-device-name { font-size: var(--fs-26, 26rpx); }
+.wd-battery-inline { font-size: var(--fs-20, 20rpx); }
+.wd-status-text { font-size: var(--fs-20, 20rpx); }
+.wd-sync-btn { font-size: var(--fs-22, 22rpx); }
+.wd-sync-btn-text { font-size: var(--fs-22, 22rpx); }
+.wd-measure-btn-text { font-size: var(--fs-24, 24rpx); }
+.wd-ring-time-label { font-size: var(--fs-20, 20rpx); }
+.wd-ring-time-val { font-size: var(--fs-22, 22rpx); }
+.wd-interval-title { font-size: var(--fs-20, 20rpx); }
+.wd-interval-label { font-size: var(--fs-22, 22rpx); }
+.wd-wm-badge { font-size: var(--fs-17, 17rpx); }
+.wd-int-btn { font-size: var(--fs-20, 20rpx); }
+.wd-settings-loading-txt { font-size: var(--fs-22, 22rpx); }
+.wd-save-txt { font-size: var(--fs-22, 22rpx); }
+.wd-unbind-txt { font-size: var(--fs-22, 22rpx); }
+.wd-measuring-txt { font-size: var(--fs-22, 22rpx); }
+.ring-sum-val { font-size: var(--fs-34, 34rpx); line-height: 1; }
+.ring-sum-na { font-size: var(--fs-30, 30rpx); line-height: 1; }
+.ring-sum-unit { font-size: var(--fs-17, 17rpx); }
+.ring-sum-sub { font-size: var(--fs-19, 19rpx); }
+.ring-sum-stress-label { font-size: var(--fs-17, 17rpx); }
+.ring-sum-footer { font-size: var(--fs-18, 18rpx); }
+.ring-chart-label { font-size: var(--fs-18, 18rpx); }
+.ring-chart-time { font-size: var(--fs-19, 19rpx); }
+.ring-chart-date { font-size: var(--fs-17, 17rpx); }
+.ring-chart-day-avg { font-size: var(--fs-16, 16rpx); line-height: 1; }
+.ring-chart-day-label { font-size: var(--fs-15, 15rpx); line-height: 1; }
+.ring-reading-date-header { font-size: var(--fs-19, 19rpx); }
+.ring-reading-date { font-size: var(--fs-18, 18rpx); line-height: 1.2; }
+.ring-reading-time { font-size: var(--fs-22, 22rpx); }
+.ring-reading-val { font-size: var(--fs-28, 28rpx); line-height: 1; }
+.ring-reading-unit { font-size: var(--fs-17, 17rpx); }
+.ring-lc-estimated-marker { font-size: var(--fs-20, 20rpx); }
+.ring-lc-smoothed-note { font-size: var(--fs-16, 16rpx); }
+.ring-linechart-latest { font-size: var(--fs-34, 34rpx); line-height: 1; }
+.ring-linechart-unit { font-size: var(--fs-18, 18rpx); }
+.ring-linechart-bound { font-size: var(--fs-18, 18rpx); }
+.ring-linechart-count { font-size: var(--fs-18, 18rpx); }
+.ring-sleepweek-axis-lbl { font-size: var(--fs-14, 14rpx); line-height: 1; }
+.ring-sleepweek-total { font-size: var(--fs-15, 15rpx); line-height: 1; }
+.ring-sleepweek-daylabel { font-size: var(--fs-14, 14rpx); line-height: 1; }
+.ring-sleep-leg-txt { font-size: var(--fs-19, 19rpx); }
+.privacy-title { font-size: var(--fs-32, 32rpx); }
+.privacy-body { font-size: var(--fs-26, 26rpx); line-height: 1.6; }
+.privacy-agree-btn { font-size: var(--fs-28, 28rpx); }
+.privacy-cancel-btn text { font-size: var(--fs-26, 26rpx); }
+.fs-summary { font-size: var(--fs-24, 24rpx); }
+.fs-food { font-size: var(--fs-26, 26rpx); }
+.fs-class { font-size: var(--fs-20, 20rpx); }
+.fs-val { font-size: var(--fs-22, 22rpx); }
+.fs-window { font-size: var(--fs-22, 22rpx); }
+.fs-subs { font-size: var(--fs-22, 22rpx); }
+.fs-footnote { font-size: var(--fs-20, 20rpx); }
+.tr-count { font-size: var(--fs-22, 22rpx); }
+.tr-title { font-size: var(--fs-28, 28rpx); }
+.tr-meta { font-size: var(--fs-22, 22rpx); }
+.tr-origin { font-size: var(--fs-22, 22rpx); }
+.tr-summary { font-size: var(--fs-22, 22rpx); line-height: 1.45; }
+.tr-open, .tr-open-txt { font-size: var(--fs-22, 22rpx); }
+.ins-title { font-size: var(--fs-28, 28rpx); }
+.ins-sub { font-size: var(--fs-20, 20rpx); }
+.ins-score { font-size: var(--fs-40, 40rpx); line-height: 1; }
+.ins-score-of { font-size: var(--fs-18, 18rpx); }
+.ins-readiness-label { font-size: var(--fs-24, 24rpx); }
+.ins-level { font-size: var(--fs-30, 30rpx); }
+.ins-date { font-size: var(--fs-20, 20rpx); }
+.ins-chip { font-size: var(--fs-20, 20rpx); line-height: 1.5; }
+.ins-row-label { font-size: var(--fs-22, 22rpx); }
+.ins-row-val { font-size: var(--fs-24, 24rpx); }
+.ins-row-delta { font-size: var(--fs-20, 20rpx); }
+.ins-flag-txt { font-size: var(--fs-22, 22rpx); }
+.ins-flag-since { font-size: var(--fs-20, 20rpx); }
+.ins-provisional { font-size: var(--fs-20, 20rpx); }
+.ecg-card-title { font-size: var(--fs-24, 24rpx); }
+.ecg-card-unit { font-size: var(--fs-22, 22rpx); }
+.ecg-card-meta { font-size: var(--fs-22, 22rpx); }
+.ecg-card-empty { font-size: var(--fs-22, 22rpx); line-height: 1.5; }
+.ecg-card-list-row { font-size: var(--fs-22, 22rpx); }
+.ecg-card-foot { font-size: var(--fs-20, 20rpx); line-height: 1.5; }
+/* …and the miniapp text that sets no size of its own but inherits one (xapp's <text> inherits nothing). */
+.ecg-card-list-when { font-size: var(--fs-22, 22rpx); }
+.ecg-card-list-val { font-size: var(--fs-22, 22rpx); }
 /* #endif */
 </style>

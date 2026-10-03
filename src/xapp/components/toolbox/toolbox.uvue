@@ -128,4 +128,12 @@ export default {
   opacity: 0.35;
 }
 /* #endif */
+/* #ifdef MP-WEIXIN */
+/* Text size (菜单 › 字体大小), from the miniapp's stylesheet: every rule of its whose font-size reads
+   var(--fs-N), with the line-height it declares. The variables come from App.uvue's copy of app.wxss,
+   rescaled under the page's .fs-1/.fs-2/.fs-3, and inherit into components; this file's own px sizes
+   never would. Regenerate (tools/xapp-mini/style-gen: fsvars.js, then fsinherit.js) when the miniapp's sizes change. */
+.tool-item-icon { font-size: var(--fs-30, 30rpx); line-height: 1; }
+.tool-item-label { font-size: var(--fs-24, 24rpx); }
+/* #endif */
 </style>
