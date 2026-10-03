@@ -354,7 +354,7 @@
 
             <view v-if="typing" class="msg-row msg-row-ai">
               <view class="message-bubble message-ai typing-indicator">
-                <text class="typing-dots">···</text>
+                <view v-for="i in 3" :key="i" class="typing-dot" :class="typingDotOn(i - 1) ? 'typing-dot-on' : ''"></view>
                 <text v-if="chatStatusText.length > 0" class="typing-status-text">{{ chatStatusText }}</text>
               </view>
             </view>
@@ -2361,6 +2361,8 @@ export default {
       messages: [] as ChatMsg[],
       chatInput: '',
       typing: false,
+      typingPhase: 0, // 0..5, one step per 200ms: drives the three bouncing dots (_startTypingDots)
+      _typingTimer: 0,
       chatStatusText: '',
       isSending: false,
       toolboxOpen: false,
@@ -2921,6 +2923,7 @@ export default {
   },
 
   onUnload() {
+    this._stopTypingDots()
     this._stopPolling()
     this._stopKinoSlide()
     setPrivacyHandler(null)
@@ -2947,6 +2950,7 @@ export default {
   watch: {
     theme(v : string) { syncRootClasses(v, this.textScale) },
     textScale(v : number) { syncRootClasses(this.theme, v) },
+    typing(v : boolean) { if (v) this._startTypingDots(); else this._stopTypingDots() },
   },
   methods: {
     // Store-scroll refresher (a Page method in the source, not a lifecycle hook).
@@ -2956,6 +2960,22 @@ export default {
       this.storeRefreshing = true
       await this._loadStore(user, this.lang)
       this.storeRefreshing = false
+    },
+    // The miniapp's dot-bounce keyframes (1.2s, dots 0.2s apart) as a 200ms step timer: uvue has
+    // no @keyframes on native, and a timer plus a transition looks the same on every platform.
+    _startTypingDots() {
+      if (this._typingTimer != 0) return
+      this.typingPhase = 0
+      this._typingTimer = setInterval(() => { this.typingPhase = (this.typingPhase + 1) % 6 }, 200)
+    },
+    _stopTypingDots() {
+      if (this._typingTimer != 0) clearInterval(this._typingTimer)
+      this._typingTimer = 0
+    },
+    // Dot i is up for two of the six steps, each one step after the dot before it.
+    typingDotOn(i : number) : boolean {
+      const d = (this.typingPhase - i + 6) % 6
+      return d == 1 || d == 2
     },
     // ── dictionary access ──
     tr(path : string) : string { return tMainTr(this.t, path) },
@@ -7617,7 +7637,9 @@ export default {
 /* color moved into MD_TAG_STYLE node styles — view/rich-text ignore it (see top of script) */
 .msg-rule { height: 1px; background-color: rgba(127, 127, 127, 0.3); margin-top: 12px; margin-bottom: 12px; }
 .typing-indicator { flex-direction: row; align-items: center; }
-.typing-dots { color: #A0B4FF; font-size: 16px; }
+.typing-dot { width: 6px; height: 6px; border-radius: 3px; margin-right: 5px; background-color: #6375EC;
+  opacity: 0.35; transform: scale(0.7); transition-property: transform, opacity; transition-duration: 0.25s; }
+.typing-dot-on { opacity: 1; transform: scale(1.2); }
 .typing-status-text { color: #A6C4E5; font-size: 11px; margin-left: 8px; }
 .msg-action-card { flex-direction: row; align-items: center; background-color: rgba(99, 117, 236, 0.12); border: 1px solid rgba(99, 117, 236, 0.3); border-radius: 10px; padding: 8px 12px; }
 .msg-action-label { color: #A0B4FF; font-size: 13px; }
@@ -9235,7 +9257,6 @@ export default {
 .theme-light .fcard-tier-note-text { color: rgb(121, 96, 68); }
 .theme-light .fcard-cta-label { color: rgb(122, 74, 40); }
 .theme-light .ccard-cta-label { color: var(--chat-accent); }
-.theme-light .typing-dots { color: var(--text); }
 .theme-light .typing-status-text { color: var(--text); }
 .theme-light .quick-btn-label { color: var(--text); }
 .theme-light .cond-chip-label { color: var(--text-muted); }
