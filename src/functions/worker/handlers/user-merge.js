@@ -211,7 +211,7 @@ async function repointForeignKeys(client, winnerId, loserId, conflictNotes) {
 // delete: the loser row survives with merged_into_user_id set, so anything that still reads
 // it directly (rather than through a repointed FK) resolves correctly, and the merge is
 // recoverable by hand via user_merges if a match turns out wrong.
-async function mergeUsers(winnerId, loserId, matchedOn, options = {}) {
+async function mergeUsers(winnerId, loserId, matchedOn) {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -223,14 +223,6 @@ async function mergeUsers(winnerId, loserId, matchedOn, options = {}) {
             [[winnerId, loserId]]
         );
         if (managed.rows.length) throw new Error('managed_account_not_mergeable');
-        if (matchedOn === 'wx_unionid') {
-            const phoneOwners = await client.query(
-                `SELECT user_id FROM users WHERE user_id = ANY($1::text[]) AND phone IS NOT NULL
-                 UNION SELECT user_id FROM user_phones WHERE user_id = ANY($1::text[])`,
-                [[winnerId, loserId]]
-            );
-            if (phoneOwners.rows.length) throw new Error('wechat_identity_conflict_requires_verified_login');
-        }
         const conflictNotes = [];
 
         await supersedeIfConflicting(client, 'coaches', 'created_at', winnerId, loserId, conflictNotes);
@@ -249,7 +241,6 @@ async function mergeUsers(winnerId, loserId, matchedOn, options = {}) {
         await client.query(`UPDATE user_emails SET is_primary = false WHERE user_id = $1`, [loserId]);
 
         await repointForeignKeys(client, winnerId, loserId, conflictNotes);
-        if (options.strict && conflictNotes.length) throw new Error('wechat_identity_merge_record_conflict');
         // The actual login identities now belong to the winner. Clear the loser's denormalized
         // cache before promoting on the winner; users.phone is unique even though the loser row
         // remains as an audit tombstone.
@@ -259,20 +250,6 @@ async function mergeUsers(winnerId, loserId, matchedOn, options = {}) {
         );
         await ensurePrimaryPhone(client, winnerId);
         await reconcileAccessContext(client, winnerId, loserId);
-        if (matchedOn === 'wx_unionid') {
-            await client.query(
-                `UPDATE users w SET wx_unionid = COALESCE(w.wx_unionid, l.wx_unionid),
-                        wx_app_openid = COALESCE(w.wx_app_openid, l.wx_app_openid)
-                   FROM users l WHERE w.user_id = $1 AND l.user_id = $2`,
-                [winnerId, loserId]
-            );
-        }
-        if (Object.hasOwn(options, 'channelId') || Object.hasOwn(options, 'coachId')) {
-            await client.query(
-                'UPDATE users SET channel_id = $1, coach_id = $2, updated_at = NOW() WHERE user_id = $3',
-                [options.channelId ?? null, options.coachId ?? null, winnerId]
-            );
-        }
         await client.query('UPDATE users SET merged_into_user_id = $1 WHERE user_id = $2', [winnerId, loserId]);
         await client.query(
             `INSERT INTO user_merges (winner_user_id, loser_user_id, matched_on, conflict_notes) VALUES ($1, $2, $3, $4)`,

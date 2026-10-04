@@ -6,7 +6,6 @@ const { normalizeCnPhone } = require('../lib/phone');
 const { grantSignupTrial } = require('../lib/personaOverride');
 const { syncPartnerPhoneFromUser } = require('./partners');
 const { resolveRootChannelKey, resolveGcnSector } = require('../lib/channels');
-const { miniappCredentials, exchangeMiniappCode, findMiniappUser, attachMiniappIdentity } = require('../lib/wechatIdentity');
 
 // A referral code belongs to a user, not a coach. Two things follow from that, and both are wanted:
 //
@@ -165,23 +164,34 @@ async function handleWxLogin(body) {
     const { code, coach_id, invite_code, ref, app_id, phone_code, channel_slug } = body;
     if (!code) return { success: false, error: 'code is required' };
 
-    const credential = miniappCredentials(app_id);
-    if (!credential) return { success: false, error: 'unknown_app_id', statusCode: 400 };
-    const appid = credential.appId;
-    let wxIdentity;
-    try { wxIdentity = await exchangeMiniappCode(code, appid); }
-    catch (err) { return { success: false, error: 'wechat_login_unavailable', statusCode: 502 }; }
-    if (wxIdentity.error) return { success: false, error: wxIdentity.error };
-    const openid = wxIdentity.openid;
+    const credMap = {};
+    if (process.env.WX_APPID && process.env.WX_SECRET)
+        credMap[process.env.WX_APPID] = process.env.WX_SECRET;
+    if (process.env.WX_APPID_WAVEN && process.env.WX_SECRET_WAVEN)
+        credMap[process.env.WX_APPID_WAVEN] = process.env.WX_SECRET_WAVEN;
+    if (process.env.WX_APPID_AEVIVA && process.env.WX_SECRET_AEVIVA)
+        credMap[process.env.WX_APPID_AEVIVA] = process.env.WX_SECRET_AEVIVA;
+
+    const appid  = (app_id && credMap[app_id]) ? app_id : process.env.WX_APPID;
+    const secret = credMap[appid];
+    if (!appid || !secret) return { success: false, error: 'WX_APPID / WX_SECRET not configured' };
+
+    const wxRes = await fetch(
+        `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${code}&grant_type=authorization_code`
+    );
+    const wxData = await wxRes.json();
+    if (wxData.errcode) return { success: false, error: `WeChat: ${wxData.errmsg} (${wxData.errcode})` };
+
+    const openid = wxData.openid;
     // unionid is present when the miniapp is bound to the WeChat Open Platform
     // account — it bridges miniapp and mobile-app identities (see /wx-app-login).
-    const unionid = wxIdentity.unionid;
+    const unionid = wxData.unionid || null;
 
     // Use pre-resolved phone (already verified by /resolve-phone), or resolve from code if provided
     console.log(JSON.stringify({ level: 'INFO', msg: 'wx-login-phone', phone_code_present: !!phone_code, raw_phone_ignored: !!body.phone }));
     let resolvedPhone = null;
     if (!resolvedPhone && phone_code) {
-        const token = await getWxAccessToken(appid, credential.secret);
+        const token = await getWxAccessToken(appid, credMap[appid]);
         const phoneRes = await fetch(`https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=${token}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -213,16 +223,9 @@ async function handleWxLogin(body) {
              SELECT DISTINCT ON (user_id) user_id, bio_age
              FROM biomarkers ORDER BY user_id, tested_at DESC
          ) b ON u.user_id = b.user_id
-         `;
-    let matchedUser;
-    try { matchedUser = await findMiniappUser(appid, openid, unionid); }
-    catch (err) {
-        console.error(JSON.stringify({ level: 'ERROR', msg: 'wx-login-identity', error: err.message }));
-        return { success: false, error: err.message, statusCode: 409 };
-    }
-    const existing = matchedUser
-        ? await pool.query(`${WX_LOGIN_USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [matchedUser.user_id])
-        : { rows: [] };
+         WHERE u.external_id = $1 OR u.user_id = $1
+         LIMIT 1`;
+    const existing = await pool.query(WX_LOGIN_USER_SELECT, [openid]);
 
     if (existing.rows.length > 0) {
         let existingRow = existing.rows[0];
@@ -231,13 +234,15 @@ async function handleWxLogin(body) {
         // every downstream side effect below (channel assignment, invite tracking, etc.)
         // must apply to the surviving winner, not the now-defunct loser.
         while (existingRow.merged_into_user_id) {
-            const winnerRes = await pool.query(`${WX_LOGIN_USER_SELECT} WHERE u.user_id = $1 LIMIT 1`, [existingRow.merged_into_user_id]);
+            const winnerRes = await pool.query(WX_LOGIN_USER_SELECT, [existingRow.merged_into_user_id]);
             if (winnerRes.rows.length === 0) break;
             existingRow = winnerRes.rows[0];
         }
 
-        try { await attachMiniappIdentity(existingRow.user_id, appid, openid, unionid); }
-        catch (err) { return { success: false, error: err.message, statusCode: 409 }; }
+        // Backfill unionid so the mobile app can match this account later
+        if (unionid) {
+            await pool.query('UPDATE users SET wx_unionid = COALESCE(wx_unionid, $1) WHERE user_id = $2', [unionid, existingRow.user_id]);
+        }
 
         // Existing user with no channel + invite code → assign channel from invite or referral
         if (!existingRow.channel_id && invite_code) {
@@ -377,8 +382,7 @@ async function handleWxLogin(body) {
         // the real owner's next WeChat login.
         if (phoneMatch.rows.length > 0) {
             const row = phoneMatch.rows[0];
-            try { await attachMiniappIdentity(row.user_id, appid, openid, unionid); }
-            catch (err) { return { success: false, error: err.message, statusCode: 409 }; }
+            await pool.query('UPDATE users SET external_id = $1, wx_unionid = COALESCE(wx_unionid, $2) WHERE user_id = $3', [openid, unionid, row.user_id]);
             const { channel_name, channel_key, channel_logo_url, channel_sub_age_names, channel_locale, ...user } = row;
             const channel = channel_name
                 ? { name: channel_name, key_name: channel_key, logo_url: channel_logo_url, sub_age_display_names: channel_sub_age_names || null, locale: channel_locale || 'zh' }
@@ -482,8 +486,6 @@ async function handleWxLogin(body) {
          RETURNING user_id, nickname, birth_date, gender, language, phone, email, avatar_url, avatar_character, avatar_moods, coach_id, channel_id, roles, created_at, bio_data, referral_code`,
         [newUserId, openid, resolvedCoachId, channelId, inviteRecord?.id || null, referralUserId, newReferralCode, resolvedPhone, unionid]
     );
-    try { await attachMiniappIdentity(newUserId, appid, openid, unionid); }
-    catch (err) { return { success: false, error: err.message, statusCode: 409 }; }
 
     try { await grantSignupTrial(pool, newUserId, channelId); } catch (err) {
         console.error(JSON.stringify({ level: 'ERROR', msg: 'grantSignupTrial failed', user_id: newUserId, error: err.message }));
@@ -515,8 +517,7 @@ async function handleWxLogin(body) {
         };
     }
 
-    return { success: true, new_user: true, needs_existing_account_choice: !unionid,
-        user: { ...created.rows[0], bio_age: null, coach_name: null }, channel };
+    return { success: true, new_user: true, user: { ...created.rows[0], bio_age: null, coach_name: null }, channel };
 }
 
 // WeChat Open Platform (mobile app / fluwx) login. Unlike the miniapp's
@@ -544,7 +545,7 @@ async function handleWxAppLogin(body) {
     const unionid   = wxData.unionid || null;
 
     const bundleSelect = `
-        SELECT u.user_id, u.merged_into_user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
+        SELECT u.user_id, u.nickname, u.birth_date, u.gender, u.language, u.phone, u.email,
                u.avatar_url, u.avatar_character, u.avatar_moods, u.coach_id, u.channel_id, u.roles, u.created_at, u.bio_data, u.referral_code,
                u.referred_by_user_id, (u.phone_verified_at IS NOT NULL AND u.phone IS NOT NULL) AS phone_verified, b.bio_age,
                cu.nickname AS coach_name,
@@ -575,12 +576,7 @@ async function handleWxAppLogin(body) {
         existing = await pool.query(`${bundleSelect} WHERE u.wx_unionid = $1 LIMIT 1`, [unionid]);
     }
     if (existing.rows.length > 0) {
-        let row = existing.rows[0];
-        while (row.merged_into_user_id) {
-            const winner = await pool.query(`${bundleSelect} WHERE u.user_id = $1 LIMIT 1`, [row.merged_into_user_id]);
-            if (!winner.rows.length) break;
-            row = winner.rows[0];
-        }
+        const row = existing.rows[0];
         await pool.query(
             'UPDATE users SET wx_app_openid = $1, wx_unionid = COALESCE(wx_unionid, $2) WHERE user_id = $3',
             [appOpenid, unionid, row.user_id]
