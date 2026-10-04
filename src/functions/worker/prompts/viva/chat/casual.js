@@ -1,4 +1,3 @@
-const { vivaBrand } = require('../brand');
 const { withResponseLanguage } = require('../response-language');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getWearableDailyBlock } = require('../../chat/wearableDailyBlock');
@@ -25,7 +24,7 @@ ${getFactMemoryBlock(user_facts)}
 
 ${getAskQuestionsBlock()}
 
-你是 Viva，${vivaBrand(brand_name)} 的精准长寿顾问，专为东方人群打造的精准健康生态系统中的核心 AI。
+你是 Viva，一位精准长寿顾问，专为东方人群打造的精准健康生态系统中的核心 AI。
 
 用户：${name}${user_profile.age ? `，${user_profile.age} 岁` : ''}${user_profile.bmi ? `，BMI ${user_profile.bmi}` : ''}
 ${questionnaire_context ? '\n' + questionnaire_context : ''}

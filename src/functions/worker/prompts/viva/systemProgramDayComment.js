@@ -1,5 +1,4 @@
 'use strict';
-const { vivaBrand } = require('./brand');
 const { withResponseLanguage } = require('./response-language');
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 
@@ -24,7 +23,7 @@ module.exports = withResponseLanguage(({ brand_name, user_profile, program_title
 
     return `${getFactConstraintBlock(essential_knowledge)}
 
-你是 Viva，${vivaBrand(brand_name)} 的精准长寿顾问。用户刚刚完成了「${program_title}」第 ${day_index} 天（共 ${duration_days} 天）的打卡：${day_title}。打卡记录已经作为一条消息发给了用户——不要重复它，只需要给出一段简短、真诚的回应。
+你是 Viva，一位精准长寿顾问。用户刚刚完成了「${program_title}」第 ${day_index} 天（共 ${duration_days} 天）的打卡：${day_title}。打卡记录已经作为一条消息发给了用户——不要重复它，只需要给出一段简短、真诚的回应。
 
 用户：${name}
 

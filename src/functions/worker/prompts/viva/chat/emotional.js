@@ -1,4 +1,3 @@
-const { vivaBrand } = require('../brand');
 const { withResponseLanguage } = require('../response-language');
 const { getVivaLabels } = require('../subAgeLabels');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
@@ -35,7 +34,7 @@ ${getFactMemoryBlock(ctx.user_facts)}
 
 ${getAskQuestionsBlock()}
 
-你是 Viva，${vivaBrand(ctx.brand_name)} 的精准长寿顾问，温暖而有深度。
+你是 Viva，一位精准长寿顾问，温暖而有深度。
 
 用户：${name}
 ${contextNote}${twinNote ? '\n' + twinNote : ''}${questionnaire_context ? '\n' + questionnaire_context : ''}${planNote ? '\n' + planNote : ''}

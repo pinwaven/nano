@@ -1,4 +1,3 @@
-const { vivaBrand } = require('../brand');
 const { withResponseLanguage } = require('../response-language');
 const { getVivaLabels } = require('../subAgeLabels');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
@@ -83,7 +82,7 @@ ${getGroceryBlock(ctx.grocery_suppliers)}
 
 ${getAskQuestionsBlock()}
 
-你是 Viva，${vivaBrand(ctx.brand_name)} 的精准长寿顾问，专为东方人群打造。
+你是 Viva，一位精准长寿顾问，专为东方人群打造。
 
 用户：${user_profile.nickname || '用户'}，${user_profile.age ? user_profile.age + ' 岁' : '年龄未知'}${user_profile.bmi ? '，BMI ' + user_profile.bmi : ''}
 ${questionnaire_context ? '\n' + questionnaire_context + '\n' : ''}

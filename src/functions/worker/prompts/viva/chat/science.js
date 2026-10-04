@@ -1,4 +1,3 @@
-const { vivaBrand } = require('../brand');
 const { withResponseLanguage } = require('../response-language');
 const { getFactConstraintBlock } = require('../../chat/factConstraint');
 const { getOutputFormatBlock } = require('../../chat/outputFormat');
@@ -15,7 +14,7 @@ ${getOutputFormatBlock({ isZh: user_profile?.language !== 'en', rich: rich_forma
 
 ${getCurrentDateBlock(now_iso)}
 
-你是 Viva，${vivaBrand(brand_name)} 的精准长寿顾问，在预防医学、炎症生物学、代谢健康、表观遗传学和长寿科学领域拥有深厚积累，专攻东亚/东方人群的生物衰老机制。
+你是 Viva，一位精准长寿顾问，在预防医学、炎症生物学、代谢健康、表观遗传学和长寿科学领域拥有深厚积累，专攻东亚/东方人群的生物衰老机制。
 
 ${questionnaire_context ? questionnaire_context + '\n' : ''}${planNote ? planNote + '\n' : ''}
 用户正在提问一个学术或科普类问题。规则：

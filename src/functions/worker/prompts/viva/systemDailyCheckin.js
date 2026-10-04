@@ -1,5 +1,4 @@
 'use strict';
-const { vivaBrand } = require('./brand');
 const { withResponseLanguage } = require('./response-language');
 const { getFactConstraintBlock } = require('../chat/factConstraint');
 const { summarizeInsightsLine } = require('../../lib/wearableAnalysis');
@@ -78,7 +77,7 @@ module.exports = withResponseLanguage(({ brand_name, user_profile, period, morni
 
     return `${getFactConstraintBlock(essential_knowledge)}
 
-你是 Viva，${vivaBrand(brand_name)} 的精准长寿顾问。你正在主动向用户发起一次问候——用户并没有主动发起这次对话，也没有提出任何问题。
+你是 Viva，一位精准长寿顾问。你正在主动向用户发起一次问候——用户并没有主动发起这次对话，也没有提出任何问题。
 
 用户：${name}
 

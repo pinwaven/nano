@@ -241,14 +241,23 @@ function _addLanguageSwitchNote(history, language) {
 // Same history-over-prompt effect for Viva's company: after a channel gets its own brand
 // (SuperiorMed, 2026-10-03), a user who had asked "Who are you" before kept getting the old
 // "I'm Viva — Aeviva's precision longevity advisor…" reply word for word — 3 of 3 against the
-// real prod history, while the prompt said SuperiorMed; with the name corrected in the earlier
-// replies, 3 of 3 said SuperiorMed. So Viva's own earlier replies are shown to the model under
-// the channel's current brand. In-memory only, never written back to chat_messages.
-function _alignHistoryBrand(history, brandName, language) {
-    const brand = vivaBrand(brandName, language);
-    if (brand === DEFAULT_BRAND) return history;
+// real prod history, while the prompt said SuperiorMed. Viva is now brand-neutral (2026-10-04,
+// prompts/viva/brand.js vivaBrandRule) and the same copying put "…advisor at SuperiorMed" back
+// into 4 of 10 English "Who are you" replies. So the company name is taken out of Viva's own
+// earlier replies — the default and the channel's, both languages. In-memory only, never
+// written back to chat_messages; the user's turns are untouched.
+function _neutralizeHistoryBrand(history, brandName) {
+    const names = [...new Set([DEFAULT_BRAND, vivaBrand(brandName, 'zh'), vivaBrand(brandName, 'en')])]
+        .map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const b = `(?:${names.join('|')})`;
+    const patterns = [
+        new RegExp(`,?\\s*(?:powered by|built by|made by|developed by|from|at|by|of|with)\\s+${b}\\b`, 'gi'),
+        new RegExp(`${b}\\s*[’']s\\s+`, 'gi'),
+        new RegExp(`(?:由\\s*)?${b}\\s*(?:旗下|研发|开发|打造|推出)?的?\\s*`, 'gi'),
+    ];
     for (const m of history) {
-        if (m.role === 'assistant' && typeof m.content === 'string') m.content = m.content.replace(/Aeviva/gi, brand);
+        if (m.role !== 'assistant' || typeof m.content !== 'string') continue;
+        for (const re of patterns) m.content = m.content.replace(re, '');
     }
     return history;
 }
@@ -2007,7 +2016,7 @@ async function handlePostChat(body) {
                 else cleanHistory.push({ role: 'user', content: message });
             }
             _addLanguageSwitchNote(cleanHistory, user.language);
-            if (personaType === 'viva') _alignHistoryBrand(cleanHistory, channelBrandName, user.language);
+            if (personaType === 'viva') _neutralizeHistoryBrand(cleanHistory, channelBrandName);
 
             // The shared grounding-retry check below (verifyBiomarkerGrounding) rebuilds its
             // correction attempt from this plain system+history message list regardless of
@@ -3605,7 +3614,7 @@ module.exports = {
     stripTrailingQuestion,
     extractDateMentions,
     _addLanguageSwitchNote,
-    _alignHistoryBrand,
+    _neutralizeHistoryBrand,
     _stripActionTails,
     _filterProductsByUserFacts,
     _validateProductRecommendations,
