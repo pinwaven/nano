@@ -13,7 +13,7 @@ covers discovery, the run/verify runbook, and the porting rules that the compile
 
 ```
 src/xapp/
-├── manifest.json        # appid empty; packagename net.gcn.nano (for a future custom base)
+├── manifest.json        # appid __UNI__316095D; packagename net.gcn.nano
 ├── pages.json           # pages + pull-refresh, same routes as app.json
 ├── pages/               # main (5 tabs + Kino overlay), coach, login, verify-phone, …
 ├── components/          # user-health, health-documents, viva-ag-panel, strip-record,
@@ -35,7 +35,7 @@ this exposed (plain-text QR for `/qr-login`, `ref` param for signup referrals).
 
 ## Running on a device (runbook)
 
-To package a signed APK, run `tools/xapp-android/build.sh`; it copies the result
+To package a local debug APK, run `tools/xapp-android/build.sh`; it copies the result
 to `dist/xapp/android/`. See [the packaging prerequisites](../../tools/xapp-android/README.md).
 
 ```bash
@@ -70,7 +70,7 @@ adb connect <ip>:<connectport>
 |---|---|
 | `io.dcloud.uniappx` ("uni-app x") | **the xapp** — HBuilderX debug base; src/xapp code hot-pushes into it |
 | `com.waven.nano` | June-2026 **Donut APK of the miniapp** (`cli build-apk`; Donut framework: [wechat-multiterminal.md](wechat-multiterminal.md)) — NOT src/xapp |
-| `net.gcn.nano` | manifest packagename for a future custom base/release build — not installed yet |
+| `net.gcn.nano` | locally packaged xapp APK (`npm run build:xapp:android`) |
 
 `am start -n io.dcloud.uniappx/io.dcloud.uniapp.UniAppActivity` brings the xapp up; it keeps its
 login session across restarts (uni storage), the Donut APK has a separate storage and looks

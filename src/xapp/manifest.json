@@ -1,6 +1,6 @@
 {
   "name": "nano-xapp",
-  "appid": "",
+  "appid": "__UNI__316095D",
   "description": "uni-app x port of the Waven Nano WeChat miniapp (src/mini/nano-miniapp)",
   "versionName": "0.1.0",
   "versionCode": "100",
