@@ -21,15 +21,20 @@ HBX=${HBX:-}
 if [ -z "$HBX" ]; then
   if [ -x /Applications/HBuilderX.app/Contents/MacOS/cli ]; then
     HBX=/Applications/HBuilderX.app
-  else
+  elif [ -x "$HOME/Applications/HBuilderX.app/Contents/MacOS/cli" ]; then
+    HBX="$HOME/Applications/HBuilderX.app"
+  elif [ -x "$HOME/HBuilderX/cli" ]; then
     HBX="$HOME/HBuilderX"
+  else
+    echo "HBuilderX not found. Checked /Applications/HBuilderX.app, $HOME/Applications/HBuilderX.app and $HOME/HBuilderX. Set HBX to your installation path." >&2
+    exit 1
   fi
 fi
 case "$HBX" in
   *.app) CLI="$HBX/Contents/MacOS/cli" ;;
   *) CLI="$HBX/cli" ;;
 esac
-[ -x "$CLI" ] || { echo "HBuilderX CLI not found at $CLI (set HBX=)" >&2; exit 1; }
+[ -x "$CLI" ] || { echo "HBuilderX CLI not found at $CLI (selected by HBX=$HBX; unset HBX to use automatic discovery)" >&2; exit 1; }
 VERSION=$("$CLI" version | sed 's/\x1b\[[0-9;]*m//g' | tr -d '\r\n')
 [ "$VERSION" = '5.26.2026091802' ] || { echo "Local SDK requires HBuilderX 5.26.2026091802; found $VERSION" >&2; exit 1; }
 ANDROID_HOME=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}

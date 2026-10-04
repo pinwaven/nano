@@ -18,6 +18,9 @@ adb install -r dist/xapp/android/nano-xapp-debug.apk
   `ANDROID_SDK_ROOT`; macOS defaults to `~/Library/Android/sdk`.
 - Node.js, curl, unzip, shasum; network access for the initial SDK and Gradle dependencies.
 
+The script checks `/Applications/HBuilderX.app`, `~/Applications/HBuilderX.app`,
+then `~/HBuilderX`. An existing `HBX` environment variable overrides discovery;
+`unset HBX` clears an old override.
 `HBX=/path/to/HBuilderX.app npm run build:xapp:android` selects another installation.
 The pinned VDOM SDK is downloaded and checksum-verified by `setup-sdk.sh`, cached
 in `temp/xapp-android-sdk/`. HBuilderX and the SDK must be upgraded together.

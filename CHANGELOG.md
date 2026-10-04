@@ -18,6 +18,8 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ### Changed
 
+- **xapp Android: local HBuilderX discovery** · 2026-10-04: also check `~/Applications/HBuilderX.app`; missing-install errors list the searched paths and stale `HBX` overrides are identified explicitly.
+
 - **xapp-mini: end-of-chat scrolling** · 2026-10-04: applied the direct end markers and delayed layout settling pass to WeChat too, so long replies are scrolled to their end; touch cancels queued scrolls. Existing clipping padding remains. Rebuilt `dist/xapp/mini` and verified in WeChat DevTools with synthetic local history: long initial history, reply height growing after 800ms, short reply, and manual scroll preservation all pass; both offline gates pass. Real-device WeChat verification remains pending. xapp VERSION `1004-8`.
 - **xapp Android: initial chat scroll** · 2026-10-04: scroll to direct end markers after native history layout, with a final settling pass; cancel queued scrolling when the user touches chat or leaves the page. Preserve the existing last-message padding. Verified on OnePlus PJZ110 across two cold launches: the final reply is fully visible. Both offline gates pass. xapp VERSION `1004-7`.
 - **xapp Android: avatar action pills** · 2026-10-04: added horizontal and vertical padding and a minimum height to the 换头像 / 编辑资料 pills, with smaller side margins to keep them beside the avatar. Rebuilt and verified both labels fit with padding on OnePlus PJZ110; both offline gates pass. xapp VERSION `1004-6`.
