@@ -152,7 +152,8 @@
           :scroll-top="scrollTop" :scroll-with-animation="false"
           :scroll-into-view="scrollAnchor"
           :refresher-enabled="hasMoreHistory" :refresher-triggered="historyLoading"
-          v-on:refresherrefresh="onPullLoadMore" v-on:scrolltoupper="onScrollToUpper">
+          v-on:refresherrefresh="onPullLoadMore" v-on:scrolltoupper="onScrollToUpper"
+          v-on:touchstart="_cancelChatScroll">
           <view class="chat-inner">
 
             <!-- history load-more / start indicator -->
@@ -363,6 +364,11 @@
                  this back down without confirming the underlying repaint issue is actually fixed. -->
             <view :style="'height:100px'"></view>
           </view>
+          <!-- #ifdef APP-ANDROID || MP-WEIXIN -->
+          <!-- Direct scroll-view children target the end after rich-text layout settles. -->
+          <view id="chat-bottom-a" style="height:1px;flex-shrink:0"></view>
+          <view id="chat-bottom-b" style="height:1px;flex-shrink:0"></view>
+          <!-- #endif -->
         </scroll-view>
 
         <!-- Onboarding / questionnaire input bars (one per input_type) -->
@@ -2603,6 +2609,7 @@ export default {
       _scrollFlip: false,
       _scrollTimer: 0 as number,
       _scrollTimer2: 0 as number,
+      _scrollSettleTimer: 0 as number,
       _scrollAnchorTimer: 0 as number,
       _bioSeries: null as Map<string, Point[]> | null,
       _segCtas: new Map<string, UTSJSONObject>(),
@@ -2920,11 +2927,13 @@ export default {
   },
 
   onHide() {
+    this._cancelChatScroll()
     this._stopPolling()
     this._stopKinoSlide()
   },
 
   onUnload() {
+    this._cancelChatScroll()
     this._stopTypingDots()
     this._stopPolling()
     this._stopKinoSlide()
@@ -5097,25 +5106,36 @@ export default {
       }
     },
 
-    // AGENTS §23 (scroll half): scrollTop alone under-shoots on a real phone's cold launch; the
-    // anchor mechanism scrolls a specific element against whatever the layout actually is. The
-    // nextTick the miniapp used has no xapp equivalent — the two follow-up timers (150/500ms)
-    // catch slower devices/longer markdown re-layout; images re-snap via onChatImageLoad and
-    // short non-overflowing messages are covered by the 100px .chat-inner padding above.
-    _scrollBottom() {
-      if (this.messages.length == 0) return
+    // Native and WeChat history can finish rich-text layout after the first render.
+    // Target the actual end of the scroll-view, rather than the start of a long last message.
+    _cancelChatScroll() {
       if (this._scrollTimer != 0) clearTimeout(this._scrollTimer)
       if (this._scrollTimer2 != 0) clearTimeout(this._scrollTimer2)
+      if (this._scrollSettleTimer != 0) clearTimeout(this._scrollSettleTimer)
       if (this._scrollAnchorTimer != 0) clearTimeout(this._scrollAnchorTimer)
+      this.scrollAnchor = ''
+    },
+
+    _scrollBottom() {
+      if (this.messages.length == 0) return
+      this._cancelChatScroll()
       const doScrollTop = () => {
         this._scrollFlip = !this._scrollFlip
         this.scrollTop = this._scrollFlip ? 999998 : 999999
+        // #ifdef APP-ANDROID || MP-WEIXIN
+        this.scrollAnchor = this._scrollFlip ? 'chat-bottom-a' : 'chat-bottom-b'
+        // #endif
       }
       this._scrollTimer = setTimeout(doScrollTop, 150)
       this._scrollTimer2 = setTimeout(doScrollTop, 500)
+      // #ifdef APP-ANDROID || MP-WEIXIN
+      this._scrollSettleTimer = setTimeout(doScrollTop, 1200)
+      // #endif
+      // #ifdef !APP-ANDROID && !MP-WEIXIN
       const lastId = this.messages[this.messages.length - 1].id
       this.scrollAnchor = `m${lastId}`
-      this._scrollAnchorTimer = setTimeout(() => { this.scrollAnchor = '' }, 700)
+      // #endif
+      this._scrollAnchorTimer = setTimeout(() => { this.scrollAnchor = '' }, 1500)
     },
 
     // <image mode="widthFix"> bubbles reach their final height only once the image loads — well
@@ -7602,7 +7622,7 @@ export default {
 .viva-expired-banner-btn { color: #A0B4FF; font-size: 12px; font-weight: bold; }
 
 .menu-mask { position: absolute; left: 0; top: 0; right: 0; bottom: 0; z-index: 100; }
-.menu-dropdown { position: absolute; left: 12px; background-color: #0F2540; border: 1px solid rgba(99, 117, 236, 0.25); border-radius: 10px; min-width: 120px; overflow: hidden; box-shadow: rgba(0, 0, 0, 0.5) 0px 4px 20px 0px; }
+.menu-dropdown { position: absolute; left: 12px; background-color: #0F2540; border: 1px solid rgba(99, 117, 236, 0.25); border-radius: 10px; min-width: 120px; overflow: hidden; box-shadow: 0px 4px 20px 0px rgba(0, 0, 0, 0.5); }
 .menu-item { flex-direction: row; align-items: center; padding: 14px 16px; color: rgb(238, 242, 255); }
 .menu-item-icon { color: #A6C4E5; font-size: 14px; margin-right: 10px; }
 .menu-item-label { color: #EEF2FF; font-size: 14px; }
@@ -8085,7 +8105,7 @@ export default {
 .store-header { flex-direction: row; align-items: flex-start; justify-content: space-between; padding: 14px 18px 10px 18px; }
 .store-title { color: #EEF2FF; font-size: 17px; font-weight: bold; }
 .store-header-right { flex-direction: row; align-items: center; }
-.store-credit-card { flex-direction: row; align-items: center; background-color: transparent; border-radius: 13px; color: rgb(238, 242, 255); background-image: linear-gradient(150deg, rgb(29, 53, 101) 0%, rgb(22, 46, 74) 100%); box-shadow: rgba(99, 117, 236, 0.35) 0px 4px 16px 0px, rgba(255, 255, 255, 0.07) 0px 1px 0px 0px inset; padding: 9px 14px 9px 11px; border-style: solid; border-width: 1px; border-color: rgba(139, 159, 255, 0.45); }
+.store-credit-card { flex-direction: row; align-items: center; background-color: transparent; border-radius: 13px; color: rgb(238, 242, 255); background-image: linear-gradient(150deg, rgb(29, 53, 101) 0%, rgb(22, 46, 74) 100%); box-shadow: 0px 4px 16px 0px rgba(99, 117, 236, 0.35), 0px 1px 0px 0px rgba(255, 255, 255, 0.07) inset; padding: 9px 14px 9px 11px; border-style: solid; border-width: 1px; border-color: rgba(139, 159, 255, 0.45); }
 .store-credit-card-num { color: rgb(255, 255, 255); font-size: 27px; font-weight: bold; letter-spacing: -1px; }
 .store-credit-card-unit { color: rgba(160, 180, 255, 0.65); font-size: 9px; font-weight: bold; margin: 0px 0px 2px 3px; }
 .store-credit-card-label { color: #A6C4E5; font-size: 9px; margin-left: 8px; }
@@ -8190,7 +8210,7 @@ export default {
 .training-tab { padding: 10px 16px 10px 16px; }
 .loading-row { align-items: center; padding: 20px 0; }
 .loading-text { color: #A6C4E5; font-size: 13px; }
-.academy-status-card { position: relative; overflow: hidden; background-image: linear-gradient(150deg, rgb(26, 31, 98) 0%, rgb(29, 53, 101) 50%, rgb(22, 46, 74) 100%); border: 1px solid rgba(139, 159, 255, 0.38); border-radius: 16px; padding: 16px 16px 14px; box-shadow: rgba(99, 117, 236, 0.32) 0px 6px 24px 0px, rgba(255, 255, 255, 0.06) 0px 1px 0px 0px inset; margin: 12px 14px 8px 14px; }
+.academy-status-card { position: relative; overflow: hidden; background-image: linear-gradient(150deg, rgb(26, 31, 98) 0%, rgb(29, 53, 101) 50%, rgb(22, 46, 74) 100%); border: 1px solid rgba(139, 159, 255, 0.38); border-radius: 16px; padding: 16px 16px 14px; box-shadow: 0px 6px 24px 0px rgba(99, 117, 236, 0.32), 0px 1px 0px 0px rgba(255, 255, 255, 0.06) inset; margin: 12px 14px 8px 14px; }
 .academy-card-glow-tl { position: absolute; top: -35px; right: -25px; width: 114px; height: 114px; background-color: rgba(139, 159, 255, 0.10); border-radius: 57px; }
 /* #ifdef MP-WEIXIN */
 .academy-card-glow-tl { background-image: radial-gradient(circle, rgba(139, 159, 255, 0.22) 0%, rgba(0, 0, 0, 0) 70%); }
@@ -8431,7 +8451,7 @@ export default {
 .ksm-body { flex: 1; }
 .ksm-body-inner { align-items: center; padding: 18px 22px 24px 22px; }
 .ksm-device-wrap { width: 176px; height: 176px; align-items: center; justify-content: center; }
-.ksm-ring-face { width: 160px; height: 160px; border-radius: 80px; background-color: rgb(255, 255, 255); align-items: center; justify-content: center; border-width: 0px; box-shadow: rgba(99, 117, 236, 0.06) 0px 2px 12px 0px inset, rgba(99, 117, 236, 0.18) 0px 4px 24px 0px; }
+.ksm-ring-face { width: 160px; height: 160px; border-radius: 80px; background-color: rgb(255, 255, 255); align-items: center; justify-content: center; border-width: 0px; box-shadow: 0px 2px 12px 0px rgba(99, 117, 236, 0.06) inset, 0px 4px 24px 0px rgba(99, 117, 236, 0.18); }
 
 .ksm-face-slide { align-items: center; opacity: 1; }
 .ksm-slide-index { color: #7F97B5; font-size: 10px; }
@@ -8466,7 +8486,7 @@ export default {
 .ksm-bm-label { color: #A6C4E5; font-size: 12px; }
 .ksm-bm-val { color: #EEF2FF; font-size: 12px; }
 .ksm-bm-unit { color: #7F97B5; font-size: 10px; }
-.ksm-btn { width: 100%; border-radius: 12px; background-color: transparent; margin-top: 16px; align-items: center; font-size: 14px; color: rgb(255, 255, 255); font-weight: bold; padding: 14px 0px 14px 0px; background-image: linear-gradient(135deg, rgb(99, 117, 236) 0%, rgb(123, 143, 255) 100%); box-shadow: rgba(99, 117, 236, 0.45) 0px 4px 20px 0px; flex-direction: row; justify-content: center; }
+.ksm-btn { width: 100%; border-radius: 12px; background-color: transparent; margin-top: 16px; align-items: center; font-size: 14px; color: rgb(255, 255, 255); font-weight: bold; padding: 14px 0px 14px 0px; background-image: linear-gradient(135deg, rgb(99, 117, 236) 0%, rgb(123, 143, 255) 100%); box-shadow: 0px 4px 20px 0px rgba(99, 117, 236, 0.45); flex-direction: row; justify-content: center; }
 .ksm-btn-label { color: #FFFFFF; font-size: 14px; font-weight: bold; }
 .ksm-btn-analyzing { background-color: #475569; }
 .ksm-btn-complete { background-color: #10B981; }
@@ -8496,7 +8516,7 @@ export default {
 .pin-capture { position: absolute; left: 0; top: 0; width: 100%; height: 54px; opacity: 0; color: rgba(0, 0, 0, 0); font-size: 1px; background-color: rgba(0, 0, 0, 0); }
 .guest-sheet-error { width: 100%; background-color: rgba(239, 68, 68, 0.12); border-radius: 8px; padding: 8px 10px; margin-top: 10px; }
 .guest-sheet-error-text { color: #FFB3B3; font-size: 12px; }
-.guest-sheet-btn { width: 100%; background-color: transparent; border-radius: 14px; margin-top: 16px; align-items: center; padding: 18px 18px 18px 18px; background-image: linear-gradient(135deg, rgb(99, 117, 236) 0%, rgb(139, 159, 255) 100%); box-shadow: rgba(99, 117, 236, 0.45) 0px 4px 20px 0px; }
+.guest-sheet-btn { width: 100%; background-color: transparent; border-radius: 14px; margin-top: 16px; align-items: center; padding: 18px 18px 18px 18px; background-image: linear-gradient(135deg, rgb(99, 117, 236) 0%, rgb(139, 159, 255) 100%); box-shadow: 0px 4px 20px 0px rgba(99, 117, 236, 0.45); }
 .guest-sheet-label { color: #FFFFFF; font-size: 15px; font-weight: bold; }
 .guest-sheet-btn-disabled { background-color: #475569; background-image: none; box-shadow: none; }
 .viva-redeem-input { height: 44px; background-color: rgba(255, 255, 255, 0.06); color: #EEF2FF; border-radius: 10px; margin-top: 10px; width: 100%; padding: 12px 14px 12px 14px; border-style: solid; border-width: 1px; border-color: rgba(255, 255, 255, 0.12); }

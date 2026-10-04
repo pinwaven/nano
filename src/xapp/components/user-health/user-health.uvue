@@ -181,11 +181,11 @@
                 <!-- Collapsed: side-by-side chips, tap BioAge to expand -->
                 <view v-if="!bioAgeTrendOpen" class="dt-age-chips">
                   <view class="bio-chip bio-chip-dim">
-                    <text class="bio-num bio-num-chrono">{{ cAge != null ? cAge : '—' }}</text>
+                    <text class="bio-num bio-num-chrono dt-age-number">{{ cAge != null ? cAge : '—' }}</text>
                     <text class="bio-unit">{{ tt('chronoAge') }}</text>
                   </view>
                   <view class="bio-chip bio-chip-primary" v-on:click.stop="toggleBioAgeTrend">
-                    <text class="bio-num bio-num-primary" :style="'color:' + tc(bAgeColor)">{{ bAge.length > 0 ? bAge : '—' }}</text>
+                    <text class="bio-num bio-num-primary dt-age-number" :style="'color:' + tc(bAgeColor)">{{ bAge.length > 0 ? bAge : '—' }}</text>
                     <text class="bio-unit">{{ tt('bioAge') }}</text>
                   </view>
                 </view>
@@ -6860,7 +6860,7 @@ export default {
 .health-hero { align-items: center; padding: 18px 20px 14px 20px; }
 .avatar-area { flex-direction: row; align-items: center; justify-content: center; }
 .health-avatar-container { position: relative; width: 124px; height: 124px; }
-.health-avatar-wrap { width: 124px; height: 124px; border-radius: 62px; overflow: hidden; background-color: transparent; box-shadow: rgba(99, 117, 236, 0.22) 0px 0px 14px 0px; border-style: solid; border-width: 1px; border-color: rgba(99, 117, 236, 0.45); }
+.health-avatar-wrap { width: 124px; height: 124px; border-radius: 62px; overflow: hidden; background-color: transparent; box-shadow: 0px 0px 14px 0px rgba(99, 117, 236, 0.22); border-style: solid; border-width: 1px; border-color: rgba(99, 117, 236, 0.45); }
 .health-avatar-img { width: 124px; height: 124px; border-radius: 62px; }
 .health-avatar-placeholder { width: 72px; height: 72px; border-radius: 36px; background-color: #12283F; align-items: center; justify-content: center; }
 .health-avatar-letter { color: #A6C4E5; font-size: 28px; font-weight: bold; }
@@ -6892,12 +6892,12 @@ export default {
 .twin-layer-strip { flex-direction: row; flex-wrap: wrap; margin-top: 6px; }
 .twin-layer { flex-direction: row; align-items: center; border: 1px solid rgba(166, 196, 229, 0.12); border-radius: 999px; padding: 4px 8px; margin-right: 5px; margin-top: 5px; opacity: 0.45; }
 .twin-layer-active { border-color: rgba(16, 185, 129, 0.4); opacity: 1; }
-.twin-layer-dot { width: 4px; height: 4px; border-radius: 2px; background-color: rgba(166, 196, 229, 0.3); margin-right: 4px; box-shadow: rgb(16, 185, 129) 0px 0px 4px 0px; }
+.twin-layer-dot { width: 4px; height: 4px; border-radius: 2px; background-color: rgba(166, 196, 229, 0.3); margin-right: 4px; box-shadow: 0px 0px 4px 0px rgb(16, 185, 129); }
 .twin-layer-active .twin-layer-dot { background-color: #10b981; }
 .twin-layer-label { color: rgba(166, 196, 229, 0.7); font-size: 10px; }
 .twin-layer-date { color: rgba(166, 196, 229, 0.35); font-size: 9px; margin-left: 4px; }
 
-.dt-hero-card { margin: 0 12px 14px; background-color: rgba(10, 15, 30, 0.88); border-style: solid; border-width: 1px; border-color: rgba(99, 117, 236, 0.14); border-radius: 14px; box-shadow: rgba(0, 0, 0, 0.35) 0px 4px 20px 0px; padding: 14px 12px 10px 12px; }
+.dt-hero-card { margin: 0 12px 14px; background-color: rgba(10, 15, 30, 0.88); border-style: solid; border-width: 1px; border-color: rgba(99, 117, 236, 0.14); border-radius: 14px; box-shadow: 0px 4px 20px 0px rgba(0, 0, 0, 0.35); padding: 14px 12px 10px 12px; }
 .dt-body-row { flex-direction: row; align-items: flex-start; }
 .dt-fig-col { width: 157px; align-items: center; flex-direction: row; justify-content: center; }
 .dt-body-fig { align-items: center; }
@@ -6916,7 +6916,7 @@ export default {
 .dt-age-chips { flex-direction: row; margin: 0px 0px 9px 0px; }
 .bio-chip { flex: 1; border-radius: 14px; align-items: center; background-color: rgba(11, 28, 46, 0.5); padding: 14px 12px 11px 12px; border-style: solid; border-width: 1px; border-color: rgba(99, 117, 236, 0.25); justify-content: center; }
 .bio-chip-dim { background-color: rgba(11, 28, 46, 0.5); margin-right: 6px; border-radius: 14px; padding: 14px 12px 11px 12px; border-style: solid; border-width: 1px; border-color: rgba(99, 117, 236, 0.25); justify-content: center; }
-.bio-chip-primary { background-color: rgb(15, 37, 64); border-radius: 14px; box-shadow: rgba(99, 117, 236, 0.18) 0px 0px 20px 0px; padding: 14px 12px 11px 12px; border-style: solid; border-width: 1px; border-color: rgba(99, 117, 236, 0.55); justify-content: center; }
+.bio-chip-primary { background-color: rgb(15, 37, 64); border-radius: 14px; box-shadow: 0px 0px 20px 0px rgba(99, 117, 236, 0.18); padding: 14px 12px 11px 12px; border-style: solid; border-width: 1px; border-color: rgba(99, 117, 236, 0.55); justify-content: center; }
 .bio-num { font-size: 27px; font-weight: bold; }
 .bio-num-chrono { color: rgb(166, 196, 229); font-size: 27px; }
 .bio-num-primary { color: #6375EC; font-size: 27px; }
@@ -7032,7 +7032,7 @@ export default {
 .ins-row-delta { color: rgba(166, 196, 229, 0.55); font-size: 10px; margin: 0px 0px 0px 3px; }
 .ins-band-track { height: 8px; background-color: rgba(99, 117, 236, 0.08); border-radius: 3px; position: relative; margin: 6px 0px 2px 0px; }
 .ins-band-range { position: absolute; top: 0; height: 8px; background-color: rgba(14, 165, 233, 0.28); border-radius: 3px; }
-.ins-band-marker { position: absolute; top: -2px; width: 13px; height: 12px; border-radius: 6.5px; box-shadow: rgba(0, 0, 0, 0.25) 0px 0px 5px 0px; margin: 0px 0px 0px -6px; border-style: solid; border-width: 1px; border-color: rgb(15, 37, 64); }
+.ins-band-marker { position: absolute; top: -2px; width: 13px; height: 12px; border-radius: 6.5px; box-shadow: 0px 0px 5px 0px rgba(0, 0, 0, 0.25); margin: 0px 0px 0px -6px; border-style: solid; border-width: 1px; border-color: rgb(15, 37, 64); }
 .ins-flag { flex-direction: row; align-items: center; margin-top: 4px; }
 .ins-flag-txt { color: #f59e0b; font-size: 11px; }
 .ins-flag-since { color: rgba(166, 196, 229, 0.5); font-size: 10px; margin-left: 6px; }
@@ -8091,5 +8091,16 @@ export default {
 /* …and the miniapp text that sets no size of its own but inherits one (xapp's <text> inherits nothing). */
 .ecg-card-list-when { font-size: var(--fs-22, 22rpx); }
 .ecg-card-list-val { font-size: var(--fs-22, 22rpx); }
+/* #endif */
+/* #ifdef APP-ANDROID */
+/* Keep the decimal age readable inside the narrow native side-by-side chips. */
+.bio-chip, .bio-chip-dim, .bio-chip-primary { padding-left: 4px; padding-right: 4px; }
+.dt-age-number { font-size: 22px; line-height: 1.1; white-space: nowrap; text-align: center; }
+/* Give avatar action labels horizontal breathing room and a taller tap target. */
+.avatar-side-pill { padding: 8px 10px; margin-left: 8px; margin-right: 8px; min-height: 34px; }
+/* Center the score independently of the smaller denominator. */
+.ins-score-wrap { position: relative; padding: 0; align-items: center; justify-content: center; }
+.ins-score { text-align: center; line-height: 1.2; }
+.ins-score-of { position: absolute; left: 0; right: 0; bottom: 4px; margin: 0; text-align: center; line-height: 1.1; }
 /* #endif */
 </style>
