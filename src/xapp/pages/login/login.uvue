@@ -22,17 +22,9 @@
       <text class="status-text">正在登录…</text>
     </view>
 
-    <view v-else-if="step == 'accountChoice'" class="login-card">
-      <text class="login-card-label">欢迎使用 {{ channelName }}</text>
-      <text class="login-card-hint">已有账号可通过手机号连接原有健康数据</text>
-      <view class="login-btn" v-on:click="useOtherNumber"><text>登录已有账号</text></view>
-      <view class="login-link" v-on:click="continueNewAccount"><text>创建新账号</text></view>
-    </view>
-
     <view v-else-if="step == 'error'" class="status-wrap">
       <text class="error-text">{{ error }}</text>
-      <view v-if="canRecoverByPhone" class="retry-btn" v-on:click="useOtherNumber"><text>验证手机号</text></view>
-      <view v-else class="login-link" v-on:click="useOtherNumber"><text>使用手机号登录</text></view>
+      <view class="login-link" v-on:click="useOtherNumber"><text>使用手机号登录</text></view>
       <view class="retry-btn" v-on:click="retry"><text>重试</text></view>
     </view>
 
@@ -167,7 +159,7 @@
 // - mp-weixin (xapp-mini) keeps the miniapp's whole entry: silent wx.login → /wx-login, which
 //   answers guest:true for an unknown WeChat user with no invite/coach/ref/channel — guest
 //   browsing is what lets the mini-program reviewer use the app without an account. Also
-//   ?invite=/?coach_id=/?ref=/channel QR, accountChoice, the error step and ?loggedOut=1.
+//   ?invite=/?coach_id=/?ref=/channel QR, the error step and ?loggedOut=1.
 // - Native (and web) drop those WeChat-era paths (no openid on a native app — the server's
 //   /phone-otp/verify links accounts by verified phone alone): stored user → straight
 //   through; nano_last_session → loggedOut card; else phone/email entry. No guest mode.
@@ -198,10 +190,9 @@ export default {
   name: 'LoginPage',
   data() {
     return {
-      step: 'loggedOut', // 'loggedOut' | 'phoneEntry'; mp-weixin also 'checking' | 'accountChoice' | 'error'
+      step: 'loggedOut', // 'loggedOut' | 'phoneEntry'; mp-weixin also 'checking' | 'error'
       loading: false,
       error: '',
-      canRecoverByPhone: false,
       maskedPhone: '',
       phoneStep: 'phone', // 'phone' | 'code'
       loginMethod: 'phone', // 'phone' | 'email'
@@ -234,7 +225,6 @@ export default {
       _inviteCode: '',
       _refCode: '',
       _channelSlug: '',
-      _pendingNewUser: null as UTSJSONObject | null,
       _signIn: false, // opened from the guest menu's 登录: existing accounts only, 返回 goes back
       _netErr: '', // errMsg of the last failed _postReq (e.g. a domain not on the appid's request list)
     }
@@ -374,11 +364,6 @@ export default {
         uni.navigateBack()
         return
       }
-      if (this._pendingNewUser != null) {
-        this.step = 'accountChoice'
-        this.phoneError = ''
-        return
-      }
       this.step = 'loggedOut'
       this.phoneError = ''
     },
@@ -418,24 +403,15 @@ export default {
       this.phoneLoading = true
       this.phoneError = ''
       const body = { phone: phone, code: code } as UTSJSONObject
-      // #ifdef MP-WEIXIN
-      // Links this WeChat identity to the account (phone-otp.js linkVerifiedMiniappLogin);
-      // existing_only when the user came here to reach an existing account (miniapp parity).
-      let miniappCode = ''
-      try { miniappCode = await this._getWxCode() } catch (e : any) { miniappCode = '' }
-      body['miniapp_code'] = miniappCode
-      body['app_id'] = wx.getAccountInfoSync().miniProgram.appId
-      body['existing_only'] = this._pendingNewUser != null || this.canRecoverByPhone || this._signIn
-      // #endif
+      // Guest sign-in: an unknown number gets invite_required back instead of a new account.
+      if (this._signIn) body['require_invite'] = true
       const res = await this._postReq(`${BASE}/api/phone-otp/verify`, body)
       this.phoneLoading = false
       if (res == null) { this.phoneError = this._networkError(); return }
       if (res.getBoolean('success') != true) {
         const err = res.getString('error')
-        this.phoneError = err == 'invalid_code' ? '验证码不正确'
-          : err == 'account_not_found' ? (this._signIn ? '该手机号没有已有账号，请返回注册' : '该手机号没有已有账号，请返回创建新账号')
-          // linkVerifiedMiniappLogin: this WeChat already belongs to an account with another phone.
-          : (err == 'wechat_identity_already_bound' || err == 'wechat_unionid_mismatch') ? '此微信已绑定其他手机号的账号，请用该账号登录'
+        this.phoneError = res.getBoolean('invite_required') == true ? '该手机号没有已有账号，请返回注册'
+          : err == 'invalid_code' ? '验证码不正确'
           : '验证失败，请重试'
         this.code = ''
         return
@@ -644,31 +620,16 @@ export default {
           this._finishNewUser(res)
           return
         }
-        if (newUser && res.getBoolean('needs_existing_account_choice') == true) {
-          this._pendingNewUser = res
-          this.step = 'accountChoice'
-          this.loading = false
-          return
-        }
         this._finishLogin(res)
       } catch (e : any) {
         const msg = (e as Error).message
-        const needsPhone = msg == 'wechat_identity_conflict_requires_verified_login'
         this.loading = false
         this.step = 'error'
-        this.canRecoverByPhone = needsPhone
-        this.error = needsPhone ? '请验证手机号以连接已有账号' : (msg.length > 0 ? msg : '登录失败，请重试')
+        this.error = msg.length > 0 ? msg : '登录失败，请重试'
       }
     },
 
     retry() { this.wxLogin() },
-
-    continueNewAccount() {
-      const pending = this._pendingNewUser
-      if (pending == null) return
-      this._pendingNewUser = null
-      this._finishLogin(pending!)
-    },
 
     _getWxCode() : Promise<string> {
       return new Promise<string>((resolve, reject) => {

@@ -56,9 +56,9 @@ It is the native port's behaviour (`#ifndef WEB` branches), not the miniapp's, e
     no 学习/商店 tabs; every gated action opens the invite-code sheet. That UI was already in the
     shared main page; the native app never reaches it, since only `/wx-login` returns `guest`.
   - A valid invite relaunches login with `?invite=`; the new account goes to verify-phone.
-    `?coach_id=`, `?ref=`, channel QR (`scene=ch:<id>`), the account-choice step, the error step
-    and `?loggedOut=1` behave as in the miniapp. Phone OTP sends `miniapp_code`, so it links the
-    WeChat identity.
+    `?coach_id=`, `?ref=`, channel QR (`scene=ch:<id>`), the error step and `?loggedOut=1` behave as
+    in the miniapp. Phone sign-in does not link the WeChat to the account: the 2026-09-30
+    WeChat-identity work was withdrawn on 2026-10-04 (kept on branch `wechat-identity-wip`).
   - The guest is not stored; each launch asks `/wx-login` again, as in the miniapp.
   - `/wx-login` refuses an appid it has no secret for (`unknown_app_id`). `wxecbcf00ce480fcf2` is
     known (`WX_APPID`); a new appid for a reviewed release needs its credentials in the worker env.

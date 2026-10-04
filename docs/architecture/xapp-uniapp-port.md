@@ -30,7 +30,7 @@ under `src/xapp/`, it is the only way to prove a device build is current.
 
 Auth differs by design: **no `wx.login`** on native (the mp-weixin build, xapp-mini, keeps the
 miniapp's `wx.login` and guest mode — `tools/xapp-mini/README.md`) — phone/email OTP only (server already supports it,
-§33); `/phone-otp/verify` works without `miniapp_code`. See README for the two server-side gaps
+§33). See README for the two server-side gaps
 this exposed (plain-text QR for `/qr-login`, `ref` param for signup referrals).
 
 ## Running on a device (runbook)
