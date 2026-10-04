@@ -26,12 +26,16 @@ The platform supports multiple AI personas, routed at the **channel level** via 
 
 ### Per-channel brand (`brand_name`, 2026-10-03)
 
-Viva says which company she belongs to; a channel can override it with `channels.config.brand_name`
+Viva is **brand-neutral** (2026-10-04): her identity lines name no company, and she names one
+only when the user asks who is behind her. The company is `channels.config.brand_name`
 (`{zh, en}` or a string; inherited like `sub_age_display_names`; set from the admin panel's channel
-form). `lib/channels.js` `resolveChannelBrand` → `llmContext.brand_name` → `prompts/viva/brand.js`
-`vivaBrand()`, Aeviva when unset. SuperiorMed sets it; Viva keeps her own name everywhere. **Never
-write a company name as a literal in a Viva template** — use `vivaBrand`; business lines (customer
-service, the store) stay neutral. `tests/viva-brand.test.js` renders every template with a brand.
+form) → `lib/channels.js` `resolveChannelBrand` → `llmContext.brand_name` → `prompts/viva/brand.js`
+`vivaBrandRule()` (Aeviva when unset), which `withResponseLanguage` appends to every live Viva
+template. **Never write a company name — literal or `vivaBrand()` — into a Viva identity line**;
+business lines (customer service, the store) stay neutral. History outweighs the prompt, so
+`handlers/chat.js` `_neutralizeHistoryBrand` strips the company from Viva's earlier replies before
+the model sees them (in memory only). `tests/viva-brand.test.js` renders every template with and
+without a brand.
 
 ### Prompt directory layout
 
