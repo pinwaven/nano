@@ -153,10 +153,16 @@ sync and capture code above it is the same code xapp-mini runs.
 
 ## WeChat mini-program export (2026-10-01, VERSION 1001-9)
 
-`tools/xapp-mini/build.sh` → `src/xapp-mini`, a WeChat DevTools project. Uploads read files
+`tools/xapp-mini/build.sh` → `dist/xapp/mini`, a WeChat DevTools project. Uploads read files
 through `getFileSystemManager` (`utils/file-bytes.uts`). Bluetooth (Halo/V8) runs over WeChat's API through
 `utils/wearable/transport-mp.uts`, installed from `App.uvue` (VERSION 1002-1). Login on mp-weixin is the miniapp's `wx.login` flow, including guest mode for mini-program
 review (VERSION 1002-4); native keeps phone/email OTP and has no guest mode. Details and gaps: [`tools/xapp-mini/README.md`](../../tools/xapp-mini/README.md).
+
+## Android APK packaging
+
+`tools/xapp-android/build.sh` packages a signed APK through HBuilderX and copies it to
+`dist/xapp/android/`. The empty manifest app ID must be registered before this can run;
+see [`tools/xapp-android/README.md`](../../tools/xapp-android/README.md).
 
 ## Web (H5) build (2026-10-01, VERSION 1001-8)
 

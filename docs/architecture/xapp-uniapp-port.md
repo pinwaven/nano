@@ -35,6 +35,9 @@ this exposed (plain-text QR for `/qr-login`, `ref` param for signup referrals).
 
 ## Running on a device (runbook)
 
+To package a signed APK, run `tools/xapp-android/build.sh`; it copies the result
+to `dist/xapp/android/`. See [the packaging prerequisites](../../tools/xapp-android/README.md).
+
 ```bash
 # 1. HBuilderX 5.26 must be installed; project already imported. Where it lives differs per Mac:
 #    the original arm64 Mac: /Applications/HBuilderX.app, project /Users/pin/waven/nano/src/xapp;
@@ -142,7 +145,7 @@ together with headless browsers it exhausts the 4 GB of memory.
 
 ## WeChat mini-program export (xapp-mini)
 
-`tools/xapp-mini/build.sh` compiles the same tree for `mp-weixin` into `src/xapp-mini`
+`tools/xapp-mini/build.sh` compiles the same tree for `mp-weixin` into `dist/xapp/mini`
 (git-ignored), for WeChat DevTools. It runs the native branches (`#ifndef WEB`). How to open it
 and what differs from the miniapp: [tools/xapp-mini/README.md](../../tools/xapp-mini/README.md).
 
