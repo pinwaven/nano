@@ -1,0 +1,156 @@
+// scanQr(): uni.scanCode on native; on the web the web user-app's scanner (components/ui/
+// UiHost.jsx Scanner) — uni-app x's web runtime ships scanCode as an "unsupported" stub, which
+// broke every scan in the browser (Kino chip, Dots box activation, the coach's box scan). Same
+// markup and `ui-*` classes as the user-app, so static/web/user-app.css draws it identically,
+// mounted inside the phone frame (#app). Camera via BarcodeDetector where the browser has it,
+// a manual code field otherwise; both resolve with the raw string uni.scanCode gives.
+//
+// (A helper, not a patch of the global `uni`: page code imports uni APIs as tree-shaken module
+// bindings, so reassigning uni.scanCode would not reach it.)
+
+// #ifdef WEB
+type Fn = (res : any) => void
+
+let _lang : () => string = () : string => 'zh'
+
+function _t(zh : string, en : string) : string { return _lang() == 'en' ? en : zh }
+
+function _host() : HTMLElement {
+  return (document.getElementById('app') ?? document.body) as HTMLElement
+}
+
+function _el(tag : string, cls : string, text : string | null = null) : HTMLElement {
+  const e = document.createElement(tag)
+  if (cls.length > 0) e.className = cls
+  if (text != null) e.textContent = text
+  return e
+}
+
+function _done(opts : any, ok : boolean, res : any) {
+  const o = opts as any
+  try {
+    if (ok && o.success != null) (o.success as Fn)(res)
+    if (!ok && o.fail != null) (o.fail as Fn)(res)
+    if (o.complete != null) (o.complete as Fn)(res)
+  } catch (e : any) { console.error(e) }
+}
+
+function _scanCode(opts : any, title : string) {
+  const o = opts as any
+  const w = window as any
+  const supported = w.BarcodeDetector != null && navigator.mediaDevices != null && (navigator.mediaDevices as any).getUserMedia != null
+  const mask = _el('div', 'ui-mask')
+  const modal = _el('div', 'ui-modal ui-scanner')
+  modal.addEventListener('click', (e : Event) => { e.stopPropagation() })
+  mask.appendChild(modal)
+  let stream : any = null
+  let timer : number = 0
+  let stopped = false
+  const stop = () => {
+    stopped = true
+    if (timer != 0) clearTimeout(timer)
+    if (stream != null) { for (const tr of (stream.getTracks() as any[])) tr.stop() }
+    stream = null
+  }
+  const finish = (value : string | null) => {
+    stop()
+    mask.remove()
+    if (value != null) _done(o, true, { result: value, scanType: 'QR_CODE', charSet: 'utf-8', path: '', errMsg: 'scanCode:ok' })
+    else _done(o, false, { errMsg: 'scanCode:fail cancel' })
+  }
+  mask.addEventListener('click', () => { finish(null) })
+
+  let render : (mode : string) => void = (_m : string) => {}
+  render = (mode : string) => {
+    stop()
+    stopped = false
+    modal.innerHTML = ''
+    modal.appendChild(_el('div', 'ui-modal-title', title.length > 0 ? title : _t('扫一扫', 'Scan')))
+    const actions = _el('div', 'ui-modal-actions')
+    const cancel = _el('button', 'ui-btn ui-btn-ghost', _t('取消', 'Cancel'))
+    cancel.addEventListener('click', () => { finish(null) })
+    actions.appendChild(cancel)
+    if (mode == 'camera') {
+      const video = document.createElement('video')
+      video.className = 'ui-scanner-video'
+      video.muted = true
+      video.setAttribute('playsinline', 'true')
+      modal.appendChild(video)
+      modal.appendChild(_el('div', 'ui-modal-body', _t('将二维码对准摄像头', 'Point the QR code at the camera')))
+      const manual = _el('button', 'ui-btn ui-btn-ghost', _t('请输入二维码中的编码', 'Enter the code from the QR'))
+      manual.addEventListener('click', () => { render('manual') })
+      actions.appendChild(manual)
+      modal.appendChild(actions)
+      let detector : any = null
+      try { detector = new w.BarcodeDetector({ formats: ['qr_code'] }) } catch (e : any) { render('manual'); return }
+      ;(navigator.mediaDevices as any).getUserMedia({ video: { facingMode: 'environment' } }).then((s : any) => {
+        if (stopped) { for (const tr of (s.getTracks() as any[])) tr.stop(); return }
+        stream = s
+        video.srcObject = s
+        video.play().catch(() => {})
+        const tick = () => {
+          if (stopped) return
+          const detectNow = video.readyState >= 2 ? (detector.detect(video) as Promise<any[]>) : Promise.resolve([] as any[])
+          detectNow.then((codes : any[]) => {
+            if (codes.length > 0 && codes[0].rawValue != null) { finish(`${codes[0].rawValue}`); return }
+            timer = setTimeout(tick, 250)
+          }).catch(() => { timer = setTimeout(tick, 250) })
+        }
+        tick()
+      }).catch(() => { render('manual') })
+      return
+    }
+    const input = document.createElement('input')
+    input.className = 'ui-input'
+    input.placeholder = _t('请输入二维码中的编码', 'Enter the code from the QR')
+    modal.appendChild(input)
+    if (supported) {
+      const cam = _el('button', 'ui-btn ui-btn-ghost', _t('使用摄像头扫描', 'Scan with camera'))
+      cam.addEventListener('click', () => { render('camera') })
+      actions.appendChild(cam)
+    }
+    const ok = _el('button', 'ui-btn ui-btn-primary', _t('确认', 'Confirm')) as HTMLButtonElement
+    ok.disabled = true
+    input.addEventListener('input', () => { ok.disabled = input.value.trim().length == 0 })
+    input.addEventListener('keydown', (e : KeyboardEvent) => { if (e.key == 'Enter' && input.value.trim().length > 0) finish(input.value.trim()) })
+    ok.addEventListener('click', () => { if (input.value.trim().length > 0) finish(input.value.trim()) })
+    actions.appendChild(ok)
+    modal.appendChild(actions)
+    input.focus()
+  }
+  _host().appendChild(mask)
+  render(supported ? 'camera' : 'manual')
+}
+// #endif
+
+let _nextTitle : string = ''
+// The web scanner's heading for the next scanQr() (the user-app passes the action's name).
+export function setScanTitle(title : string) { _nextTitle = title }
+
+export function scanQr(opts : ScanCodeOptions) {
+  const title = _nextTitle
+  _nextTitle = ''
+  // #ifdef WEB
+  _scanCode(opts, title)
+  return
+  // #endif
+  // #ifndef WEB
+  uni.scanCode(opts)
+  // #endif
+}
+
+export function setWebUiLang(lang : () => string) {
+  // #ifdef WEB
+  _lang = lang
+  // #endif
+}
+
+// Web: the user-app keeps its theme / text-scale tokens on <html> (`:root.theme-light`,
+// `:root.fs-N`, theme-tokens.css); mirror the page's state there. Native: no-op.
+export function syncRootClasses(theme : string, textScale : number) {
+  // #ifdef WEB
+  const cl = document.documentElement.classList
+  cl.toggle('theme-light', theme == 'light')
+  for (let i = 1; i <= 3; i++) cl.toggle(`fs-${i}`, textScale == i)
+  // #endif
+}

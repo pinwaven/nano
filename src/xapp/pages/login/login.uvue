@@ -1,0 +1,1400 @@
+<template>
+  <!-- #ifdef WEB -->
+  <!-- Web: the web user-app's login screen (phone/email/WeChat QR, 中/EN) — components/web-login. -->
+  <web-login v-on:login="_finishLogin" v-on:resume="continueAsPrevious" />
+  <!-- #endif -->
+  <!-- #ifdef MP-WEIXIN -->
+  <!-- xapp-mini renders the miniapp's own login markup with its stylesheet (the style block's
+       MP-WEIXIN section). Its dead invite-code step (step 'code', never set) is left out, and the
+       country <picker> is the same action sheet native uses. -->
+  <view class="login-screen">
+    <view class="login-glow"></view>
+
+    <view class="login-brand">
+      <image class="login-logo-img" :src="logoSrc" mode="aspectFit" />
+      <text class="login-title">{{ channelName }}</text>
+      <text class="login-subtitle">您的精准健康伴侣</text>
+      <text v-if="version.length > 0" class="login-version">v{{ version }}</text>
+    </view>
+
+    <view v-if="step == 'checking'" class="status-wrap">
+      <view class="spinner"></view>
+      <text class="status-text">正在登录…</text>
+    </view>
+
+    <view v-else-if="step == 'error'" class="status-wrap">
+      <text class="error-text">{{ error }}</text>
+      <view class="login-link" v-on:click="useOtherNumber"><text>使用手机号登录</text></view>
+      <view class="retry-btn" v-on:click="retry"><text>重试</text></view>
+    </view>
+
+    <view v-else-if="step == 'loggedOut'" class="login-card">
+      <text class="login-card-label">欢迎回来</text>
+      <view class="login-btn" v-on:click="continueAsPrevious">
+        <text>{{ maskedPhone.length > 0 ? ('继续使用 ' + maskedPhone) : '继续使用当前账号' }}</text>
+      </view>
+      <view class="login-link" v-on:click="useOtherNumber"><text>使用其他手机号登录</text></view>
+      <view v-if="emailLoginAvailable" class="login-link" v-on:click="useEmailLogin"><text>使用邮箱登录</text></view>
+    </view>
+
+    <view v-else-if="step == 'phoneEntry'" class="login-card">
+      <template v-if="phoneStep == 'phone' && loginMethod == 'email'">
+        <text class="login-card-label">邮箱登录</text>
+        <view class="phone-input-row">
+          <input class="login-input phone-input email-input" v-model="email" placeholder="请输入邮箱地址"
+            placeholder-style="line-height: 96rpx; color: rgba(166, 196, 229, 0.4);" :maxlength="254" type="text"
+            confirm-type="send" v-on:confirm="sendLoginCode" />
+        </view>
+        <text v-if="phoneError.length > 0" class="error-text">{{ phoneError }}</text>
+        <view class="login-btn" :class="phoneLoading ? 'disabled' : ''" v-on:click="sendLoginCode">
+          <text>{{ phoneLoading ? '发送中…' : '获取验证码' }}</text>
+        </view>
+        <view class="login-link" v-on:click="toggleLoginMethod"><text>使用手机号登录</text></view>
+      </template>
+      <template v-else-if="phoneStep == 'phone'">
+        <text class="login-card-label">手机号登录</text>
+        <view class="phone-input-row">
+          <view class="country-code-select" v-on:click="pickCountry">
+            <text>{{ countryOptions[countryIndex].code }}</text>
+            <text class="country-code-arrow">▾</text>
+          </view>
+          <input class="login-input phone-input" v-model="phone" placeholder="请输入手机号"
+            placeholder-style="line-height: 96rpx; color: rgba(166, 196, 229, 0.4);" :maxlength="otpSupported ? 11 : 15" type="number" />
+        </view>
+        <text v-if="!otpSupported" class="login-card-hint">暂不支持该国家/地区的手机号登录</text>
+        <text v-if="phoneError.length > 0" class="error-text">{{ phoneError }}</text>
+        <view v-if="otpSupported" class="login-btn" :class="phoneLoading ? 'disabled' : ''" v-on:click="sendLoginCode">
+          <text>{{ phoneLoading ? '发送中…' : '获取验证码' }}</text>
+        </view>
+        <view v-if="emailLoginAvailable" class="login-link" v-on:click="toggleLoginMethod"><text>使用邮箱登录</text></view>
+      </template>
+      <template v-else>
+        <text class="login-card-label">输入验证码</text>
+        <text class="login-card-hint">验证码已发送至 {{ loginMethod == 'email' ? email : phone }}</text>
+        <input class="code-input" v-model="code" placeholder="6位验证码" :maxlength="6" type="number" />
+        <text v-if="phoneError.length > 0" class="error-text">{{ phoneError }}</text>
+        <view class="login-btn" :class="resendCooldown > 0 ? 'disabled' : ''" v-on:click="sendLoginCode">
+          <text>{{ resendCooldown > 0 ? ('重新发送(' + resendCooldown + 's)') : '重新发送' }}</text>
+        </view>
+      </template>
+      <view class="login-link" v-on:click="backToLoggedOut"><text>返回</text></view>
+    </view>
+
+    <view class="login-footer">
+      <text class="login-footer-txt">哈佛大学创新实验室</text>
+      <text class="login-footer-dot">·</text>
+      <text class="login-footer-txt">成员企业</text>
+    </view>
+  </view>
+  <!-- #endif -->
+  <!-- #ifdef APP -->
+  <view class="login-screen">
+    <view class="login-brand">
+      <image class="login-logo-img" :src="logoSrc" mode="aspectFit" />
+      <text class="login-title">{{ channelName }}</text>
+      <text class="login-subtitle">您的精准健康伴侣</text>
+      <text v-if="version.length > 0" class="login-version">v{{ version }}</text>
+    </view>
+
+
+    <view v-if="step == 'loggedOut'" class="login-card">
+      <text class="login-card-label">欢迎回来</text>
+      <view class="login-btn" v-on:click="continueAsPrevious">
+        <text class="btn-text">{{ maskedPhone.length > 0 ? ('继续使用 ' + maskedPhone) : '继续使用当前账号' }}</text>
+      </view>
+      <view class="login-link" v-on:click="useOtherNumber"><text class="link-text">使用其他手机号登录</text></view>
+      <view class="login-link" v-on:click="useEmailLogin"><text class="link-text">使用邮箱登录</text></view>
+    </view>
+
+    <view v-else-if="step == 'phoneEntry'" class="login-card">
+      <view v-if="phoneStep == 'phone' && loginMethod == 'email'">
+        <text class="login-card-label">邮箱登录</text>
+        <input class="login-input" v-model="email" placeholder="请输入邮箱地址" :maxlength="254" />
+        <text v-if="phoneError.length > 0" class="error-text">{{ phoneError }}</text>
+        <view class="login-btn" v-on:click="sendLoginCode">
+          <text class="btn-text">{{ phoneLoading ? '发送中…' : '获取验证码' }}</text>
+        </view>
+        <view class="login-link" v-on:click="toggleLoginMethod"><text class="link-text">使用手机号登录</text></view>
+      </view>
+
+      <view v-else-if="phoneStep == 'phone'">
+        <text class="login-card-label">手机号登录</text>
+        <view class="phone-input-row">
+          <view class="country-code-select" v-on:click="pickCountry">
+            <text class="country-code-text">{{ countryOptions[countryIndex].code }}</text>
+            <text class="country-code-arrow">▾</text>
+          </view>
+          <input class="login-input phone-input" v-model="phone" placeholder="请输入手机号" :maxlength="otpSupported ? 11 : 15" />
+        </view>
+        <text v-if="!otpSupported" class="login-card-hint">暂不支持该国家/地区的手机号登录</text>
+        <text v-if="phoneError.length > 0" class="error-text">{{ phoneError }}</text>
+        <view v-if="otpSupported" class="login-btn" v-on:click="sendLoginCode">
+          <text class="btn-text">{{ phoneLoading ? '发送中…' : '获取验证码' }}</text>
+        </view>
+        <view class="login-link" v-on:click="toggleLoginMethod"><text class="link-text">使用邮箱登录</text></view>
+      </view>
+
+      <view v-else>
+        <text class="login-card-label">输入验证码</text>
+        <text class="login-card-hint">验证码已发送至 {{ loginMethod == 'email' ? email : phone }}</text>
+        <input class="login-input code-input" v-model="code" placeholder="6位验证码" :maxlength="6" />
+        <text v-if="phoneError.length > 0" class="error-text">{{ phoneError }}</text>
+        <view class="login-btn" v-on:click="sendLoginCode">
+          <text class="btn-text">{{ resendCooldown > 0 ? ('重新发送(' + resendCooldown + 's)') : '重新发送' }}</text>
+        </view>
+      </view>
+
+      <view class="login-link" v-on:click="backToLoggedOut"><text class="link-text">返回</text></view>
+    </view>
+
+    <view class="login-footer">
+      <text class="footer-text">哈佛大学创新实验室 · 成员企业</text>
+    </view>
+  </view>
+  <!-- #endif -->
+</template>
+
+<script>
+// Ported from miniapp pages/login/login.js.
+// - mp-weixin (xapp-mini) keeps the miniapp's whole entry: silent wx.login → /wx-login, which
+//   answers guest:true for an unknown WeChat user with no invite/coach/ref/channel — guest
+//   browsing is what lets the mini-program reviewer use the app without an account. Also
+//   ?invite=/?coach_id=/?ref=/channel QR, the error step and ?loggedOut=1.
+// - Native (and web) drop those WeChat-era paths (no openid on a native app — the server's
+//   /phone-otp/verify links accounts by verified phone alone): stored user → straight
+//   through; nano_last_session → loggedOut card; else phone/email entry. No guest mode.
+// Deviations: <picker selector> → uni.showActionSheet; live digit-filter bindinput →
+// validate-on-send (v-model); phone/email toggles always offered (EMAIL_LOGIN_AVAILABLE is
+// true for the root identity, config.uts).
+
+import { BASE, API_ORIGIN, DISPLAY_VERSION, IS_DEV, EMAIL_LOGIN_AVAILABLE, CHANNEL_SLUG, CHANNEL_DISPLAY } from '../../utils/config.uts'
+import { state } from '../../utils/state.uts'
+import { saveSession, clearSession } from '../../utils/session.uts'
+import { maskPhone, maskEmail } from '../../utils/phone.uts'
+
+const LOGIN_PHONE_RE = /^1\d{10}$/
+const LOGIN_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+
+class CountryOption {
+  code : string
+  label : string
+  otpSupported : boolean
+  constructor(code : string, label : string, otp : boolean) {
+    this.code = code
+    this.label = label
+    this.otpSupported = otp
+  }
+}
+
+export default {
+  name: 'LoginPage',
+  data() {
+    return {
+      step: 'loggedOut', // 'loggedOut' | 'phoneEntry'; mp-weixin also 'checking' | 'error'
+      loading: false,
+      error: '',
+      maskedPhone: '',
+      phoneStep: 'phone', // 'phone' | 'code'
+      loginMethod: 'phone', // 'phone' | 'email'
+      emailLoginAvailable: EMAIL_LOGIN_AVAILABLE as boolean,
+      phone: '',
+      email: '',
+      code: '',
+      phoneError: '',
+      phoneLoading: false,
+      resendCooldown: 0,
+      countryIndex: 0,
+      // The build's brand (xapp-mini: SuperiorMed) paints first, splash included; a stored or
+      // scanned channel replaces it in onLoad.
+      channelName: (CHANNEL_DISPLAY != null ? (CHANNEL_DISPLAY!.getString('name') ?? 'NANO') : 'NANO') as string,
+      channelLogo: (CHANNEL_DISPLAY != null ? (CHANNEL_DISPLAY!.getString('logo_url') ?? '') : '') as string,
+      countryOptions: [
+        new CountryOption('+86', '中国 +86', true),
+        new CountryOption('+1', '美国 +1', false),
+        new CountryOption('+852', '中国香港 +852', false),
+        new CountryOption('+65', '新加坡 +65', false),
+        new CountryOption('+886', '中国台湾 +886', false),
+        new CountryOption('+66', '泰国 +66', false),
+        new CountryOption('+60', '马来西亚 +60', false),
+        new CountryOption('+84', '越南 +84', false),
+        new CountryOption('+81', '日本 +81', false),
+      ] as CountryOption[],
+      _cooldownTimer: 0 as number,
+      // mp-weixin /wx-login inputs (miniapp login.js _coachId/_inviteCode/_refCode/_channelSlug)
+      _coachId: '',
+      _inviteCode: '',
+      _refCode: '',
+      _channelSlug: '',
+      _signIn: false, // opened from the guest menu's 登录: existing accounts only, 返回 goes back
+      _netErr: '', // errMsg of the last failed _postReq (e.g. a domain not on the appid's request list)
+    }
+  },
+  computed: {
+    otpSupported() : boolean {
+      return this.countryOptions[this.countryIndex].otpSupported
+    },
+    version() : string {
+      return DISPLAY_VERSION
+    },
+    logoSrc() : string {
+      return this.channelLogo.length > 0 ? this.channelLogo : '/static/waven-logo-icon.png'
+    }
+  },
+  onLoad(options : OnLoadOptions) {
+    // #ifdef MP-WEIXIN
+    this._mpOnLoad(options)
+    return
+    // #endif
+    // NOTE (gap): the miniapp's ?ref= referral ride-along only existed on /wx-login;
+    // /phone-otp/verify has no ref parameter yet, so referral binding for xapp signups
+    // needs a server-side addition before this page forwards it.
+    // Already signed in (restored by App.uvue onLaunch) → no login screen at all, unless a
+    // sign-up was interrupted mid-verification (same resume rule as the miniapp).
+    if (state.user != null) {
+      const pending = state.user!.getBoolean('pendingPhoneVerification')
+      uni.reLaunch({ url: (pending == true) ? '/pages/verify-phone/verify-phone?new=1' : '/pages/main/main' })
+      return
+    }
+    const channel = state.channel
+    if (channel != null) {
+      const name = channel!.getString('name')
+      const logo = channel!.getString('logo_url')
+      if (name != null) this.channelName = name
+      if (logo != null) this.channelLogo = logo
+    }
+    const lastSession = uni.getStorageSync('nano_last_session')
+    if (lastSession != null && lastSession instanceof UTSJSONObject) {
+      const ls = lastSession as UTSJSONObject
+      if (ls.getJSON('user') != null) {
+        this.step = 'loggedOut'
+        const mp = ls.getString('maskedPhone')
+        this.maskedPhone = mp != null ? mp : ''
+        return
+      }
+    }
+    this.step = 'phoneEntry'
+  },
+  onUnload() {
+    if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+  },
+  methods: {
+    // ── country picker (uni-app x has no <picker mode=selector> in the trial target —
+    // showActionSheet is the supported equivalent) ──
+    pickCountry() {
+      const labels : string[] = []
+      for (const c of this.countryOptions) labels.push(c.label)
+      uni.showActionSheet({
+        itemList: labels,
+        success: (res) => {
+          this.countryIndex = res.tapIndex
+          this.phone = ''
+          this.phoneError = ''
+        }
+      })
+    },
+
+    // ── logged-out card ──
+    // Restores the previous session snapshot directly from storage — no network, mirrors the
+    // miniapp (never re-derives by identity: a phone switch then logout must land back in the
+    // account the user chose, not the first one).
+    continueAsPrevious() {
+      const raw = uni.getStorageSync('nano_last_session')
+      if (raw == null || !(raw instanceof UTSJSONObject)) { this._noSnapshot(); return }
+      const lastSession = raw as UTSJSONObject
+      const user = lastSession.getJSON('user')
+      if (user == null) { this._noSnapshot(); return }
+      // No stored `u.` session → no way to resume (the legacy-bearer upgrade is not ported).
+      const token = lastSession.getString('session_token')
+      if (token == null) { this._noSnapshot(); return }
+      state.user = user
+      state.channel = lastSession.getJSON('channel')
+      state.coach = lastSession.getJSON('coach')
+      const lang = user.getString('language')
+      state.lang = lang == 'en' ? 'en' : 'zh'
+      clearSession()
+      saveSession(token!)
+      uni.setStorageSync('nano_user', user)
+      const chn2 = lastSession.getJSON('channel')
+      if (chn2 != null) uni.setStorageSync('nano_channel', chn2); else uni.removeStorageSync('nano_channel')
+      const co2 = lastSession.getJSON('coach')
+      if (co2 != null) uni.setStorageSync('nano_coach', co2); else uni.removeStorageSync('nano_coach')
+      uni.setStorageSync('nano_base', API_ORIGIN)
+      uni.reLaunch({ url: '/pages/main/main' })
+    },
+
+    // Nothing to resume: mp-weixin signs in through WeChat again (miniapp continueAsPrevious);
+    // native has only the phone/email entry.
+    _noSnapshot() {
+      // #ifdef MP-WEIXIN
+      this.wxLogin()
+      return
+      // #endif
+      this.step = 'phoneEntry'
+    },
+
+    useOtherNumber() {
+      if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+      this.step = 'phoneEntry'
+      this.phoneStep = 'phone'
+      this.loginMethod = 'phone'
+      this.phone = ''
+      this.email = ''
+      this.code = ''
+      this.phoneError = ''
+      this.phoneLoading = false
+      this.resendCooldown = 0
+      this.countryIndex = 0
+    },
+
+    useEmailLogin() {
+      this.useOtherNumber()
+      this.loginMethod = 'email'
+    },
+
+    toggleLoginMethod() {
+      if (this.phoneStep != 'phone' || this.phoneLoading) return
+      this.loginMethod = this.loginMethod == 'email' ? 'phone' : 'email'
+      this.phoneError = ''
+      this.code = ''
+    },
+
+    backToLoggedOut() {
+      if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+      if (this._signIn) {
+        uni.navigateBack()
+        return
+      }
+      this.step = 'loggedOut'
+      this.phoneError = ''
+    },
+
+    // ── OTP send / verify ──
+    sendLoginCode() {
+      if (this.loginMethod == 'email') this._sendEmailLoginCode()
+      else this._sendPhoneLoginCode()
+    },
+
+    async _sendPhoneLoginCode() {
+      const phone = this._digitsOnly(this.phone.trim())
+      if (!this.otpSupported || !LOGIN_PHONE_RE.test(phone)) {
+        this.phoneError = '请输入正确的手机号'
+        return
+      }
+      if (this.resendCooldown > 0) return
+      this.phone = phone
+      this.phoneLoading = true
+      this.phoneError = ''
+      const res = await this._postReq(`${BASE}/api/phone-otp/send`, { phone: phone } as UTSJSONObject)
+      this.phoneLoading = false
+      if (res == null) { this.phoneError = this._networkError(); return }
+      if (res.getBoolean('success') != true) {
+        this.phoneError = res.getString('error') == 'rate_limited' ? '发送过于频繁，请稍后再试' : '验证码发送失败，请重试'
+        return
+      }
+      this.phoneStep = 'code'
+      this.code = ''
+      this._startCooldown()
+    },
+
+    async _verifyPhoneLoginCode() {
+      const phone = this.phone.trim()
+      const code = this.code.trim()
+      if (code.length == 0 || this.phoneLoading) return
+      this.phoneLoading = true
+      this.phoneError = ''
+      const body = { phone: phone, code: code } as UTSJSONObject
+      // Guest sign-in: an unknown number gets invite_required back instead of a new account.
+      if (this._signIn) body['require_invite'] = true
+      const res = await this._postReq(`${BASE}/api/phone-otp/verify`, body)
+      this.phoneLoading = false
+      if (res == null) { this.phoneError = this._networkError(); return }
+      if (res.getBoolean('success') != true) {
+        const err = res.getString('error')
+        this.phoneError = res.getBoolean('invite_required') == true ? '该手机号没有已有账号，请返回注册'
+          : err == 'invalid_code' ? '验证码不正确'
+          : '验证失败，请重试'
+        this.code = ''
+        return
+      }
+      this._finishLogin(res)
+    },
+
+    async _sendEmailLoginCode() {
+      const email = this.email.trim().toLowerCase()
+      if (!LOGIN_EMAIL_RE.test(email)) {
+        this.phoneError = '请输入正确的邮箱地址'
+        return
+      }
+      if (this.resendCooldown > 0) return
+      this.email = email
+      this.phoneLoading = true
+      this.phoneError = ''
+      const res = await this._postReq(`${BASE}/api/email-otp/send`, {
+        email: email, language: state.lang,
+      } as UTSJSONObject)
+      this.phoneLoading = false
+      if (res == null) { this.phoneError = this._networkError(); return }
+      if (res.getBoolean('success') != true) {
+        const err = res.getString('error')
+        this.phoneError = err == 'rate_limited' ? '发送过于频繁，请稍后再试'
+          : err == 'invalid_email' ? '请输入正确的邮箱地址'
+          : '验证码发送失败，请重试'
+        return
+      }
+      this.phoneStep = 'code'
+      this.code = ''
+      this._startCooldown()
+    },
+
+    async _verifyEmailLoginCode() {
+      const code = this.code.trim()
+      if (code.length == 0 || this.phoneLoading) return
+      this.phoneLoading = true
+      this.phoneError = ''
+      const body = { email: this.email, code: code, language: state.lang } as UTSJSONObject
+      // Guest sign-in: an unknown address gets invite_required back instead of a new account.
+      if (this._signIn) body['require_invite'] = true
+      const res = await this._postReq(`${BASE}/api/email-otp/verify`, body)
+      this.phoneLoading = false
+      if (res == null) { this.phoneError = this._networkError(); return }
+      if (res.getBoolean('success') != true) {
+        const err = res.getString('error')
+        this.phoneError = res.getBoolean('invite_required') == true ? '该邮箱没有已有账号，请返回注册'
+          : err == 'invalid_code' ? '验证码不正确'
+          : err == 'too_many_attempts' ? '错误次数过多，请重新获取验证码'
+          : err == 'channel_not_supported' ? '该账号暂不支持邮箱登录，请使用手机号'
+          : '验证失败，请重试'
+        this.code = ''
+        return
+      }
+      this._finishLogin(res)
+    },
+
+    _startCooldown() {
+      this.resendCooldown = 60
+      if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+      this._cooldownTimer = setInterval(() => {
+        const next = this.resendCooldown - 1
+        if (next <= 0) {
+          clearInterval(this._cooldownTimer)
+          this._cooldownTimer = 0
+          this.resendCooldown = 0
+        } else {
+          this.resendCooldown = next
+        }
+      }, 1000)
+    },
+
+    // ── session completion ──
+    // PII trim kept: raw phone/email never persisted to storage; the masked form is computed
+    // here (the one moment the raw phone exists) and stored as maskedPhone.
+    _finishLogin(data : UTSJSONObject) {
+      if (!this._persistLogin(data, false)) return
+      uni.reLaunch({ url: '/pages/main/main' })
+    },
+
+    // A brand-new account from a deliberate sign-up (invite / coach link) — always
+    // phone-unverified, so it goes to verify-phone, which also owns the avatar step (?new=1).
+    _finishNewUser(data : UTSJSONObject) {
+      if (!this._persistLogin(data, true)) return
+      uni.reLaunch({ url: '/pages/verify-phone/verify-phone?new=1' })
+    },
+
+    _persistLogin(data : UTSJSONObject, pendingPhoneVerification : boolean) : boolean {
+      const token = data.getString('session_token')
+      if (token != null) saveSession(token!)
+      const user = data.getJSON('user')
+      if (user == null) return false
+      if (pendingPhoneVerification) user['pendingPhoneVerification'] = true
+      const channel = data.getJSON('channel')
+      const coach = data.getJSON('coach')
+      state.user = user
+      state.channel = channel
+      state.coach = coach
+      const lang = user.getString('language')
+      state.lang = lang == 'en' ? 'en' : 'zh'
+
+      const phone = user.getString('phone')
+      const email = user.getString('email')
+      const mp = maskPhone(phone)
+      const masked = mp.length > 0 ? mp : maskEmail(email)
+
+      const trimmed = new UTSJSONObject()
+      user.toMap().forEach((v : any | null, k : string) => {
+        if (k == 'phone' || k == 'email') return
+        trimmed[k] = v
+      })
+      trimmed['phoneSet'] = phone != null && phone!.length > 0
+      trimmed['phone_verified'] = user.getBoolean('phone_verified') == true
+      trimmed['email_verified'] = user.getBoolean('email_verified') == true
+      trimmed['maskedPhone'] = masked
+
+      uni.setStorageSync('nano_user', trimmed)
+      // Written or cleared, never left: an account with no coach identity kept the previous
+      // account's (Pin's coach on 轻逍, dev 2026-10-03). The miniapp stores both unconditionally.
+      if (channel != null) uni.setStorageSync('nano_channel', channel!); else uni.removeStorageSync('nano_channel')
+      if (coach != null) uni.setStorageSync('nano_coach', coach!); else uni.removeStorageSync('nano_coach')
+      uni.setStorageSync('nano_base', API_ORIGIN) // backend the session is valid against — App.uvue checks on launch
+      return true
+    },
+
+    // ── WeChat sign-in (mp-weixin only) — miniapp login.js onLoad/wxLogin ──
+    // #ifdef MP-WEIXIN
+    async _mpOnLoad(options : OnLoadOptions) {
+      this.step = 'checking' // the spinner, not the logged-out card, while branding loads
+      const opt = (k : string) : string => { const v = options[k]; return v != null ? `${v}` : '' }
+      this._coachId = opt('coach_id')
+      this._inviteCode = opt('invite')
+      // From the guest menu's 登录 (main.uvue openSignIn): straight to phone/email entry. Signing
+      // in reaches an existing account only — a new one goes through 注册账户's invite sheet.
+      if (opt('signin').length > 0) {
+        this._signIn = true
+        this.useOtherNumber()
+        return
+      }
+      // A 小程序码 from GET /channels/:id/miniapp-qrcode lands with scene `ch:<id>` (URL-encoded
+      // from a real scan); `?channel=<id>` covers share links and compile-mode testing.
+      const scene = decodeURIComponent(opt('scene'))
+      const channelParam = opt('channel').length > 0 ? opt('channel') : (scene.startsWith('ch:') ? scene.substring(3) : '')
+      const channelId = /^\d+$/.test(channelParam) ? parseInt(channelParam) : 0
+      if (opt('ref').length > 0) {
+        this._refCode = opt('ref')
+        uni.setStorageSync('nano_ref', this._refCode)
+      }
+      const deliberate = this._inviteCode.length > 0 || this._coachId.length > 0
+      // A session goes straight in — review requires free browsing, so phone verification is
+      // never a standing gate — except a sign-up interrupted before verify-phone finished.
+      if (state.user != null && !deliberate) {
+        const pending = state.user!.getBoolean('pendingPhoneVerification')
+        uni.reLaunch({ url: (pending == true) ? '/pages/verify-phone/verify-phone?new=1' : '/pages/main/main' })
+        return
+      }
+      const channel = state.channel
+      if (channel != null) {
+        const name = channel!.getString('name')
+        const logo = channel!.getString('logo_url')
+        if (name != null) this.channelName = name
+        if (logo != null) this.channelLogo = logo
+      }
+      // Channel QR: brand the first paint, and the name rides /wx-login as channel_slug.
+      if (channelId > 0 && !deliberate) {
+        const branded = await this._fetchChannelBranding(channelId)
+        if (branded != null) {
+          this._channelSlug = branded!.getString('name') ?? ''
+          this.channelName = this._channelSlug
+          this.channelLogo = branded!.getString('logo_url') ?? ''
+        }
+      }
+      // From an explicit logout: offer "continue as previous" rather than silently re-login.
+      if (opt('loggedOut').length > 0 && !deliberate) {
+        const raw = uni.getStorageSync('nano_last_session')
+        if (raw != null && raw instanceof UTSJSONObject && (raw as UTSJSONObject).getJSON('user') != null) {
+          const mp = (raw as UTSJSONObject).getString('maskedPhone')
+          this.maskedPhone = mp != null ? mp : ''
+          this.step = 'loggedOut'
+          return
+        }
+      }
+      this.wxLogin()
+    },
+
+    async wxLogin() {
+      this.loading = true
+      this.error = ''
+      this.step = 'checking'
+      try {
+        const code = await this._getWxCode()
+        const res = await this._callWxLogin(code)
+        if (res == null) throw new Error(this._networkError())
+        // Unknown WeChat user, nothing deliberate about the visit → browse as a guest.
+        // Not persisted: every launch asks /wx-login again, as the miniapp does.
+        if (res.getBoolean('guest') == true) {
+          clearSession()
+          state.user = { guest: true } as UTSJSONObject
+          uni.reLaunch({ url: '/pages/main/main' })
+          return
+        }
+        if (res.getBoolean('success') != true) throw new Error(res.getString('error') ?? '登录失败，请重试')
+        const newUser = res.getBoolean('new_user') == true
+        if (newUser && (this._inviteCode.length > 0 || this._coachId.length > 0)) {
+          this._finishNewUser(res)
+          return
+        }
+        this._finishLogin(res)
+      } catch (e : any) {
+        const msg = (e as Error).message
+        this.loading = false
+        this.step = 'error'
+        this.error = msg.length > 0 ? msg : '登录失败，请重试'
+      }
+    },
+
+    retry() { this.wxLogin() },
+
+    _getWxCode() : Promise<string> {
+      return new Promise<string>((resolve, reject) => {
+        wx.login({
+          success: (res : any) => { resolve(`${res.code}`) },
+          fail: (e : any) => { reject(new Error(`${e?.errMsg ?? 'wx.login failed'}`)) },
+        } as any)
+      })
+    },
+
+    _callWxLogin(code : string) : Promise<UTSJSONObject | null> {
+      const body = { code: code, app_id: wx.getAccountInfoSync().miniProgram.appId } as UTSJSONObject
+      if (this._coachId.length > 0) body['coach_id'] = this._coachId
+      if (this._inviteCode.length > 0) body['invite_code'] = this._inviteCode
+      else if (this._channelSlug.length > 0 || CHANNEL_SLUG != null) body['channel_slug'] = this._channelSlug.length > 0 ? this._channelSlug : CHANNEL_SLUG
+      const storedRef = uni.getStorageSync('nano_ref')
+      const ref = this._refCode.length > 0 ? this._refCode : (storedRef != null ? `${storedRef}` : '')
+      if (ref.length > 0) body['ref'] = ref
+      return this._postReq(`${BASE}/api/wx-login`, body).then((res : UTSJSONObject | null) : UTSJSONObject | null => {
+        if (res != null) uni.removeStorageSync('nano_ref')
+        return res
+      })
+    },
+
+    // { name, logo_url } or null — branding is best-effort and never throws.
+    _fetchChannelBranding(channelId : number) : Promise<UTSJSONObject | null> {
+      return new Promise<UTSJSONObject | null>((resolve) => {
+        uni.request<UTSJSONObject>({
+          url: `${BASE}/api/channel-branding?id=${channelId}`,
+          method: 'GET' as RequestMethod,
+          timeout: 4000,
+          header: { 'Authorization': `Bearer ${state.apiToken}` } as UTSJSONObject,
+          success: (res) => {
+            const d = res.data
+            const ch = d != null && d!.getBoolean('success') == true ? d!.getJSON('channel') : null
+            resolve(ch != null && ch!.getString('name') != null ? ch : null)
+          },
+          fail: (_e) => { resolve(null) },
+        })
+      })
+    },
+    // #endif
+
+    _digitsOnly(s : string) : string {
+      let out = ''
+      for (let i = 0; i < s.length; i++) {
+        const c = s.charCodeAt(i) ?? 0
+        if (c >= 48 && c <= 57) out += s.charAt(i)
+      }
+      return out
+    },
+
+    _postReq(url : string, body : UTSJSONObject) : Promise<UTSJSONObject | null> {
+      return new Promise<UTSJSONObject | null>((resolve : (v : UTSJSONObject | null) => void, _reject : (e : any | null) => void) => {
+        uni.request<UTSJSONObject>({
+          url: url,
+          method: 'POST' as RequestMethod,
+          header: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.apiToken}`
+          } as UTSJSONObject,
+          data: body,
+          success: (res) => { this._netErr = ''; resolve(res.data) },
+          fail: (err) => { this._netErr = err.errMsg; resolve(null) },
+        })
+      })
+    },
+
+    // The miniapp's "网络错误" for a request that never got an answer; a develop build adds
+    // WeChat's errMsg so a blocked domain ("url not in domain list") is visible on a phone.
+    _networkError() : string {
+      return IS_DEV && this._netErr.length > 0 ? `网络错误，请重试（${this._netErr}）` : '网络错误，请重试'
+    },
+  },
+  watch: {
+    // auto-verify at 6 digits, like the miniapp's onLoginCodeInput
+    code(newVal : string) {
+      const clean = this._digitsOnly(newVal)
+      if (clean != newVal) { this.code = clean; return }
+      if (clean.length == 6) {
+        if (this.loginMethod == 'email') this._verifyEmailLoginCode()
+        else this._verifyPhoneLoginCode()
+      }
+    },
+    email(newVal : string) {
+      this.phoneError = ''
+    },
+    phone(newVal : string) {
+      this.phoneError = ''
+    },
+  }
+}
+</script>
+
+<style>
+/* Native only — the web build renders components/web-login, styled by static/web/; xapp-mini uses the
+   miniapp's own stylesheet (the MP-WEIXIN section below). */
+/* #ifdef APP */
+/* Structural port of login.wxss (dark theme, same palette). Full styling pass happens
+   against a real device once HBuilderX compiles — uni-app x CSS is a flexbox subset,
+   decorative effects (glow gradients) simplified. */
+.login-screen {
+  flex: 1;
+  background-color: #0B1C2E;
+  padding-left: 24px;
+  padding-right: 24px;
+  align-items: center;
+}
+.login-brand {
+  margin-top: 80px;
+  align-items: center;
+}
+.login-logo-img {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+}
+.login-title {
+  margin-top: 16px;
+  font-size: 26px;
+  font-weight: bold;
+  color: #EAF2FB;
+}
+.login-subtitle {
+  margin-top: 6px;
+  font-size: 14px;
+  color: #A6C4E5;
+}
+.login-version {
+  margin-top: 4px;
+  font-size: 11px;
+  color: rgba(166, 196, 229, 0.5);
+}
+.login-card {
+  width: 100%;
+  margin-top: 40px;
+  background-color: #12283F;
+  border-radius: 16px;
+  padding: 20px;
+}
+.login-card-label {
+  font-size: 17px;
+  font-weight: bold;
+  color: #EAF2FB;
+  margin-bottom: 12px;
+}
+.login-card-hint {
+  font-size: 12px;
+  color: rgba(166, 196, 229, 0.7);
+  margin-bottom: 8px;
+}
+.login-input {
+  width: 100%;
+  height: 48px;
+  background-color: #0B1C2E;
+  color: #EAF2FB;
+  border-radius: 10px;
+  padding-left: 12px;
+  padding-right: 12px;
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+.code-input {
+  letter-spacing: 6px;
+}
+.phone-input-row {
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.phone-input {
+  flex: 1;
+}
+.country-code-select {
+  flex-direction: row;
+  align-items: center;
+  padding: 10px 10px;
+}
+.country-code-text {
+  color: #EAF2FB;
+  font-size: 15px;
+}
+.country-code-arrow {
+  color: #A6C4E5;
+  font-size: 12px;
+  margin-left: 4px;
+}
+.login-btn {
+  width: 100%;
+  height: 48px;
+  background-color: #2E7CF6;
+  border-radius: 12px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+}
+.btn-text {
+  color: #FFFFFF;
+  font-size: 16px;
+  font-weight: bold;
+}
+.login-link {
+  margin-top: 16px;
+  align-items: center;
+}
+.link-text {
+  color: #A6C4E5;
+  font-size: 14px;
+}
+.error-text {
+  color: #FF6B6B;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.status-wrap {
+  margin-top: 40px;
+  align-items: center;
+}
+.spinner {
+  width: 28px;
+  height: 28px;
+  border-style: solid;
+  border-width: 2px;
+  border-color: rgba(99, 117, 236, 0.25);
+  border-top-color: #6375EC;
+  border-radius: 14px;
+}
+.status-text {
+  margin-top: 12px;
+  font-size: 13px;
+  color: rgba(166, 196, 229, 0.6);
+}
+.retry-btn {
+  margin-top: 12px;
+  background-color: #6375EC;
+  border-radius: 12px;
+  padding: 10px 32px;
+}
+.login-footer {
+  margin-top: auto;
+  margin-bottom: 30px;
+  align-items: center;
+}
+.footer-text {
+  color: rgba(166, 196, 229, 0.45);
+  font-size: 11px;
+}
+/* #endif */
+/* #ifdef MP-WEIXIN */
+/* The miniapp's pages/login/login.wxss, verbatim (its button.* rules dropped: no buttons here).
+   uvue.wxss makes every view a flex column; undo that for this page's own view classes, listed
+   explicitly (a tag selector would reach embedded components; WXSS rejects :not()/:where() lists).
+   It sits before the miniapp's rules, so at equal specificity those still win. */
+.country-code-select, .login-brand, .login-btn, .login-card, .login-footer, .login-glow, .login-link, .login-screen, .phone-input-row, .retry-btn, .spinner, .status-wrap { display: block; position: static; flex-direction: row; flex-shrink: 1; align-items: normal; align-content: normal; justify-content: normal; min-height: auto; min-width: auto; }
+.login-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 96rpx 64rpx 80rpx;
+  background: radial-gradient(ellipse at 50% 20%, #1a3155 0%, #0B1C2E 65%);
+  gap: 64rpx;
+  position: relative;
+  overflow: hidden;
+  padding-top: calc(96rpx + env(safe-area-inset-top));
+}
+
+.login-glow {
+  position: absolute;
+  top: -120rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600rpx;
+  height: 600rpx;
+  background: radial-gradient(circle, rgba(99, 117, 236, 0.25) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.login-top-bar {
+  position: absolute;
+  top: calc(40rpx + env(safe-area-inset-top));
+  right: 40rpx;
+}
+
+.lang-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  background: rgba(99, 117, 236, 0.1);
+  border: 1rpx solid rgba(99, 117, 236, 0.25);
+  border-radius: 40rpx;
+  padding: 10rpx 24rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.lang-active { color: #6375EC; }
+.lang-dim    { color: rgba(166, 196, 229, 0.4); }
+.lang-sep    { opacity: 0.3; font-weight: 400; color: rgba(166, 196, 229, 0.4); }
+
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28rpx;
+}
+
+.login-logo-img {
+  width: 160rpx;
+  height: 160rpx;
+}
+
+.login-title {
+  font-size: 52rpx;
+  font-weight: 800;
+  letter-spacing: 16rpx;
+  color: #EEF2FF;
+}
+
+.login-subtitle {
+  font-size: 24rpx;
+  color: rgba(166, 196, 229, 0.4);
+  letter-spacing: 1rpx;
+  text-align: center;
+}
+
+.login-version {
+  font-size: 18rpx;
+  color: rgba(99, 117, 236, 0.7);
+  background: rgba(99, 117, 236, 0.12);
+  border: 1rpx solid rgba(99, 117, 236, 0.25);
+  border-radius: 8rpx;
+  padding: 4rpx 10rpx;
+}
+
+.login-card {
+  width: 100%;
+  background: rgba(15, 37, 64, 0.6);
+  border: 1rpx solid rgba(99, 117, 236, 0.18);
+  border-radius: 40rpx;
+  padding: 48rpx 44rpx 44rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 32rpx;
+}
+
+.login-card-label {
+  font-size: 22rpx;
+  font-weight: 600;
+  letter-spacing: 3rpx;
+  text-transform: uppercase;
+  color: rgba(166, 196, 229, 0.4);
+  text-align: center;
+}
+
+.login-card-hint {
+  font-size: 24rpx;
+  color: rgba(166, 196, 229, 0.5);
+  text-align: center;
+}
+
+.login-link {
+  text-align: center;
+  padding: 8rpx;
+  font-size: 26rpx;
+  color: #6375EC;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.login-label {
+  font-size: 20rpx;
+  font-weight: 600;
+  letter-spacing: 3.6rpx;
+  text-transform: uppercase;
+  color: rgba(166, 196, 229, 0.4);
+}
+
+.login-input {
+  width: 100%;
+  height: 96rpx;
+  line-height: 96rpx;
+  padding: 0 32rpx;
+  border-radius: 26rpx;
+  border: 1rpx solid rgba(99, 117, 236, 0.28);
+  background: #162E4A;
+  color: #EEF2FF;
+  font-size: 34rpx;
+}
+
+.login-input-ph {
+  color: rgba(166, 196, 229, 0.4);
+  font-size: 28rpx;
+}
+
+.phone-input-row {
+  display: flex;
+  gap: 16rpx;
+  align-items: stretch;
+}
+
+.country-code-select {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  height: 96rpx;
+  padding: 0 20rpx;
+  border-radius: 26rpx;
+  border: 1rpx solid rgba(99, 117, 236, 0.28);
+  background: #162E4A;
+  color: #EEF2FF;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.country-code-arrow {
+  font-size: 20rpx;
+  color: rgba(166, 196, 229, 0.5);
+}
+
+.phone-input {
+  flex: 1;
+  width: auto;
+}
+
+/* Email entry reuses the phone row without the country picker; the number keyboard's
+   centred digit styling does not suit an address, so it left-aligns at the same height. */
+.email-input {
+  text-align: left;
+  letter-spacing: 0;
+  font-size: 30rpx;
+}
+
+.login-error {
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1rpx solid rgba(239, 68, 68, 0.2);
+  border-radius: 20rpx;
+  padding: 20rpx 28rpx;
+}
+
+.login-btn {
+  width: 100%;
+  padding: 32rpx;
+  border-radius: 26rpx;
+  background: linear-gradient(135deg, #6375EC 0%, #8B9FFF 100%);
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 700;
+  box-shadow: 0 8rpx 40rpx rgba(99, 117, 236, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16rpx;
+}
+
+.login-btn-disabled {
+  opacity: 0.35;
+  box-shadow: none;
+}
+
+
+.login-spinner {
+  width: 28rpx;
+  height: 28rpx;
+  border: 4rpx solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.status-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.spinner {
+  width: 56rpx;
+  height: 56rpx;
+  border: 4rpx solid rgba(99, 117, 236, 0.25);
+  border-top-color: #6375EC;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.status-text {
+  font-size: 26rpx;
+  color: rgba(166, 196, 229, 0.6);
+}
+
+.error-text {
+  font-size: 26rpx;
+  color: #fca5a5;
+  text-align: center;
+  line-height: 1.5;
+  padding: 0 40rpx;
+}
+
+.retry-btn {
+  background: #6375EC;
+  color: #fff;
+  font-size: 28rpx;
+  font-weight: 600;
+  padding: 20rpx 64rpx;
+  border-radius: 24rpx;
+  box-shadow: 0 4rpx 20rpx rgba(99, 117, 236, 0.45);
+}
+
+.login-footer {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  font-size: 22rpx;
+  color: rgba(166, 196, 229, 0.4);
+  letter-spacing: 1rpx;
+}
+
+.login-footer-dot { opacity: 0.4; }
+/* uvue.wxss zeroes letter-spacing on every <text>, so the footer's spacing never reaches its words. */
+.login-footer-txt, .login-footer-dot { letter-spacing: 1rpx; }
+
+.phone-step-desc {
+  font-size: 28rpx;
+  color: rgba(166, 196, 229, 0.7);
+  line-height: 1.6;
+  text-align: center;
+}
+
+.phone-skip-btn {
+  text-align: center;
+  padding: 16rpx;
+  font-size: 26rpx;
+  color: rgba(166, 196, 229, 0.4);
+}
+
+/* Avatar picker */
+.avatar-pick-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.avatar-pick-btn {
+  width: 144rpx;
+  min-width: 144rpx;
+  max-width: 144rpx;
+  height: 144rpx;
+  min-height: 144rpx;
+  max-height: 144rpx;
+  flex-shrink: 0;
+  border-radius: 50%;
+  padding: 0;
+  margin: 0;
+  background: rgba(99, 117, 236, 0.12);
+  border: 2rpx dashed rgba(99, 117, 236, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+
+.avatar-pick-img {
+  width: 144rpx;
+  height: 144rpx;
+  border-radius: 50%;
+}
+
+.avatar-pick-default {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-pick-icon {
+  font-size: 48rpx;
+  color: rgba(99, 117, 236, 0.7);
+  font-weight: 300;
+  line-height: 1;
+}
+
+.avatar-pick-hint {
+  font-size: 22rpx;
+  color: rgba(166, 196, 229, 0.4);
+  letter-spacing: 1rpx;
+}
+
+/* PIN box input */
+.pin-field {
+  position: relative;
+  width: 100%;
+}
+
+.pin-boxes {
+  display: flex;
+  justify-content: center;
+  gap: 16rpx;
+}
+
+.pin-box {
+  width: 80rpx;
+  height: 96rpx;
+  border-radius: 16rpx;
+  border: 2rpx solid rgba(99, 117, 236, 0.25);
+  background: #162E4A;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pin-active {
+  border-color: #6375EC;
+  box-shadow: 0 0 0 4rpx rgba(99, 117, 236, 0.15);
+}
+
+.pin-filled {
+  border-color: rgba(99, 117, 236, 0.5);
+}
+
+.pin-digit {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #EEF2FF;
+}
+
+.pin-capture {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  font-size: 1rpx;
+  color: transparent;
+  background: transparent;
+}
+
+/* Phone-skip passcode overlay */
+.skip-pass-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 500;
+  background: rgba(6, 15, 25, 0.96);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.skip-pass-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 0 80rpx;
+}
+
+.skip-pass-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  letter-spacing: 4rpx;
+  color: #A6C4E5;
+  margin-bottom: 48rpx;
+}
+
+.skip-pass-dots {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20rpx;
+}
+
+.skip-pass-dot {
+  width: 22rpx;
+  height: 22rpx;
+  border-radius: 50%;
+  border: 2rpx solid rgba(99, 117, 236, 0.5);
+  background: transparent;
+  margin: 0 18rpx;
+  transition: background 0.15s;
+}
+
+.skip-pass-dot-filled {
+  background: #6375EC;
+  border-color: #6375EC;
+}
+
+.skip-pass-dot-error {
+  background: #E86060;
+  border-color: #E86060;
+  animation: skip-pass-shake 0.4s ease;
+}
+
+.skip-pass-error {
+  font-size: 24rpx;
+  color: #E86060;
+  height: 36rpx;
+  line-height: 36rpx;
+}
+
+.skip-pass-numpad {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+  margin-top: 16rpx;
+  margin-bottom: 40rpx;
+}
+
+.skip-pass-key {
+  width: 160rpx;
+  height: 100rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 8rpx 12rpx;
+  border-radius: 20rpx;
+  background: rgba(99, 117, 236, 0.1);
+  border: 1rpx solid rgba(99, 117, 236, 0.2);
+  font-size: 40rpx;
+  font-weight: 500;
+  color: #EEF2FF;
+}
+
+.skip-pass-key-empty {
+  background: transparent;
+  border-color: transparent;
+}
+
+.skip-pass-key-del {
+  background: rgba(99, 117, 236, 0.06);
+}
+
+.skip-pass-del-icon {
+  font-size: 36rpx;
+  color: #A6C4E5;
+}
+
+.skip-pass-cancel {
+  font-size: 26rpx;
+  color: rgba(166, 196, 229, 0.4);
+  padding: 16rpx 40rpx;
+}
+
+@keyframes skip-pass-shake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-8rpx); }
+  60%       { transform: translateX(8rpx); }
+}
+/* #endif */
+</style>

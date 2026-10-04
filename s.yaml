@@ -526,6 +526,8 @@ resources:
         routes:
           - path: /QJaeMN3iR8.txt
             functionName: nano-worker-dev
+          - path: /7zkfaknx0A.txt
+            functionName: nano-worker-dev
           # Before /api/*: the twin function owns its own prefix.
           - path: /api/twin/*
             functionName: twin-dev

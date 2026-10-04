@@ -1,0 +1,30 @@
+// Read a picked file (uni.chooseImage / uni.chooseFile tempFilePath) as bytes for the binary
+// OSS PUT. Shared by utils/tool-actions.uts (chat image upload) and components/health-documents.
+//
+// Web: the temp path is a blob: URL the browser can fetch. WeChat mini-program (xapp-mini): the
+// temp path is a wxfile:// path read through the file-system manager. Native: TODO(port) — wire
+// FileInputStream (Android) / NSData (iOS) during the device-testing pass; null makes the upload
+// fail with the honest 上传失败 message instead of silently PUTting garbage.
+export async function readFileBytes(path : string) : Promise<ArrayBuffer | null> {
+  // #ifdef WEB
+  try {
+    const res = await fetch(path)
+    if (!res.ok) return null
+    return await res.arrayBuffer()
+  } catch (e : any) {
+    return null
+  }
+  // #endif
+  // #ifdef MP-WEIXIN
+  return await new Promise<ArrayBuffer | null>((resolve) => {
+    uni.getFileSystemManager().readFile({
+      filePath: path,
+      success: (res) => { resolve(res.data as ArrayBuffer) },
+      fail: (_e) => { resolve(null) }
+    })
+  })
+  // #endif
+  // #ifdef APP
+  return null
+  // #endif
+}

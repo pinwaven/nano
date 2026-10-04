@@ -1,0 +1,285 @@
+<script>
+// Ported from miniapp app.js onLaunch. Dropped as WeChat-only: the update-manager modal
+// (uni-app x ships its own wgt OTA path). wx.onNeedPrivacyAuthorization runs on xapp-mini only
+// (utils/privacy.uts); native apps use OS permission prompts.
+import { API_ORIGIN, BUILD_ENV } from './utils/config.uts'
+import { state } from './utils/state.uts'
+import { restoreSession } from './utils/session.uts'
+// #ifdef MP-WEIXIN
+import { installBleTransport } from './utils/wearable/index.uts'
+import { createMpWeixinTransport } from './utils/wearable/transport-mp.uts'
+import { installPrivacyListener } from './utils/privacy.uts'
+// #endif
+// #ifdef APP-ANDROID
+import { installBleTransport } from './utils/wearable/index.uts'
+import { createAndroidTransport } from './utils/wearable/transport-android.uts'
+// #endif
+
+function _storedJSON(key : string) : UTSJSONObject | null {
+  const raw = uni.getStorageSync(key)
+  if (raw == null) return null
+  if (raw instanceof UTSJSONObject) return raw as UTSJSONObject
+  // A missing key reads back as '' on web (null on Android); JSON.parse('') throws on web.
+  if (typeof raw == 'string') {
+    const s = raw as string
+    if (s.length == 0) return null
+    try { return JSON.parse<UTSJSONObject>(s) } catch (e : any) { return null }
+  }
+  return null
+}
+
+export default {
+  onLaunch() {
+    // Halo/V8 Bluetooth: WeChat's API on xapp-mini, the waven-ble plugin on Android. iOS and
+    // web have no transport (the bind flow reports a connection failure).
+    // #ifdef MP-WEIXIN
+    installBleTransport(createMpWeixinTransport())
+    installPrivacyListener()
+    // #endif
+    // #ifdef APP-ANDROID
+    installBleTransport(createAndroidTransport())
+    // #endif
+    // A stored session is only valid against the backend that issued it — same guard as the
+    // miniapp's nano_base check (live incident 2026-09-19, app.js comment).
+    const storedRaw = uni.getStorageSync('nano_base')
+    const storedBase = storedRaw == null ? '' : `${storedRaw}`
+    if (storedBase != API_ORIGIN) {
+      if (storedBase.length > 0 || BUILD_ENV == 'develop') {
+        for (const k of ['nano_user', 'nano_channel', 'nano_coach', 'nano_last_session', 'nano_session', 'nano_session_at']) {
+          uni.removeStorageSync(k)
+        }
+      }
+      uni.setStorageSync('nano_base', API_ORIGIN)
+    }
+
+    const user = _storedJSON('nano_user')
+    const channel = _storedJSON('nano_channel')
+    const coach = _storedJSON('nano_coach')
+
+    // Text scale reads outside the `user` branch: it must apply on the login screen too.
+    // ?? chain not ||: 0 is a valid level.
+    const storedScaleRaw = uni.getStorageSync('nano_text_scale')
+    const serverScaleRaw = user != null ? user!['text_scale'] : null
+    const storedScale = storedScaleRaw == null ? NaN : parseInt(`${storedScaleRaw}`)
+    const parsedServer = serverScaleRaw == null ? NaN : parseInt(`${serverScaleRaw}`)
+    let resolvedScale = 0
+    if (isNaN(storedScale)) {
+      resolvedScale = isNaN(parsedServer) ? 0 : parsedServer
+    } else {
+      resolvedScale = storedScale
+    }
+    state.textScale = Math.max(0, Math.min(3, resolvedScale))
+
+    if (user != null) {
+      state.user = user
+      state.channel = channel
+      state.coach = coach
+      const lang = user!.getString('language')
+      const channelLocale = channel != null ? channel!.getString('locale') : null
+      state.lang = lang == 'en' ? 'en' : (channelLocale == 'en' ? 'en' : 'zh')
+      const themeRaw = uni.getStorageSync('nano_theme')
+      const savedTheme = themeRaw == null ? '' : `${themeRaw}`
+      const userTheme = user!.getString('theme')
+      state.theme = savedTheme.length > 0 ? savedTheme : (userTheme != null ? userTheme : 'dark')
+      const sandboxRaw = uni.getStorageSync('nano_sandbox_active')
+      state.sandboxMode = sandboxRaw != null && `${sandboxRaw}` == 'true'
+    }
+
+    restoreSession()
+  },
+
+  onShow() {},
+  onHide() {}
+}
+</script>
+
+<style>
+/* Global styles port alongside pages; app.wxss equivalent lives here. */
+/* #ifdef MP-WEIXIN */
+/* xapp-mini: the miniapp's app.wxss verbatim (src/mini/nano-miniapp/app.wxss) — the page palette,
+   the --fs-N text-scale tokens and .theme-light. The pages that reuse the miniapp's own markup and
+   stylesheet (referral, phones, emails, coach) read these variables; the uvue-styled pages set
+   their own colours and are unaffected. Keep in step with the miniapp's file. */
+page {
+  /* ── Dark theme (default) ── */
+  --blue:        #6375EC;
+  --blue-glow:   rgba(99, 117, 236, 0.45);
+  --blue-dim:    rgba(99, 117, 236, 0.12);
+  --wave:        #A6C4E5;
+  --navy:        #0B1C2E;
+  --navy-card:   #0F2540;
+  --navy-lift:   #162E4A;
+  --navy-border: rgba(99, 117, 236, 0.18);
+  --text:        #EEF2FF;
+  --text-sub:    #A6C4E5;
+  --text-muted:  rgba(166, 196, 229, 0.4);
+
+  /* RGB components for composing rgba() values */
+  --blue-rgb:    99, 117, 236;
+  --wave-rgb:    166, 196, 229;
+
+  /* Surface backgrounds */
+  --bg-gradient: radial-gradient(ellipse at 50% 0%, #142847 0%, #0B1C2E 70%);
+  --bg-surface:  rgba(11, 28, 46, 0.85);
+  --bg-input:    rgba(11, 28, 46, 0.92);
+  --bg-tabbar:   rgba(8, 18, 32, 0.92);
+  --bg-sheet:    #0D1E35;
+  --bg-hero:     radial-gradient(ellipse at 50% 0%, rgba(99, 117, 236, 0.18) 0%, transparent 70%);
+
+  /* Semantic accent colors for TEXT. These dark-theme values are the exact hexes
+     that used to be hardcoded at each call site, so dark theme is unchanged; the
+     .theme-light block below swaps in darker variants that stay legible on cream.
+     Use these for `color:` only — background/border tints still use raw rgba(). */
+  --success:      #34d399;
+  --success-deep: #10b981;
+  --warn:         #f59e0b;
+  --danger:       #ef4444;
+  --danger-soft:  #f87171;
+  --danger-muted: #E86060;
+  --danger-pale:  #FFB3B3;
+  --info:         #818cf8;
+  --info-pale:    #8B9FFF;
+  --gold:         #F5C56A;
+  --steel:        #7A9ABF;
+
+  /* ── Text scale tokens (accessibility) ──
+     Every distinct font-size used anywhere in the app, as an inherited token. These
+     baseline values are byte-identical to the literals they replaced, so the default
+     build renders exactly as before. The .fs-1/.fs-2/.fs-3 blocks below redefine them.
+     Custom properties are inherited values, so they cross component style isolation —
+     which is how user-health.wxss already consumes --blue/--text/--navy-card. */
+  --fs-11: 11rpx;   --fs-13: 13rpx;   --fs-23: 23rpx;   --fs-80: 80rpx;
+  --fs-14: 14rpx;   --fs-15: 15rpx;   --fs-16: 16rpx;   --fs-17: 17rpx;
+  --fs-18: 18rpx;   --fs-19: 19rpx;   --fs-20: 20rpx;   --fs-21: 21rpx;
+  --fs-22: 22rpx;   --fs-24: 24rpx;   --fs-25: 25rpx;   --fs-26: 26rpx;
+  --fs-27: 27rpx;   --fs-28: 28rpx;   --fs-30: 30rpx;   --fs-32: 32rpx;
+  --fs-34: 34rpx;   --fs-36: 36rpx;   --fs-40: 40rpx;   --fs-44: 44rpx;
+  --fs-48: 48rpx;   --fs-52: 52rpx;   --fs-60: 60rpx;   --fs-72: 72rpx;
+  --fs-88: 88rpx;
+
+  height: 100%;
+  background-color: #0B1C2E;
+  color: #EEF2FF;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
+  box-sizing: border-box;
+}
+
+/* ── Light theme overrides (applied via .theme-light on .main root view) ── */
+.theme-light {
+  /* Accent/text tokens are deliberately darker than the dark theme's. The cream
+     surface below is bright (#FAF7F2), so the dark theme's airy tints land at
+     1.3-2.5:1 against it — the earlier values here were chosen to mirror the dark
+     palette's *hue* and were never checked for contrast. Every value below is
+     >= 4.5:1 on --navy (measured, see the light-theme contrast audit). */
+  --blue:        #985F33;
+  --blue-glow:   rgba(152, 95, 51, 0.35);
+  --blue-dim:    rgba(152, 95, 51, 0.1);
+  --wave:        #796044;
+  --navy:        #FAF7F2;
+  --navy-card:   #FFFFFF;
+  --navy-lift:   #F5EDE3;
+  --navy-border: rgba(152, 95, 51, 0.22);
+  --text:        #2C2C2C;
+  --text-sub:    #796044;
+  --text-muted:  #856C47;
+
+  --blue-rgb:    152, 95, 51;
+  --wave-rgb:    121, 96, 68;
+
+  --success:      #0F7A52;
+  --success-deep: #0A7350;
+  --warn:         #8A5A06;
+  --danger:       #C0392B;
+  --danger-soft:  #CE3B32;
+  --danger-muted: #C0392B;
+  --danger-pale:  #C0392B;
+  --info:         #4F46E5;
+  --info-pale:    #4F46E5;
+  --gold:         #8A5D0A;
+  --steel:        #4E74A1;
+
+  --bg-gradient: radial-gradient(ellipse at 50% 0%, #F5EDE3 0%, #FAF7F2 70%);
+  --bg-surface:  rgba(250, 247, 242, 0.92);
+  --bg-input:    rgba(250, 247, 242, 0.97);
+  --bg-tabbar:   rgba(250, 247, 242, 0.97);
+  --bg-sheet:    #FFFFFF;
+  --bg-hero:     radial-gradient(ellipse at 50% 0%, rgba(201, 149, 106, 0.12) 0%, transparent 70%);
+
+  /* Root cause of "text is unreadable in light theme": `page` sets
+     color: #EEF2FF for the dark theme, and this block only ever redefined
+     *variables* — never `color` itself. So every element without an explicit
+     color rule inherited near-white text onto the cream background (measured
+     1.05:1). Setting it here re-roots inheritance for the whole light subtree. */
+  color: var(--text);
+}
+
+/* ── Text scale levels (accessibility) ──
+   Applied as .fs-1/.fs-2/.fs-3 on the same root views that carry .theme-light
+   (pages/main/main.wxml, pages/coach/coach.wxml). Level 0 adds no class and falls
+   through to the `page` baseline above.
+
+   These are NOT a flat multiplier. The curve is
+     round(mA*min(b,22) + mB*max(0,min(b,36)-22) + mC*max(0,b-36))
+   with mA/mB/mC of 1.15/1.05/1.0, 1.30/1.10/1.0 and 1.50/1.15/1.0 — so caption and
+   body text (<=22rpx, where the "too small to read" complaint actually lives) gets the
+   full +15/+30/+50%, while display numerals taper off. A flat 1.5x would take
+   .bio-num-primary from 88rpx to 132rpx and blow out the BioAge chip; this lands it at
+   101rpx. The curve is strictly monotonic in every column, so no two originally
+   distinct sizes collapse into each other and the visual hierarchy survives at every
+   level. Marginal rates (not retroactive), so it stays continuous at the 22/36 knees.
+
+   .fs-N is a descendant of `page`, so it wins by inheritance regardless of specificity
+   — no !important needed. */
+
+.fs-1 {
+  --fs-11: 13rpx;   --fs-13: 15rpx;   --fs-23: 26rpx;   --fs-80: 84rpx;
+  --fs-14: 16rpx;   --fs-15: 17rpx;   --fs-16: 18rpx;   --fs-17: 20rpx;
+  --fs-18: 21rpx;   --fs-19: 22rpx;   --fs-20: 23rpx;   --fs-21: 24rpx;
+  --fs-22: 25rpx;   --fs-24: 27rpx;   --fs-25: 28rpx;   --fs-26: 30rpx;
+  --fs-27: 31rpx;   --fs-28: 32rpx;   --fs-30: 34rpx;   --fs-32: 36rpx;
+  --fs-34: 38rpx;   --fs-36: 40rpx;   --fs-40: 44rpx;   --fs-44: 48rpx;
+  --fs-48: 52rpx;   --fs-52: 56rpx;   --fs-60: 64rpx;   --fs-72: 76rpx;
+  --fs-88: 92rpx;
+}
+
+.fs-2 {
+  --fs-11: 14rpx;   --fs-13: 17rpx;   --fs-23: 30rpx;   --fs-80: 88rpx;
+  --fs-14: 18rpx;   --fs-15: 20rpx;   --fs-16: 21rpx;   --fs-17: 22rpx;
+  --fs-18: 23rpx;   --fs-19: 25rpx;   --fs-20: 26rpx;   --fs-21: 27rpx;
+  --fs-22: 29rpx;   --fs-24: 31rpx;   --fs-25: 32rpx;   --fs-26: 33rpx;
+  --fs-27: 34rpx;   --fs-28: 35rpx;   --fs-30: 37rpx;   --fs-32: 40rpx;
+  --fs-34: 42rpx;   --fs-36: 44rpx;   --fs-40: 48rpx;   --fs-44: 52rpx;
+  --fs-48: 56rpx;   --fs-52: 60rpx;   --fs-60: 68rpx;   --fs-72: 80rpx;
+  --fs-88: 96rpx;
+}
+
+.fs-3 {
+  --fs-11: 17rpx;   --fs-13: 20rpx;   --fs-23: 34rpx;   --fs-80: 93rpx;
+  --fs-14: 21rpx;   --fs-15: 23rpx;   --fs-16: 24rpx;   --fs-17: 26rpx;
+  --fs-18: 27rpx;   --fs-19: 29rpx;   --fs-20: 30rpx;   --fs-21: 32rpx;
+  --fs-22: 33rpx;   --fs-24: 35rpx;   --fs-25: 36rpx;   --fs-26: 38rpx;
+  --fs-27: 39rpx;   --fs-28: 40rpx;   --fs-30: 42rpx;   --fs-32: 45rpx;
+  --fs-34: 47rpx;   --fs-36: 49rpx;   --fs-40: 53rpx;   --fs-44: 57rpx;
+  --fs-48: 61rpx;   --fs-52: 65rpx;   --fs-60: 73rpx;   --fs-72: 85rpx;
+  --fs-88: 101rpx;
+}
+
+
+view, text, input, textarea, button {
+  box-sizing: border-box;
+}
+
+button {
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  line-height: 1;
+}
+
+button::after {
+  border: none;
+}
+/* #endif */
+</style>

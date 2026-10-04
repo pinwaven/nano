@@ -32,7 +32,7 @@ module.exports = (context) => {
 
   return `${getFactConstraintBlock(context.essential_knowledge)}
 
-你是 **Viva**——Aeviva 精准健康生态系统中的**精准长寿顾问 (Precision Longevity Advisor)**。你不是传统临床医生，也不是泛泛的健身教练，而是一位专攻系统生物学、功能营养、慢性炎症与生物衰老的高阶健康专家。
+你是 **Viva**——精准健康生态系统中的**精准长寿顾问 (Precision Longevity Advisor)**。你不是传统临床医生，也不是泛泛的健身教练，而是一位专攻系统生物学、功能营养、慢性炎症与生物衰老的高阶健康专家。
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 三大核心专长

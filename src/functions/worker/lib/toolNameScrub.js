@@ -84,6 +84,10 @@ function dropForeignLines(text, language = 'zh') {
             && (line.match(LATIN_WORDS_RE) || []).length >= FOREIGN_LINE_MIN_WORDS;
         if (!isForeign) kept.push(line);
     }
+    // A reply with no Chinese prose left is not a Chinese reply with a pasted hint: the model
+    // answered in the user's own language (an English question from a zh-language user). Dropping
+    // its lines shipped an empty bubble (dev 2026-10-03, 「Who are you…」), so keep it whole.
+    if (!kept.some(l => CJK_RE.test(l))) return text;
     // Collapse the blank line a dropped paragraph leaves behind.
     return kept.join('\n').replace(/\n{3,}/g, '\n\n');
 }

@@ -1,0 +1,22 @@
+{
+  "id": "waven-ble",
+  "displayName": "waven-ble",
+  "version": "1.0.0",
+  "description": "Android BLE central for the xapp's Halo/V8 stack (BluetoothLeScanner + BluetoothGatt), adapted to utils/wearable/transport.uts by utils/wearable/transport-android.uts",
+  "keywords": ["ble", "bluetooth"],
+  "engines": { "HBuilderX": "^4.0", "uni-app-x": "^4.0" },
+  "dcloudext": { "type": "uts" },
+  "uni_modules": {
+    "dependencies": [],
+    "encrypt": [],
+    "platforms": {
+      "client": {
+        "uni-app-x": {
+          "web": { "safari": "-", "chrome": "-" },
+          "app": { "android": { "minVersion": "21" }, "ios": "-", "harmony": "-" },
+          "mp": { "weixin": "-" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,40 @@
+import App from './App.uvue'
+import { createSSRApp } from 'vue'
+import { state } from './utils/state.uts'
+import { setWebUiLang } from './utils/web-ui.uts'
+
+// Web build: styled by the web user-app's own stylesheet + the xapp's web layer (both in
+// static/web/, a web-only directory — see xapp-web.css). Appended to <head> so they come after
+// uni's base CSS; vite rewrites index.html, so they cannot be <link>s there.
+// #ifdef WEB
+for (const href of ['/static/web/user-app.css', '/static/web/xapp-web.css']) {
+  const link = document.createElement('link')
+  link.rel = 'stylesheet'
+  link.href = href
+  document.head.appendChild(link)
+}
+// The user-app's desktop shell: its own .shell/.phone-frame rules (style.css) draw the phone
+// silhouette from 640px up and go full-screen below.
+document.body.classList.add('shell')
+document.getElementById('app')?.classList.add('phone-frame')
+// Inside the frame the app is --frame-w wide, but uni reports the browser window; the xapp
+// sizes a few things from windowWidth (rpx ratio, chart widths, the dots strip scroll).
+const _getWindowInfo = uni.getWindowInfo
+;(uni as any).getWindowInfo = () : GetWindowInfoResult => {
+  const info = _getWindowInfo()
+  const frame = document.getElementById('app')
+  if (frame != null && info.windowWidth >= 640) {
+    const r = frame.getBoundingClientRect()
+    return { ...info, windowWidth: r.width, windowHeight: r.height, screenWidth: r.width, screenHeight: r.height } as GetWindowInfoResult
+  }
+  return info
+}
+setWebUiLang(() : string => state.lang) // the web scanner's copy (utils/web-ui.uts)
+// #endif
+
+export function createApp() {
+  const app = createSSRApp(App)
+  return {
+    app
+  }
+}

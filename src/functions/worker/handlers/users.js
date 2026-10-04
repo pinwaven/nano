@@ -663,7 +663,7 @@ async function handlePutUser(user_id, body) {
 }
 
 async function handlePatchUser(user_id, body) {
-    const { theme, wearable, text_scale } = body;
+    const { theme, wearable, text_scale, language } = body;
     try {
         if (!pool) return { success: false, error: 'Database pool not initialized' };
         const updates = [];
@@ -671,6 +671,13 @@ async function handlePatchUser(user_id, body) {
         if (theme !== undefined) {
             params.push(theme === 'light' ? 'light' : 'dark');
             updates.push(`theme = $${params.length}`);
+        }
+        // The menu's language toggle. users.language is what Viva replies in
+        // (prompts/viva/response-language.js), so a UI-only switch left her answering in
+        // Chinese. PATCH, not PUT: PUT rewrites nickname/gender/birth_date unconditionally.
+        if (language !== undefined) {
+            params.push(language === 'en' ? 'en' : 'zh');
+            updates.push(`language = $${params.length}`);
         }
         // Accessibility text-size level (0-3), mirrored from the miniapp's
         // app.globalData.textScale / wx.getStorageSync('nano_text_scale').

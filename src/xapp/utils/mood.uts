@@ -1,0 +1,140 @@
+// Ported from miniapp utils/mood.js — live wearable readings → one of the 4 avatar moods.
+// Same curves as user-health.js (kept duplicated by design, see miniapp comment).
+
+import { findAvatar } from './avatar-gallery.uts'
+export { findAvatar }
+
+export const DEFAULT_MOOD : string = 'relaxed'
+export const CUSTOM_AVATAR_ID : string = 'custom'
+const RELAXED_BASELINE : number = 45
+
+// Same raw ring-data shape the health tab already builds from a synced wearable.
+export class MoodRaw {
+  stress : number | null = null
+  sleepMinutes : number | null = null
+  hrv : number | null = null
+  steps : number | null = null
+  restingHr : number | null = null
+  spo2 : number | null = null
+  systolicBP : number | null = null
+  diastolicBP : number | null = null
+}
+
+function _scoreHrv(ms : number) : number {
+  if (ms >= 80) return 100
+  if (ms >= 50) return 75 + (ms - 50) / 30 * 25
+  if (ms >= 30) return 45 + (ms - 30) / 20 * 30
+  return Math.max(10, ms / 30 * 45)
+}
+
+function _scoreRestHr(bpm : number) : number {
+  if (bpm <= 52) return 100
+  if (bpm <= 65) return 100 - (bpm - 52) / 13 * 20
+  if (bpm <= 75) return 80 - (bpm - 65) / 10 * 20
+  if (bpm <= 90) return 60 - (bpm - 75) / 15 * 30
+  return Math.max(5, 30 - (bpm - 90) / 30 * 25)
+}
+
+function _scoreSpo2(pct : number) : number {
+  if (pct >= 98) return 100
+  if (pct >= 95) return 70 + (pct - 95) / 3 * 30
+  return Math.max(10, 30 + (pct - 90) / 5 * 40)
+}
+
+function _scoreSteps(steps : number) : number {
+  if (steps >= 10000) return 100
+  if (steps >= 7500) return 75 + (steps - 7500) / 2500 * 25
+  if (steps >= 5000) return 50 + (steps - 5000) / 2500 * 25
+  return Math.max(5, steps / 5000 * 50)
+}
+
+function _scoreBp(sys : number | null, dia : number | null) : number | null {
+  if (sys == null || dia == null) return null
+  if (sys >= 140 || dia >= 90) return 20
+  if (sys >= 130 || dia >= 85) return 50
+  if (sys >= 120 || dia >= 80) return 75
+  if (sys < 85 || dia < 55) return 60
+  return 100
+}
+
+function _scoreSleep(hours : number) : number {
+  if (hours >= 8) return 100
+  if (hours >= 6.5) return 70 + (hours - 6.5) / 1.5 * 30
+  if (hours >= 5) return 40 + (hours - 5) / 1.5 * 30
+  return Math.max(5, hours / 5 * 40)
+}
+
+class Pair {
+  v : number | null
+  w : number
+  constructor(v : number | null, w : number) {
+    this.v = v
+    this.w = w
+  }
+}
+
+// Weighted average over only the non-null pairs, renormalized.
+function _weightedAvg(pairs : Pair[]) : number {
+  let sumV = 0.0
+  let sumW = 0.0
+  for (const p of pairs) {
+    const pv = p.v
+    if (pv == null) continue
+    sumV += pv * p.w
+    sumW += p.w
+  }
+  return sumW > 0 ? sumV / sumW : 0
+}
+
+export function computeMood(raw : MoodRaw | null) : string {
+  if (raw == null) return DEFAULT_MOOD
+
+  const bpScore = _scoreBp(raw.systolicBP, raw.diastolicBP)
+  const stressAxis = _weightedAvg([
+    new Pair(raw.stress, 0.60),
+    new Pair(raw.restingHr != null ? 100 - _scoreRestHr(raw.restingHr!) : null, 0.15),
+    new Pair(raw.hrv != null ? 100 - _scoreHrv(raw.hrv!) : null, 0.15),
+    new Pair(bpScore != null ? 100 - bpScore! : null, 0.10),
+  ])
+
+  const sleepMin = raw.sleepMinutes
+  const sleepHours = sleepMin != null ? sleepMin / 60 : null
+  const recoveryAxis = _weightedAvg([
+    new Pair(sleepHours != null ? _scoreSleep(sleepHours!) : null, 0.50),
+    new Pair(raw.hrv != null ? _scoreHrv(raw.hrv!) : null, 0.30),
+    new Pair(raw.restingHr != null ? _scoreRestHr(raw.restingHr!) : null, 0.15),
+    new Pair(raw.spo2 != null ? _scoreSpo2(raw.spo2!) : null, 0.05),
+  ])
+
+  const activityAxis = _weightedAvg([
+    new Pair(raw.steps != null ? _scoreSteps(raw.steps!) : null, 1.0),
+  ])
+
+  const scores = new Map<string, number>()
+  scores.set('stressed', stressAxis)
+  scores.set('restored', recoveryAxis)
+  scores.set('engaged', activityAxis)
+  scores.set('relaxed', RELAXED_BASELINE)
+
+  let mood = DEFAULT_MOOD
+  for (const key of ['stressed', 'restored', 'engaged', 'relaxed']) {
+    const s = scores.get(key)
+    const cur = scores.get(mood)
+    if (s != null && cur != null && s > cur) mood = key
+  }
+  return mood
+}
+
+// users.avatar_moods (the per-user generated set, avatar-gallery.md §6) is only consulted for
+// the 'custom' id, so a gallery pick can never render a stale generated image and vice versa.
+export function resolveAvatarUrl(avatarId : string | null, mood : string, customMoods : UTSJSONObject | null) : string | null {
+  if (avatarId == CUSTOM_AVATAR_ID) {
+    if (customMoods == null) return null
+    const m = customMoods.getString(mood)
+    if (m != null) return m
+    return customMoods.getString(DEFAULT_MOOD)
+  }
+  const avatar = findAvatar(avatarId)
+  if (avatar == null) return null
+  return avatar.moodUrl(mood)
+}

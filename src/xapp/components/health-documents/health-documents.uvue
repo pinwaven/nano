@@ -1,0 +1,1303 @@
+<template>
+  <!-- 健康文档 — twin layer 3, Medical Records (AGENTS §34). Hosted by BOTH the 数字孪生
+       subtab and the Viva AG subtab, which is why it lives here rather than inside either one. -->
+  <view class="hd-root" :class="theme == 'light' ? 'theme-light' : ''">
+    <view class="hd-section">
+      <view class="hd-section-head" :class="collapsible ? 'hd-section-head-toggle' : ''" v-on:click="toggleExpanded">
+        <view class="hd-section-head-main">
+          <view class="hd-section-title-row">
+            <text class="hd-section-title">{{ tr('documents') }}</text>
+            <text v-if="collapsible" class="hd-section-count">{{ documents.length }}</text>
+          </view>
+          <view v-if="collapsible && !expanded">
+            <text v-if="docsLoading" class="hd-compact-summary">{{ tr('loading') }}</text>
+            <view v-else-if="documents.length > 0" class="hd-compact-doc">
+              <text class="hd-compact-name">{{ firstDocName }}</text>
+              <text class="hd-compact-meta">{{ firstDocMeta }}</text>
+            </view>
+            <text v-else class="hd-compact-summary">{{ canUpload ? tr('noDocsTitle') : tr('noDocsOther') }}</text>
+          </view>
+        </view>
+        <view class="hd-section-head-actions">
+          <text v-if="!collapsible" class="hd-section-count">{{ documents.length }}</text>
+          <view v-if="collapsible && !expanded && canUpload" class="hd-upload-compact" :class="uploading ? 'hd-btn-busy' : ''" v-on:click.stop="chooseDocument">
+            <text class="hd-upload-compact-txt">{{ uploading ? uploadStatus : tr('uploadBtn') }}</text>
+          </view>
+          <view v-if="collapsible" class="hd-expand-control">
+            <text class="hd-expand-label">{{ expanded ? tr('collapse') : tr('expand') }}</text>
+            <text class="hd-expand-chevron">{{ expanded ? '⌃' : '⌄' }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view v-if="!collapsible || expanded" :class="collapsible ? 'hd-expanded-body' : ''">
+        <view v-if="canUpload" class="hd-upload-btn" :class="uploading ? 'hd-btn-busy' : ''" v-on:click="chooseDocument">
+          <text v-if="!uploading" class="hd-upload-btn-txt">{{ tr('uploadBtn') }}</text>
+          <text v-else class="hd-upload-btn-txt">{{ uploadStatus }}</text>
+        </view>
+        <view v-if="canUpload && uploading" class="hd-progress">
+          <view class="hd-progress-bar"></view>
+        </view>
+
+        <text v-if="docsLoading" class="hd-muted">{{ tr('loading') }}</text>
+        <view v-else-if="documents.length == 0" class="hd-empty">
+          <text class="hd-empty-title">{{ canUpload ? tr('noDocsTitle') : tr('noDocsOther') }}</text>
+          <text v-if="canUpload" class="hd-empty-hint">{{ tr('noDocsHint') }}</text>
+        </view>
+        <view v-else>
+          <view v-for="(doc, di) in documents" :key="di" class="hd-doc-wrap">
+            <view class="hd-doc">
+              <view class="hd-doc-main" v-on:click="openDocument(docIdOf(doc))">
+                <text class="hd-doc-name">{{ doc.getString('filename') }}</text>
+                <view class="hd-doc-meta">
+                  <!-- The badge is the type control for the owner: tap → action sheet (PATCH doc_type). -->
+                  <text v-if="canUpload" class="hd-doc-badge hd-doc-badge-tap" v-on:click.stop="changeType(docIdOf(doc))">{{ doc.getString('typeLabel') }} ⌄</text>
+                  <text v-else class="hd-doc-badge">{{ doc.getString('typeLabel') }}</text>
+                  <text v-if="hasText(doc, 'doc_date')" class="hd-doc-sub">{{ doc.getString('doc_date') }}</text>
+                  <text class="hd-doc-sub">{{ doc.getString('sizeLabel') }}</text>
+                </view>
+                <text v-if="hasText(doc, 'extLabel')" class="hd-doc-ext" :class="(doc.getBoolean('extBusy') == true || doc.getBoolean('extNone') == true) ? 'hd-doc-ext-busy' : ''">{{ doc.getString('extLabel') }}</text>
+                <text v-if="hasText(doc, 'summary')" class="hd-doc-summary">{{ doc.getString('summary') }}</text>
+              </view>
+              <text v-if="canUpload" class="hd-doc-del" v-on:click.stop="deleteDocument(docIdOf(doc), fileNameOf(doc))">{{ tr('delete') }}</text>
+            </view>
+
+            <!-- A read refused for want of a date is the one failure the owner can fix alone. -->
+            <view v-if="canUpload && doc.getBoolean('extMissingDate') == true" class="hd-doc-fix">
+              <text class="hd-doc-fix-hint">{{ tr('extMissingDateHint') }}</text>
+              <picker mode="date" :end="today" v-on:change="onDocDateChange($event, docIdOf(doc))">
+                <text class="hd-doc-action">{{ tr('setDate') }}</text>
+              </picker>
+            </view>
+
+            <view v-if="canUpload && (doc.getBoolean('extDone') == true || doc.getBoolean('extNone') == true || doc.getBoolean('extFailed') == true)" class="hd-doc-actions">
+              <text v-if="doc.getBoolean('extNone') == true" class="hd-doc-action" v-on:click.stop="rerunExtraction(docIdOf(doc))">{{ tr('extRun') }}</text>
+              <text v-else-if="doc.getBoolean('extFailed') == true" class="hd-doc-action" v-on:click.stop="rerunExtraction(docIdOf(doc))">{{ tr('extRetry') }}</text>
+              <text v-else class="hd-doc-action" v-on:click.stop="rerunExtraction(docIdOf(doc))">{{ tr('extRerun') }}</text>
+              <text v-if="doc.getBoolean('extDone') == true" class="hd-doc-action hd-doc-action-warn" v-on:click.stop="rejectExtraction(docIdOf(doc))">{{ tr('extWrong') }}</text>
+              <text v-if="doc.getBoolean('hasStructured') == true" class="hd-doc-action" v-on:click.stop="toggleStructured(docIdOf(doc))">{{ doc.getBoolean('structuredOpen') == true ? tr('structuredHide') : tr('structuredShow') }}</text>
+            </view>
+            <view v-else-if="doc.getBoolean('hasStructured') == true" class="hd-doc-actions">
+              <text class="hd-doc-action" v-on:click.stop="toggleStructured(docIdOf(doc))">{{ doc.getBoolean('structuredOpen') == true ? tr('structuredHide') : tr('structuredShow') }}</text>
+            </view>
+
+            <!-- What the document states about the person (contract 3 tags, AGENTS §39/§40).
+                 A fact chip is something nano acts on; a descriptor chip is only recorded, and says so. -->
+            <view v-if="tagsOf(doc).length > 0" class="hd-tags">
+              <view v-for="(tag, ti) in tagsOf(doc)" :key="ti" class="hd-tag" :class="(tag.getBoolean('isFact') == true ? 'hd-tag-fact' : 'hd-tag-desc') + (tag.getBoolean('inactive') == true ? ' hd-tag-inactive' : '')">
+                <text class="hd-tag-cat">{{ tag.getString('category') }}</text>
+                <text class="hd-tag-label">{{ tag.getString('label') }}</text>
+                <text v-if="hasText(tag, 'status')" class="hd-tag-status">{{ tag.getString('status') }}</text>
+                <text v-if="tag.getBoolean('isFact') != true" class="hd-tag-status">{{ tr('tagDescriptor') }}</text>
+              </view>
+            </view>
+
+            <!-- The agent's structured block (AGENTS §39): version 2 as the tables it holds,
+                 version 1 as the generic key/value tree it arrived as. -->
+            <view v-if="doc.getBoolean('structuredOpen') == true" class="hd-struct">
+              <view v-for="(sec, si) in blocksOf(doc)" :key="si" class="hd-struct-sec">
+                <view v-if="hasText(sec, 'title')" class="hd-struct-row hd-struct-head">
+                  <text class="hd-struct-key">{{ sec.getString('title') }}</text>
+                </view>
+                <scroll-view v-for="(tbl, tj) in tablesOf(sec)" :key="tj" direction="horizontal" class="hd-table-wrap">
+                  <view class="hd-table">
+                    <view class="hd-table-row hd-table-header">
+                      <text v-for="(col, ci) in columnsOf(tbl)" :key="ci" class="hd-table-cell hd-table-cell-head">{{ col }}</text>
+                    </view>
+                    <view v-for="(row, ri) in tableRowsOf(tbl)" :key="ri" class="hd-table-row">
+                      <text v-for="(cell, vi) in cellsOf(row)" :key="vi" class="hd-table-cell">{{ cell }}</text>
+                    </view>
+                  </view>
+                </scroll-view>
+                <view v-for="(pair, pi) in pairsOf(sec)" :key="pi" class="hd-struct-row" style="padding-left: 12px">
+                  <text class="hd-struct-key">{{ pair.getString('label') }}</text>
+                  <text class="hd-struct-val">{{ pair.getString('value') }}</text>
+                </view>
+              </view>
+              <view v-for="(row, rj) in flatRowsOf(doc)" :key="rj" class="hd-struct-row" :class="row.getBoolean('isHead') == true ? 'hd-struct-head' : ''" :style="'padding-left:' + (depthOf(row) * 12) + 'px'">
+                <text :class="row.getBoolean('isHead') == true ? 'hd-struct-key hd-struct-key-head' : 'hd-struct-key'">{{ row.getString('key') }}</text>
+                <text v-if="row.getBoolean('isHead') != true" class="hd-struct-val">{{ row.getString('value') }}</text>
+              </view>
+            </view>
+          </view>
+          <text v-if="canUpload" class="hd-footnote">{{ tr('footnote') }}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+// 健康文档 — the user's uploaded health records: clinic notes, 体检报告 PDFs, photographs of
+// paper printouts. This is twin layer 3, Medical Records (AGENTS §34), not a Viva AG feature,
+// which is why it is a shared component: the 数字孪生 subtab hosts it for everyone, and the
+// Viva AG subtab hosts the same one for add-on holders. Extracted from viva-ag-panel on
+// 2026-09-08 — a second copy would be two upload paths drifting apart against one backend.
+//
+// A coach embeds it read-only (can-upload=false + coach-id), which hides the upload button
+// and the per-row delete. The server re-checks ownership from coach_id; see
+// worker/handlers/health_documents.js's _resolveOwner.
+//
+// Port notes (uni-app x):
+//  - properties → props, observers → watch, lifetimes.attached → mounted.
+//  - wx.request → utils/request.uts body helpers; PATCH has no helper there yet (see _patchBody).
+//  - wx.chooseMessageFile / wx.chooseMedia → uni.chooseFile / uni.chooseImage (TODO(port) below).
+//  - <picker mode="date"> → uni.showDatePicker (coach.uvue pattern).
+//  - catchtap → v-on:click.stop (uni-app x supports the .stop modifier).
+
+import { readFileBytes } from '../../utils/file-bytes.uts'
+import { BASE } from '../../utils/config.uts'
+import { state } from '../../utils/state.uts'
+import { getBody, postBody, deleteBody } from '../../utils/request.uts'
+import { handleAuthFailure } from '../../utils/session.uts'
+
+const T_ZH : UTSJSONObject = {
+  documents: '健康文档',
+  expand: '展开',
+  collapse: '收起',
+  uploadBtn: '＋ 上传文档',
+  sourcePdf: '从聊天记录选择文件',
+  sourcePhoto: '拍照 / 从相册选择',
+  photoName: '健康文档照片',
+  unsupportedTitle: '暂不支持这种文件',
+  unsupportedBody: '目前支持 PDF、Word、Excel、PPT 和图片。请选择其中一种格式的健康文档。',
+  pdfUnavailableTitle: '文件上传暂未开放',
+  pdfUnavailableBody: '微信要求先在小程序后台的「用户隐私保护指引」中声明「选中的文件」权限，才能从聊天记录选择文件。在此之前，可以先用「拍照 / 从相册选择」上传文档照片。',
+  gotIt: '知道了',
+  errPickFile: '选择文件失败，请重试',
+  errOpen: '无法打开该文件，请重试',
+  errTooLarge: '文件超过 20MB，请压缩后再试',
+  errUpload: '上传失败，请重试',
+  errGeneric: '操作失败，请重试',
+  okDeleted: '已删除',
+  opening: '打开中…',
+  preparing: '准备中…',
+  uploading: '上传中…',
+  registering: '保存中…',
+  loading: '加载中…',
+  noDocsTitle: '还没有上传任何文档',
+  noDocsOther: '该用户还没有上传健康文档',
+  noDocsHint: '支持 PDF、Word、Excel、PPT 和图片。可以直接拍照上传纸质报告；文件请先发送到「文件传输助手」或任意聊天，再回来选择。',
+  footnote: '文档保存在你的数字孪生「医疗记录」层，健康分析时会作为参考。',
+  delete: '删除',
+  extPending: '正在解析…',
+  extFailed: '解析未完成',
+  extRejected: '已标记为解析有误',
+  extNone: '尚未解析',
+  extRun: '解析',
+  extRetry: '重试解析',
+  extRerun: '重新解析',
+  extWrong: '解析有误',
+  extRerunOk: '已重新排队',
+  extRerunBusy: '正在解析中',
+  extClearedTitle: '清除这次解析？',
+  extClearedBody: '会删除本次从这份文档读取的指标和健康信息，文档本身保留。',
+  extCleared: '已清除',
+  extMissingDateHint: '报告上没有读到日期，指标未能保存。设置报告日期后会自动重新解析。',
+  setDate: '设置报告日期',
+  dateSaved: '已设置，重新解析中',
+  changeTypeTitle: '这份文档是',
+  typeSaved: '已更新',
+  structuredShow: '查看读取到的内容',
+  structuredHide: '收起',
+  tagsTitle: '文档记载',
+  tagDescriptor: '仅记录',
+  tagStatus: { past: '既往', stopped: '已停用' } as UTSJSONObject,
+  tagCategory: { allergy: '过敏', condition: '诊断', medication: '用药', diet: '饮食', lifestyle: '生活方式', result: '结果', family_history: '家族史', procedure: '手术史', other: '其他' } as UTSJSONObject,
+  summaryLabel: '摘要',
+  deleteConfirm: '删除后不可恢复，确定删除吗？',
+  typeHospital: '就医记录', typeLab: '检验报告', typeImaging: '影像报告',
+  typeDischarge: '出院小结', typePrescription: '处方', typeOther: '文档',
+  typeGenetic: '基因检测', typeMicrobiome: '肠道菌群', typeFunctional: '功能医学检测',
+} as UTSJSONObject
+
+const T_EN : UTSJSONObject = {
+  documents: 'Health Records',
+  expand: 'Expand',
+  collapse: 'Collapse',
+  uploadBtn: '＋ Upload record',
+  sourcePdf: 'Choose a file from a chat',
+  sourcePhoto: 'Take a photo / choose from album',
+  photoName: 'health-record-photo',
+  unsupportedTitle: 'That file type is not supported',
+  unsupportedBody: 'PDF, Word, Excel, PowerPoint and images are supported. Please pick a health record in one of those formats.',
+  pdfUnavailableTitle: 'File upload not enabled yet',
+  pdfUnavailableBody: 'WeChat requires the "selected files" scope to be declared in the Mini Program console\'s privacy guidelines before files can be picked from a chat. Until then, use "Take a photo / choose from album" to upload a picture of the record.',
+  gotIt: 'Got it',
+  errPickFile: "Couldn't pick that file, please try again",
+  errOpen: "Couldn't open that file, please try again",
+  errTooLarge: 'That file is over 20MB. Please compress it and try again',
+  errUpload: 'Upload failed, please try again',
+  errGeneric: "That didn't work, please try again",
+  okDeleted: 'Deleted',
+  opening: 'Opening…',
+  preparing: 'Preparing…',
+  uploading: 'Uploading…',
+  registering: 'Saving…',
+  loading: 'Loading…',
+  noDocsTitle: 'No records uploaded yet',
+  noDocsOther: 'This user has not uploaded any health records',
+  noDocsHint: 'PDF, Word, Excel, PowerPoint and images are supported. Photograph a paper report directly, or send the file to File Transfer (文件传输助手) or any conversation first, then come back and pick it.',
+  footnote: "Records are kept in your digital twin's Medical Records layer and drawn on for health analysis.",
+  delete: 'Delete',
+  extPending: 'Reading…',
+  extFailed: "Couldn't read this one",
+  extRejected: 'Marked as misread',
+  extNone: 'Not read yet',
+  extRun: 'Read',
+  extRetry: 'Try again',
+  extRerun: 'Read again',
+  extWrong: 'Misread',
+  extRerunOk: 'Queued again',
+  extRerunBusy: 'Already reading',
+  extClearedTitle: 'Clear this reading?',
+  extClearedBody: 'Removes the markers and health details read from this document. The document itself is kept.',
+  extCleared: 'Cleared',
+  extMissingDateHint: "No report date could be read, so its values were not saved. Set the date and it will be read again.",
+  setDate: 'Set report date',
+  dateSaved: 'Saved — reading again',
+  changeTypeTitle: 'This document is a',
+  typeSaved: 'Updated',
+  structuredShow: 'Show what was read',
+  structuredHide: 'Hide',
+  tagsTitle: 'Stated in this document',
+  tagDescriptor: 'noted only',
+  tagStatus: { past: 'past', stopped: 'stopped' } as UTSJSONObject,
+  tagCategory: { allergy: 'Allergy', condition: 'Condition', medication: 'Medication', diet: 'Diet', lifestyle: 'Lifestyle', result: 'Result', family_history: 'Family history', procedure: 'Procedure', other: 'Other' } as UTSJSONObject,
+  summaryLabel: 'Summary',
+  deleteConfirm: 'This cannot be undone. Delete this record?',
+  typeHospital: 'Hospital record', typeLab: 'Lab report', typeImaging: 'Imaging',
+  typeDischarge: 'Discharge summary', typePrescription: 'Prescription', typeOther: 'Record',
+  typeGenetic: 'Genetic test', typeMicrobiome: 'Microbiome', typeFunctional: 'Functional test',
+} as UTSJSONObject
+
+function _tr(t : UTSJSONObject, path : string) : string {
+  const parts = path.split('.')
+  var cur : UTSJSONObject = t
+  for (let i = 0; i < parts.length; i++) {
+    if (i == parts.length - 1) {
+      const v = cur.getString(parts[i])
+      return v != null ? v! : parts[i]
+    }
+    const nxt = cur.getJSON(parts[i])
+    if (nxt == null) return parts[parts.length - 1]
+    cur = nxt!
+  }
+  return path
+}
+
+// Same walk as _tr, but a missing key is an empty string instead of the key name — used where
+// the miniapp did `t.tagStatus[x.status] ? … : ''` (an absent status must render nothing).
+function _trOrEmpty(t : UTSJSONObject, path : string) : string {
+  const parts = path.split('.')
+  var cur : UTSJSONObject = t
+  for (let i = 0; i < parts.length; i++) {
+    if (i == parts.length - 1) {
+      const v = cur.getString(parts[i])
+      return v != null ? v! : ''
+    }
+    const nxt = cur.getJSON(parts[i])
+    if (nxt == null) return ''
+    cur = nxt!
+  }
+  return ''
+}
+
+// Mirrors MAX_DOCUMENT_BYTES in handlers/health_documents.js. Enforced here too because the
+// miniapp's readFile pulled the whole file into the JS heap: an oversized PDF crashed the page
+// rather than failing cleanly, so it must never reach the read at all.
+const MAX_BYTES : number = 20 * 1024 * 1024
+
+// Mirrors CONTENT_TYPE_BY_EXT in worker/handlers/health_documents.js — a health record is
+// whatever the clinic handed the user, so PDFs, Word/Excel/PowerPoint and photos of paper
+// printouts are all accepted. The server re-validates; this list only drives the picker filter
+// and the pre-upload message.
+const DOC_EXTENSIONS : string[] = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']
+const IMAGE_EXTENSIONS : string[] = ['jpg', 'jpeg', 'png', 'heic', 'heif', 'webp', 'bmp', 'gif']
+const ALLOWED_EXTENSIONS : string[] = DOC_EXTENSIONS.concat(IMAGE_EXTENSIONS)
+
+// The doc types a user may set. Order is the action sheet's order. Mirrors VALID_DOC_TYPES in
+// worker/handlers/health_documents.js; the server re-validates.
+const DOC_TYPES : string[] = ['lab_report', 'hospital_record', 'imaging', 'discharge_summary', 'prescription',
+  'genetic', 'microbiome', 'functional_test', 'other']
+
+function extOf(name : string | null) : string {
+  if (name == null || name!.length == 0 || name!.indexOf('.') == -1) return ''
+  const parts = name!.split('.')
+  const last = parts[parts.length - 1]
+  return last.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+// ── untyped-JSON helpers (the `structured` block has no schema, AGENTS §39) ──
+function _isArr(v : any | null) : boolean { return v != null && v instanceof Array }
+function _arrOf(v : any | null) : Array<any> { return v == null ? ([] as Array<any>) : (v as Array<any>) }
+function _objOf(v : any | null) : UTSJSONObject | null { return v != null && v instanceof UTSJSONObject ? (v as UTSJSONObject) : null }
+function _strOf(v : any | null) : string { return v == null ? '' : `${v}` }
+function _present(v : any | null) : boolean { return v != null && `${v}`.length > 0 }
+// JS truthiness for a JSON leaf (the miniapp wrote `!!x.missing_date`): false, null, '' and 0
+// are all absent; the string "false" must not read as present the way _present would.
+function _truthy(v : any | null) : boolean {
+  if (v == null) return false
+  const s = `${v}`
+  if (s.length == 0 || s == 'false' || s == '0') return false
+  return true
+}
+
+// Flattens the agent's schema-less `structured` block into rows the template can render without
+// recursion: {depth, key, value, isHead}. An object's keys become rows, an array's entries are
+// numbered, a leaf is key: value. Generic on purpose — the block has no schema (AGENTS §39),
+// so the only honest rendering is the shape it arrived in. Bounded by the server's caps.
+const FLAT_SKIP : string[] = ['label', 'name', 'title', 'key', 'value', 'result', 'unit', 'note']
+
+function flattenStructured(node : any | null, depth : number, key : string, out : UTSJSONObject[]) : void {
+  if (out.length >= 400) return
+  if (node == null) {
+    if (key.length > 0) out.push({ 'depth': depth, 'key': key, 'value': '—', 'isHead': false } as UTSJSONObject)
+    return
+  }
+  if (node instanceof Array) {
+    if (key.length > 0) out.push({ 'depth': depth, 'key': key, 'value': '', 'isHead': true } as UTSJSONObject)
+    const arr = node as Array<any>
+    for (let i = 0; i < arr.length; i++) {
+      const n = arr[i]
+      const no = _objOf(n)
+      if (no != null) {
+        // A row-like object ({label, value, …}) reads best as "label: value"; anything else
+        // gets its own numbered head.
+        const label = _firstOf([no!['label'], no!['name'], no!['title'], no!['key']])
+        const rowLike = label.length > 0 && (no!['value'] != null || no!['result'] != null || no!['note'] != null)
+        if (rowLike) {
+          const val = _firstOf([no!['value'], no!['result']])
+          const unit = _present(no!['unit']) ? ` ${_strOf(no!['unit'])}` : ''
+          const note = _present(no!['note']) ? `  ${_strOf(no!['note'])}` : ''
+          const value = `${val}${unit}${note}`.trim()
+          out.push({ 'depth': depth + 1, 'key': label, 'value': value.length > 0 ? value : '—', 'isHead': false } as UTSJSONObject)
+          no!.toMap().forEach((v : any | null, k : string) => {
+            if (FLAT_SKIP.indexOf(k) != -1) return
+            flattenStructured(v, depth + 2, k, out)
+          })
+        } else {
+          flattenStructured(n, depth + 1, label.length > 0 ? label : `#${i + 1}`, out)
+        }
+      } else if (_isArr(n)) {
+        flattenStructured(n, depth + 1, `#${i + 1}`, out)
+      } else {
+        out.push({ 'depth': depth + 1, 'key': `#${i + 1}`, 'value': _strOf(n), 'isHead': false } as UTSJSONObject)
+      }
+    }
+    return
+  }
+  if (node instanceof UTSJSONObject) {
+    const o = node as UTSJSONObject
+    if (key.length > 0) out.push({ 'depth': depth, 'key': key, 'value': '', 'isHead': true } as UTSJSONObject)
+    const inner = key.length > 0 ? depth + 1 : depth
+    o.toMap().forEach((v : any | null, k : string) => { flattenStructured(v, inner, k, out) })
+    return
+  }
+  out.push({ 'depth': depth, 'key': key, 'value': _strOf(node), 'isHead': false } as UTSJSONObject)
+}
+
+function _firstOf(vals : Array<any | null>) : string {
+  for (let i = 0; i < vals.length; i++) {
+    if (_present(vals[i])) return _strOf(vals[i])
+  }
+  return ''
+}
+
+// Contract 3's `structured.version: 2`: sections of tables (named columns, verbatim cells) and
+// pairs. Rendered as the tables they are — the column context is the reason the shape exists.
+// Table rows become {cells: string[]} so the template can index a flat array of strings.
+function structuredV2Blocks(s : UTSJSONObject | null) : UTSJSONObject[] {
+  const out : UTSJSONObject[] = []
+  if (s == null || s!.getNumber('version') != 2) return out
+  const sections = _arrOf(s!['sections'])
+  const secLimit = Math.min(50, sections.length)
+  for (let i = 0; i < secLimit; i++) {
+    const sec = _objOf(sections[i])
+    const block = new UTSJSONObject()
+    block['key'] = `s${i}`
+    block['title'] = sec != null ? _strOf(sec!['title']) : ''
+    const tablesOut : UTSJSONObject[] = []
+    const rawTables = _arrOf(sec != null ? sec!['tables'] : null)
+    const tblLimit = Math.min(20, rawTables.length)
+    for (let ti = 0; ti < tblLimit; ti++) {
+      const tbl = _objOf(rawTables[ti])
+      if (tbl == null) continue
+      const columns : string[] = []
+      for (const c of _arrOf(tbl!['columns'])) columns.push(_strOf(c))
+      const rowsOut : UTSJSONObject[] = []
+      const rawRows = _arrOf(tbl!['rows'])
+      const rowLimit = Math.min(200, rawRows.length)
+      for (let ri = 0; ri < rowLimit; ri++) {
+        const cells : string[] = []
+        for (const c of _arrOf(rawRows[ri])) cells.push(_strOf(c))
+        rowsOut.push({ 'cells': cells } as UTSJSONObject)
+      }
+      tablesOut.push({ 'key': `s${i}t${ti}`, 'columns': columns, 'rows': rowsOut } as UTSJSONObject)
+    }
+    block['tables'] = tablesOut
+    const pairsOut : UTSJSONObject[] = []
+    const rawPairs = _arrOf(sec != null ? sec!['pairs'] : null)
+    const pairLimit = Math.min(200, rawPairs.length)
+    for (let pi = 0; pi < pairLimit; pi++) {
+      const p = _objOf(rawPairs[pi])
+      if (p == null) continue
+      const detail : string[] = []
+      if (_present(p!['value'])) detail.push(_strOf(p!['value']))
+      if (_present(p!['note'])) detail.push(_strOf(p!['note']))
+      const value = detail.join('  ')
+      pairsOut.push({ 'label': _strOf(p!['label']), 'value': value.length > 0 ? value : '—' } as UTSJSONObject)
+    }
+    block['pairs'] = pairsOut
+    out.push(block)
+  }
+  return out
+}
+
+// The document's tags (contract 3), as chips. A FACT resolved in nano's catalog and is acted on;
+// a DESCRIPTOR did not and is only shown — the chip says so, so a user never reads a
+// descriptor as something nano is doing something with.
+function tagChips(tags : any | null, t : UTSJSONObject, lang : string) : UTSJSONObject[] {
+  const out : UTSJSONObject[] = []
+  if (!_isArr(tags)) return out
+  const arr = tags as Array<any>
+  const limit = Math.min(60, arr.length)
+  for (let i = 0; i < limit; i++) {
+    const x = _objOf(arr[i])
+    if (x == null) continue
+    const isFact = x!.getString('kind') == 'fact' && _truthy(x!['tag_key'])
+    const textRaw = _strOf(x!['text'])
+    let name = textRaw
+    if (isFact) {
+      if (lang == 'en') {
+        name = _firstOf([x!['name_en'], x!['name_zh'], x!['text']])
+      } else {
+        name = _firstOf([x!['name_zh'], x!['text']])
+      }
+    }
+    const value = _present(x!['value']) ? ` ${_strOf(x!['value'])}` : ''
+    const statusKey = x!.getString('status') ?? ''
+    const status = statusKey.length > 0 ? _trOrEmpty(t, 'tagStatus.' + statusKey) : ''
+    const categoryKey = x!.getString('category') ?? ''
+    const category = categoryKey.length > 0 && _trOrEmpty(t, 'tagCategory.' + categoryKey).length > 0
+      ? _trOrEmpty(t, 'tagCategory.' + categoryKey)
+      : _trOrEmpty(t, 'tagCategory.other')
+    out.push({
+      'id': x!['id'],
+      'isFact': isFact,
+      'inactive': statusKey == 'past' || statusKey == 'stopped',
+      'category': category,
+      'label': `${name}${value}`,
+      'status': status,
+      'text': isFact && textRaw.length > 0 && textRaw != name ? textRaw : '',
+    } as UTSJSONObject)
+  }
+  return out
+}
+
+// presign → read → PUT → register carries one file through; the miniapp passed a plain object.
+class UploadFile {
+  path : string
+  name : string
+  size : number
+  constructor(path : string, name : string, size : number) {
+    this.path = path
+    this.name = name
+    this.size = size
+  }
+}
+
+// TODO(port): request.uts ships getBody/postBody/putBody/deleteBody but no patchBody (and
+// putBody would send the wrong verb to PATCH /health-documents/:id). Kept local, mirroring
+// request.uts's _body: session header + 401 → handleAuthFailure, null on network failure.
+async function _patchBody(url : string, body : UTSJSONObject | null) : Promise<UTSJSONObject | null> {
+  const full = url.startsWith('http') ? url : `${BASE}${url}`
+  let res : RequestSuccess<UTSJSONObject> | null = null
+  await new Promise<boolean>((resolve : (v : boolean) => void, _reject : (e : any | null) => void) => {
+    uni.request<UTSJSONObject>({
+      url: full,
+      method: 'PATCH' as RequestMethod,
+      header: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.apiToken}`
+      } as UTSJSONObject,
+      data: body,
+      success: (r) => { res = r; resolve(true) },
+      fail: (err) => { resolve(false) },
+    })
+  })
+  if (res == null) return null
+  if (res!.statusCode == 401 && state.apiToken.length > 0) handleAuthFailure()
+  return res!.data
+}
+
+export default {
+  name: 'HealthDocuments',
+  props: {
+    userId: { type: String, default: '' },
+    lang: { type: String, default: 'zh' },
+    theme: { type: String, default: 'dark' },
+    // Digital Twin uses a compact-by-default summary; Viva AG and existing consumers retain the
+    // full always-open document manager unless they opt in explicitly.
+    collapsible: { type: Boolean, default: false },
+    // False hides the upload button AND the per-row delete — a coach reads a client's records,
+    // it never adds to or removes from them.
+    canUpload: { type: Boolean, default: true },
+    // Set only by the coach app. Travels as &coach_id= so the server can verify the target is
+    // actually one of this coach's clients (worker/handlers/health_documents.js _resolveOwner).
+    coachId: { type: String, default: '' },
+  },
+  data() {
+    return {
+      t: T_ZH as UTSJSONObject,
+      documents: [] as UTSJSONObject[],
+      docsLoading: true,
+      uploading: false,
+      uploadStatus: '',
+      expanded: true,
+      today: '',
+    }
+  },
+  computed: {
+    firstDoc() : UTSJSONObject | null {
+      return this.documents.length > 0 ? this.documents[0] : null
+    },
+    firstDocName() : string {
+      const d = this.firstDoc
+      return d != null ? (d!.getString('filename') ?? '') : ''
+    },
+    firstDocMeta() : string {
+      const d = this.firstDoc
+      if (d == null) return ''
+      const dd = d!.getString('doc_date') ?? ''
+      const ext = d!.getString('extLabel') ?? ''
+      const head = dd.length > 0 ? dd : (d!.getString('typeLabel') ?? '')
+      return ext.length > 0 ? `${head} · ${ext}` : head
+    },
+  },
+  watch: {
+    // Both hosts sit behind a v-if, so an AG holder toggling subtabs gets a fresh mount and
+    // a fresh fetch. A user with no AG subtab, though, mounts this once per app launch (the
+    // health tab is hidden, never unmounted) — so a language switch after that has to
+    // re-translate here rather than relying on mounted(). viva-ag-panel does not do this,
+    // which is the bug this avoids inheriting.
+    lang(newLang : string) {
+      this.t = newLang == 'en' ? T_EN : T_ZH
+      if (this.documents.length > 0) this._relabel()
+    },
+    userId(id : string) {
+      if (id.length > 0) this._loadDocuments()
+    },
+    collapsible(enabled : boolean) {
+      if (!enabled && !this.expanded) this.expanded = true
+    },
+  },
+  mounted() {
+    this.t = this.lang == 'en' ? T_EN : T_ZH
+    this.expanded = !this.collapsible
+    this.today = todayStr()
+    this._loadDocuments()
+  },
+  methods: {
+    tr(path : string) : string { return _tr(this.t, path) },
+    _toast(title : string, success : boolean = false) {
+      // The miniapp passed icon:'none'|'success'; uni-app x's icon is a literal union, so the
+      // two variants are spelled out rather than cast from a runtime string.
+      if (success) uni.showToast({ title: title, icon: 'success' })
+      else uni.showToast({ title: title, icon: 'none' })
+    },
+    _pad2(n : number) : string { return n < 10 ? `0${n}` : `${n}` },
+
+    toggleExpanded() {
+      if (!this.collapsible) return
+      this.expanded = !this.expanded
+    },
+
+    _scope() : string {
+      return this.coachId.length > 0 ? `&coach_id=${encodeURIComponent(this.coachId)}` : ''
+    },
+
+    _typeLabel(docType : string | null) : string {
+      const t = this.t
+      if (docType == 'hospital_record') return _tr(t, 'typeHospital')
+      if (docType == 'lab_report') return _tr(t, 'typeLab')
+      if (docType == 'imaging') return _tr(t, 'typeImaging')
+      if (docType == 'discharge_summary') return _tr(t, 'typeDischarge')
+      if (docType == 'prescription') return _tr(t, 'typePrescription')
+      if (docType == 'genetic') return _tr(t, 'typeGenetic')
+      if (docType == 'microbiome') return _tr(t, 'typeMicrobiome')
+      if (docType == 'functional_test') return _tr(t, 'typeFunctional')
+      return _tr(t, 'typeOther')
+    },
+
+    _sizeLabel(bytes : number | null) : string {
+      if (bytes == null || bytes! == 0) return ''
+      const mb = (bytes!) / (1024 * 1024)
+      return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round((bytes!) / 1024))} KB`
+    },
+
+    // typeLabel is baked into each row at fetch time, so a language switch has to redo it
+    // without a round trip.
+    _relabel() {
+      const rebuilt : UTSJSONObject[] = []
+      for (const d of this.documents) {
+        const row = new UTSJSONObject()
+        d.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+        row['typeLabel'] = this._typeLabel(d.getString('doc_type'))
+        row['extLabel'] = this._extLabel(_objOf(d['extraction']))
+        row['tagChips'] = tagChips(d['tags'], this.t, this.lang)
+        rebuilt.push(row)
+      }
+      this.documents = rebuilt
+    },
+
+    // What the extraction found, in one line. Counts only — the values themselves are the
+    // document's own metadata and the Medical Records layer, and a second copy here would be one
+    // more thing to keep in step.
+    _extLabel(ext : UTSJSONObject | null) : string {
+      const t = this.t
+      // No job at all: a document uploaded before extraction existed. It says so, and the
+      // actions row offers 解析 — before this the row was silent and there was no way to ask.
+      if (ext == null) return this.canUpload ? _tr(t, 'extNone') : ''
+      const status = ext!.getString('status') ?? ''
+      if (['queued', 'claimed', 'processing'].indexOf(status) != -1) return _tr(t, 'extPending')
+      if (status == 'failed') return _tr(t, 'extFailed')
+      if (status == 'rejected') return _tr(t, 'extRejected')
+      if (status != 'completed') return ''
+      const isZh = this.lang != 'en'
+      const accepted = ext!.getNumber('accepted') ?? 0
+      const findings = ext!.getNumber('findings') ?? 0
+      const bits : string[] = []
+      if (accepted! > 0) bits.push(isZh ? `${accepted} 项指标` : `${accepted} marker${accepted! == 1 ? '' : 's'}`)
+      // Rows kept by printed name only — outside the catalog, but no longer thrown away.
+      const kept = Math.max(0, (ext!.getNumber('items') ?? 0) - accepted!)
+      if (kept > 0) bits.push(isZh ? `${kept} 项按原文保存` : `${kept} item${kept! == 1 ? '' : 's'} as printed`)
+      if (findings! > 0) bits.push(isZh ? `${findings} 条健康信息` : `${findings} health detail${findings! == 1 ? '' : 's'}`)
+      if (bits.length == 0) return isZh ? '未读取到指标' : 'No markers found'
+      return isZh ? `已记录 ${bits.join('、')}` : `Recorded ${bits.join(', ')}`
+    },
+
+    // ── template accessors (rows are UTSJSONObject; the template cannot destructure them) ──
+    docIdOf(doc : UTSJSONObject) : number { return doc.getNumber('id') ?? 0 },
+    fileNameOf(doc : UTSJSONObject) : string { return doc.getString('filename') ?? '' },
+    hasText(o : UTSJSONObject, key : string) : boolean {
+      const s = o.getString(key)
+      return s != null && s!.length > 0
+    },
+    tagsOf(doc : UTSJSONObject) : UTSJSONObject[] { return doc.getArray<UTSJSONObject>('tagChips') ?? ([] as UTSJSONObject[]) },
+    blocksOf(doc : UTSJSONObject) : UTSJSONObject[] { return doc.getArray<UTSJSONObject>('structuredBlocks') ?? ([] as UTSJSONObject[]) },
+    flatRowsOf(doc : UTSJSONObject) : UTSJSONObject[] { return doc.getArray<UTSJSONObject>('structuredRows') ?? ([] as UTSJSONObject[]) },
+    tablesOf(sec : UTSJSONObject) : UTSJSONObject[] { return sec.getArray<UTSJSONObject>('tables') ?? ([] as UTSJSONObject[]) },
+    pairsOf(sec : UTSJSONObject) : UTSJSONObject[] { return sec.getArray<UTSJSONObject>('pairs') ?? ([] as UTSJSONObject[]) },
+    columnsOf(tbl : UTSJSONObject) : string[] { return tbl.getArray<string>('columns') ?? ([] as string[]) },
+    tableRowsOf(tbl : UTSJSONObject) : UTSJSONObject[] { return tbl.getArray<UTSJSONObject>('rows') ?? ([] as UTSJSONObject[]) },
+    cellsOf(row : UTSJSONObject) : string[] { return row.getArray<string>('cells') ?? ([] as string[]) },
+    depthOf(row : UTSJSONObject) : number { return row.getNumber('depth') ?? 0 },
+
+    // Two ways to correct a document the agent could not fully read, both through
+    // PATCH /health-documents/:id (owner only; stamps user_edited_at so the next run keeps it).
+    // Returns the response body, or null on network failure / non-success (the miniapp threw).
+    async _patch(id : number, body : UTSJSONObject) : Promise<UTSJSONObject | null> {
+      const payload = new UTSJSONObject()
+      body.toMap().forEach((v : any | null, k : string) => { payload[k] = v })
+      payload['openid'] = this.userId
+      const res = await _patchBody(`${BASE}/api/health-documents/${id}`, payload)
+      if (res == null || res!.getBoolean('success') != true) return null
+      return res
+    },
+
+    // The date picker's value lands here. re_extract rides along: a date is only ever set to
+    // rescue a read the missing date refused, so re-running is the point, not a second step.
+    // The miniapp's <picker end="{{today}}"> cap is carried over via :end="today".
+    async onDocDateChange(e : any | null, id : number) {
+      if (!this.canUpload) return
+      const ymd = (e as UniPickerChangeEvent).detail.value as string
+      const ok = await this._patch(id, { 'doc_date': ymd, 're_extract': true } as UTSJSONObject)
+      if (ok == null) { this._toast(_tr(this.t, 'errGeneric')); return }
+      this._toast(_tr(this.t, 'dateSaved'), true)
+      this._loadDocuments()
+    },
+
+    // Tapping the type badge: an action sheet over the doc types. No re-run — the type is a
+    // badge on the row and the report, not something the extraction depends on.
+    changeType(id : number) {
+      if (!this.canUpload) return
+      const labels : string[] = []
+      for (const k of DOC_TYPES) labels.push(this._typeLabel(k))
+      uni.showActionSheet({
+        itemList: labels,
+        success: (r) => { (async () : Promise<void> => {
+          if (r.tapIndex < 0 || r.tapIndex >= DOC_TYPES.length) return
+          const docType = DOC_TYPES[r.tapIndex]
+          const ok = await this._patch(id, { 'doc_type': docType } as UTSJSONObject)
+          if (ok == null) { this._toast(_tr(this.t, 'errGeneric')); return }
+          this._toast(_tr(this.t, 'typeSaved'), true)
+          this._loadDocuments()
+        })() },
+        fail: () => {},
+      })
+    },
+
+    toggleStructured(id : number) {
+      const rebuilt : UTSJSONObject[] = []
+      for (const d of this.documents) {
+        const row = new UTSJSONObject()
+        d.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+        if ((d.getNumber('id') ?? 0) == id) row['structuredOpen'] = d.getBoolean('structuredOpen') != true
+        rebuilt.push(row)
+      }
+      this.documents = rebuilt
+    },
+
+    // Re-run. The server clears the previous extraction BEFORE queueing, which is mandatory
+    // rather than tidy: health_events dedupes on (user_id, source, external_id), so a corrected
+    // value for the same marker and date would otherwise be a silent no-op.
+    async rerunExtraction(id : number) {
+      if (!this.canUpload) return
+      const res = await postBody(`${BASE}/api/health-documents/${id}/extract`, { 'openid': this.userId } as UTSJSONObject)
+      if (res == null || res!.getBoolean('success') != true) { this._toast(_tr(this.t, 'errGeneric')); return }
+      this._toast(res!.getBoolean('queued') == true ? _tr(this.t, 'extRerunOk') : _tr(this.t, 'extRerunBusy'), true)
+      this._loadDocuments()
+    },
+
+    // 解析有误 — throw the reading away and keep the document. Deliberately a different action
+    // from deleting the document: the user is saying the reading was wrong, not the file.
+    rejectExtraction(id : number) {
+      if (!this.canUpload) return
+      uni.showModal({
+        title: _tr(this.t, 'extClearedTitle'),
+        content: _tr(this.t, 'extClearedBody'),
+        confirmColor: '#E05C5C',
+        success: (m) => { (async () : Promise<void> => {
+          if (!m.confirm) return
+          const res = await deleteBody(`${BASE}/api/health-documents/${id}/extraction?openid=${encodeURIComponent(this.userId)}`, null)
+          // The miniapp only failed the action on a transport error (wx.request resolves a 4xx
+          // with a body it never inspected) — getBody returns null in exactly that case.
+          if (res == null) { this._toast(_tr(this.t, 'errGeneric')); return }
+          this._toast(_tr(this.t, 'extCleared'), true)
+          this._loadDocuments()
+        })() },
+      })
+    },
+
+    async _loadDocuments() {
+      if (this.userId.length == 0) return
+      const res = await getBody(`${BASE}/api/health-documents?openid=${encodeURIComponent(this.userId)}&include_structured=1${this._scope()}`)
+      if (res == null) { this.docsLoading = false; return }
+      // which rows were open before the refetch
+      const openIds : number[] = []
+      for (const d of this.documents) {
+        if (d.getBoolean('structuredOpen') == true) openIds.push(d.getNumber('id') ?? 0)
+      }
+      const docs : UTSJSONObject[] = []
+      const raw = res!.getArray<UTSJSONObject>('documents') ?? ([] as UTSJSONObject[])
+      for (const d of raw) {
+        const row = new UTSJSONObject()
+        d.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+        const ext = _objOf(d['extraction'])
+        const extStatus = ext != null ? (ext!.getString('status') ?? '') : ''
+        row['typeLabel'] = this._typeLabel(d.getString('doc_type'))
+        row['sizeLabel'] = this._sizeLabel(d.getNumber('size_bytes'))
+        row['extLabel'] = this._extLabel(ext)
+        row['extBusy'] = ext != null && ['queued', 'claimed', 'processing', 'grouped'].indexOf(extStatus) != -1
+        row['extDone'] = ext != null && extStatus == 'completed'
+        row['extNone'] = ext == null
+        row['extFailed'] = ext != null && extStatus == 'failed'
+        row['extMissingDate'] = ext != null && extStatus == 'completed' && _truthy(ext!['missing_date']) && !_present(d['doc_date'])
+        const structured = _objOf(d['structured'])
+        row['structuredRows'] = (structured != null && structured!.getNumber('version') != 2)
+          ? flattenStructured(structured, 0, '', ([] as UTSJSONObject[]))
+          : ([] as UTSJSONObject[])
+        row['structuredBlocks'] = structuredV2Blocks(structured)
+        row['hasStructured'] = structured != null
+        row['structuredOpen'] = openIds.indexOf(d.getNumber('id') ?? 0) != -1
+        row['tagChips'] = tagChips(d['tags'], this.lang == 'en' ? T_EN : T_ZH, this.lang)
+        docs.push(row)
+      }
+      this.documents = docs
+      this.docsLoading = false
+      this.today = todayStr()
+      // The host counts documents toward the twin's Medical Records layer (user-health's
+      // _recomputeTwinLayers). Uploaded records are that layer even before extraction runs.
+      const dates : string[] = []
+      for (const d of docs) {
+        const dd = d.getString('doc_date') ?? ''
+        if (dd.length > 0) { dates.push(dd); continue }
+        const created = _strOf(d['created_at'])
+        if (created.length > 0) dates.push(created.slice(0, 10))
+      }
+      dates.sort()
+      this.$emit('loaded', {
+        'count': docs.length,
+        'latestDate': dates.length > 0 ? dates[dates.length - 1] : null,
+      } as UTSJSONObject)
+    },
+
+    // Two sources, because they have different platform prerequisites and different real-world
+    // uses: a PDF already sitting in a WeChat chat, or a photo of a paper record.
+    chooseDocument() {
+      if (this.uploading) return
+      if (this.collapsible && !this.expanded) this.expanded = true
+      uni.showActionSheet({
+        itemList: [_tr(this.t, 'sourcePdf'), _tr(this.t, 'sourcePhoto')],
+        success: (r) => {
+          if (r.tapIndex == 0) this._choosePdf()
+          else this._choosePhoto()
+        },
+        fail: () => {},
+      })
+    },
+
+    // wx.chooseMessageFile is the ONLY way to obtain a PDF in a Mini Program, and it reads from
+    // a WeChat *conversation*, not the device filesystem — hence the instruction in the empty
+    // state. It also required the 「选中的文件」 privacy declaration; without it WeChat rejected
+    // the call outright (errno 112) with no runtime consent flow to rescue it, so the miniapp
+    // surfaced that plainly and pointed the user at the photo path.
+    //
+    // xapp-mini uses wx.chooseMessageFile (below). TODO(port): native has no chat-file picker —
+    // device testing to confirm.
+    // uni.chooseFile reads the device filesystem, not a conversation, so the empty-state hint
+    // ("send the file to 文件传输助手 first") is WeChat-only wording; the privacy-scope branch
+    // below (errno 112) can never fire outside WeChat and is kept for parity.
+    _choosePdf() {
+      const t = this.t
+      // #ifdef MP-WEIXIN
+      // xapp-mini: the miniapp's wx.chooseMessageFile — a file from a WeChat conversation, which is
+      // what the empty-state hint describes. Results are plain WeChat objects.
+      wx.chooseMessageFile({
+        type: 'all',
+        count: 1,
+        success: (res : any) => {
+          const files = res.tempFiles as any[]
+          if (files == null || files.length == 0) return
+          const f = files[0]
+          const path = `${f.path}`
+          const name = f.name != null && `${f.name}`.length > 0 ? `${f.name}` : `record.${extOf(path).length > 0 ? extOf(path) : 'jpg'}`
+          const sizeBytes = f.size != null ? (f.size as number) : 0
+          if (ALLOWED_EXTENSIONS.indexOf(extOf(name)) == -1) {
+            uni.showModal({ title: _tr(t, 'unsupportedTitle'), content: _tr(t, 'unsupportedBody'), showCancel: false, confirmText: _tr(t, 'gotIt') })
+            return
+          }
+          if (sizeBytes > MAX_BYTES) { this._toast(_tr(t, 'errTooLarge')); return }
+          this._uploadDocument(new UploadFile(path, name, sizeBytes))
+        },
+        fail: (err : any) => {
+          const errMsg = err != null && err.errMsg != null ? `${err.errMsg}` : ''
+          console.log(JSON.stringify({ level: 'WARN', msg: 'wx.chooseMessageFile failed', data: { errMsg } }))
+          if (/cancel|deny/i.test(errMsg)) return
+          if (/privacy|scope/i.test(errMsg)) {
+            uni.showModal({ title: _tr(t, 'pdfUnavailableTitle'), content: _tr(t, 'pdfUnavailableBody'), showCancel: false, confirmText: _tr(t, 'gotIt') })
+            return
+          }
+          this._toast(_tr(t, 'errPickFile'))
+        },
+      } as any)
+      return
+      // #endif
+      uni.chooseFile({
+        // 'all' rather than 'file': a lab report someone forwarded as an IMAGE would be invisible
+        // under type:'file'. The extension filter only applies to type:'file' anyway, so
+        // validation happens below — which also lets us say what went wrong instead of silently
+        // hiding the file the user is looking at.
+        type: 'all',
+        count: 1,
+        success: (res) => {
+          // TODO(port): the picker's tempFiles entry shape (path / name / size) is to confirm on
+          // device — outside WeChat the handle is a native file object, not the miniapp's.
+          const files = res.tempFiles
+          if (files.length == 0) return
+          const f = _objOf(files[0])
+          if (f == null) return
+          const path = _strOf(f!['path'])
+          // Images picked from a chat have no `name`; fall back to the temp path's extension.
+          const rawName = _strOf(f!['name'])
+          const name = rawName.length > 0 ? rawName : `record.${extOf(path).length > 0 ? extOf(path) : 'jpg'}`
+          const size = parseFloat(_strOf(f!['size']))
+          const sizeBytes = isNaN(size) ? 0 : size
+          const ext = extOf(name)
+          if (ALLOWED_EXTENSIONS.indexOf(ext) == -1) {
+            uni.showModal({ title: _tr(t, 'unsupportedTitle'), content: _tr(t, 'unsupportedBody'), showCancel: false, confirmText: _tr(t, 'gotIt') })
+            return
+          }
+          if (sizeBytes > MAX_BYTES) { this._toast(_tr(t, 'errTooLarge')); return }
+          this._uploadDocument(new UploadFile(path, name, sizeBytes))
+        },
+        fail: (err : any | null) => {
+          const errMsg = err != null ? `${err}` : ''
+          console.log(JSON.stringify({ level: 'WARN', msg: 'chooseFile failed', data: { errMsg } }))
+          // User backed out of the picker — say nothing.
+          if (/cancel|deny/i.test(errMsg)) return
+          if (/privacy|scope/i.test(errMsg)) {
+            uni.showModal({ title: _tr(t, 'pdfUnavailableTitle'), content: _tr(t, 'pdfUnavailableBody'), showCancel: false, confirmText: _tr(t, 'gotIt') })
+            return
+          }
+          this._toast(_tr(t, 'errPickFile'))
+        },
+      })
+    },
+
+    // Photograph a paper record, or pick an existing photo. Same album/camera permission the
+    // chat tab's image upload already uses, so this path needs no additional declaration.
+    _choosePhoto() {
+      const t = this.t
+      uni.chooseImage({
+        count: 1,
+        // miniapp: mediaType ['image'], sourceType ['album','camera'], sizeType ['original']
+        success: (res) => {
+          const paths = res.tempFilePaths
+          if (paths.length == 0) return
+          const path = `${paths[0]}`
+          const files = res.tempFiles
+          let size = 0
+          if (files.length > 0) {
+            const s = parseFloat(`${_objOf(files[0])?.get('size')}`)
+            if (!isNaN(s)) size = s
+          }
+          if (size > MAX_BYTES) { this._toast(_tr(t, 'errTooLarge')); return }
+          // chooseImage gives no filename — derive one from the temp path's extension so the
+          // server can resolve a content type and the list has something readable to show.
+          const parts = path.split('.')
+          const ext = (parts.length > 1 ? parts[parts.length - 1] : 'jpg').toLowerCase()
+          const stamp = todayStr()
+          this._uploadDocument(new UploadFile(path, `${_tr(t, 'photoName')}-${stamp}.${ext}`, size))
+        },
+        fail: (err : any) => {
+          const errMsg = err != null ? `${err}` : ''
+          if (/cancel|deny/i.test(errMsg)) return
+          console.log(JSON.stringify({ level: 'WARN', msg: 'chooseImage failed', data: { errMsg } }))
+          this._toast(_tr(t, 'errPickFile'))
+        },
+      })
+    },
+
+    // presign → read → PUT → register. Mirrors utils/tool-actions.js's _doUpload; the PUT's
+    // Content-Type must be exactly what presign returned, since it is part of the signature.
+    async _uploadDocument(file : UploadFile) {
+      const t = this.t
+      // Three phases, because a single 'uploading' label covered ~95% of the wait and never
+      // moved while it did — indistinguishable from a hang on a large scan over a slow uplink.
+      // The file read alone is seconds on a 20MB PDF (it pulls the whole file into the heap) and
+      // reports nothing, so it gets its own phase rather than hiding inside the transfer's.
+      //
+      // The accompanying bar is INDETERMINATE by necessity, not by preference: the raw request
+      // exposes no upload progress events, and uni.uploadFile — the only API that does — sends
+      // multipart/form-data, which would break the OSS presigned PUT's signature (it signs the
+      // raw body plus Content-Type). A real percentage needs an OSS POST-policy upload and a
+      // different presign shape server-side. Until then this says "still working" rather than
+      // inventing a number nothing can measure.
+      this.uploading = true
+      this.uploadStatus = _tr(t, 'preparing')
+      this.expanded = true
+      try {
+        const pre = await getBody(`${BASE}/api/health-documents/presign?openid=${encodeURIComponent(this.userId)}`
+          + `&filename=${encodeURIComponent(file.name)}&size_bytes=${file.size}`)
+        const preErr = pre != null ? (pre!.getString('error') ?? '') : ''
+        if (pre == null || pre!.getBoolean('success') != true) throw new Error(preErr.length > 0 ? preErr : 'presign failed')
+        const key = pre!.getString('key') ?? ''
+        const putUrl = pre!.getString('put_url') ?? ''
+        const putContentType = pre!.getString('put_content_type') ?? ''
+        if (key.length == 0 || putUrl.length == 0) throw new Error('presign incomplete')
+
+        const bytes = await readFileBytes(file.path)
+        if (bytes == null) throw new Error('read failed')
+
+        this.uploadStatus = _tr(t, 'uploading')
+        // Binary PUT straight to OSS — request.uts's putBody is JSON-only, so this one call
+        // goes through uni.request directly (data accepts ArrayBuffer on Android 4.51+/iOS 4.61+).
+        const putCode : number = await new Promise<number>((resolve : (v : number) => void, reject : (e : any | null) => void) => {
+          uni.request<UTSJSONObject>({
+            url: putUrl,
+            method: 'PUT' as RequestMethod,
+            header: { 'Content-Type': putContentType } as UTSJSONObject,
+            data: bytes!,
+            success: (res) => { resolve(res.statusCode) },
+            fail: (err) => { reject(new Error('PUT network: ' + err.errMsg)) },
+          })
+        })
+        if (putCode != 200) throw new Error('PUT ' + putCode)
+
+        this.uploadStatus = _tr(t, 'registering')
+        const reg = await postBody(`${BASE}/api/health-documents`, {
+          'openid': this.userId, 'oss_key': key, 'filename': file.name,
+          'size_bytes': file.size, 'doc_type': 'other',
+        } as UTSJSONObject)
+        if (reg == null || reg!.getBoolean('success') != true) throw new Error('register failed')
+
+        this.uploading = false
+        this.uploadStatus = ''
+        this._loadDocuments()
+      } catch (e : any) {
+        this.uploading = false
+        this.uploadStatus = ''
+        this._toast(_tr(t, 'errUpload'))
+      }
+    },
+
+    // Two viewers, because documents do not render inline in a template and images do not open
+    // in a document viewer. The extension has to drive the choice.
+    //
+    // xapp-mini opens documents with wx.openDocument. TODO(port): Android/iOS have no equivalent — opening a PDF or
+    // Word file needs a UTS document-viewer plugin (or a web-view on the presigned URL). The
+    // download step is kept so the file is local once a viewer is wired; until then a
+    // non-image document reports 无法打开该文件 instead of pretending to succeed.
+    async openDocument(id : number) {
+      const t = this.t
+      uni.showLoading({ title: _tr(t, 'opening'), mask: true })
+      try {
+        const res = await getBody(
+          `${BASE}/api/health-documents/${id}/url?openid=${encodeURIComponent(this.userId)}${this._scope()}`)
+        if (res == null || res!.getBoolean('success') != true) throw new Error('no url')
+        const url = res!.getString('url') ?? ''
+        const ext = extOf(res!.getString('filename')).length > 0 ? extOf(res!.getString('filename')) : extOf(url)
+
+        uni.hideLoading()
+        if (IMAGE_EXTENSIONS.indexOf(ext) != -1) {
+          // previewImage takes the URL directly — no download step, and it gives pinch-zoom,
+          // which is what someone reading a photographed lab printout actually needs.
+          // (miniapp passed current: the url string; uni-app x's current is an index.)
+          uni.previewImage({
+            urls: [url],
+            current: 0,
+            fail: () => this._toast(_tr(t, 'errOpen')),
+          })
+          return
+        }
+
+        uni.downloadFile({
+          url: url,
+          success: (dl) => {
+            if (dl.statusCode != 200) { this._toast(_tr(t, 'errOpen')); return }
+            const filePath = dl.tempFilePath
+            const _fileType = DOC_EXTENSIONS.indexOf(ext) != -1 ? ext : 'pdf'
+            // #ifdef MP-WEIXIN
+            // xapp-mini: WeChat's own document viewer, as the miniapp (showMenu: forward/save).
+            wx.openDocument({ filePath: filePath, fileType: _fileType, showMenu: true, fail: () => { this._toast(_tr(t, 'errOpen')) } } as any)
+            return
+            // #endif
+            // uni.openDocument({ filePath, fileType: _fileType }) — see the TODO(port) above.
+            console.log(JSON.stringify({ level: 'WARN', msg: 'document viewer not available on uni-app x yet', data: { filePath, fileType: _fileType } }))
+            this._toast(_tr(t, 'errOpen'))
+          },
+          fail: () => this._toast(_tr(t, 'errOpen')),
+        })
+      } catch (err : any) {
+        uni.hideLoading()
+        this._toast(_tr(t, 'errOpen'))
+      }
+    },
+
+    deleteDocument(id : number, name : string) {
+      if (!this.canUpload) return
+      uni.showModal({
+        title: name,
+        content: _tr(this.t, 'deleteConfirm'),
+        confirmColor: '#E05C5C',
+        success: (m) => { (async () : Promise<void> => {
+          if (!m.confirm) return
+          const res = await deleteBody(`${BASE}/api/health-documents/${id}?openid=${encodeURIComponent(this.userId)}`, null)
+          // Same as the miniapp: only a transport error (null body) counts as a failure here.
+          if (res == null) { this._toast(_tr(this.t, 'errGeneric')); return }
+          this._toast(_tr(this.t, 'okDeleted'), true)
+          this._loadDocuments()
+        })() },
+      })
+    },
+  }
+}
+
+function todayStr() : string {
+  const d = new Date()
+  const p = (n : number) : string => n < 10 ? `0${n}` : `${n}`
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+</script>
+
+<style>
+/* Native only — the web build is styled by static/web/ (the web user-app's own CSS). */
+/* #ifndef WEB */
+/* Structural pass of health-documents.wxss — rpx halved to px, the CSS custom properties
+   (--fs-*, --wave-rgb, --blue-rgb, --wave, --steel) resolved to their dark-theme literals the
+   same way the rest of src/xapp does it (blue rgba(99,117,236,α), wave #A6C4E5, steel #7A9ABF).
+   The light theme exists on xapp-mini only (the MP-WEIXIN block at the end); native has none,
+   since uni-app x has no descendant rules.
+   // TODO(port): the miniapp's indeterminate upload bar is a translateX @keyframes animation —
+   uni-app x CSS carries no keyframe animation for this; the bar renders as a static stripe. */
+.hd-root { flex-direction: column; }
+.hd-section { padding: 16px 18px; border-bottom-width: 1px; border-bottom-color: rgba(99, 117, 236, 0.08); border-bottom-style: solid; }
+.hd-section-head { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.hd-section-head-toggle { min-height: 44px; margin-bottom: 0; }
+.hd-expanded-body { margin-top: 12px; }
+.hd-section-head-main { flex: 1; }
+.hd-section-title-row { flex-direction: row; align-items: flex-end; }
+.hd-section-title { font-size: 10px; font-weight: bold; letter-spacing: 2px; color: rgba(166, 196, 229, 0.4); }
+.hd-section-count { font-size: 11px; color: rgba(166, 196, 229, 0.4); margin-left: 7px; }
+.hd-section-head-actions { flex-direction: row; align-items: center; }
+.hd-compact-doc { flex-direction: column; margin-top: 4px; }
+.hd-compact-name { font-size: 12px; color: #A6C4E5; lines: 1; text-overflow: ellipsis; }
+.hd-compact-summary { font-size: 12px; color: #A6C4E5; lines: 1; text-overflow: ellipsis; margin-top: 4px; }
+.hd-compact-meta { font-size: 10px; color: rgba(166, 196, 229, 0.45); lines: 1; text-overflow: ellipsis; }
+.hd-upload-compact { padding-left: 9px; padding-right: 9px; height: 44px; flex-direction: row; align-items: center; justify-content: center; border-radius: 7px; border-width: 1px; border-color: rgba(99, 117, 236, 0.35); border-style: solid; margin-left: 7px; }
+.hd-upload-compact-txt { font-size: 11px; color: #A0B4FF; }
+.hd-expand-control { min-width: 34px; flex-direction: column; align-items: center; justify-content: center; margin-left: 7px; }
+.hd-expand-label { font-size: 9px; color: rgba(166, 196, 229, 0.55); }
+.hd-expand-chevron { font-size: 13px; color: rgba(166, 196, 229, 0.55); }
+.hd-muted { font-size: 12px; color: rgba(166, 196, 229, 0.45); padding-top: 6px; padding-bottom: 6px; }
+.hd-upload-btn { padding-top: 11px; padding-bottom: 11px; border-radius: 7px; border-width: 1px; border-style: dashed; border-color: rgba(99, 117, 236, 0.35); align-items: center; margin-bottom: 11px; }
+.hd-upload-btn-txt { font-size: 13px; color: #A0B4FF; }
+.hd-btn-busy { opacity: 0.55; }
+.hd-progress { height: 2px; border-radius: 2px; background-color: rgba(99, 117, 236, 0.12); overflow: hidden; margin-bottom: 11px; }
+.hd-progress-bar { width: 40%; height: 2px; border-radius: 2px; background-color: #A0B4FF; }
+.hd-empty { padding: 10px 2px; flex-direction: column; }
+.hd-empty-title { font-size: 13px; color: #7A9ABF; margin-bottom: 5px; }
+.hd-empty-hint { font-size: 11px; line-height: 18px; color: rgba(166, 196, 229, 0.45); }
+/* The wrapper owns the row separator, because a document now spans two rows: the file itself and
+ * an optional actions strip. Putting the border on .hd-doc would draw a line between them. */
+.hd-doc-wrap { border-bottom-width: 1px; border-bottom-color: rgba(99, 117, 236, 0.06); border-bottom-style: solid; flex-direction: column; }
+.hd-doc { flex-direction: row; align-items: center; padding-top: 10px; padding-bottom: 10px; }
+.hd-doc-main { flex: 1; flex-direction: column; }
+.hd-doc-name { font-size: 13px; color: #A6C4E5; margin-bottom: 4px; lines: 1; text-overflow: ellipsis; }
+.hd-doc-meta { flex-direction: row; align-items: center; }
+.hd-doc-badge { font-size: 10px; padding-top: 2px; padding-bottom: 2px; padding-left: 6px; padding-right: 6px; border-radius: 3px; background-color: rgba(99, 117, 236, 0.14); color: #A0B4FF; margin-right: 7px; }
+.hd-doc-badge-tap { padding-right: 5px; }
+.hd-doc-sub { font-size: 10px; color: rgba(166, 196, 229, 0.4); margin-right: 7px; }
+.hd-doc-ext { font-size: 11px; color: #7FBF9F; margin-top: 4px; }
+.hd-doc-ext-busy { color: rgba(166, 196, 229, 0.45); }
+.hd-doc-summary { font-size: 11px; line-height: 17px; color: rgba(166, 196, 229, 0.5); margin-top: 4px; }
+.hd-doc-del { font-size: 11px; color: #E05C5C; padding-left: 12px; padding-top: 5px; padding-bottom: 5px; }
+.hd-doc-actions { flex-direction: row; padding-bottom: 9px; }
+.hd-doc-action { font-size: 11px; color: #A0B4FF; margin-right: 14px; }
+.hd-doc-action-warn { color: #E05C5C; }
+.hd-doc-fix { flex-direction: column; padding-bottom: 7px; }
+.hd-doc-fix-hint { font-size: 11px; line-height: 17px; color: #E0A05C; margin-bottom: 4px; }
+/* Matches user-health's .fact-footnote, the same "what this data is for" note one section up. */
+.hd-footnote { font-size: 10px; line-height: 16px; color: rgba(166, 196, 229, 0.35); margin-top: 8px; }
+/* Tags: what the document states about the person. A fact is solid, a descriptor is outlined. */
+.hd-tags { flex-direction: row; flex-wrap: wrap; margin-bottom: 7px; }
+.hd-tag { flex-direction: row; align-items: center; padding-top: 3px; padding-bottom: 3px; padding-left: 7px; padding-right: 7px; border-radius: 20px; border-width: 1px; border-style: solid; border-color: rgba(166, 196, 229, 0.25); margin-right: 4px; margin-bottom: 4px; }
+.hd-tag-fact { background-color: rgba(99, 117, 236, 0.16); border-color: rgba(99, 117, 236, 0.35); }
+.hd-tag-desc { background-color: rgba(0, 0, 0, 0); }
+.hd-tag-inactive { opacity: 0.55; }
+.hd-tag-cat { font-size: 10px; color: rgba(166, 196, 229, 0.5); margin-right: 4px; }
+.hd-tag-label { font-size: 10px; font-weight: 600; color: #A6C4E5; margin-right: 4px; }
+.hd-tag-status { font-size: 10px; color: rgba(166, 196, 229, 0.5); }
+/* The structured block: a key/value tree indented by depth. Generic by design. */
+.hd-struct { flex-direction: column; margin-bottom: 9px; padding: 7px 9px; border-radius: 6px; background-color: rgba(99, 117, 236, 0.06); }
+.hd-struct-sec { flex-direction: column; }
+.hd-struct-row { flex-direction: row; padding-top: 2px; padding-bottom: 2px; }
+.hd-struct-head { margin-top: 3px; }
+.hd-struct-key { flex: 1; font-size: 11px; line-height: 17px; color: rgba(166, 196, 229, 0.5); }
+.hd-struct-key-head { color: rgba(166, 196, 229, 0.75); font-weight: bold; }
+.hd-struct-val { flex: 1; font-size: 11px; line-height: 17px; color: #A6C4E5; }
+/* Version-2 tables: a real grid, horizontally scrollable when a 体检 table is wider than the phone. */
+.hd-table-wrap { width: 100%; margin-top: 3px; margin-bottom: 5px; }
+.hd-table { flex-direction: column; }
+.hd-table-row { flex-direction: row; }
+.hd-table-cell { font-size: 11px; line-height: 17px; color: #A6C4E5; min-width: 60px; padding-right: 6px; }
+.hd-table-cell-head { color: rgba(166, 196, 229, 0.75); font-weight: bold; }
+/* #endif */
+/* #ifdef MP-WEIXIN */
+/* Android's CSS has no baseline alignment; WeChat matches the miniapp's title row. */
+.hd-section-title-row { align-items: baseline; }
+/* xapp puts these labels in their own <text>, which does not inherit the miniapp's parent colour. */
+.theme-light .hd-upload-btn-txt, .theme-light .hd-upload-compact-txt { color: #2942E5; }
+.theme-light .hd-tag-label { color: #14243D; }
+/* Light theme, from the miniapp's stylesheet: its own .theme-light rules, plus each of its colour
+   declarations that reads a CSS variable restated under .theme-light. The variables come from the
+   miniapp's app.wxss in App.uvue and flip under the page's .theme-light; xapp's rules above carry
+   dark literals, which never would. */
+.theme-light .hd-section { border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.08); }
+.theme-light .hd-section-title { color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .hd-section-count { color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .hd-compact-name, .theme-light .hd-compact-summary { color: var(--wave, #A6C4E5); }
+.theme-light .hd-compact-meta { color: rgba(var(--wave-rgb), 0.45); }
+.theme-light .hd-upload-compact { border: 1rpx solid rgba(var(--blue-rgb), 0.35); }
+.theme-light .hd-expand-control { color: rgba(var(--wave-rgb), 0.55); }
+.theme-light .hd-muted { color: rgba(var(--wave-rgb), 0.45); }
+.theme-light .hd-upload-btn { border: 1rpx dashed rgba(var(--blue-rgb), 0.35); }
+.theme-light .hd-progress { background: rgba(var(--blue-rgb), 0.12); }
+.theme-light .hd-progress-bar { background: linear-gradient(90deg, rgba(var(--blue-rgb), 0.15), #A0B4FF, rgba(var(--blue-rgb), 0.15)); }
+.theme-light .hd-empty-title { color: var(--steel); }
+.theme-light .hd-empty-hint { color: rgba(var(--wave-rgb), 0.45); }
+.theme-light .hd-doc-wrap { border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.06); }
+.theme-light .hd-doc-ext-busy { color: rgba(var(--wave-rgb), 0.45); }
+.theme-light .hd-doc-summary { color: rgba(var(--wave-rgb), 0.5); }
+.theme-light .hd-doc-name { color: var(--wave, #A6C4E5); }
+.theme-light .hd-doc-badge { background: rgba(var(--blue-rgb), 0.14); }
+.theme-light .hd-doc-sub { color: rgba(var(--wave-rgb), 0.4); }
+.theme-light .hd-footnote { color: rgba(var(--wave-rgb), 0.35); }
+.theme-light .hd-struct { background: rgba(var(--blue-rgb), 0.06); }
+.theme-light .hd-struct-head .hd-struct-key { color: rgba(var(--wave-rgb), 0.75); }
+.theme-light .hd-struct-key { color: rgba(var(--wave-rgb), 0.5); }
+.theme-light .hd-struct-val { color: var(--wave, #A6C4E5); }
+.theme-light .hd-table-header .hd-table-cell { color: rgba(var(--wave-rgb), 0.75); border-bottom: 1rpx solid rgba(var(--wave-rgb), 0.18); }
+.theme-light .hd-table-cell { color: var(--wave, #A6C4E5); }
+.theme-light .hd-tag { border: 1rpx solid rgba(var(--wave-rgb), 0.25); color: var(--wave, #A6C4E5); }
+.theme-light .hd-tag-fact { background: rgba(var(--blue-rgb), 0.16); border-color: rgba(var(--blue-rgb), 0.35); }
+.theme-light .hd-tag-desc { color: rgba(var(--wave-rgb), 0.65); }
+.theme-light .hd-tag-cat { color: rgba(var(--wave-rgb), 0.5); }
+.theme-light .hd-tag-status { color: rgba(var(--wave-rgb), 0.5); }
+.theme-light .hd-doc-badge,
+.theme-light .hd-upload-btn,
+.theme-light .hd-upload-compact { color: #2942E5; }
+.theme-light .hd-compact-name, .theme-light .hd-compact-summary { color: #14243D; }
+.theme-light .hd-compact-meta, .theme-light .hd-expand-control { color: #607090; }
+.theme-light .hd-progress { background: rgba(41, 66, 229, 0.10); }
+.theme-light .hd-progress-bar { background: linear-gradient(90deg, rgba(41, 66, 229, 0.12), #2942E5, rgba(41, 66, 229, 0.12)); }
+.theme-light .hd-empty-title { color: #607090; }
+.theme-light .hd-doc-name { color: #14243D; }
+.theme-light .hd-doc-ext { color: #2E8B57; }
+.theme-light .hd-doc-summary { color: #607090; }
+.theme-light .hd-doc-action { color: #2942E5; }
+.theme-light .hd-struct { background: rgba(41, 66, 229, 0.05); }
+.theme-light .hd-table-cell { color: #14243D; }
+.theme-light .hd-table-header .hd-table-cell { color: #14243D; border-bottom-color: rgba(20, 36, 61, 0.15); }
+.theme-light .hd-tag { color: #14243D; border-color: rgba(20, 36, 61, 0.2); }
+.theme-light .hd-tag-fact { background: rgba(41, 66, 229, 0.1); border-color: rgba(41, 66, 229, 0.3); }
+.theme-light .hd-tag-desc { color: #607090; }
+.theme-light .hd-tag-cat, .theme-light .hd-tag-status { color: #607090; }
+.theme-light .hd-struct-key { color: #607090; }
+.theme-light .hd-struct-head .hd-struct-key { color: #14243D; }
+.theme-light .hd-struct-val { color: #14243D; }
+.theme-light .hd-doc-fix-hint { color: #B8741E; }
+/* The miniapp colours .hd-expand-control and its text inherits; xapp's <text> inherits nothing, so the
+   label and chevron carried their dark-theme colour (faint 展开 on light). */
+.theme-light .hd-expand-label, .theme-light .hd-expand-chevron { color: #607090; }
+/* `lines: 1` is uni-app x only — WeChat ignores it and the meta line wrapped. The miniapp's own clamp: */
+.hd-compact-name, .hd-compact-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hd-compact-meta { max-width: 360rpx; }
+/* #endif */
+/* #ifdef MP-WEIXIN */
+/* Text size (菜单 › 字体大小), from the miniapp's stylesheet: every rule of its whose font-size reads
+   var(--fs-N), with the line-height it declares. The variables come from App.uvue's copy of app.wxss,
+   rescaled under the page's .fs-1/.fs-2/.fs-3, and inherit into components; this file's own px sizes
+   never would. Regenerate (tools/xapp-mini/style-gen: fsvars.js, then fsinherit.js) when the miniapp's sizes change. */
+.hd-section-title { font-size: var(--fs-20, 20rpx); }
+.hd-section-count { font-size: var(--fs-22, 22rpx); }
+.hd-compact-name, .hd-compact-summary { font-size: var(--fs-23, 23rpx); }
+.hd-compact-meta { font-size: var(--fs-20, 20rpx); }
+.hd-upload-compact, .hd-upload-compact-txt { font-size: var(--fs-21, 21rpx); }
+.hd-expand-label { font-size: var(--fs-18, 18rpx); }
+.hd-muted { font-size: var(--fs-24, 24rpx); }
+.hd-upload-btn, .hd-upload-btn-txt { font-size: var(--fs-25, 25rpx); }
+.hd-empty-title { font-size: var(--fs-25, 25rpx); }
+.hd-empty-hint { font-size: var(--fs-22, 22rpx); line-height: 1.6; }
+.hd-doc-ext { font-size: var(--fs-22, 22rpx); }
+.hd-doc-summary { font-size: var(--fs-22, 22rpx); line-height: 1.55; }
+.hd-doc-action { font-size: var(--fs-22, 22rpx); }
+.hd-doc-name { font-size: var(--fs-26, 26rpx); }
+.hd-doc-badge { font-size: var(--fs-20, 20rpx); }
+.hd-doc-sub { font-size: var(--fs-21, 21rpx); }
+.hd-doc-del { font-size: var(--fs-23, 23rpx); }
+.hd-footnote { font-size: var(--fs-20, 20rpx); line-height: 1.6; }
+.hd-doc-fix-hint { font-size: var(--fs-21, 21rpx); line-height: 1.55; }
+.hd-struct-row { font-size: var(--fs-22, 22rpx); line-height: 1.5; }
+.hd-table-cell { font-size: var(--fs-22, 22rpx); line-height: 1.5; }
+.hd-tag { font-size: var(--fs-20, 20rpx); line-height: 1.4; }
+/* …and the miniapp text that sets no size of its own but inherits one (xapp's <text> inherits nothing). */
+.hd-tag-cat { font-size: var(--fs-20, 20rpx); }
+.hd-tag-label { font-size: var(--fs-20, 20rpx); }
+.hd-tag-status { font-size: var(--fs-20, 20rpx); }
+.hd-struct-key { font-size: var(--fs-22, 22rpx); }
+.hd-struct-val { font-size: var(--fs-22, 22rpx); }
+/* #endif */
+</style>

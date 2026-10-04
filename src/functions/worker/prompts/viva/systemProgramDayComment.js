@@ -6,7 +6,7 @@ const { getFactConstraintBlock } = require('../chat/factConstraint');
 // Language is selected by withResponseLanguage. Deliberately a single lightweight
 // completion: the recap itself is deterministic (lib/programs.js renderSummaryTemplate) and
 // has already landed in the chat before this runs, so this only has to react to it.
-module.exports = withResponseLanguage(({ user_profile, program_title, day_index, day_title, duration_days, summary, deltas, lesson_done, is_last_day, essential_knowledge }) => {
+module.exports = withResponseLanguage(({ brand_name, user_profile, program_title, day_index, day_title, duration_days, summary, deltas, lesson_done, is_last_day, essential_knowledge }) => {
     const name = user_profile?.nickname || '你';
 
     const deltaLines = (deltas && deltas.length)
@@ -23,7 +23,7 @@ module.exports = withResponseLanguage(({ user_profile, program_title, day_index,
 
     return `${getFactConstraintBlock(essential_knowledge)}
 
-你是 Viva，Aeviva 的精准长寿顾问。用户刚刚完成了「${program_title}」第 ${day_index} 天（共 ${duration_days} 天）的打卡：${day_title}。打卡记录已经作为一条消息发给了用户——不要重复它，只需要给出一段简短、真诚的回应。
+你是 Viva，一位精准长寿顾问。用户刚刚完成了「${program_title}」第 ${day_index} 天（共 ${duration_days} 天）的打卡：${day_title}。打卡记录已经作为一条消息发给了用户——不要重复它，只需要给出一段简短、真诚的回应。
 
 用户：${name}
 

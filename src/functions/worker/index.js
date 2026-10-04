@@ -105,7 +105,7 @@ const { handlePostBoxBatch, handleGetBoxBatches, handleGetBoxBatchBoxes, handleG
 const { handleGetAgFormulationReviewSnapshot, handlePostAgFormulationApproved, handleGetAgFormulationStatus } = require('./handlers/ag_formulation');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
 const { handleResolvePhone, handleBindPhone, handleWxLogin, handleWxAppLogin, handleValidateInvite, handleGetMyReferrals, handlePostWebviewToken, handleExchangeWebviewToken, handlePostAdminWebviewToken, handleExchangeAdminWebviewToken, handlePostQrLoginInit, handleGetQrLoginStatus, handlePostQrLoginConfirm, handleGetMyCoach } = require('./handlers/login');
-const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified, handlePhoneOtpList, handlePhoneOtpRemove, handlePhoneOtpAdminAdd } = require('./handlers/phone-otp');
+const { handlePhoneOtpSend, handlePhoneOtpVerify, handlePhoneOtpBind, handlePhoneSetPrimary, handlePhoneAcceptUnverified, handlePhoneOtpList, handlePhoneOtpRemove, handlePhoneOtpAdminAdd, currentSessionShape } = require('./handlers/phone-otp');
 const { handleEmailOtpSend, handleEmailOtpVerify, handleEmailOtpBind, handleEmailSetPrimary, handleEmailOtpList, handleEmailOtpRemove, handleEmailOtpAdminAdd } = require('./handlers/email-otp');
 const { saveChatMessage, fetchTagDerivationContext, resolveOrUpsertUser, handleGetChatHistory, handlePostBiomarkers, handlePostChat, handleChatGenerateEvent, handlePostChatMessages, handlePostHeartbeat, handlePostHealthAdvice, handlePostAnalyzeImage, handlePostHealthEvent, handlePostHealthEventsSync, handleGetHealthEvents, handleGetHealthTwin, handleGetWearableInsights, handleGetOssPresign, _fireQuestionnaireAnsweredFollowup } = require('./handlers/chat');
 const { CHAT_EVENT_SOURCE } = require('./lib/chatEventBridge');
@@ -292,11 +292,13 @@ exports.handler = async (req, resp, context) => {
         return optionsPayload;
     }
 
-    // WeChat business domain verification file — no auth required
-    if (method === 'GET' && rawPath === '/QJaeMN3iR8.txt') {
-        const wxVerifyPayload = { isBase64Encoded: false, statusCode: 200, headers: { 'Content-Type': 'text/plain' }, body: 'e038f3e1651b72fc26feaf9eb6cf30e7' };
-        if (isStandardHttp) { resp.setStatusCode(200); resp.setHeader('Content-Type', 'text/plain'); resp.send('e038f3e1651b72fc26feaf9eb6cf30e7'); return; }
-        return wxVerifyPayload;
+    // WeChat business domain verification files — no auth required. One per mini-program appid:
+    // QJaeMN3iR8 for the miniapp's, 7zkfaknx0A for xapp-mini's (wxecbcf00ce480fcf2).
+    const WX_VERIFY_FILES = { '/QJaeMN3iR8.txt': 'e038f3e1651b72fc26feaf9eb6cf30e7', '/7zkfaknx0A.txt': '89cebc19782abaaafedfeb87130ec176' };
+    if (method === 'GET' && WX_VERIFY_FILES[rawPath]) {
+        const wxVerifyBody = WX_VERIFY_FILES[rawPath];
+        if (isStandardHttp) { resp.setStatusCode(200); resp.setHeader('Content-Type', 'text/plain'); resp.send(wxVerifyBody); return; }
+        return { isBase64Encoded: false, statusCode: 200, headers: { 'Content-Type': 'text/plain' }, body: wxVerifyBody };
     }
 
     // Public certificate verification — no auth required
@@ -1022,6 +1024,11 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostKinoScan(parsedBody);
             } else if (path === '/heartbeat') {
                 result = await handlePostHeartbeat(parsedBody);
+                // Current channel + own coach identity, so the client can replace its sign-in copy.
+                if (result?.success && parsedBody?.user_id) {
+                    const shape = await currentSessionShape(parsedBody.user_id);
+                    if (shape) Object.assign(result, shape);
+                }
             } else if (path.includes('/chat-messages')) {
                 result = await handlePostChatMessages(parsedBody);
             } else if (path.includes('/cartridge-insert')) {

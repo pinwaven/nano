@@ -1,0 +1,114 @@
+// BleTransport for the WeChat mini-program build (xapp-mini): WeChat's own Bluetooth API, the
+// same calls the miniapp's utils/wearable/ble-manager.js makes. Installed once from App.uvue
+// onLaunch under #ifdef MP-WEIXIN; everything above it (BLEManager, halo/, v8/, sync) is shared.
+//
+// wx.* rather than uni.*: uni-app x declares only part of the Bluetooth API (no discovery calls),
+// and this file only ever runs inside WeChat. Bytes cross the transport as number[]; ArrayBuffer
+// only at the write/notify edge.
+
+// #ifdef MP-WEIXIN
+import { BleTransport, BleScanDevice, BleService, BleCharacteristic, CharChangeFn } from './transport.uts'
+
+function _err(e : any, fallback : string) : Error {
+  const msg = (e as any)?.errMsg
+  return new Error(msg != null ? `${msg}` : fallback)
+}
+
+let _deviceFound : ((devices : BleScanDevice[]) => void) | null = null
+let _deviceFoundAttached = false
+// One per BLEManager that attached; each dispatches through its own handler map (the miniapp
+// registers one wx listener per manager, with the same effect).
+const _charChange : CharChangeFn[] = []
+let _charChangeAttached = false
+
+function _attachDeviceFound() {
+  if (_deviceFoundAttached) return
+  _deviceFoundAttached = true
+  wx.onBluetoothDeviceFound((res : any) => {
+    const cb = _deviceFound
+    if (cb == null) return
+    const out : BleScanDevice[] = []
+    for (const d of (res.devices as any[])) {
+      const name = d.name != null && `${d.name}`.length > 0 ? `${d.name}` : (d.localName != null ? `${d.localName}` : '')
+      out.push(new BleScanDevice(`${d.deviceId}`, name, d.RSSI as number))
+    }
+    cb(out)
+  })
+}
+
+function _attachCharChange() {
+  if (_charChangeAttached) return
+  _charChangeAttached = true
+  wx.onBLECharacteristicValueChange((res : any) => {
+    const bytes : number[] = Array.from(new Uint8Array(res.value as ArrayBuffer))
+    for (const cb of _charChange) cb(`${res.deviceId}`, `${res.characteristicId}`, bytes)
+  })
+}
+
+export function createMpWeixinTransport() : BleTransport {
+  const t = new BleTransport()
+
+  t.openAdapter = () : Promise<void> => new Promise<void>((resolve, reject) => {
+    // An 'already opened' errMsg is tolerated by BLEManager.openAdapter.
+    wx.openBluetoothAdapter({ success: () => { resolve() }, fail: (e : any) => { reject(_err(e, 'openBluetoothAdapter failed')) } } as any)
+  })
+  t.closeAdapter = () => { wx.closeBluetoothAdapter({} as any) }
+
+  t.onDeviceFound = (cb : ((devices : BleScanDevice[]) => void) | null) => {
+    _deviceFound = cb
+    if (cb != null) _attachDeviceFound()
+  }
+  t.startDiscovery = (services : string[]) : Promise<void> => new Promise<void>((resolve, reject) => {
+    wx.startBluetoothDevicesDiscovery({
+      services, allowDuplicatesKey: false,
+      success: () => { resolve() }, fail: (e : any) => { reject(_err(e, 'startBluetoothDevicesDiscovery failed')) },
+    } as any)
+  })
+  t.stopDiscovery = () => { wx.stopBluetoothDevicesDiscovery({} as any) }
+
+  t.createConnection = (deviceId : string) : Promise<void> => new Promise<void>((resolve, reject) => {
+    wx.createBLEConnection({ deviceId, success: () => { resolve() }, fail: (e : any) => { reject(_err(e, 'createBLEConnection failed')) } } as any)
+  })
+  t.closeConnection = (deviceId : string) => { wx.closeBLEConnection({ deviceId } as any) }
+
+  // iOS has no setBLEMTU and rejects; BLEManager swallows it (best-effort, as in the miniapp).
+  t.negotiateMtu = (deviceId : string, mtu : number) : Promise<void> => new Promise<void>((resolve, reject) => {
+    wx.setBLEMTU({ deviceId, mtu, success: () => { resolve() }, fail: (e : any) => { reject(_err(e, 'setBLEMTU failed')) } } as any)
+  })
+
+  t.getServices = (deviceId : string) : Promise<BleService[]> => new Promise<BleService[]>((resolve, reject) => {
+    wx.getBLEDeviceServices({
+      deviceId,
+      success: (res : any) => { resolve((res.services as any[]).map((s : any) : BleService => new BleService(`${s.uuid}`))) },
+      fail: (e : any) => { reject(_err(e, 'getBLEDeviceServices failed')) },
+    } as any)
+  })
+  t.getCharacteristics = (deviceId : string, serviceUUID : string) : Promise<BleCharacteristic[]> => new Promise<BleCharacteristic[]>((resolve, reject) => {
+    wx.getBLEDeviceCharacteristics({
+      deviceId, serviceId: serviceUUID,
+      success: (res : any) => { resolve((res.characteristics as any[]).map((c : any) : BleCharacteristic => new BleCharacteristic(`${c.uuid}`))) },
+      fail: (e : any) => { reject(_err(e, 'getBLEDeviceCharacteristics failed')) },
+    } as any)
+  })
+  t.enableNotify = (deviceId : string, serviceUUID : string, charUUID : string) : Promise<void> => new Promise<void>((resolve, reject) => {
+    wx.notifyBLECharacteristicValueChange({
+      deviceId, serviceId: serviceUUID, characteristicId: charUUID, state: true,
+      success: () => { resolve() }, fail: (e : any) => { reject(_err(e, 'notifyBLECharacteristicValueChange failed')) },
+    } as any)
+  })
+
+  t.onCharacteristicChange = (cb : CharChangeFn | null) => {
+    if (cb == null) return
+    _charChange.push(cb)
+    _attachCharChange()
+  }
+
+  t.write = (deviceId : string, serviceUUID : string, charUUID : string, packet : number[]) : Promise<void> => new Promise<void>((resolve, reject) => {
+    wx.writeBLECharacteristicValue({
+      deviceId, serviceId: serviceUUID, characteristicId: charUUID, value: new Uint8Array(packet).buffer,
+      success: () => { resolve() }, fail: (e : any) => { reject(_err(e, 'writeBLECharacteristicValue failed')) },
+    } as any)
+  })
+  return t
+}
+// #endif

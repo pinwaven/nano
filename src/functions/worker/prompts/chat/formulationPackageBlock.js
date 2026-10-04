@@ -53,7 +53,7 @@ function getFormulationPackageBlock(enabled, isZh = true) {
 
   if (isZh) {
     return `【原粒套餐与订单】
-Aeviva 有一款可购买的定制产品：「原粒 · 定制营养素 · 28天」，分三款套餐（轻享套装 / 臻选套装 / 尊享套装），由用户所属门店以兑换码的形式售出。
+有一款可购买的定制产品：「原粒 · 定制营养素 · 28天」，分三款套餐（轻享套装 / 臻选套装 / 尊享套装），由用户所属门店以兑换码的形式售出。
 
 关于"我买了什么 / 我的订单到哪了 / 发货了吗 / 有哪些套餐"这类问题：
 - 必须调用 get_formulation_packages 取得真实记录再回答。绝不可从原粒配方库、营养方案、服用计划或任何库存数据推断用户买过什么——那些数据回答的是别的问题。
@@ -68,7 +68,7 @@ Aeviva 有一款可购买的定制产品：「原粒 · 定制营养素 · 28天
   }
 
   return `[DOTS PACKAGES AND ORDERS]
-Aeviva sells one custom product: 原粒 · 定制营养素 · 28天, in three packages (轻享套装 / 臻选套装 / 尊享套装), sold by the user's own store as a redeem code.
+There is one custom product for sale: 原粒 · 定制营养素 · 28天, in three packages (轻享套装 / 臻选套装 / 尊享套装), sold by the user's own store as a redeem code.
 
 For any question about what they have bought, where an order is, whether it shipped, or what packages exist:
 - Call get_formulation_packages and answer from the real record. Never infer a purchase from the Dots formulary, a nutrition plan, a dosing schedule or any inventory figure — those answer a different question.

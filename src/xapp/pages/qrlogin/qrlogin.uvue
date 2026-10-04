@@ -1,0 +1,143 @@
+<template>
+  <view class="qr-screen">
+    <view class="qr-card">
+      <text class="qr-title">{{ statusTitle }}</text>
+      <text class="qr-hint">{{ hintText }}</text>
+      <text v-if="errorMsg.length > 0" class="qr-error">{{ errorMsg }}</text>
+      <view v-if="status == 'idle' || status == 'error'" class="qr-btn" v-on:click="scanAndConfirm">
+        <text class="btn-text">扫码并确认登录</text>
+      </view>
+      <view v-if="status == 'confirmed'" class="qr-btn" v-on:click="cancelLogin">
+        <text class="btn-text">完成，返回</text>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+// Ported from miniapp pages/qrlogin/qrlogin.js. Entry inverted: the miniapp was LAUNCHED BY
+// scanning a wxacode (scene carried in options); a native app cannot read a mini-program
+// code, so this page scans the web panel's QR itself (uni.scanCode) and confirms against
+// the backend the code names. GAP: the web login panel must emit a plain-text QR
+// (`[d:]<session_id>` payload) for xapp clients — wxacode images are unreadable outside
+// WeChat. Same /qr-login/confirm contract (own session token proves who grants the login).
+
+import { BASE, BUILD_ENV } from '../../utils/config.uts'
+import { state } from '../../utils/state.uts'
+import { postBody } from '../../utils/request.uts'
+import { scanQr } from '../../utils/web-ui.uts'
+
+export default {
+  name: 'QrloginPage',
+  data() {
+    return {
+      status: 'idle', // idle | loading | confirmed | error
+      errorMsg: '',
+      nickname: '',
+    }
+  },
+  computed: {
+    statusTitle() : string {
+      if (this.status == 'confirmed') return '登录已确认'
+      if (this.status == 'loading') return '确认中…'
+      if (this.nickname.length > 0) return `以 ${this.nickname} 登录网页后台`
+      return '网页后台登录'
+    },
+    hintText() : string {
+      if (this.status == 'confirmed') return '请在电脑浏览器中继续操作。'
+      return '请扫描网页后台登录页上的二维码（Native App 版）。'
+    }
+  },
+  onLoad(_options : OnLoadOptions) {
+    const user = state.user
+    if (user != null) {
+      const nick = user!.getString('nickname')
+      this.nickname = nick != null ? nick : ''
+    }
+  },
+  methods: {
+    scanAndConfirm() {
+      scanQr({
+        success: (res) => {
+          this._confirmWithScene(res.result)
+        },
+        fail: (_) => {
+          this.status = 'error'
+          this.errorMsg = '扫码失败，请重试'
+        }
+      })
+    },
+    _confirmWithScene(rawScene : string) {
+      var scene = rawScene
+      try { const d = decodeURIComponent(rawScene); if (d != null) scene = d } catch (e : any) {}
+      if (scene.length == 0) {
+        this.status = 'error'
+        this.errorMsg = '二维码无效，请重新扫描'
+        return
+      }
+      const isDev = scene.startsWith('d:')
+      const sessionId = isDev ? scene.substring(2) : scene
+      // Never switch backends on a scanned code: confirming posts this build's session token,
+      // so a `d:` QR in a release build would hand a prod session to the dev server (and the
+      // reverse can't validate anyway). A QR for the other backend is refused.
+      if (isDev != (BUILD_ENV == 'develop')) {
+        this.status = 'error'
+        this.errorMsg = isDev ? '这是测试环境的二维码，请使用正式版网页后台' : '这是正式环境的二维码，请使用测试版网页后台'
+        return
+      }
+      const user = state.user
+      if (user == null || user!.getString('user_id') == null) {
+        this.status = 'error'
+        this.errorMsg = '请先登录后再扫码'
+        return
+      }
+      this.status = 'loading'
+      this.errorMsg = ''
+      postBody(`${BASE}/api/qr-login/confirm`, {
+        session_id: sessionId,
+        openid: user!.getString('user_id'),
+      } as UTSJSONObject).then((res) => {
+        if (res != null && res.getBoolean('success') == true) {
+          this.status = 'confirmed'
+        } else {
+          const err = res != null ? res.getString('error') : null
+          this.status = 'error'
+          this.errorMsg = err != null ? err : '确认失败，请重试'
+        }
+      })
+    },
+    cancelLogin() {
+      uni.navigateBack()
+    }
+  }
+}
+</script>
+
+<style>
+.qr-screen {
+  flex: 1;
+  background-color: #0B1C2E;
+  justify-content: center;
+  align-items: center;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+.qr-card {
+  width: 100%;
+  background-color: #12283F;
+  border-radius: 16px;
+  padding: 20px;
+}
+.qr-title { color: #EAF2FB; font-size: 17px; font-weight: bold; margin-bottom: 8px; }
+.qr-hint { color: rgba(166, 196, 229, 0.7); font-size: 13px; }
+.qr-error { color: #FF6B6B; font-size: 12px; margin-top: 8px; }
+.qr-btn {
+  height: 46px;
+  background-color: #2E7CF6;
+  border-radius: 12px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16px;
+}
+.btn-text { color: #FFFFFF; font-size: 15px; font-weight: bold; }
+</style>

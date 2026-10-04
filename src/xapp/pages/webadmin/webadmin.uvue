@@ -1,0 +1,22 @@
+<template>
+  <view class="av-screen">
+    <web-view :src="adminUrl" />
+  </view>
+</template>
+
+<script>
+// Ported from miniapp pages/webadmin/webadmin.js — a full-page web-view on the admin panel.
+// Auth inside the panel rides the existing /qr-login + session upgrade flow, unchanged.
+export default {
+  name: 'WebadminPage',
+  data() {
+    return {
+      adminUrl: 'https://nano.gcn.net/admin',
+    }
+  }
+}
+</script>
+
+<style>
+.av-screen { flex: 1; background-color: #0B1C2E; }
+</style>

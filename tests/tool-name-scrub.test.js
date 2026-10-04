@@ -83,3 +83,8 @@ test('a bare English status label in a zh reply is localised, inside metric card
   assert.ok(out.includes('The high road is normal here, and that is good.'), 'an English sentence is left alone');
   assert.strictEqual(localizeStatusWords(text, 'en'), text);
 });
+
+test('dropForeignLines keeps a reply written wholly in English for a zh-language user', () => {
+  const text = "I'm Viva, your AI-powered longevity advisor from SuperiorMed.\n\nLet me know what you would like to explore first today.";
+  assert.strictEqual(dropForeignLines(text, 'zh'), text, 'nothing Chinese is left to keep, so nothing is dropped');
+});

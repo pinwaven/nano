@@ -44,4 +44,29 @@ async function resolveGcnSector(channelId, db = pool) {
     return (root && GCN_SECTOR_FOR_ROOT_CHANNEL[root]) || null;
 }
 
-module.exports = { resolveRootChannelKey, resolveGcnSector, GCN_SECTOR_FOR_ROOT_CHANNEL };
+// The company Viva says she belongs to (「Viva，<brand> 的精准长寿顾问」). channels.config.brand_name,
+// `{zh, en}` or a plain string, inherited down the tree through effective_channel_config — so a
+// SuperiorMed sub-channel says SuperiorMed. null = unset (prompts/viva/brand.js falls back to
+// Aeviva). Never throws: a lookup failure only costs the override.
+async function resolveChannelBrand(channelId, db = pool) {
+    if (channelId === null || channelId === undefined) return null;
+    try {
+        const { rows } = await db.query(
+            `SELECT effective_channel_config($1, 'brand_name') AS brand_name`, [channelId]);
+        return normalizeBrandName(rows[0]?.brand_name);
+    } catch (err) {
+        console.log(JSON.stringify({ level: 'WARN', msg: 'channel-brand-lookup-failed', data: { channelId, err: err.message } }));
+        return null;
+    }
+}
+
+function normalizeBrandName(v) {
+    if (typeof v === 'string') return v.trim() ? { zh: v.trim(), en: v.trim() } : null;
+    if (!v || typeof v !== 'object') return null;
+    const zh = typeof v.zh === 'string' ? v.zh.trim() : '';
+    const en = typeof v.en === 'string' ? v.en.trim() : '';
+    if (!zh && !en) return null;
+    return { zh: zh || en, en: en || zh };
+}
+
+module.exports = { resolveRootChannelKey, resolveGcnSector, resolveChannelBrand, normalizeBrandName, GCN_SECTOR_FOR_ROOT_CHANNEL };

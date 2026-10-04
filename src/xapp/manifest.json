@@ -1,0 +1,57 @@
+{
+  "name": "nano-xapp",
+  "appid": "",
+  "description": "uni-app x port of the Waven Nano WeChat miniapp (src/mini/nano-miniapp)",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "uni-app-x": {},
+  "app": {
+    "distribute": {
+      "android": {
+        "packagename": "net.gcn.nano",
+        "minSdkVersion": 21,
+        "targetSdkVersion": 33,
+        "abiFilters": [
+          "arm64-v8a"
+        ],
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.INTERNET\"/>",
+          "<uses-permission android:name=\"android.permission.CAMERA\"/>",
+          "<uses-permission android:name=\"android.permission.BLUETOOTH\"/>",
+          "<uses-permission android:name=\"android.permission.BLUETOOTH_ADMIN\"/>",
+          "<uses-permission android:name=\"android.permission.BLUETOOTH_SCAN\"/>",
+          "<uses-permission android:name=\"android.permission.BLUETOOTH_CONNECT\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\"/>",
+          "<uses-permission android:name=\"android.permission.RECORD_AUDIO\"/>",
+          "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>"
+        ]
+      },
+      "ios": {
+        "bundleidentifier": "net.gcn.nano"
+      }
+    }
+  },
+  "mp-weixin": {
+    "__usePrivacyCheck__": true,
+    "requiredBackgroundModes": [
+      "audio"
+    ],
+    "plugins": {
+      "WechatSI": {
+        "version": "0.3.10",
+        "provider": "wx069ba97219f66d99"
+      }
+    },
+    "permission": {
+      "scope.bluetooth": {
+        "desc": "用于连接您的健康戒指，读取健康数据"
+      },
+      "scope.record": {
+        "desc": "用于语音输入转文字"
+      },
+      "scope.writePhotosAlbum": {
+        "desc": "用于保存商家收款二维码，以便在支付宝中扫码付款"
+      }
+    }
+  }
+}

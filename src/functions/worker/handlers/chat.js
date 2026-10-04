@@ -70,7 +70,8 @@ const { analyzeWearable } = require('../lib/wearableAnalysis');
 // Channels with a GCN storefront behind them resolve to their GCN sector through the channel
 // tree (lib/channels.js — aeviva and waven roots). Nothing else has a catalog to recommend
 // from, so the store fetch is gated on this rather than on persona alone.
-const { resolveGcnSector } = require('../lib/channels');
+const { resolveGcnSector, resolveChannelBrand, normalizeBrandName } = require('../lib/channels');
+const { vivaBrand, DEFAULT_BRAND } = require('../prompts/viva/brand');
 
 // Suppress any product whose declared allergens/cautions collide with something the user has
 // already told us (user_memory_facts, CLAUDE.md §27). Deliberately a hard filter applied BEFORE
@@ -146,8 +147,8 @@ async function saveChatMessage(user_id, role, content, image_url = null, persona
 
 function _vivaSubscriptionExpiredMessage(language) {
     return language === 'zh'
-        ? 'Viva 订阅已过期，请前往 Aeviva 商城续订后继续对话。'
-        : 'Your Viva subscription has expired. Please renew in the Aeviva store to keep chatting.';
+        ? 'Viva 订阅已过期，请在商城续订后继续对话。'
+        : 'Your Viva subscription has expired. Please renew it in the store to keep chatting.';
 }
 
 // Roles the `since_id` incremental poll is allowed to ask for. 'ai' also matches rows written
@@ -212,6 +213,53 @@ async function handleGetChatHistory(openid, sinceId = null, beforeId = null, rol
     } catch (err) {
         return { success: false, error: err.message };
     }
+}
+
+// The reply language lives only in the system prompt (prompts/viva/response-language.js), and
+// a history of replies in the other language outweighs it: right after the menu's language
+// switch, Pin's "hi" in English drew the previous Chinese reply back word for word, even with a
+// trailing system reminder (2026-10-03, reproduced against qwen-plus-latest). A note on the
+// current user turn is what the model follows. Only added when the last reply is in the other
+// language — i.e. just after a switch — and only to the in-memory history the model sees,
+// never to chat_messages.
+function _addLanguageSwitchNote(history, language) {
+    const last = history[history.length - 1];
+    if (!last || last.role !== 'user') return history;
+    const prevReply = [...history].reverse().find(m => m.role === 'assistant');
+    if (!prevReply || !prevReply.content) return history;
+    const cjk = (prevReply.content.match(/[\u4e00-\u9fff]/g) || []).length;
+    const latin = (prevReply.content.match(/[A-Za-z]/g) || []).length;
+    const prevZh = cjk > latin;
+    const wantZh = (language || 'zh') !== 'en';
+    if (prevZh === wantZh) return history;
+    last.content = wantZh
+        ? `[用户已把应用切换为中文——从现在起请用简体中文回复。] ${last.content}`
+        : `[The user has switched the app to English — reply in English from now on.] ${last.content}`;
+    return history;
+}
+
+// Same history-over-prompt effect for Viva's company: after a channel gets its own brand
+// (SuperiorMed, 2026-10-03), a user who had asked "Who are you" before kept getting the old
+// "I'm Viva — Aeviva's precision longevity advisor…" reply word for word — 3 of 3 against the
+// real prod history, while the prompt said SuperiorMed. Viva is now brand-neutral (2026-10-04,
+// prompts/viva/brand.js vivaBrandRule) and the same copying put "…advisor at SuperiorMed" back
+// into 4 of 10 English "Who are you" replies. So the company name is taken out of Viva's own
+// earlier replies — the default and the channel's, both languages. In-memory only, never
+// written back to chat_messages; the user's turns are untouched.
+function _neutralizeHistoryBrand(history, brandName) {
+    const names = [...new Set([DEFAULT_BRAND, vivaBrand(brandName, 'zh'), vivaBrand(brandName, 'en')])]
+        .map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const b = `(?:${names.join('|')})`;
+    const patterns = [
+        new RegExp(`,?\\s*(?:powered by|built by|made by|developed by|from|at|by|of|with)\\s+${b}\\b`, 'gi'),
+        new RegExp(`${b}\\s*[’']s\\s+`, 'gi'),
+        new RegExp(`(?:由\\s*)?${b}\\s*(?:旗下|研发|开发|打造|推出)?的?\\s*`, 'gi'),
+    ];
+    for (const m of history) {
+        if (m.role !== 'assistant' || typeof m.content !== 'string') continue;
+        for (const re of patterns) m.content = m.content.replace(re, '');
+    }
+    return history;
 }
 
 async function resolveOrUpsertUser(body) {
@@ -1414,6 +1462,7 @@ async function _fireQuestionnaireAnsweredFollowup(userId, assignmentId) {
         current_solar_term: currentSolarTerm,
         essential_knowledge: essentialKnowledge,
         user_facts: factsRes.rows,
+        brand_name: await resolveChannelBrand(user.channel_id),
     };
 
     const systemPrompt = vivaPrompts.casual_chat(llmContext);
@@ -1460,16 +1509,18 @@ async function handlePostChat(body) {
     // Resolve persona from an active per-user override, else channel config (defaults to 'nano')
     let channelPersonaType = 'nano';
     let channelSubAgeNames = null;
+    let channelBrandName = null;
     let channelKeyName = null;
     let gcnSector = null;
     if (user.channel_id) {
         try {
-            const chRes = await pool.query(`SELECT key_name, effective_persona_type(id) AS persona_type, effective_channel_config(id, 'sub_age_display_names') AS sub_age_display_names FROM channels WHERE id = $1`, [user.channel_id]);
+            const chRes = await pool.query(`SELECT key_name, effective_persona_type(id) AS persona_type, effective_channel_config(id, 'sub_age_display_names') AS sub_age_display_names, effective_channel_config(id, 'brand_name') AS brand_name FROM channels WHERE id = $1`, [user.channel_id]);
             const chConfig = chRes.rows[0] || {};
             channelKeyName = chRes.rows[0]?.key_name || null;
             gcnSector = await resolveGcnSector(user.channel_id);
             channelPersonaType = chRes.rows[0]?.persona_type ?? 'nano';
             channelSubAgeNames = chConfig.sub_age_display_names || null;
+            channelBrandName = normalizeBrandName(chConfig.brand_name);
         } catch (err) {
             console.log(JSON.stringify({ level: 'WARN', msg: 'Failed to fetch channel persona, defaulting to nano', error: err.message }));
         }
@@ -1868,6 +1919,7 @@ async function handlePostChat(body) {
                     milestones_done: parseInt(p.milestones_done || 0, 10),
                 })),
                 sub_age_display_names: channelSubAgeNames,
+                brand_name: channelBrandName,
                 current_solar_term: currentSolarTerm,
                 essential_knowledge: essentialKnowledge,
                 user_facts: fetched.user_facts?.rows || [],
@@ -1963,6 +2015,8 @@ async function handlePostChat(body) {
                 if (lastTurn && lastTurn.role === 'user') lastTurn.content = message;
                 else cleanHistory.push({ role: 'user', content: message });
             }
+            _addLanguageSwitchNote(cleanHistory, user.language);
+            if (personaType === 'viva') _neutralizeHistoryBrand(cleanHistory, channelBrandName);
 
             // The shared grounding-retry check below (verifyBiomarkerGrounding) rebuilds its
             // correction attempt from this plain system+history message list regardless of
@@ -2971,6 +3025,7 @@ async function handlePostHealthAdvice(body) {
             essential_knowledge: essentialKnowledge,
             user_facts: factsResult.rows,
             now_iso: getNowShanghai().toISO(),
+            brand_name: await resolveChannelBrand(user.channel_id),
         }) + managedVoiceBlock(user);
 
         // A managed customer's advice is requested by, and written for, their coach (§49): the
@@ -3558,6 +3613,8 @@ module.exports = {
     // exported for tests — pure helpers, no DB/LLM dependency
     stripTrailingQuestion,
     extractDateMentions,
+    _addLanguageSwitchNote,
+    _neutralizeHistoryBrand,
     _stripActionTails,
     _filterProductsByUserFacts,
     _validateProductRecommendations,

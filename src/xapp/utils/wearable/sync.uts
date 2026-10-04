@@ -1,0 +1,411 @@
+// Ported from miniapp utils/wearable/sync.js — brand-agnostic snapshot → health_events upload.
+// Rules kept verbatim: sleep keyed per session date with same-day merge; V8's null stage split
+// uploads null not 0 (§18); per-measurement HRV/SpO2/temp events with their own external_id;
+// realtime fallback only when no slots; 500-event batch cap with sequential batching so a
+// backlog can shrink.
+//
+// Slot arrays (stepSlots/sleepHistory/sleepSlots/hrSlots/hrvSlots/spo2Slots/tempSlots) are
+// carried as UTSJSONObject built by the page-side snapshot builder — same JSON shapes the
+// miniapp pushes. ISO formatting is done with civil-calendar arithmetic (UTS Date.toISOString
+// unverified).
+
+import { BASE } from '../config.uts'
+import { dateStrToAbsMins } from './halo/parsers.uts'
+
+const MAX_EVENTS_PER_CALL = 500 // server hard-rejects the whole call above this
+const OFFSET_MS = 8 * 60 * 60 * 1000
+
+export class WearableSnapshot {
+  source : string = 'smart_ring'
+  wearableName : string | null = null
+  steps : number | null = null
+  calories : number | null = null
+  distance : number | null = null
+  stepSlots : UTSJSONObject[] = []
+  sleepMinutes : number | null = null
+  sleepDeep : number | null = null
+  sleepLight : number | null = null
+  sleepRem : number | null = null
+  sleepAwake : number | null = null
+  sleepStart : number | null = null
+  sleepEnd : number | null = null
+  sleepSlots : UTSJSONObject[] = []
+  sleepHistory : UTSJSONObject[] = []
+  hrSlots : UTSJSONObject[] = []
+  restingHr : number | null = null
+  hrv : number | null = null
+  stress : number | null = null
+  spo2 : number | null = null
+  breathRate : number | null = null
+  heartRateFromHrv : number | null = null
+  systolicBP : number | null = null
+  diastolicBP : number | null = null
+  hrvMeasuredAt : string | null = null
+  hrvSlots : UTSJSONObject[] = []
+  spo2Slots : UTSJSONObject[] = []
+  tempSlots : UTSJSONObject[] = []
+  syncedAt : number = 0
+}
+
+export class SyncResult {
+  success : boolean
+  synced : number
+  skipped : number
+  error : string | null
+  constructor(success : boolean, synced : number, skipped : number, error : string | null) {
+    this.success = success
+    this.synced = synced
+    this.skipped = skipped
+    this.error = error
+  }
+}
+
+function _pad2(n : number) : string {
+  return n < 10 ? `0${n}` : `${n}`
+}
+
+function _pad3(n : number) : string {
+  if (n < 10) return `00${n}`
+  if (n < 100) return `0${n}`
+  return `${n}`
+}
+
+// epoch millis → 'YYYY-MM-DD' on the +08:00 calendar, dayOffset shifts whole days.
+function shanghaiDateStr(ms : number, dayOffset : number) : string {
+  const days = Math.floor((ms + OFFSET_MS) / 86400000) + dayOffset
+  // civil_from_days (Hinnant)
+  const z = days + 719468
+  const era = Math.floor((z >= 0 ? z : z - 146096) / 146097)
+  const doe = z - era * 146097
+  const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365)
+  const y = yoe + era * 400
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100))
+  const mp = Math.floor((5 * doy + 2) / 153)
+  const d = doy - Math.floor((153 * mp + 2) / 5) + 1
+  const m = mp < 10 ? mp + 3 : mp - 9
+  const yy = m <= 2 ? y + 1 : y
+  return `${yy}-${_pad2(m)}-${_pad2(d)}`
+}
+
+// epoch millis → true-UTC ISO 'YYYY-MM-DDTHH:mm:ss.sssZ'
+function _isoUtc(ms : number) : string {
+  const days = Math.floor(ms / 86400000)
+  const rem = ms - days * 86400000
+  const h = Math.floor(rem / 3600000)
+  const mi = Math.floor((rem % 3600000) / 60000)
+  const s = Math.floor((rem % 60000) / 1000)
+  const mss = rem % 1000
+  const z = days + 719468
+  const era = Math.floor((z >= 0 ? z : z - 146096) / 146097)
+  const doe = z - era * 146097
+  const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365)
+  const y = yoe + era * 400
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100))
+  const mp = Math.floor((5 * doy + 2) / 153)
+  const d = doy - Math.floor((153 * mp + 2) / 5) + 1
+  const m = mp < 10 ? mp + 3 : mp - 9
+  const yy = m <= 2 ? y + 1 : y
+  return `${yy}-${_pad2(m)}-${_pad2(d)}T${_pad2(h)}:${_pad2(mi)}:${_pad2(s)}.${_pad3(mss)}Z`
+}
+
+// Ring BCD 'YYYY-MM-DD HH:MM:SS' (Shanghai local) → UTC ISO; null if unparseable.
+function shanghaiTsToIso(ts : string) : string | null {
+  const p = ts.split(' ')
+  if (p.length < 2) return null
+  const ymd = p[0].split('-')
+  const hms = p[1].split(':')
+  if (ymd.length != 3 || hms.length < 2) return null
+  const y = parseInt(ymd[0])
+  const mo = parseInt(ymd[1])
+  const d = parseInt(ymd[2])
+  if (isNaN(y) || isNaN(mo) || isNaN(d)) return null
+  const secs = hms.length > 2 ? parseInt(hms[2]) : 0
+  const ms = dateStrToAbsMins(ts) * 60000 + (isNaN(secs) ? 0 : secs) * 1000 - OFFSET_MS
+  return _isoUtc(ms)
+}
+
+function _digitsOnly(s : string) : string {
+  let out = ''
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i) ?? 0
+    if (c >= 48 && c <= 57) out += s.charAt(i)
+  }
+  return out
+}
+
+// external_id fallback key: miniapp does toISOString().replace(/[:.]/g,'') — T and Z STAY,
+// so this must too (server upsert keys differ otherwise).
+function _stripColonDot(s : string) : string {
+  let out = ''
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charAt(i)
+    if (c != ':' && c != '.') out += c
+  }
+  return out
+}
+
+function _nullableNum(o : UTSJSONObject, key : string) : number | null {
+  return o.getNumber(key)
+}
+
+function _postBatch(openid : string, events : UTSJSONObject[], apiToken : string) : Promise<UTSJSONObject | null> {
+  return new Promise<UTSJSONObject | null>((resolve : (v : UTSJSONObject | null) => void, _reject : (e : any | null) => void) => {
+    const header = { 'Content-Type': 'application/json' } as UTSJSONObject
+    if (apiToken.length > 0) header['Authorization'] = `Bearer ${apiToken}`
+    uni.request<UTSJSONObject>({
+      url: `${BASE}/api/health-events/sync`,
+      method: 'POST' as RequestMethod,
+      header: header,
+      data: { openid: openid, events: events } as UTSJSONObject,
+      success: (res) => { resolve(res.data) },
+      fail: (err) => { resolve(null) },
+    })
+  })
+}
+export async function syncWearableData(openid : string, snapshot : WearableSnapshot, apiToken : string) : Promise<SyncResult> {
+  const nowMs = snapshot.syncedAt
+  const todayDate = shanghaiDateStr(nowMs, 0)
+  const sleepDate = shanghaiDateStr(nowMs, -1) // sleep is overnight — previous date
+  const recordedAt = _isoUtc(nowMs)
+  const src = snapshot.source
+  const events : UTSJSONObject[] = []
+
+  const _ev = (category : string, dataDate : string, externalId : string, data : UTSJSONObject) : UTSJSONObject => {
+    return {
+      category: category,
+      source: src,
+      wearable_name: snapshot.wearableName,
+      data_date: dataDate,
+      recorded_at: recordedAt,
+      external_id: externalId,
+      data: data,
+    } as UTSJSONObject
+  }
+
+  // — activity —
+  if (snapshot.steps != null || snapshot.calories != null || snapshot.distance != null) {
+    const data = {
+      steps: snapshot.steps,
+      calories: snapshot.calories,
+      distance_m: snapshot.distance,
+    } as UTSJSONObject
+    if (snapshot.stepSlots.length > 0) data['slots'] = snapshot.stepSlots
+    events.push(_ev('activity', todayDate, `${src}_activity_${todayDate}`, data))
+  }
+
+  // — sleep — one event per calendar date; same-date sessions merged, longest session sets
+  // onset/end (a min()/max() over minute-of-day would let a morning top-up win as the onset).
+  if (snapshot.sleepHistory.length > 0) {
+    const dates : string[] = []
+    const aggs = new Map<string, UTSJSONObject>()
+    const mainMinutes = new Map<string, number>()
+    for (const s of snapshot.sleepHistory) {
+      const total = s.getNumber('totalMinutes')
+      if (total == null || total! == 0) continue
+      const date = s.getString('date')
+      if (date == null) continue
+      let agg = aggs.get(date!)
+      if (agg == null) {
+        agg = {
+          totalMinutes: 0, deep: 0, light: 0, rem: 0, awake: 0, hasStages: false,
+          sleepStart: null, sleepEnd: null, slots: [] as UTSJSONObject[], sessions: [] as UTSJSONObject[],
+        } as UTSJSONObject
+        aggs.set(date!, agg)
+        mainMinutes.set(date!, 0)
+        dates.push(date!)
+      }
+      const a = agg!
+      a['totalMinutes'] = (a.getNumber('totalMinutes') ?? 0) + total!
+      a['deep'] = (a.getNumber('deep') ?? 0) + (s.getNumber('deep') ?? 0)
+      a['light'] = (a.getNumber('light') ?? 0) + (s.getNumber('light') ?? 0)
+      a['rem'] = (a.getNumber('rem') ?? 0) + (s.getNumber('rem') ?? 0)
+      a['awake'] = (a.getNumber('awake') ?? 0) + (s.getNumber('awake') ?? 0)
+      if (s.getNumber('deep') != null || s.getNumber('light') != null || s.getNumber('rem') != null || s.getNumber('awake') != null) {
+        a['hasStages'] = true
+      }
+      const curMain = mainMinutes.get(date!) ?? 0
+      const sleepStartVal = s.getNumber('sleepStart')
+      if (sleepStartVal != null && total! > curMain) {
+        mainMinutes.set(date!, total!)
+        a['sleepStart'] = sleepStartVal
+        a['sleepEnd'] = s.getNumber('sleepEnd')
+      }
+      const slotArr = s.getArray<UTSJSONObject>('slots')
+      if (slotArr != null) {
+        const existing = a.getArray<UTSJSONObject>('slots') ?? ([] as UTSJSONObject[])
+        for (const sl of slotArr!) existing.push(sl)
+        a['slots'] = existing
+      }
+      const sess = {
+        onset: s.getString('onset'),
+        totalMinutes: total,
+        deep: s.getNumber('deep'),
+        light: s.getNumber('light'),
+        rem: s.getNumber('rem'),
+        awake: s.getNumber('awake'),
+        sleepStart: sleepStartVal,
+        sleepEnd: s.getNumber('sleepEnd'),
+      } as UTSJSONObject
+      if (slotArr != null && slotArr!.length > 0) sess['slots'] = slotArr
+      const sessions = a.getArray<UTSJSONObject>('sessions') ?? ([] as UTSJSONObject[])
+      sessions.push(sess)
+      a['sessions'] = sessions
+    }
+
+    for (const date of dates) {
+      const a = aggs.get(date)!
+      const data = {
+        duration_minutes: a.getNumber('totalMinutes'),
+        // null, not 0, when no session reported a stage split — V8 leaves stages null by
+        // design (§18), and a summed 0 reads downstream as "no deep sleep at all".
+        deep_minutes: a.getBoolean('hasStages') == true ? a.getNumber('deep') : null,
+        light_minutes: a.getBoolean('hasStages') == true ? a.getNumber('light') : null,
+        rem_minutes: a.getBoolean('hasStages') == true ? a.getNumber('rem') : null,
+        awake_minutes: a.getBoolean('hasStages') == true ? a.getNumber('awake') : null,
+        sleep_start_min: a['sleepStart'],
+        sleep_end_min: a['sleepEnd'],
+        sessions: a.getArray<UTSJSONObject>('sessions') ?? ([] as UTSJSONObject[]),
+      } as UTSJSONObject
+      const slots = a.getArray<UTSJSONObject>('slots')
+      if (slots != null && slots!.length > 0) data['slots'] = slots
+      events.push(_ev('sleep', date, `${src}_sleep_${date}`, data))
+    }
+  } else if (snapshot.sleepMinutes != null && snapshot.sleepMinutes! > 0) {
+    const data = {
+      duration_minutes: snapshot.sleepMinutes,
+      deep_minutes: snapshot.sleepDeep,
+      light_minutes: snapshot.sleepLight,
+      rem_minutes: snapshot.sleepRem,
+      awake_minutes: snapshot.sleepAwake,
+      sleep_start_min: snapshot.sleepStart,
+      sleep_end_min: snapshot.sleepEnd,
+    } as UTSJSONObject
+    if (snapshot.sleepSlots.length > 0) data['slots'] = snapshot.sleepSlots
+    events.push(_ev('sleep', sleepDate, `${src}_sleep_${sleepDate}`, data))
+  }
+
+  // — daily vitals: resting HR + full-day HR log —
+  if (snapshot.restingHr != null || snapshot.hrSlots.length > 0) {
+    const data = { resting_hr: snapshot.restingHr } as UTSJSONObject
+    if (snapshot.hrSlots.length > 0) data['hr_slots'] = snapshot.hrSlots
+    events.push(_ev('vitals', todayDate, `${src}_resting_hr_${todayDate}`, data))
+  }
+
+  // — per-measurement HRV (one event per 0x56 reading, own external_id) —
+  for (const slot of snapshot.hrvSlots) {
+    const ts = slot.getString('timestamp')
+    if (ts == null) continue
+    const slotDate = ts!.substring(0, 10)
+    const data = {
+      hrv_ms: slot.getNumber('hrv'),
+      stress: slot.getNumber('stress'),
+      breath_rate: slot.getNumber('breath'),
+      heart_rate_hrv: slot.getNumber('heartRate'),
+      bp_systolic: slot.getNumber('highBP'),
+      bp_diastolic: slot.getNumber('lowBP'),
+    } as UTSJSONObject
+    const ev = _ev('vitals', slotDate, `${src}_hrv_${_digitsOnly(ts!)}`, data)
+    const iso = shanghaiTsToIso(ts!)
+    if (iso != null) ev['recorded_at'] = iso
+    events.push(ev)
+  }
+
+  // — per-measurement SpO2 —
+  for (const slot of snapshot.spo2Slots) {
+    const ts = slot.getString('timestamp')
+    if (ts == null) continue
+    const slotDate = ts!.substring(0, 10)
+    const data = { spo2: slot.getNumber('spo2') } as UTSJSONObject
+    const ev = _ev('vitals', slotDate, `${src}_spo2_${_digitsOnly(ts!)}`, data)
+    const iso = shanghaiTsToIso(ts!)
+    if (iso != null) ev['recorded_at'] = iso
+    events.push(ev)
+  }
+
+  // — per-measurement temperature (Halo and V8) —
+  // Halo slots carry `timestamp`; V8 slots carry the same 'YYYY-MM-DD HH:MM:SS' under `date`.
+  // The external_id keeps its two historical shapes (V8's is the date digits + '0000') so
+  // re-syncs keep upserting the same rows.
+  for (const slot of snapshot.tempSlots) {
+    const tsOpt = slot.getString('timestamp')
+    const dateOpt = slot.getString('date')
+    const bodyTemp = slot.getNumber('estimatedBodyTemp')
+    if (bodyTemp == null) continue
+    const ts = tsOpt != null ? _digitsOnly(tsOpt!) : `${_digitsOnly(dateOpt ?? todayDate)}0000`
+    const slotDate = tsOpt != null ? tsOpt!.substring(0, 10) : (dateOpt ?? todayDate).substring(0, 10)
+    const readingTs : string | null = tsOpt != null ? tsOpt : (dateOpt != null && dateOpt!.length > 10 ? dateOpt : null)
+    const data = {
+      body_temp_c: bodyTemp,
+      skin_temp_c: slot.getNumber('skinTemp'),
+    } as UTSJSONObject
+    const ev = _ev('vitals', slotDate, `${src}_temp_${ts}`, data)
+    if (readingTs != null) {
+      const iso = shanghaiTsToIso(readingTs!)
+      if (iso != null) ev['recorded_at'] = iso
+    }
+    events.push(ev)
+  }
+
+  // — single realtime vitals fallback (no per-measurement slots) —
+  const hasSlots = snapshot.hrvSlots.length > 0 || snapshot.spo2Slots.length > 0
+  const hasRealtime = !hasSlots && (snapshot.hrv != null || snapshot.stress != null || snapshot.spo2 != null
+    || snapshot.systolicBP != null || snapshot.breathRate != null)
+  if (hasRealtime) {
+    const measuredTs = snapshot.hrvMeasuredAt != null
+      ? _digitsOnly(snapshot.hrvMeasuredAt!)
+      : _stripColonDot(_isoUtc(nowMs))
+    const data = {
+      hrv_ms: snapshot.hrv,
+      stress: snapshot.stress,
+      spo2: snapshot.spo2,
+      breath_rate: snapshot.breathRate,
+      heart_rate_hrv: snapshot.heartRateFromHrv,
+      bp_systolic: snapshot.systolicBP,
+      bp_diastolic: snapshot.diastolicBP,
+    } as UTSJSONObject
+    const ev = _ev('vitals', todayDate, `${src}_realtime_${measuredTs}`, data)
+    if (snapshot.hrvMeasuredAt != null) {
+      const iso = shanghaiTsToIso(snapshot.hrvMeasuredAt!)
+      if (iso != null) ev['recorded_at'] = iso
+    }
+    events.push(ev)
+  }
+
+  if (events.length == 0) return new SyncResult(true, 0, 0, null)
+
+  if (events.length <= MAX_EVENTS_PER_CALL) {
+    const res = await _postBatch(openid, events, apiToken)
+    return _toResult(res)
+  }
+
+  // >500 events (e.g. Halo's ~3-day buffer after a sync gap): the server rejects the whole
+  // call above the cap, so without batching a backlog fails every sync forever — split.
+  let synced = 0
+  let skipped = 0
+  let success = true
+  let error : string | null = null
+  for (let i = 0; i < events.length; i += MAX_EVENTS_PER_CALL) {
+    const end = Math.min(i + MAX_EVENTS_PER_CALL, events.length)
+    const batch = events.slice(i, end)
+    const res = await _postBatch(openid, batch, apiToken)
+    const r = _toResult(res)
+    if (!r.success) {
+      success = false
+      error = error ?? r.error
+    }
+    synced += r.synced
+    skipped += r.skipped
+  }
+  return new SyncResult(success, synced, skipped, error)
+}
+
+function _toResult(res : UTSJSONObject | null) : SyncResult {
+  if (res == null) return new SyncResult(false, 0, 0, 'network error')
+  const ok = res.getBoolean('success')
+  return new SyncResult(
+    ok == null || ok, // absence of `success:false` counts as ok (miniapp semantics)
+    res.getNumber('synced') ?? 0,
+    res.getNumber('skipped') ?? 0,
+    res.getString('error'),
+  )
+}

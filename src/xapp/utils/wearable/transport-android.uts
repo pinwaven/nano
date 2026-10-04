@@ -1,0 +1,77 @@
+// BleTransport for the native Android app: the waven-ble UTS plugin (uni_modules/waven-ble),
+// which drives Android's BluetoothLeScanner/BluetoothGatt with its own GATT op queue. Installed
+// once from App.uvue onLaunch under #ifdef APP-ANDROID; everything above it (BLEManager, halo/,
+// v8/, sync) is shared with xapp-mini's transport-mp.uts.
+//
+// uni-app x declares its own Bluetooth API for mp-weixin only (HBuilderX 5.26), hence a plugin.
+
+// #ifdef APP-ANDROID
+import { BleTransport, BleScanDevice, BleService, BleCharacteristic, CharChangeFn } from './transport.uts'
+import {
+  bleOpen, bleClose, bleOnFound, bleStartScan, bleStopScan, bleConnect, bleDisconnect,
+  bleRequestMtu, bleGetServices, bleGetCharacteristics, bleEnableNotify, bleOnValue, bleWrite,
+} from '@/uni_modules/waven-ble'
+
+// One per BLEManager that attached; each dispatches through its own handler map.
+const _charChange : CharChangeFn[] = []
+let _valueAttached = false
+
+function _voidCall(run : (cb : (err : string | null) => void) => void) : Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    run((err : string | null) => {
+      if (err == null) resolve()
+      else reject(new Error(err))
+    })
+  })
+}
+
+export function createAndroidTransport() : BleTransport {
+  const t = new BleTransport()
+
+  t.openAdapter = () : Promise<void> => _voidCall((cb) => { bleOpen(cb) })
+  t.closeAdapter = () => { bleClose() }
+
+  t.onDeviceFound = (cb : ((devices : BleScanDevice[]) => void) | null) => {
+    if (cb == null) { bleOnFound(null); return }
+    bleOnFound((deviceId : string, name : string, rssi : number) => {
+      cb([new BleScanDevice(deviceId, name, rssi)] as BleScanDevice[])
+    })
+  }
+  t.startDiscovery = (services : string[]) : Promise<void> => _voidCall((cb) => { bleStartScan(services, cb) })
+  t.stopDiscovery = () => { bleStopScan() }
+
+  t.createConnection = (deviceId : string) : Promise<void> => _voidCall((cb) => { bleConnect(deviceId, cb) })
+  t.closeConnection = (deviceId : string) => { bleDisconnect(deviceId) }
+
+  t.negotiateMtu = (deviceId : string, mtu : number) : Promise<void> => _voidCall((cb) => { bleRequestMtu(deviceId, mtu, cb) })
+
+  t.getServices = (deviceId : string) : Promise<BleService[]> => new Promise<BleService[]>((resolve, reject) => {
+    bleGetServices(deviceId, (err : string | null, uuids : string[]) => {
+      if (err != null) { reject(new Error(err)); return }
+      resolve(uuids.map((u : string) : BleService => new BleService(u)))
+    })
+  })
+  t.getCharacteristics = (deviceId : string, serviceUUID : string) : Promise<BleCharacteristic[]> => new Promise<BleCharacteristic[]>((resolve, reject) => {
+    bleGetCharacteristics(deviceId, serviceUUID, (err : string | null, uuids : string[]) => {
+      if (err != null) { reject(new Error(err)); return }
+      resolve(uuids.map((u : string) : BleCharacteristic => new BleCharacteristic(u)))
+    })
+  })
+  t.enableNotify = (deviceId : string, serviceUUID : string, charUUID : string) : Promise<void> =>
+    _voidCall((cb) => { bleEnableNotify(deviceId, serviceUUID, charUUID, cb) })
+
+  t.onCharacteristicChange = (cb : CharChangeFn | null) => {
+    if (cb == null) return
+    _charChange.push(cb)
+    if (_valueAttached) return
+    _valueAttached = true
+    bleOnValue((deviceId : string, charUuid : string, value : number[]) => {
+      for (const f of _charChange) f(deviceId, charUuid, value)
+    })
+  }
+
+  t.write = (deviceId : string, serviceUUID : string, charUUID : string, packet : number[]) : Promise<void> =>
+    _voidCall((cb) => { bleWrite(deviceId, serviceUUID, charUUID, packet, cb) })
+  return t
+}
+// #endif

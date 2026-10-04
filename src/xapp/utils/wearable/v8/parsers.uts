@@ -1,0 +1,368 @@
+// V8 per-notification chunk parsers — ported from miniapp v8/index.js's private helpers.
+// V8 reassembly model differs from Halo: each notification is parsed independently (a single
+// notification can hold several stacked records thanks to the negotiated MTU), records
+// accumulate parsed-not-raw. v8-smart-band.md §3.
+
+import { parseBcdDate, bcdToString, readLEInt } from './protocol.uts'
+import { SleepBlock } from '../halo/parsers.uts'
+
+export class ChunkResult<T> {
+  records : T[]
+  done : boolean
+  constructor(records : T[], done : boolean) {
+    this.records = records
+    this.done = done
+  }
+}
+
+export class TotalStepRecord {
+  date : string
+  step : number
+  exerciseMinutes : number
+  distance : number
+  calories : number
+  constructor(date : string, step : number, exerciseMinutes : number, distance : number, calories : number) {
+    this.date = date
+    this.step = step
+    this.exerciseMinutes = exerciseMinutes
+    this.distance = distance
+    this.calories = calories
+  }
+}
+
+export class DetailActivityRecord {
+  date : string
+  step : number
+  calories : number
+  distance : number
+  constructor(date : string, step : number, calories : number, distance : number) {
+    this.date = date
+    this.step = step
+    this.calories = calories
+    this.distance = distance
+  }
+}
+
+export class DynamicHrRecord {
+  date : string
+  samples : number[]
+  constructor(date : string, samples : number[]) { this.date = date; this.samples = samples }
+}
+
+export class StaticHrRecord {
+  date : string
+  heartRate : number
+  constructor(date : string, heartRate : number) { this.date = date; this.heartRate = heartRate }
+}
+
+export class V8HrvRecord {
+  date : string
+  hrv : number
+  vascularAging : number
+  heartRate : number
+  stress : number
+  highBP : number
+  lowBP : number
+  constructor(date : string, hrv : number, vascularAging : number, heartRate : number, stress : number, highBP : number, lowBP : number) {
+    this.date = date
+    this.hrv = hrv
+    this.vascularAging = vascularAging
+    this.heartRate = heartRate
+    this.stress = stress
+    this.highBP = highBP
+    this.lowBP = lowBP
+  }
+}
+
+export class V8TempRecord {
+  date : string
+  temperature : number
+  constructor(date : string, temperature : number) { this.date = date; this.temperature = temperature }
+}
+
+export class V8OxygenRecord {
+  date : string
+  spo2 : number
+  constructor(date : string, spo2 : number) { this.date = date; this.spo2 = spo2 }
+}
+
+export class V8SleepNight {
+  date : string
+  onset : string
+  totalMinutes : number
+  // deep/light/rem/awake are deliberately null: V8's raw stage codes (1,2,3,4,6,10 observed
+  // live) don't match Halo's confirmed 0=awake/1=deep/2=light/3=rem enum, and no vendor doc
+  // confirms them — guessing would silently mislabel real data (v8-smart-band.md §6-7).
+  deep : number | null = null
+  light : number | null = null
+  rem : number | null = null
+  awake : number | null = null
+  sleepStart : number
+  sleepEnd : number
+  constructor(date : string, onset : string, totalMinutes : number, sleepStart : number, sleepEnd : number) {
+    this.date = date
+    this.onset = onset
+    this.totalMinutes = totalMinutes
+    this.sleepStart = sleepStart
+    this.sleepEnd = sleepEnd
+  }
+}
+
+function _cmpStr(a : string, b : string) : number {
+  const n = Math.min(a.length, b.length)
+  for (let i = 0; i < n; i++) {
+    const ca = a.charCodeAt(i) ?? 0
+    const cb = b.charCodeAt(i) ?? 0
+    if (ca != cb) return ca < cb ? -1 : 1
+  }
+  if (a.length == b.length) return 0
+  return a.length < b.length ? -1 : 1
+}
+
+function _pad2(n : number) : string {
+  return n < 10 ? `0${n}` : `${n}`
+}
+
+export function getStepRecordSize(length : number) : number {
+  if (length == 2) return 27
+  if (length % 26 == 0) return 26
+  if (length % 27 == 0) return 27
+  if ((length - 2) % 26 == 0) return 26
+  if ((length - 2) % 27 == 0) return 27
+  return 27
+}
+
+// 0x51 — daily activity totals
+export function parseTotalStepChunk(buf : number[]) : ChunkResult<TotalStepRecord> {
+  const length = buf.length
+  const recSize = getStepRecordSize(length)
+  const size = Math.floor(length / recSize)
+  const records : TotalStepRecord[] = []
+  let done = false
+  for (let i = 0; i < size; i++) {
+    const base = i * recSize
+    const flag = 1 + (i + 1) * recSize
+    if (flag < length && buf[flag] == 0xff) done = true
+    const date = `20${bcdToString(buf[2 + base])}-${bcdToString(buf[3 + base])}-${bcdToString(buf[4 + base])}`
+    const step = readLEInt(buf, 5 + base, 4)
+    const exerciseMinutes = readLEInt(buf, 9 + base, 4)
+    const distance = readLEInt(buf, 13 + base, 4)
+    const calories = readLEInt(buf, 17 + base, 4)
+    records.push(new TotalStepRecord(date, step, exerciseMinutes, distance / 100, calories / 100))
+  }
+  if (size == 0) done = true
+  return new ChunkResult<TotalStepRecord>(records, done)
+}
+
+// 0x52 — per-minute activity detail
+export function parseDetailActivityChunk(buf : number[]) : ChunkResult<DetailActivityRecord> {
+  const length = buf.length
+  const size = Math.floor(length / 25)
+  const records : DetailActivityRecord[] = []
+  const done = size == 0 || buf[length - 1] == 0xff
+  for (let i = 0; i < size; i++) {
+    const base = i * 25
+    const date = parseBcdDate(buf, 3 + base, true)
+    const step = readLEInt(buf, 9 + base, 2)
+    const calories = readLEInt(buf, 11 + base, 2)
+    const distance = readLEInt(buf, 13 + base, 2)
+    records.push(new DetailActivityRecord(date, step, calories / 100, distance / 100))
+  }
+  return new ChunkResult<DetailActivityRecord>(records, done)
+}
+
+// 0x54 — continuous HR
+export function parseDynamicHrChunk(buf : number[]) : ChunkResult<DynamicHrRecord> {
+  const length = buf.length
+  const size = Math.floor(length / 24)
+  const records : DynamicHrRecord[] = []
+  const done = size == 0 || buf[length - 1] == 0xff
+  for (let i = 0; i < size; i++) {
+    const base = i * 24
+    const date = parseBcdDate(buf, 3 + base, true)
+    const samples : number[] = []
+    for (let j = 0; j < 15; j++) samples.push(buf[9 + j + base])
+    records.push(new DynamicHrRecord(date, samples))
+  }
+  return new ChunkResult<DynamicHrRecord>(records, done)
+}
+
+// 0x55 — static HR
+export function parseStaticHrChunk(buf : number[]) : ChunkResult<StaticHrRecord> {
+  const length = buf.length
+  const size = Math.floor(length / 10)
+  const records : StaticHrRecord[] = []
+  const done = size == 0 || buf[length - 1] == 0xff
+  for (let i = 0; i < size; i++) {
+    const base = i * 10
+    records.push(new StaticHrRecord(parseBcdDate(buf, 3 + base, true), buf[9 + base]))
+  }
+  return new ChunkResult<StaticHrRecord>(records, done)
+}
+
+// 0x56 — HRV + stress + BP (positions confirmed live; highBP/lowBP decode to realistic
+// paired values). Raw stress byte tracks HRV upward — invert to a true stress scale, same
+// shared-protocol quirk confirmed on Halo 2026-08-02. 0 stays 0 (downstream reads it as
+// "no reading").
+export function parseHrvChunk(buf : number[]) : ChunkResult<V8HrvRecord> {
+  const length = buf.length
+  const size = Math.floor(length / 15)
+  const records : V8HrvRecord[] = []
+  const done = size == 0 || buf[length - 1] == 0xff
+  for (let i = 0; i < size; i++) {
+    const base = i * 15
+    const rawStress = buf[12 + base]
+    records.push(new V8HrvRecord(
+      parseBcdDate(buf, 3 + base, true),
+      buf[9 + base],
+      buf[10 + base],
+      buf[11 + base],
+      rawStress == 0 ? 0 : 100 - rawStress,
+      buf[13 + base],
+      buf[14 + base],
+    ))
+  }
+  return new ChunkResult<V8HrvRecord>(records, done)
+}
+
+// 0x62 — temperature (single combined value, not Halo's 3-sensor NTC breakdown)
+export function parseTemperatureChunk(buf : number[]) : ChunkResult<V8TempRecord> {
+  const length = buf.length
+  const size = Math.floor(length / 11)
+  const records : V8TempRecord[] = []
+  const done = size == 0 || buf[length - 1] == 0xff
+  for (let i = 0; i < size; i++) {
+    const base = i * 11
+    records.push(new V8TempRecord(parseBcdDate(buf, 3 + base, true), readLEInt(buf, 9 + base, 2) / 10))
+  }
+  return new ChunkResult<V8TempRecord>(records, done)
+}
+
+// 0x66 — auto SpO2
+export function parseOxygenChunk(buf : number[]) : ChunkResult<V8OxygenRecord> {
+  const length = buf.length
+  const size = Math.floor(length / 10)
+  const records : V8OxygenRecord[] = []
+  const done = size == 0 || buf[length - 1] == 0xff
+  for (let i = 0; i < size; i++) {
+    const base = i * 10
+    records.push(new V8OxygenRecord(parseBcdDate(buf, 3 + base, true), buf[9 + base]))
+  }
+  return new ChunkResult<V8OxygenRecord>(records, done)
+}
+
+// 0x53 — sleep blocks. Two shapes seen in vendor source: a single 130-byte 1-min-record
+// notification, or stacked 34-byte 5-min records within one notification — per-notification
+// rather than per-concatenated-stream like Halo.
+export function parseV8SleepBlocks(buf : number[]) : SleepBlock[] {
+  const length = buf.length
+  const endMarker = length >= 2 && buf[length - 1] == 0xff && buf[length - 2] == 0x53
+
+  if (length == 130 || (endMarker && length == 132)) {
+    const dateStr = parseBcdDate(buf, 3, true)
+    const sleepLength = buf[9]
+    const stages : number[] = []
+    for (let s = 0; s < sleepLength && 10 + s < length; s++) stages.push(buf[10 + s])
+    return stages.length > 0 ? [new SleepBlock(dateStr, 1, stages)] : [] as SleepBlock[]
+  }
+
+  const size = Math.floor(length / 34)
+  const blocks : SleepBlock[] = []
+  for (let i = 0; i < size; i++) {
+    const base = i * 34
+    const dateStr = parseBcdDate(buf, 3 + base, true)
+    const sleepLength = buf[9 + base]
+    const stages : number[] = []
+    for (let s = 0; s < sleepLength && 10 + base + s < length; s++) stages.push(buf[10 + base + s])
+    if (stages.length > 0) blocks.push(new SleepBlock(dateStr, 5, stages))
+  }
+  return blocks
+}
+
+// Night grouping with duration-only summaries (stage breakdown stays null — see
+// V8SleepNight). Same session-splitting rule as Halo (gap > 90 min → new session).
+// Reuses halo/parsers' nightKey/dateStrToAbsMins rules locally to keep this file's imports
+// minimal.
+const _DAYS_IN_MONTH : number[] = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+function _daysFromCivil(y : number, m : number, d : number) : number {
+  const yy = m <= 2 ? y - 1 : y
+  const era = Math.floor((yy >= 0 ? yy : yy - 399) / 400)
+  const yoe = yy - era * 400
+  const mp = m + (m > 2 ? -3 : 9)
+  const doy = Math.floor((153 * mp + 2) / 5) + d - 1
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy
+  return era * 146097 + doe - 719468
+}
+
+function _absMins(dateStr : string) : number {
+  const sp = dateStr.split(' ')
+  const ymd = sp[0].split('-')
+  const tp = sp.length > 1 ? sp[1] : '00:00:00'
+  const hms = tp.split(':')
+  return _daysFromCivil(parseInt(ymd[0]), parseInt(ymd[1]), parseInt(ymd[2])) * 1440 + parseInt(hms[0]) * 60 + parseInt(hms[1])
+}
+
+function _nightKey(dateStr : string) : string {
+  const sp = dateStr.split(' ')
+  const dp = sp[0]
+  const tp = sp.length > 1 ? sp[1] : '00:00:00'
+  if (parseInt(tp) >= 12) return dp
+  const p = dp.split('-')
+  let y = parseInt(p[0])
+  let mm = parseInt(p[1])
+  let dd = parseInt(p[2]) - 1
+  if (dd < 1) {
+    mm = mm - 1
+    if (mm < 1) { mm = 12; y = y - 1 }
+    dd = (mm == 2 && (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0))) ? 29 : _DAYS_IN_MONTH[mm]
+  }
+  return `${y}-${_pad2(mm)}-${_pad2(dd)}`
+}
+
+const SPLIT_GAP_MINS = 90
+
+function _summariseNightDurationOnly(date : string, records : SleepBlock[]) : V8SleepNight {
+  const unitMin = records[0].unitMin
+  let totalMinutes = 0
+  for (const r of records) totalMinutes += r.stages.length * unitMin
+  const dateStr0 = records[0].dateStr
+  const timePart = dateStr0.substring(dateStr0.indexOf(' ') + 1)
+  const colonIdx = timePart.indexOf(':')
+  const hh = parseInt(timePart.substring(0, colonIdx))
+  const mm = parseInt(timePart.substring(colonIdx + 1, colonIdx + 3))
+  const sleepStart = hh * 60 + mm
+  return new V8SleepNight(date, dateStr0, totalMinutes, sleepStart, sleepStart + totalMinutes)
+}
+
+export function summariseV8SleepBlocks(blocks : SleepBlock[]) : V8SleepNight[] {
+  if (blocks.length == 0) return [] as V8SleepNight[]
+  const nightMap = new Map<string, SleepBlock[]>()
+  for (const rec of blocks) {
+    const key = _nightKey(rec.dateStr)
+    const list = nightMap.get(key)
+    if (list == null) nightMap.set(key, [rec])
+    else list!.push(rec)
+  }
+  const keys : string[] = []
+  nightMap.forEach((v : SleepBlock[], k : string) => { keys.push(k) })
+  keys.sort((a, b) : number => _cmpStr(a, b))
+
+  const nights : V8SleepNight[] = []
+  for (const date of keys) {
+    const recs = nightMap.get(date)!
+    recs.sort((a, b) : number => _cmpStr(a.dateStr, b.dateStr))
+    const sessions : SleepBlock[][] = [[recs[0]]]
+    for (let i = 1; i < recs.length; i++) {
+      const prev = recs[i - 1]
+      const curr = recs[i]
+      const prevEnd = _absMins(prev.dateStr) + prev.stages.length * prev.unitMin
+      const gap = _absMins(curr.dateStr) - prevEnd
+      if (gap > SPLIT_GAP_MINS) sessions.push([curr])
+      else sessions[sessions.length - 1].push(curr)
+    }
+    for (const session of sessions) nights.push(_summariseNightDurationOnly(date, session))
+  }
+  nights.sort((a, b) : number => _cmpStr(a.onset, b.onset))
+  return nights
+}

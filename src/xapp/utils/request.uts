@@ -1,0 +1,105 @@
+// Ported from miniapp utils/request.js. One deviation: uni.request<UTSJSONObject> in
+// uni-app x parses JSON objects; endpoints that return a bare JSON array need the
+// responseType:'text' + JSON.parse path instead — handle per call site during page ports.
+
+import { BASE } from './config.uts'
+import { state } from './state.uts'
+import { handleAuthFailure } from './session.uts'
+
+export class RequestError extends Error {
+  type : string
+  statusCode : number
+
+  constructor(type : string, message : string, statusCode : number) {
+    super(message)
+    this.type = type
+    this.statusCode = statusCode
+  }
+}
+
+function _url(path : string) : string {
+  return path.startsWith('http') ? path : `${BASE}${path}`
+}
+
+function _headers() : UTSJSONObject {
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${state.apiToken}`
+  } as UTSJSONObject
+}
+
+async function _run(path : string, method : RequestMethod, data : any | null) : Promise<UTSJSONObject | null> {
+  // Callback form: the awaitable uni.request overload silently selects RequestTask when the
+  // verb arrives as a RequestMethod-typed VARIABLE (full-build Kotlin error).
+  let res : RequestSuccess<UTSJSONObject> | null = null
+  await new Promise<boolean>((resolve : (v : boolean) => void, _reject : (e : any | null) => void) => {
+    uni.request<UTSJSONObject>({
+      url: _url(path),
+      method: method,
+      header: _headers(),
+      data: data,
+      success: (r) => { res = r; resolve(true) },
+      fail: (err) => { resolve(false) },
+    })
+  })
+  if (res == null) throw new RequestError('network', 'Network error', 0)
+  const code = res!.statusCode
+  const body = res!.data
+  if (code >= 200 && code < 300) {
+    return body
+  }
+  let msg = `HTTP ${code}`
+  if (body != null) {
+    const e = body.getString('error')
+    if (e != null) msg = e
+  }
+  if (code == 401 || code == 403) throw new RequestError('auth', msg, code)
+  if (code >= 500) throw new RequestError('server', msg, code)
+  throw new RequestError('client', msg, code)
+}
+
+export function req(path : string, method : string = 'GET', data : any | null = null) : Promise<UTSJSONObject | null> {
+  if (method == 'POST') return _run(path, 'POST', data)
+  if (method == 'PUT') return _run(path, 'PUT', data)
+  if (method == 'DELETE') return _run(path, 'DELETE', data)
+  return _run(path, 'GET', data)
+}
+
+// ── Body-level helpers for pages ──
+// The miniapp pages call wx.request through their own _req and read res.data.success /
+// res.data.error directly (the server answers most failures 200/4xx WITH a JSON body).
+// These return the parsed body or null on network failure, and route a 401 through
+// session.handleAuthFailure so every page gets the expired-session redirect for free.
+
+async function _body(url : string, method : RequestMethod, data : any | null) : Promise<UTSJSONObject | null> {
+  let res : RequestSuccess<UTSJSONObject> | null = null
+  await new Promise<boolean>((resolve : (v : boolean) => void, _reject : (e : any | null) => void) => {
+    uni.request<UTSJSONObject>({
+      url: url,
+      method: method,
+      header: _headers(),
+      data: data,
+      success: (r) => { res = r; resolve(true) },
+      fail: (err) => { resolve(false) },
+    })
+  })
+  if (res == null) return null
+  if (res!.statusCode == 401 && state.apiToken.length > 0) handleAuthFailure()
+  return res!.data
+}
+
+export function getBody(url : string) : Promise<UTSJSONObject | null> {
+  return _body(url.startsWith('http') ? url : `${BASE}${url}`, 'GET', null)
+}
+
+export function postBody(url : string, body : UTSJSONObject | null) : Promise<UTSJSONObject | null> {
+  return _body(url.startsWith('http') ? url : `${BASE}${url}`, 'POST', body)
+}
+
+export function putBody(url : string, body : UTSJSONObject | null) : Promise<UTSJSONObject | null> {
+  return _body(url.startsWith('http') ? url : `${BASE}${url}`, 'PUT', body)
+}
+
+export function deleteBody(url : string, body : UTSJSONObject | null) : Promise<UTSJSONObject | null> {
+  return _body(url.startsWith('http') ? url : `${BASE}${url}`, 'DELETE', body)
+}

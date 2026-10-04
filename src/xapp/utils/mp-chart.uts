@@ -1,0 +1,230 @@
+// Line charts on a real canvas for xapp-mini — the miniapp's user-health.js chart drawing
+// (_drawGenericChart / _drawWeightFullChart / _drawBpChart), from the geometry user-health.uvue
+// already computes. Native and web keep the view-based charts (dots on a grid): uni-app x has no
+// legacy canvas there, and this runs only under MP-WEIXIN.
+//
+// The canvas is WeChat's 2d canvas (<canvas type="2d">), reached through uni.createCanvasContextAsync,
+// which needs the mini-program component instance ($scope) to find a canvas inside a component.
+
+export type ChartSeries = {
+  pts : UTSJSONObject[]      // {x, y} in CSS px
+  color : string
+  fill : string | null       // area fill under the line, or null for none
+  dotFill : string
+}
+
+export type ChartSpec = {
+  W : number
+  H : number
+  pL : number
+  pT : number
+  plotW : number
+  plotH : number
+  pB : number
+  grid : UTSJSONObject[]     // {y, text}
+  labels : UTSJSONObject[]   // {x, text}
+  series : ChartSeries[]
+  gridColor : string
+  gridText : string
+  labelText : string
+  axisColor : string
+}
+
+export function paintChart(id : string, component : any | null, spec : ChartSpec) {
+  // #ifdef MP-WEIXIN
+  uni.createCanvasContextAsync({
+    id: id,
+    component: component,
+    success: (cc : any) => {
+      const ctx = cc.getContext('2d')
+      const dpr = uni.getWindowInfo().pixelRatio
+      ctx.canvas.width = spec.W * dpr
+      ctx.canvas.height = spec.H * dpr
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.scale(dpr, dpr)
+      _draw(ctx, spec)
+    },
+    fail: (e : any) => { console.log(JSON.stringify({ level: 'WARN', msg: 'chart canvas unavailable', data: { id: id, err: `${e}` } })) },
+  } as any)
+  // #endif
+}
+
+// #ifdef MP-WEIXIN
+function _xy(p : UTSJSONObject, k : string) : number {
+  const v = p[k]
+  return v != null ? (v as number) : 0
+}
+
+function _draw(ctx : any, s : ChartSpec) {
+  ctx.clearRect(0, 0, s.W, s.H)
+  ctx.font = '10px sans-serif'
+  ctx.textBaseline = 'alphabetic'
+  // grid at quarters, value labels at the left edge
+  for (const g of s.grid) {
+    const y = _xy(g, 'y')
+    ctx.strokeStyle = s.gridColor; ctx.lineWidth = 0.5
+    ctx.beginPath(); ctx.moveTo(s.pL, y); ctx.lineTo(s.pL + s.plotW, y); ctx.stroke()
+    ctx.fillStyle = s.gridText
+    ctx.fillText(`${g['text']}`, 0, y + 4)
+  }
+  for (const se of s.series) {
+    const pts = se.pts
+    if (pts.length == 0) continue
+    if (se.fill != null) {
+      ctx.beginPath(); ctx.fillStyle = se.fill
+      ctx.moveTo(_xy(pts[0], 'x'), s.pT + s.plotH)
+      for (const p of pts) ctx.lineTo(_xy(p, 'x'), _xy(p, 'y'))
+      ctx.lineTo(_xy(pts[pts.length - 1], 'x'), s.pT + s.plotH)
+      ctx.closePath(); ctx.fill()
+    }
+    ctx.beginPath(); ctx.strokeStyle = se.color; ctx.lineWidth = 2
+    ctx.moveTo(_xy(pts[0], 'x'), _xy(pts[0], 'y'))
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(_xy(pts[i], 'x'), _xy(pts[i], 'y'))
+    ctx.stroke()
+  }
+  // x labels under the plot
+  ctx.fillStyle = s.labelText
+  for (const l of s.labels) ctx.fillText(`${l['text']}`, _xy(l, 'x') - 14, s.H - s.pB + 16)
+  // dots: filled, ringed in the series colour
+  for (const se of s.series) {
+    ctx.fillStyle = se.dotFill; ctx.strokeStyle = se.color; ctx.lineWidth = 1.5
+    for (const p of se.pts) { ctx.beginPath(); ctx.arc(_xy(p, 'x'), _xy(p, 'y'), 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke() }
+  }
+  // L-shaped axis
+  ctx.strokeStyle = s.axisColor; ctx.lineWidth = 1
+  ctx.beginPath(); ctx.moveTo(s.pL, s.pT); ctx.lineTo(s.pL, s.pT + s.plotH); ctx.lineTo(s.pL + s.plotW, s.pT + s.plotH); ctx.stroke()
+}
+// #endif
+
+export type BioAgeSpec = {
+  W : number
+  H : number
+  bAge : string
+  cAge : string
+  bAgeColor : string
+  bioLabel : string
+  chronoLabel : string
+  history : UTSJSONObject[]   // {date, bioAge, chronoAge?}
+  palette : UTSJSONObject     // user-health _chartPalette()
+}
+
+// The miniapp's _drawBioAgeChart: header numbers, the BioAge line over a filled area, a dashed
+// ChronoAge reference, axis labels and the glowing rounded border (the canvas covers the card).
+export function paintBioAge(id : string, component : any | null, spec : BioAgeSpec) {
+  // #ifdef MP-WEIXIN
+  uni.createCanvasContextAsync({
+    id: id,
+    component: component,
+    success: (cc : any) => {
+      const ctx = cc.getContext('2d')
+      const dpr = uni.getWindowInfo().pixelRatio
+      ctx.canvas.width = spec.W * dpr
+      ctx.canvas.height = spec.H * dpr
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.scale(dpr, dpr)
+      _drawBioAge(ctx, spec)
+    },
+    fail: (e : any) => { console.log(JSON.stringify({ level: 'WARN', msg: 'bioage canvas unavailable', data: { id: id, err: `${e}` } })) },
+  } as any)
+  // #endif
+}
+
+// #ifdef MP-WEIXIN
+function _c(p : UTSJSONObject, k : string) : string {
+  const v = p[k]
+  return v != null ? `${v}` : '#000'
+}
+
+function _drawBioAge(ctx : any, s : BioAgeSpec) {
+  const c = s.palette
+  const W = s.W, H = s.H
+  const headerH = 62
+  const pL = 28, pR = 10, pT = headerH + 12, pB = 24
+  const plotW = W - pL - pR, plotH = H - pT - pB
+  ctx.clearRect(0, 0, W, H)
+  ctx.fillStyle = _c(c, 'bg'); ctx.fillRect(0, 0, W, H)
+
+  // header: BioAge (left) + ChronoAge (right)
+  ctx.textAlign = 'left'
+  ctx.font = '30px sans-serif'; ctx.fillStyle = s.bAgeColor.length > 0 ? s.bAgeColor : _c(c, 'accent')
+  ctx.fillText(s.bAge.length > 0 ? s.bAge : '—', 14, 34)
+  ctx.font = '10px sans-serif'; ctx.fillStyle = _c(c, 'textMuted55')
+  ctx.fillText(s.bioLabel.toUpperCase(), 14, 52)
+  ctx.textAlign = 'right'
+  ctx.font = '22px sans-serif'; ctx.fillStyle = _c(c, 'textMuted75')
+  ctx.fillText(s.cAge.length > 0 ? s.cAge : '—', W - 14, 32)
+  ctx.font = '10px sans-serif'; ctx.fillStyle = _c(c, 'textMuted45')
+  ctx.fillText(s.chronoLabel.toUpperCase(), W - 14, 52)
+  ctx.beginPath(); ctx.strokeStyle = _c(c, 'gridLine'); ctx.lineWidth = 0.5
+  ctx.moveTo(0, headerH); ctx.lineTo(W, headerH); ctx.stroke()
+
+  const hist = s.history
+  if (hist.length >= 2) {
+    const num = (r : UTSJSONObject, k : string) : number | null => { const v = r[k]; return v != null ? (v as number) : null }
+    const all : number[] = []
+    for (const r of hist) { all.push(num(r, 'bioAge')!); const ch = num(r, 'chronoAge'); if (ch != null) all.push(ch) }
+    const minV = Math.floor(Math.min(...all)) - 2
+    const maxV = Math.ceil(Math.max(...all)) + 2
+    const range = (maxV - minV) == 0 ? 1 : maxV - minV
+    const toX = (i : number) : number => pL + (i / Math.max(hist.length - 1, 1)) * plotW
+    const toY = (v : number) : number => pT + ((maxV - v) / range) * plotH
+    const xs : number[] = [], ys : number[] = []
+    for (let i = 0; i < hist.length; i++) { xs.push(toX(i)); ys.push(toY(num(hist[i], 'bioAge')!)) }
+    // filled area
+    ctx.beginPath(); ctx.fillStyle = _c(c, 'fillMed')
+    ctx.moveTo(xs[0], pT + plotH)
+    for (let i = 0; i < xs.length; i++) ctx.lineTo(xs[i], ys[i])
+    ctx.lineTo(xs[xs.length - 1], pT + plotH)
+    ctx.closePath(); ctx.fill()
+    // ChronoAge dashed reference (3 on, 3 off)
+    const cx : number[] = [], cy : number[] = []
+    for (let i = 0; i < hist.length; i++) { const ch = num(hist[i], 'chronoAge'); if (ch != null) { cx.push(xs[i]); cy.push(toY(ch)) } }
+    ctx.strokeStyle = _c(c, 'textMuted28'); ctx.lineWidth = 1
+    for (let i = 0; i < cx.length - 1; i++) {
+      const x1 = cx[i], y1 = cy[i], x2 = cx[i + 1], y2 = cy[i + 1]
+      const len = Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1))
+      let d = 0
+      while (d < len) {
+        const t1 = d / len, t2 = Math.min((d + 3) / len, 1)
+        ctx.beginPath()
+        ctx.moveTo(x1 + t1 * (x2 - x1), y1 + t1 * (y2 - y1))
+        ctx.lineTo(x1 + t2 * (x2 - x1), y1 + t2 * (y2 - y1))
+        ctx.stroke()
+        d += 6
+      }
+    }
+    // BioAge line and dots
+    ctx.beginPath(); ctx.strokeStyle = _c(c, 'accent'); ctx.lineWidth = 2
+    ctx.moveTo(xs[0], ys[0])
+    for (let i = 1; i < xs.length; i++) ctx.lineTo(xs[i], ys[i])
+    ctx.stroke()
+    ctx.fillStyle = _c(c, 'accent'); ctx.strokeStyle = _c(c, 'dotRing'); ctx.lineWidth = 1.5
+    for (let i = 0; i < xs.length; i++) { ctx.beginPath(); ctx.arc(xs[i], ys[i], 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke() }
+    // axis labels
+    const step = Math.max(1, Math.floor(hist.length / 4))
+    ctx.font = '9px sans-serif'; ctx.fillStyle = _c(c, 'textMuted45'); ctx.textAlign = 'center'
+    for (let i = 0; i < hist.length; i++) {
+      if (i % step == 0 || i == hist.length - 1) ctx.fillText(`${hist[i]['date']}`.substring(5), xs[i], H - pB + 14)
+    }
+    ctx.textAlign = 'right'
+    ctx.fillText(`${maxV}`, pL - 4, pT + 9)
+    ctx.fillText(`${minV}`, pL - 4, pT + plotH + 4)
+  }
+
+  // glowing rounded border (three strokes, outer to inner)
+  const rr = (inset : number, r : number) => {
+    const x = inset, y = inset, w = W - inset * 2, h = H - inset * 2
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.lineTo(x + w - r, y); ctx.arc(x + w - r, y + r, r, -Math.PI / 2, 0)
+    ctx.lineTo(x + w, y + h - r); ctx.arc(x + w - r, y + h - r, r, 0, Math.PI / 2)
+    ctx.lineTo(x + r, y + h); ctx.arc(x + r, y + h - r, r, Math.PI / 2, Math.PI)
+    ctx.lineTo(x, y + r); ctx.arc(x + r, y + r, r, Math.PI, 3 * Math.PI / 2)
+    ctx.closePath()
+  }
+  const cr = 11
+  rr(4, cr - 3); ctx.strokeStyle = _c(c, 'glow10'); ctx.lineWidth = 10; ctx.stroke()
+  rr(2, cr - 1); ctx.strokeStyle = _c(c, 'glow22'); ctx.lineWidth = 5; ctx.stroke()
+  rr(1, cr); ctx.strokeStyle = _c(c, 'glow60'); ctx.lineWidth = 1.5; ctx.stroke()
+}
+// #endif

@@ -1,0 +1,133 @@
+// Ported from miniapp utils/session.js. Per-user `u.` sessions (AGENTS.md §50); globalData
+// access replaced by utils/state.uts. The wx.login silent re-auth in handleAuthFailure's
+// comment does not exist here — on 401 the user lands on the login page and must complete
+// phone/email OTP (server already supports it, §33).
+
+import { BASE } from './config.uts'
+import { state } from './state.uts'
+
+const TOKEN_KEY = 'nano_session'
+const SAVED_AT_KEY = 'nano_session_at'
+
+export function saveSession(token : string) {
+  if (token.length == 0) return
+  state.apiToken = token
+  uni.setStorageSync(TOKEN_KEY, token)
+  uni.setStorageSync(SAVED_AT_KEY, Date.now())
+}
+
+export function clearSession() {
+  state.apiToken = ''
+  uni.removeStorageSync(TOKEN_KEY)
+  uni.removeStorageSync(SAVED_AT_KEY)
+}
+
+async function _post(path : string, token : string, data : UTSJSONObject | null) : Promise<RequestSuccess<UTSJSONObject> | null> {
+  let res : RequestSuccess<UTSJSONObject> | null = null
+  await new Promise<boolean>((resolve : (v : boolean) => void, _reject : (e : any | null) => void) => {
+    uni.request<UTSJSONObject>({
+      url: `${BASE}/api${path}`,
+      method: 'POST' as RequestMethod,
+      header: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      } as UTSJSONObject,
+      data: data,
+      success: (r) => { res = r; resolve(true) },
+      fail: (err) => { resolve(false) },
+    })
+  })
+  return res
+}
+
+function _userId() : string | null {
+  const u = state.user
+  if (u == null) return null
+  return u.getString('user_id')
+}
+
+export function restoreSession() {
+  const stored = uni.getStorageSync(TOKEN_KEY)
+  let token = ''
+  if (stored != null) {
+    token = `${stored}`
+  }
+  const userId = _userId()
+  const signedIn = userId != null
+
+  if (token.length > 0) {
+    state.apiToken = token
+    if (signedIn) refreshSession()
+    return
+  }
+  // A stored identity without a `u.` session cannot be upgraded here: the miniapp's legacy
+  // shared-bearer upgrade path is deliberately not ported (a native install never inherits
+  // miniapp storage, and the bearer must not ship in an APK). Drop the identity → login page.
+  if (signedIn) {
+    for (const k of ['nano_user', 'nano_channel', 'nano_coach']) {
+      uni.removeStorageSync(k)
+    }
+    state.user = null
+    state.channel = null
+    state.coach = null
+  }
+  state.apiToken = ''
+}
+
+// A different login (or a miniapp-side merge) may have changed the canonical user_id; if the
+// server says so, wipe local identity and send the user through login again.
+export async function refreshSession() {
+  const token = state.apiToken
+  const res = await _post('/session/refresh', token, null)
+  if (res == null) return
+  if (state.apiToken != token || _userId() == null) return
+  const body = res.data
+  if (res.statusCode == 200 && body != null) {
+    const newToken = body.getString('session_token')
+    const serverUserId = body.getString('user_id')
+    const localUserId = _userId()
+    if (newToken != null) {
+      if (localUserId != null && serverUserId != null && serverUserId != localUserId) {
+        clearSession()
+        for (const k of ['nano_user', 'nano_channel', 'nano_coach', 'nano_last_session']) {
+          uni.removeStorageSync(k)
+        }
+        state.user = null
+        uni.reLaunch({ url: '/pages/login/login' })
+        return
+      }
+      saveSession(newToken)
+    }
+  } else if (res.statusCode == 401) {
+    handleAuthFailure()
+  }
+}
+
+let _redirecting = false
+
+export function handleAuthFailure() {
+  if (_redirecting) return
+  _redirecting = true
+  clearSession()
+  uni.removeStorageSync('nano_user')
+  state.user = null
+  uni.reLaunch({
+    url: '/pages/login/login',
+    complete: (_ : any | null) => {
+      _redirecting = false
+    }
+  })
+}
+
+let _canonicalRefreshPending = false
+
+// Call with each page request's response statusCode (mirrors miniapp usage).
+export function checkAuthStatus(statusCode : number) {
+  if (statusCode == 401 && state.apiToken.length > 0) handleAuthFailure()
+  if (statusCode == 403 && _userId() != null && !_canonicalRefreshPending) {
+    _canonicalRefreshPending = true
+    refreshSession().finally(() => {
+      _canonicalRefreshPending = false
+    })
+  }
+}

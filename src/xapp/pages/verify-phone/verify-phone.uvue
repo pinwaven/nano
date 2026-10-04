@@ -1,0 +1,438 @@
+<template>
+  <view class="vp-screen">
+    <view v-if="step == 'phone'" class="vp-card">
+      <text class="vp-label">绑定手机号</text>
+      <text class="vp-hint">绑定后可在任意设备登录你的健康数据</text>
+      <view class="phone-input-row">
+        <view class="country-code-select" v-on:click="pickCountry">
+          <text class="country-code-text">{{ countryOptions[countryIndex].code }}</text>
+          <text class="country-code-arrow">▾</text>
+        </view>
+        <input class="vp-input phone-input" v-model="phone" placeholder="请输入手机号" :maxlength="otpSupported ? 11 : 15" />
+      </view>
+      <text v-if="error.length > 0" class="error-text">{{ error }}</text>
+      <view v-if="otpSupported" class="vp-btn" v-on:click="sendCode">
+        <text class="btn-text">{{ loading ? '发送中…' : '获取验证码' }}</text>
+      </view>
+      <view v-else class="vp-btn" v-on:click="acceptUnverifiedPhone">
+        <text class="btn-text">{{ loading ? '提交中…' : '直接绑定（不验证）' }}</text>
+      </view>
+      <view class="vp-link" v-on:click="handleLogout"><text class="link-text">取消注册并退出</text></view>
+    </view>
+
+    <view v-else-if="step == 'code'" class="vp-card">
+      <text class="vp-label">输入验证码</text>
+      <text class="vp-hint">验证码已发送至 {{ countryOptions[countryIndex].code }} {{ phone }}</text>
+      <input class="vp-input" v-model="code" placeholder="6位验证码" :maxlength="6" />
+      <text v-if="error.length > 0" class="error-text">{{ error }}</text>
+      <view class="vp-btn" v-on:click="sendCode">
+        <text class="btn-text">{{ resendCooldown > 0 ? ('重新发送(' + resendCooldown + 's)') : '重新发送' }}</text>
+      </view>
+      <view class="vp-link" v-on:click="changeNumber"><text class="link-text">更换号码</text></view>
+    </view>
+
+    <view v-else class="vp-card">
+      <text class="vp-label">已绑定，选个头像开始？</text>
+      <view class="vp-btn" v-on:click="openAvatarPicker"><text class="btn-text">选择头像</text></view>
+      <view class="vp-link" v-on:click="skipAvatar"><text class="link-text">跳过，直接进入</text></view>
+    </view>
+
+    <avatar-picker :visible="avatarPickerVisible" v-on:select="onAvatarSelect" v-on:close="onAvatarPickerClose" />
+  </view>
+</template>
+
+<script>
+// Ported from miniapp pages/verify-phone/verify-phone.js. Dropped: the WeChat
+// getPhoneNumber one-tap button (handleGetPhone) — no native equivalent; manual entry +
+// SMS OTP is the path. New-user signup on xapp is inherently phone-verified (login goes
+// through /phone-otp/verify), so this page mainly serves accounts created without a phone
+// and the retroactive-binding flow — kept at parity with the miniapp.
+
+import { BASE } from '../../utils/config.uts'
+import { state } from '../../utils/state.uts'
+import { saveSession } from '../../utils/session.uts'
+import { postBody, putBody, deleteBody } from '../../utils/request.uts'
+import { resolveAvatarUrl, DEFAULT_MOOD } from '../../utils/mood.uts'
+import { maskPhone } from '../../utils/phone.uts'
+import AvatarPicker from '../../components/avatar-picker/avatar-picker.uvue'
+
+const PHONE_RE = /^1\d{10}$/
+
+class CountryOption {
+  code : string
+  label : string
+  otpSupported : boolean
+  constructor(code : string, label : string, otp : boolean) {
+    this.code = code
+    this.label = label
+    this.otpSupported = otp
+  }
+}
+
+export default {
+  name: 'VerifyPhonePage',
+  components: { AvatarPicker },
+  data() {
+    return {
+      step: 'phone', // 'phone' | 'code' | 'avatar'
+      phone: '',
+      code: '',
+      loading: false,
+      error: '',
+      resendCooldown: 0,
+      showAvatarStep: false,
+      avatarPickerVisible: false,
+      countryIndex: 0,
+      countryOptions: [
+        new CountryOption('+86', '中国 +86', true),
+        new CountryOption('+1', '美国 +1', false),
+        new CountryOption('+852', '中国香港 +852', false),
+        new CountryOption('+65', '新加坡 +65', false),
+        new CountryOption('+886', '中国台湾 +886', false),
+        new CountryOption('+66', '泰国 +66', false),
+        new CountryOption('+60', '马来西亚 +60', false),
+        new CountryOption('+84', '越南 +84', false),
+        new CountryOption('+81', '日本 +81', false),
+      ] as CountryOption[],
+      _cooldownTimer: 0 as number,
+    }
+  },
+  computed: {
+    otpSupported() : boolean {
+      return this.countryOptions[this.countryIndex].otpSupported
+    }
+  },
+  onLoad(options : OnLoadOptions) {
+    const user = state.user
+    if (user == null || user!.getBoolean('guest') == true) {
+      uni.reLaunch({ url: '/pages/login/login' })
+      return
+    }
+    const isNew = options['new']
+    this.showAvatarStep = isNew != null && `${isNew}` == '1'
+    // stored phone is E.164 (+86...) — this input only handles the bare 11-digit form.
+    const stored = user!.getString('phone')
+    if (stored != null && stored!.startsWith('+86')) {
+      this.phone = stored!.substring(3)
+    } else if (stored != null) {
+      this.phone = stored!
+    }
+  },
+  onUnload() {
+    if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+  },
+  methods: {
+    pickCountry() {
+      const labels : string[] = []
+      for (const c of this.countryOptions) labels.push(c.label)
+      uni.showActionSheet({
+        itemList: labels,
+        success: (res) => {
+          this.countryIndex = res.tapIndex
+          this.phone = ''
+          this.error = ''
+        }
+      })
+    },
+
+    async sendCode() {
+      const phone = this._digitsOnly(this.phone.trim())
+      if (!PHONE_RE.test(phone)) {
+        this.error = '请输入正确的手机号'
+        return
+      }
+      this.phone = phone
+      this.loading = true
+      this.error = ''
+      const res = await postBody(`${BASE}/api/phone-otp/send`, { phone: phone } as UTSJSONObject)
+      this.loading = false
+      if (res == null || res.getBoolean('success') != true) {
+        this.error = '验证码发送失败，请重试'
+        return
+      }
+      this.step = 'code'
+      this.code = ''
+      this._startCooldown()
+    },
+
+    async verifyCode() {
+      const code = this.code.trim()
+      if (code.length == 0 || this.loading) return
+      const user = state.user
+      if (user == null) return
+      this.loading = true
+      this.error = ''
+      const res = await postBody(`${BASE}/api/phone-otp/bind`, {
+        user_id: user.getString('user_id'),
+        phone: this.phone,
+        code: code,
+      } as UTSJSONObject)
+      this.loading = false
+      if (res == null) { this.error = '网络错误，请重试'; return }
+      if (res.getBoolean('success') != true) {
+        const err = res.getString('error')
+        const msg = err == 'invalid_code' ? '验证码不正确'
+          : err == 'phone_in_use' ? '该手机号已被其他账号绑定，请更换手机号'
+          : '验证失败，请重试'
+        if (err == 'phone_in_use') {
+          this.step = 'phone'
+          this.code = ''
+        }
+        this.error = msg
+        return
+      }
+      // A bind can merge into the account that already owned the number — the response
+      // then carries THAT account's session.
+      const token = res.getString('session_token')
+      if (token != null && token!.length > 0) saveSession(token!)
+      this._applyBoundUser(res, true)
+    },
+
+    // Non-China numbers skip OTP (no proof of ownership); phone_verified stays false but
+    // pendingPhoneVerification clears so signup completes like the OTP path.
+    async acceptUnverifiedPhone() {
+      const phone = this.phone.trim()
+      if (this.loading || phone.length < 4) return
+      const user = state.user
+      if (user == null) return
+      this.loading = true
+      this.error = ''
+      const fullPhone = `${this.countryOptions[this.countryIndex].code}${phone}`
+      const res = await postBody(`${BASE}/api/phone-otp/accept-unverified`, {
+        user_id: user.getString('user_id'),
+        phone: fullPhone,
+      } as UTSJSONObject)
+      this.loading = false
+      if (res == null) { this.error = '网络错误，请重试'; return }
+      if (res.getBoolean('success') != true) {
+        this.error = res.getString('error') == 'phone_in_use' ? '该手机号已被其他账号绑定，请更换手机号' : '提交失败，请重试'
+        return
+      }
+      this._applyBoundUser(res, false)
+    },
+
+    // Shared tail of bind/accept-unverified: merge updated fields into the stored (trimmed,
+    // masked) copy and decide avatar step vs main — mirror of miniapp (merged binds skip
+    // the avatar step; the account was already onboarded).
+    _applyBoundUser(res : UTSJSONObject, fromOtp : boolean) {
+      const user = state.user
+      if (user == null) return
+      const updated = res.getJSON('user')
+      const merged = new UTSJSONObject()
+      user!.toMap().forEach((v : any | null, k : string) => { merged[k] = v })
+      if (updated != null) {
+        updated!.toMap().forEach((v : any | null, k : string) => {
+          if (k != 'phone' && k != 'email') merged[k] = v
+        })
+      }
+      const rawPhone = updated != null ? updated!.getString('phone') : null
+      const masked = maskPhone(rawPhone)
+      if (masked.length > 0) merged['maskedPhone'] = masked
+      merged['phoneSet'] = true
+      if (fromOtp) merged['phone_verified'] = true
+      merged['pendingPhoneVerification'] = false
+
+      state.user = merged
+      const channel = res.getJSON('channel')
+      if (channel != null) state.channel = channel
+      const stored = new UTSJSONObject()
+      merged.toMap().forEach((v : any | null, k : string) => {
+        if (k != 'phone' && k != 'email') stored[k] = v
+      })
+      stored['phoneSet'] = true
+      if (fromOtp) stored['phone_verified'] = true
+      stored['maskedPhone'] = masked
+      uni.setStorageSync('nano_user', stored)
+
+      const mergedFlag = res.getBoolean('merged')
+      if (this.showAvatarStep && !(fromOtp && mergedFlag == true)) {
+        this.step = 'avatar'
+        this.avatarPickerVisible = true
+      } else {
+        uni.reLaunch({ url: '/pages/main/main' })
+      }
+    },
+
+    openAvatarPicker() {
+      this.avatarPickerVisible = true
+    },
+    onAvatarPickerClose() {
+      this.avatarPickerVisible = false
+    },
+
+    onAvatarSelect(e : UTSJSONObject) {
+      const avatarId = e.getString('avatarId')
+      if (avatarId == null) return
+      const url = resolveAvatarUrl(avatarId, DEFAULT_MOOD, null)
+      if (url == null) return
+      this.avatarPickerVisible = false
+      const user = state.user
+      if (user != null && user!.getBoolean('guest') != true) {
+        user!['avatar_url'] = url
+        user!['avatar_character'] = avatarId
+        const uid = user!.getString('user_id')
+        putBody(`${BASE}/api/users/${uid}`, {
+          nickname: user!['nickname'],
+          phone: user!['phone'],
+          email: user!['email'],
+          gender: user!['gender'],
+          birth_date: user!['birth_date'],
+          language: user!['language'],
+          coach_id: user!['coach_id'],
+          avatar_url: url,
+          avatar_character: avatarId,
+        } as UTSJSONObject).catch((_: any | null) => {})
+        uni.setStorageSync('nano_user', user)
+      }
+      uni.reLaunch({ url: '/pages/main/main' })
+    },
+
+    skipAvatar() {
+      uni.reLaunch({ url: '/pages/main/main' })
+    },
+
+    changeNumber() {
+      if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+      this.step = 'phone'
+      this.code = ''
+      this.error = ''
+      this.resendCooldown = 0
+    },
+
+    // Cancelling a just-created stub fully undoes the signup (best effort server-side).
+    handleLogout() {
+      if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+      const user = state.user
+      if (user != null && user!.getBoolean('guest') != true && this.showAvatarStep) {
+        const uid = user!.getString('user_id')
+        deleteBody(`${BASE}/api/users/${uid}`, null).catch((_: any | null) => {})
+      }
+      uni.removeStorageSync('nano_user')
+      state.user = null
+      uni.reLaunch({ url: '/pages/login/login' })
+    },
+
+    _startCooldown() {
+      this.resendCooldown = 60
+      if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+      this._cooldownTimer = setInterval(() => {
+        const next = this.resendCooldown - 1
+        if (next <= 0) {
+          clearInterval(this._cooldownTimer)
+          this._cooldownTimer = 0
+          this.resendCooldown = 0
+        } else {
+          this.resendCooldown = next
+        }
+      }, 1000)
+    },
+
+    _digitsOnly(s : string) : string {
+      let out = ''
+      for (let i = 0; i < s.length; i++) {
+        const c = s.charCodeAt(i) ?? 0
+        if (c >= 48 && c <= 57) out += s.charAt(i)
+      }
+      return out
+    },
+  },
+  watch: {
+    code(newVal : string) {
+      const clean = this._digitsOnly(newVal)
+      if (clean != newVal) { this.code = clean; return }
+      if (clean.length == 6) this.verifyCode()
+      this.error = ''
+    },
+    phone(newVal : string) {
+      this.error = ''
+    },
+  }
+}
+</script>
+
+<style>
+.vp-screen {
+  flex: 1;
+  background-color: #0B1C2E;
+  padding-left: 24px;
+  padding-right: 24px;
+  align-items: center;
+  justify-content: center;
+}
+.vp-card {
+  width: 100%;
+  background-color: #12283F;
+  border-radius: 16px;
+  padding: 20px;
+}
+.vp-label {
+  font-size: 17px;
+  font-weight: bold;
+  color: #EAF2FB;
+  margin-bottom: 8px;
+}
+.vp-hint {
+  font-size: 12px;
+  color: rgba(166, 196, 229, 0.7);
+  margin-bottom: 12px;
+}
+.vp-input {
+  width: 100%;
+  height: 48px;
+  background-color: #0B1C2E;
+  color: #EAF2FB;
+  border-radius: 10px;
+  padding-left: 12px;
+  padding-right: 12px;
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+.phone-input-row {
+  flex-direction: row;
+  align-items: center;
+}
+.phone-input {
+  flex: 1;
+}
+.country-code-select {
+  flex-direction: row;
+  align-items: center;
+  padding: 10px 10px;
+}
+.country-code-text {
+  color: #EAF2FB;
+  font-size: 15px;
+}
+.country-code-arrow {
+  color: #A6C4E5;
+  font-size: 12px;
+  margin-left: 4px;
+}
+.vp-btn {
+  width: 100%;
+  height: 48px;
+  background-color: #2E7CF6;
+  border-radius: 12px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+}
+.btn-text {
+  color: #FFFFFF;
+  font-size: 16px;
+  font-weight: bold;
+}
+.vp-link {
+  margin-top: 16px;
+  align-items: center;
+}
+.link-text {
+  color: #A6C4E5;
+  font-size: 14px;
+}
+.error-text {
+  color: #FF6B6B;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+</style>

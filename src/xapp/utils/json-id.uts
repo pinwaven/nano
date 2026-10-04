@@ -1,0 +1,10 @@
+// Server ids are numbers for some tables (coaches, reminders, orders, questionnaires…) and
+// strings for others (user_id, uuids). UTSJSONObject.getString() returns null for a number, so
+// `${o.getString('id')}` silently became "null" — read ids through this instead.
+export function idOf(o : UTSJSONObject | null, key : string) : string {
+  if (o == null) return ''
+  const s = o.getString(key)
+  if (s != null) return s
+  const n = o.getNumber(key)
+  return n != null ? n.toFixed(0) : ''
+}

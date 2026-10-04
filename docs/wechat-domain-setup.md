@@ -26,6 +26,18 @@ Business domains allow `<web-view>` components to load external URLs inside the 
 
 Each host needs its own verification pass (steps below) — but the same verification **file content** can be reused across multiple domains/hosts in one WeChat account (confirmed working: `certs/QJaeMN3iR8.txt`, content `e038f3e1651b72fc26feaf9eb6cf30e7`, is hosted and verified on all four domains above without WeChat rejecting the reuse).
 
+**xapp-mini's appid (`wxecbcf00ce480fcf2`) has its own file**, `7zkfaknx0A.txt` (content
+`89cebc19782abaaafedfeb87130ec176`), served on nano(-dev).gcn.net, aeviva(-dev).gcn.net
+and waven(-dev).gcn.net since 2026-10-03: the worker's `WX_VERIFY_FILES` map plus a route in each
+`s*.yaml`, and GCN's `site/aeviva/` (waven's site falls back to aeviva's folder).
+
+**Changing a domain's routes without the TLS key:** `s nano-domain deploy` needs `certs/key.pem`,
+which only exists on the Mac. From a box without it, edit only the route list through the FC API,
+which leaves the certificate as it is:
+`aliyun fc GET /2023-03-30/custom-domains/<domain>` → add the route →
+`aliyun fc PUT /2023-03-30/custom-domains/<domain> --body '{"routeConfig":{"routes":[…]}}'`.
+A new route takes up to a minute to answer consistently (it flaps between 404 and 200 first).
+
 ### How verification works
 
 1. Download the verification `.txt` file from [mp.weixin.qq.com](https://mp.weixin.qq.com) → Development → Development Settings → Business Domain → Download verification file.

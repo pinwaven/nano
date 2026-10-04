@@ -1,0 +1,1080 @@
+<template>
+  <!-- #ifdef WEB || MP-WEIXIN -->
+  <!-- xapp-mini renders this miniapp markup too, with the miniapp's own stylesheet (style block). -->
+  <!-- Web: the miniapp's pages/phones markup (the web user-app's IdentityPage), styled by the
+       shared stylesheet in static/web/. Native keeps its own layout below. -->
+  <view class="phones-page route-page" :class="theme == 'light' ? 'theme-light' : ''">
+    <!-- #ifdef MP-WEIXIN -->
+    <view class="status-bar-spacer" :style="'height: ' + statusBarHeight + 'px;'"></view>
+    <!-- #endif -->
+    <view class="app-header">
+      <view class="back-btn" v-on:click="goBack"><text class="back-icon">‹</text><text class="back-label">{{ t('back') }}</text></view>
+      <text class="header-title">{{ t('title') }}</text>
+    </view>
+    <view class="phones-content tab-scroll">
+      <view v-if="loading" class="center-msg"><text class="dim-text">{{ t('loading') }}</text></view>
+      <view v-else class="card">
+        <view v-for="(p, i) in phones" :key="i" class="phone-row">
+          <view class="phone-row-main">
+            <text class="phone-value">{{ p.getString('masked') }}</text>
+            <text v-if="p.getBoolean('is_primary') == true" class="phone-badge">{{ t('primaryBadge') }}</text>
+          </view>
+          <view class="phone-row-actions">
+            <text v-if="p.getBoolean('is_primary') != true" class="phone-action" v-on:click="setPrimary(`${p.getString('phone')}`)">{{ t('setPrimaryAction') }}</text>
+            <text class="phone-action phone-action-danger" v-on:click="removePhone(`${p.getString('phone')}`)">{{ t('removeAction') }}</text>
+          </view>
+        </view>
+        <view class="btn btn-outline add-phone-btn" v-on:click="openAddPhone"><text>{{ t('addPhoneBtn') }}</text></view>
+      </view>
+    </view>
+    <view v-if="addMode" class="withdraw-overlay" v-on:click="closeAddPhone">
+      <view class="withdraw-modal" v-on:click.stop="noop">
+        <text class="withdraw-modal-title">{{ t('addPhoneBtn') }}</text>
+        <view v-if="addStep == 'phone'">
+          <view class="form-field">
+            <text class="form-label">{{ t('phoneLabel') }}</text>
+            <input class="form-input" v-model="newPhone" :placeholder="t('phonePlaceholder')" :maxlength="11" type="number" :focus="true" v-on:confirm="sendCode" />
+          </view>
+          <text v-if="addError.length > 0" class="error-text">{{ addError }}</text>
+          <view class="withdraw-btns">
+            <view class="btn btn-outline" v-on:click="closeAddPhone"><text>{{ t('cancelBtn') }}</text></view>
+            <view class="btn btn-primary" :class="addLoading ? 'disabled' : ''" v-on:click="sendCode"><text>{{ addLoading ? t('sending') : t('sendCodeBtn') }}</text></view>
+          </view>
+        </view>
+        <view v-else>
+          <view class="form-field">
+            <text class="form-label">{{ t('codeLabel') }}</text>
+            <text class="phone-step-desc">{{ codeSentToText }}</text>
+            <input class="form-input" v-model="code" placeholder="——————" :maxlength="6" type="number" :focus="true" />
+          </view>
+          <text v-if="addError.length > 0" class="error-text">{{ addError }}</text>
+          <view class="phones-links">
+            <text v-if="resendCooldown > 0" class="dim-text">{{ t('resendCooldown').split('{n}').join(`${resendCooldown}`) }}</text>
+            <text v-else class="phones-link" v-on:click="sendCode">{{ t('resendCode') }}</text>
+            <text class="phones-link" v-on:click="changeNumber">{{ t('changeNumber') }}</text>
+          </view>
+          <view class="withdraw-btns">
+            <view class="btn btn-outline" v-on:click="closeAddPhone"><text>{{ t('cancelBtn') }}</text></view>
+            <view class="btn btn-primary" :class="addLoading ? 'disabled' : ''" v-on:click="manualVerify"><text>{{ addLoading ? t('verifying') : t('verifyBtn') }}</text></view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+  <!-- #endif -->
+  <!-- #ifdef APP -->
+  <view class="ph-screen">
+    <view class="ph-header" :style="'padding-top:' + statusBarHeight + 'px'">
+      <view class="ph-back" v-on:click="goBack"><text class="ph-back-text">‹ {{ t('back') }}</text></view>
+      <text class="ph-title">{{ t('title') }}</text>
+    </view>
+
+    <text v-if="loading" class="ph-hint">{{ t('loading') }}</text>
+
+    <scroll-view direction="vertical" v-else class="ph-list">
+      <view v-for="(p, i) in phones" :key="i" class="ph-row">
+        <view class="ph-row-main">
+          <text class="ph-number">{{ p.getString('masked') }}</text>
+          <text v-if="p.getBoolean('is_primary') == true" class="ph-badge">{{ t('primaryBadge') }}</text>
+          <text v-else-if="p.getString('verified_at') == null" class="ph-badge ph-badge-muted">未验证</text>
+        </view>
+        <view class="ph-row-actions">
+          <text v-if="p.getBoolean('is_primary') != true" class="ph-action" v-on:click="setPrimary(`${p.getString('phone')}`)">{{ t('setPrimaryAction') }}</text>
+          <text class="ph-action ph-action-danger" v-on:click="removePhone(`${p.getString('phone')}`)">{{ t('removeAction') }}</text>
+        </view>
+      </view>
+
+      <view class="ph-add-btn" v-on:click="openAddPhone"><text class="btn-text">{{ t('addPhoneBtn') }}</text></view>
+    </scroll-view>
+
+    <view v-if="addMode" class="ph-modal">
+      <view class="ph-card">
+        <view v-if="addStep == 'phone'">
+          <text class="ph-label">{{ t('phoneLabel') }}</text>
+          <input class="ph-input" v-model="newPhone" :placeholder="t('phonePlaceholder')" :maxlength="11" />
+          <text v-if="addError.length > 0" class="ph-error">{{ addError }}</text>
+          <view class="ph-btn" v-on:click="sendCode"><text class="btn-text">{{ addLoading ? t('sending') : t('sendCodeBtn') }}</text></view>
+        </view>
+        <view v-else>
+          <text class="ph-label">{{ t('codeLabel') }}</text>
+          <text class="ph-hint">{{ codeSentToText }}</text>
+          <input class="ph-input" v-model="code" placeholder="6位验证码" :maxlength="6" />
+          <text v-if="addError.length > 0" class="ph-error">{{ addError }}</text>
+          <view class="ph-btn" v-on:click="manualVerify"><text class="btn-text">{{ addLoading ? t('verifying') : t('verifyBtn') }}</text></view>
+          <view class="ph-link" v-on:click="changeNumber"><text class="ph-link-text">{{ t('changeNumber') }}</text></view>
+        </view>
+        <view class="ph-link" v-on:click="closeAddPhone"><text class="ph-link-text">{{ t('cancelBtn') }}</text></view>
+      </view>
+    </view>
+  </view>
+  <!-- #endif -->
+</template>
+
+<script>
+// Ported from miniapp pages/phones/phones.js (zh/en inline dictionary kept). Live-filtered
+// inputs → v-model + validate-on-send; data-* handlers → direct args; wx.showModal →
+// uni.showModal.
+
+import { BASE } from '../../utils/config.uts'
+import { state } from '../../utils/state.uts'
+import { saveSession } from '../../utils/session.uts'
+import { getBody, postBody } from '../../utils/request.uts'
+import { maskPhone } from '../../utils/phone.uts'
+
+const PHONE_RE = /^1\d{10}$/
+
+const T_ZH : UTSJSONObject = {
+  title: '手机号管理', back: '返回', loading: '加载中…', primaryBadge: '主号码',
+  setPrimaryAction: '设为主号码', removeAction: '移除', addPhoneBtn: '+ 添加手机号',
+  phoneLabel: '手机号', phonePlaceholder: '请输入手机号', sendCodeBtn: '发送验证码', sending: '发送中…',
+  codeLabel: '输入验证码', codeSentTo: '验证码已发送至 {phone}', verifyBtn: '验证并添加', verifying: '验证中…',
+  changeNumber: '更换手机号', cancelBtn: '取消', resendCode: '重新发送验证码', resendCooldown: '{n}秒后可重新发送',
+  confirmRemoveTitle: '移除手机号', confirmRemoveContent: '确定要移除 {phone} 吗？',
+  confirmSetPrimaryTitle: '设为主号码', confirmSetPrimaryContent: '将 {phone} 设为主号码？',
+  errorInvalidPhone: '请输入正确的手机号', errorSendFailed: '验证码发送失败，请重试',
+  errorNetwork: '网络错误，请重试', errorInvalidCode: '验证码不正确', errorPhoneInUse: '该手机号已被其他账号绑定',
+  toastRemoved: '已移除', toastPrimarySet: '已设为主号码', toastAdded: '已添加',
+} as UTSJSONObject
+const T_EN : UTSJSONObject = {
+  title: 'Manage Phone Numbers', back: 'Back', loading: 'Loading…', primaryBadge: 'Primary',
+  setPrimaryAction: 'Set Primary', removeAction: 'Remove', addPhoneBtn: '+ Add Phone Number',
+  phoneLabel: 'Phone Number', phonePlaceholder: 'Enter phone number', sendCodeBtn: 'Send Code', sending: 'Sending…',
+  codeLabel: 'Enter Verification Code', codeSentTo: 'Code sent to {phone}', verifyBtn: 'Verify & Add', verifying: 'Verifying…',
+  changeNumber: 'Change Number', cancelBtn: 'Cancel', resendCode: 'Resend Code', resendCooldown: 'Resend in {n}s',
+  confirmRemoveTitle: 'Remove Phone Number', confirmRemoveContent: 'Remove {phone}?',
+  confirmSetPrimaryTitle: 'Set Primary', confirmSetPrimaryContent: 'Set {phone} as your primary number?',
+  errorInvalidPhone: 'Please enter a valid phone number', errorSendFailed: 'Failed to send code, please try again',
+  errorNetwork: 'Network error, please try again', errorInvalidCode: 'Invalid code',
+  errorPhoneInUse: 'This number is already bound to another account',
+  toastRemoved: 'Removed', toastPrimarySet: 'Primary number updated', toastAdded: 'Added',
+} as UTSJSONObject
+
+export default {
+  name: 'PhonesPage',
+  data() {
+    return {
+      lang: 'zh',
+      statusBarHeight: 44,
+      phones: [] as UTSJSONObject[],
+      loading: true,
+      addMode: false,
+      addStep: 'phone',
+      newPhone: '',
+      code: '',
+      addLoading: false,
+      addError: '',
+      codeSentToText: '',
+      theme: 'dark',
+      resendCooldown: 0,
+      _cooldownTimer: 0 as number,
+    }
+  },
+  onUnload() { this._stopCooldown() },
+  onLoad(_options : OnLoadOptions) {
+    this.lang = state.lang
+    this.theme = state.theme
+    const info = uni.getWindowInfo()
+    this.statusBarHeight = info.statusBarHeight
+    this.fetchPhones()
+  },
+  methods: {
+    t(key : string) : string {
+      const dict = this.lang == 'en' ? T_EN : T_ZH
+      const v = dict.getString(key)
+      return v != null ? v : key
+    },
+    _fmt(s : string, phone : string) : string {
+      return s.split('{phone}').join(phone)
+    },
+    goBack() {
+      uni.navigateBack()
+    },
+    async fetchPhones() {
+      const user = state.user
+      if (user == null || user!.getBoolean('guest') == true) { this.loading = false; return }
+      this.loading = true
+      const uid = user!.getString('user_id') ?? ''
+      const res = await getBody(`${BASE}/api/phone-otp/list?user_id=${encodeURIComponent(uid)}`)
+      const out : UTSJSONObject[] = []
+      if (res != null && res!.getBoolean('success') == true) {
+        const list = res!.getArray<UTSJSONObject>('phones')
+        if (list != null) {
+          for (const p of list!) {
+            const row = new UTSJSONObject()
+            p.toMap().forEach((v : any | null, k : string) => { row[k] = v })
+            row['masked'] = maskPhone(p.getString('phone'))
+            out.push(row)
+          }
+        }
+      }
+      this.phones = out
+      this.loading = false
+    },
+    openAddPhone() {
+      this.addMode = true
+      this.addStep = 'phone'
+      this.newPhone = ''
+      this.code = ''
+      this.addError = ''
+    },
+    closeAddPhone() {
+      this.addMode = false
+      this._stopCooldown()
+    },
+    _digitsOnly(s : string) : string {
+      let out = ''
+      for (let i = 0; i < s.length; i++) {
+        const c = s.charCodeAt(i) ?? 0
+        if (c >= 48 && c <= 57) out += s.charAt(i)
+      }
+      return out
+    },
+    async sendCode() {
+      const phone = this._digitsOnly(this.newPhone.trim())
+      if (!PHONE_RE.test(phone)) { this.addError = this.t('errorInvalidPhone'); return }
+      if (this.resendCooldown > 0 || this.addLoading) return
+      this.newPhone = phone
+      this.addLoading = true
+      this.addError = ''
+      const res = await postBody(`${BASE}/api/phone-otp/send`, { phone: phone } as UTSJSONObject)
+      this.addLoading = false
+      if (res == null || res.getBoolean('success') != true) { this.addError = this.t('errorSendFailed'); return }
+      this.addStep = 'code'
+      this.code = ''
+      this.codeSentToText = this._fmt(this.t('codeSentTo'), phone)
+      this._startCooldown()
+    },
+    // pages/phones/phones.js: 60s before "resend" is offered again.
+    _startCooldown() {
+      this._stopCooldown()
+      this.resendCooldown = 60
+      this._cooldownTimer = setInterval(() => {
+        if (this.resendCooldown <= 1) this._stopCooldown()
+        else this.resendCooldown = this.resendCooldown - 1
+      }, 1000)
+    },
+    _stopCooldown() {
+      if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+      this._cooldownTimer = 0
+      this.resendCooldown = 0
+    },
+    noop() {},
+    manualVerify() {
+      this.verifyCode()
+    },
+    async verifyCode() {
+      const code = this.code.trim()
+      if (code.length == 0 || this.addLoading) return
+      const user = state.user
+      if (user == null) return
+      this.addLoading = true
+      this.addError = ''
+      const res = await postBody(`${BASE}/api/phone-otp/bind`, {
+        user_id: user!.getString('user_id'), phone: this.newPhone, code: code,
+      } as UTSJSONObject)
+      this.addLoading = false
+      if (res == null) { this.addError = this.t('errorNetwork'); return }
+      if (res.getBoolean('success') != true) {
+        const err = res.getString('error')
+        this.addError = err == 'invalid_code' ? this.t('errorInvalidCode')
+          : err == 'phone_in_use' ? this.t('errorPhoneInUse')
+          : this.t('errorNetwork')
+        return
+      }
+      // The bind may MERGE into the account that already owned the number — the response
+      // carries that winner's session and user; both replace the cached ones wholesale.
+      const token = res.getString('session_token')
+      if (token != null && token!.length > 0) saveSession(token!)
+      this._applyUpdatedUser(res.getJSON('user'), res.getJSON('channel'))
+      this.addMode = false
+      uni.showToast({ title: this.t('toastAdded'), icon: 'success' })
+      this.fetchPhones()
+    },
+    changeNumber() {
+      this.addStep = 'phone'
+      this.code = ''
+      this.addError = ''
+      this._stopCooldown()
+    },
+    setPrimary(phone : string) {
+      uni.showModal({
+        title: this.t('confirmSetPrimaryTitle'),
+        content: this._fmt(this.t('confirmSetPrimaryContent'), maskPhone(phone)),
+        success: (res) => { (async () : Promise<void> => {
+          if (!res.confirm) return
+          const user = state.user
+          if (user == null) return
+          const r = await postBody(`${BASE}/api/phone-otp/set-primary`, {
+            user_id: user!.getString('user_id'), phone: phone,
+          } as UTSJSONObject)
+          if (r == null || r.getBoolean('success') != true) { uni.showToast({ title: this.t('errorNetwork'), icon: 'none' }); return }
+          this._applyPhoneChange(phone)
+          uni.showToast({ title: this.t('toastPrimarySet'), icon: 'success' })
+          this.fetchPhones()
+        })() }
+      })
+    },
+    removePhone(phone : string) {
+      uni.showModal({
+        title: this.t('confirmRemoveTitle'),
+        content: this._fmt(this.t('confirmRemoveContent'), maskPhone(phone)),
+        success: (res) => { (async () : Promise<void> => {
+          if (!res.confirm) return
+          const user = state.user
+          if (user == null) return
+          const r = await postBody(`${BASE}/api/phone-otp/remove`, {
+            user_id: user!.getString('user_id'), phone: phone,
+          } as UTSJSONObject)
+          if (r == null || r.getBoolean('success') != true) { uni.showToast({ title: this.t('errorNetwork'), icon: 'none' }); return }
+          this._applyPhoneChange(r.getString('new_primary'))
+          uni.showToast({ title: this.t('toastRemoved'), icon: 'success' })
+          this.fetchPhones()
+        })() }
+      })
+    },
+    _applyPhoneChange(newPrimaryPhone : string | null) {
+      const user = state.user
+      if (user == null) return
+      const updated = new UTSJSONObject()
+      user!.toMap().forEach((v : any | null, k : string) => { updated[k] = v })
+      updated['phone'] = newPrimaryPhone
+      updated['phone_verified'] = newPrimaryPhone != null
+      this._applyUpdatedUser(updated, state.channel)
+    },
+    _applyUpdatedUser(updatedUser : UTSJSONObject | null, channel : UTSJSONObject | null) {
+      if (updatedUser == null) return
+      const rawPhone = updatedUser!.getString('phone')
+      const masked = maskPhone(rawPhone)
+      const fullUser = new UTSJSONObject()
+      updatedUser!.toMap().forEach((v : any | null, k : string) => { fullUser[k] = v })
+      fullUser['maskedPhone'] = masked
+      state.user = fullUser
+      if (channel != null) state.channel = channel
+      const stored = new UTSJSONObject()
+      fullUser.toMap().forEach((v : any | null, k : string) => {
+        if (k == 'phone' || k == 'email') return
+        stored[k] = v
+      })
+      stored['phoneSet'] = true
+      stored['phone_verified'] = updatedUser!.getString('phone') != null
+      stored['maskedPhone'] = masked
+      uni.setStorageSync('nano_user', stored)
+    },
+  },
+  watch: {
+    code(newVal : string) {
+      const clean = this._digitsOnly(newVal)
+      if (clean != newVal) { this.code = clean; return }
+      this.addError = ''
+      if (clean.length == 6) this.verifyCode()
+    },
+    newPhone(newVal : string) {
+      const clean = this._digitsOnly(newVal)
+      if (clean != newVal) { this.newPhone = clean }
+      this.addError = ''
+    },
+  }
+}
+</script>
+
+<style>
+/* #ifdef MP-WEIXIN */
+/* xapp-mini: the miniapp's pages/phones/phones.wxss verbatim. */
+/* The miniapp's stylesheet assumes browser defaults (block views, `display:flex` = a row);
+   uvue.wxss makes every view a flex column. Undo that for this page's own view classes, listed
+   explicitly: a tag selector would also reach the embedded components (WeChat applies a page's
+   tag selectors to them), and the WXSS compiler rejects both :not() and a :where() list (the
+   whole app then renders blank). It sits before every miniapp rule, so at equal specificity
+   those still win. */
+.add-phone-btn, .app-header, .back-btn, .bottom-safe, .btn, .btn-outline, .btn-primary, .card, .center-msg, .form-field, .phone-row, .phone-row-actions, .phone-row-main, .phones-content, .phones-links, .phones-page, .route-page, .status-bar-spacer, .tab-scroll, .theme-light, .withdraw-btns, .withdraw-modal, .withdraw-overlay { display: block; position: static; flex-direction: row; flex-shrink: 1; align-items: normal; align-content: normal; justify-content: normal; min-height: auto; min-width: auto; }
+/* inlined from the miniapp's ../referral/referral.wxss (its @import) */
+.referral-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #0B1C2E;
+  color: #E8F0F8;
+  overflow: hidden;
+}
+
+.referral-page.theme-light {
+  background: #F4F6FA;
+  color: #1A2B3C;
+}
+
+.status-bar-spacer { width: 100%; flex-shrink: 0; }
+
+/* Header */
+.app-header {
+  background: rgba(11, 28, 46, 0.85);
+  border-bottom: 1rpx solid rgba(99, 117, 236, 0.18);
+  padding: 16rpx 36rpx 28rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.theme-light .app-header {
+  background: rgba(244, 246, 250, 0.95);
+  border-bottom-color: rgba(99, 117, 236, 0.15);
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  flex-shrink: 0;
+}
+
+.back-icon {
+  font-size: 44rpx;
+  color: var(--blue);
+  line-height: 1;
+}
+
+.back-label {
+  font-size: 26rpx;
+  color: var(--blue);
+}
+
+.header-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  letter-spacing: 4rpx;
+  color: #EEF2FF;
+}
+
+.theme-light .header-title { color: #1A2B3C; }
+
+/* Scroll area */
+.referral-content {
+  flex: 1;
+  overflow: hidden;
+  padding: 32rpx 28rpx;
+  box-sizing: border-box;
+}
+
+/* Cards */
+.card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1rpx solid rgba(99, 117, 236, 0.2);
+  border-radius: 20rpx;
+  padding: 36rpx;
+  margin-bottom: 24rpx;
+}
+
+.theme-light .card {
+  background: #fff;
+  border-color: rgba(99, 117, 236, 0.15);
+}
+
+.card-label {
+  font-size: 22rpx;
+  color: rgba(232, 240, 248, 0.5);
+  letter-spacing: 3rpx;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 20rpx;
+}
+
+.theme-light .card-label { color: #5F656B; }
+
+.code-row {
+  margin-bottom: 28rpx;
+}
+
+.code-value {
+  font-size: 44rpx;
+  font-weight: 700;
+  letter-spacing: 6rpx;
+  color: var(--blue);
+  font-family: monospace;
+}
+
+.btn-row {
+  display: flex;
+  gap: 16rpx;
+}
+
+.btn {
+  flex: 1;
+  height: 72rpx;
+  border-radius: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26rpx;
+  font-weight: 600;
+  border: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1rpx solid rgba(var(--blue-rgb), 0.5);
+  color: var(--blue);
+}
+
+.btn-primary {
+  background: var(--blue);
+  color: #fff;
+  border: none;
+}
+
+/* Stats */
+.stats-row {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1rpx solid rgba(99, 117, 236, 0.2);
+  border-radius: 20rpx;
+  padding: 32rpx;
+  margin-bottom: 24rpx;
+}
+
+.theme-light .stats-row { background: #fff; border-color: rgba(99, 117, 236, 0.15); }
+
+.stat-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.stat-num {
+  font-size: 48rpx;
+  font-weight: 700;
+  color: var(--blue);
+}
+
+.stat-label {
+  font-size: 22rpx;
+  color: rgba(232, 240, 248, 0.55);
+}
+
+.theme-light .stat-label { color: #5E656B; }
+
+.stat-divider {
+  width: 1rpx;
+  height: 80rpx;
+  background: rgba(var(--blue-rgb), 0.2);
+}
+
+/* How it works */
+.how-card { margin-bottom: 24rpx; }
+
+.how-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.how-row:last-child { margin-bottom: 0; }
+
+.how-num {
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  background: rgba(var(--blue-rgb), 0.2);
+  border: 1rpx solid rgba(var(--blue-rgb), 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+  font-weight: 700;
+  color: var(--blue);
+  flex-shrink: 0;
+  text-align: center;
+  line-height: 36rpx;
+}
+
+.how-text {
+  font-size: 26rpx;
+  color: rgba(232, 240, 248, 0.75);
+  line-height: 1.6;
+  flex: 1;
+}
+
+.theme-light .how-text { color: rgba(26, 43, 60, 0.75); }
+
+/* Section title */
+.section-title {
+  font-size: 24rpx;
+  font-weight: 600;
+  letter-spacing: 3rpx;
+  color: rgba(232, 240, 248, 0.45);
+  margin-bottom: 16rpx;
+}
+
+.theme-light .section-title { color: #6B7177; }
+
+/* Friend cards */
+.friend-card {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.1);
+}
+
+.friend-card:last-child { border-bottom: none; }
+
+.friend-avatar {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: rgba(var(--blue-rgb), 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.avatar-letter {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--blue);
+}
+
+.friend-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.friend-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #E8F0F8;
+}
+
+.theme-light .friend-name { color: #1A2B3C; }
+
+.friend-meta {
+  font-size: 22rpx;
+  color: rgba(232, 240, 248, 0.45);
+}
+
+.theme-light .friend-meta { color: #6B7177; }
+
+.friend-commission { flex-shrink: 0; }
+
+.commission-amt {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #4CAF8A;
+}
+
+.theme-light .commission-amt { color: #157A4D; }
+
+/* Misc */
+.center-msg {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-state {
+  padding: 60rpx 0;
+  display: flex;
+  justify-content: center;
+}
+
+.dim-text {
+  font-size: 26rpx;
+  color: rgba(232, 240, 248, 0.4);
+}
+
+.theme-light .dim-text { color: #6A7175; }
+
+.error-text {
+  font-size: 26rpx;
+  color: #E87070;
+}
+
+.theme-light .error-text { color: #DC2626; }
+
+.bottom-safe { height: 60rpx; }
+
+/* Credit balance card */
+.credit-card { margin-bottom: 24rpx; }
+
+.credit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.credit-info { flex: 1; }
+
+.credit-balance {
+  font-size: 52rpx;
+  font-weight: 700;
+  color: var(--blue);
+  display: block;
+  margin: 8rpx 0 4rpx;
+}
+
+.credit-currency {
+  font-size: 26rpx;
+  font-weight: 400;
+  color: rgba(var(--blue-rgb), 0.7);
+}
+
+.credit-hint {
+  font-size: 22rpx;
+  color: rgba(232, 240, 248, 0.45);
+  display: block;
+}
+
+.theme-light .credit-hint { color: #6B7177; }
+
+.credit-withdraw-btn {
+  flex: none;
+  width: auto;
+  padding: 0 32rpx;
+  height: 72rpx;
+  font-size: 26rpx;
+}
+
+/* Withdraw overlay */
+.withdraw-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-end;
+  z-index: 100;
+}
+
+.withdraw-modal {
+  width: 100%;
+  background: #122033;
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 48rpx 40rpx 80rpx;
+  box-sizing: border-box;
+}
+
+.theme-light .withdraw-modal { background: #fff; }
+
+.withdraw-modal-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #E8F0F8;
+  display: block;
+  margin-bottom: 40rpx;
+  text-align: center;
+}
+
+.theme-light .withdraw-modal-title { color: #1A2B3C; }
+
+.form-field { margin-bottom: 28rpx; }
+
+.form-label {
+  font-size: 24rpx;
+  color: rgba(232, 240, 248, 0.55);
+  display: block;
+  margin-bottom: 12rpx;
+}
+
+.theme-light .form-label { color: #5E656B; }
+
+.form-input {
+  width: 100%;
+  height: 80rpx;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid rgba(99, 117, 236, 0.3);
+  border-radius: 14rpx;
+  padding: 0 24rpx;
+  font-size: 28rpx;
+  color: #E8F0F8;
+  box-sizing: border-box;
+}
+
+.theme-light .form-input { background: #f4f6fa; color: #1A2B3C; border-color: rgba(99, 117, 236, 0.2); }
+
+.withdraw-btns {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 40rpx;
+}
+
+.withdraw-btns .btn { flex: 1; }
+
+/* Withdrawal history cards */
+.wd-card {
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.1);
+}
+
+.wd-card:last-child { border-bottom: none; }
+
+.wd-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 8rpx;
+}
+
+.wd-credits {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--blue);
+}
+
+.wd-arrow {
+  font-size: 22rpx;
+  color: rgba(232, 240, 248, 0.4);
+}
+
+.theme-light .wd-arrow { color: #6A7175; }
+
+.wd-cash {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #4CAF8A;
+  flex: 1;
+}
+
+.theme-light .wd-cash { color: #157A4D; }
+
+.wd-badge {
+  padding: 4rpx 16rpx;
+  border-radius: 20rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+}
+
+.wd-status-pending  { background: rgba(245, 158, 11, 0.2); color: var(--warn); }
+.wd-status-approved { background: rgba(37, 99, 235, 0.2);  color: #60a5fa; }
+.wd-status-rejected { background: rgba(239, 68, 68, 0.2);  color: var(--danger-soft); }
+.wd-status-completed { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+
+.theme-light .wd-status-pending   { color: #B45309; }
+.theme-light .wd-status-approved  { color: #1D4ED8; }
+.theme-light .wd-status-rejected  { color: #B91C1C; }
+.theme-light .wd-status-completed { color: #047857; }
+
+.wd-date {
+  font-size: 22rpx;
+  color: rgba(232, 240, 248, 0.4);
+}
+
+.theme-light .wd-date { color: #6A7175; }
+
+/* ════════════════════════════════════════════════════════
+   Light theme — muted-text contrast fixes (generated)
+   The base rules above use low-alpha rgba() tuned for a bright color on dark
+   navy. On the cream light surface that same alpha washes out to 1.4-2.1:1,
+   and no alpha <= 0.6 can reach 4.5:1 on cream regardless of base color — so
+   light theme needs opaque values. Ramp preserves the faint->strong hierarchy.
+   ════════════════════════════════════════════════════════ */
+.theme-light .back-icon { color: #5D4C32; }
+.theme-light .back-label { color: #5D4C32; }
+.theme-light .code-value { color: #5D4C32; }
+.theme-light .btn-outline { color: #5D4C32; }
+.theme-light .stat-num { color: #5D4C32; }
+.theme-light .how-num { color: #5D4C32; }
+.theme-light .avatar-letter { color: #5D4C32; }
+.theme-light .credit-balance { color: #5D4C32; }
+.theme-light .credit-currency { color: #5D4C32; }
+.theme-light .wd-credits { color: #5D4C32; }
+
+.phones-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #0B1C2E;
+  color: #E8F0F8;
+  overflow: hidden;
+}
+
+.phones-page.theme-light {
+  background: #F4F6FA;
+  color: #1A2B3C;
+}
+
+.phones-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32rpx 28rpx;
+  box-sizing: border-box;
+}
+
+.phone-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid rgba(var(--blue-rgb), 0.1);
+}
+
+.phone-row:last-child { border-bottom: none; }
+
+.phone-row-main {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.phone-value {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #E8F0F8;
+}
+
+.theme-light .phone-value { color: #1A2B3C; }
+
+.phone-badge {
+  padding: 4rpx 16rpx;
+  border-radius: 20rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+  background: rgba(var(--blue-rgb), 0.2);
+  color: var(--blue);
+}
+
+.phone-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  flex-shrink: 0;
+}
+
+.phone-action {
+  font-size: 24rpx;
+  color: var(--blue);
+}
+
+.phone-action-danger {
+  color: #E87070;
+}
+
+.theme-light .phone-action-danger { color: #DC2626; }
+
+.add-phone-btn {
+  margin-top: 24rpx;
+  width: 100%;
+}
+
+.phone-step-desc {
+  font-size: 24rpx;
+  color: rgba(232, 240, 248, 0.55);
+  display: block;
+  margin: 12rpx 0 20rpx;
+}
+
+.theme-light .phone-step-desc { color: #5E656B; }
+
+.phones-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+}
+
+.phones-link {
+  font-size: 24rpx;
+  color: var(--blue);
+}
+
+/* ════════════════════════════════════════════════════════
+   Light theme — muted-text contrast fixes (generated)
+   The base rules above use low-alpha rgba() tuned for a bright color on dark
+   navy. On the cream light surface that same alpha washes out to 1.4-2.1:1,
+   and no alpha <= 0.6 can reach 4.5:1 on cream regardless of base color — so
+   light theme needs opaque values. Ramp preserves the faint->strong hierarchy.
+   ════════════════════════════════════════════════════════ */
+.theme-light .phone-badge { color: #5D4C32; }
+.theme-light .phone-action { color: #5D4C32; }
+.theme-light .phones-link { color: #5D4C32; }
+/* #endif */
+/* Android/iOS only — the web build renders the miniapp markup above, styled by static/web/. */
+/* #ifdef APP */
+.ph-screen { flex: 1; background-color: #0B1C2E; }
+.ph-header { flex-direction: row; align-items: center; padding: 12px 16px; }
+.ph-back { margin-right: 8px; }
+.ph-back-text { color: #A6C4E5; font-size: 15px; }
+.ph-title { color: #EAF2FB; font-size: 17px; font-weight: bold; }
+.ph-list { flex: 1; padding: 0 16px; }
+.ph-row {
+  background-color: #12283F;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 10px;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+.ph-row-main { flex-direction: row; align-items: center; }
+.ph-number { color: #EAF2FB; font-size: 15px; }
+.ph-badge {
+  margin-left: 8px;
+  color: #2E7CF6;
+  font-size: 11px;
+  background-color: rgba(46, 124, 246, 0.12);
+  border-radius: 6px;
+  padding-left: 6px;
+  padding-right: 6px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.ph-badge-muted { color: #A6C4E5; background-color: rgba(166, 196, 229, 0.12); }
+.ph-row-actions { flex-direction: row; }
+.ph-action { color: #2E7CF6; font-size: 13px; margin-left: 14px; }
+.ph-action-danger { color: #FF6B6B; }
+.ph-add-btn {
+  height: 46px;
+  background-color: #2E7CF6;
+  border-radius: 12px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+  margin-bottom: 20px;
+}
+.btn-text { color: #FFFFFF; font-size: 15px; font-weight: bold; }
+.ph-modal {
+  position: fixed;
+  left: 0; top: 0; right: 0; bottom: 0;
+  background-color: rgba(4, 10, 18, 0.72);
+  justify-content: center;
+  align-items: center;
+}
+.ph-card {
+  width: 86%;
+  background-color: #12283F;
+  border-radius: 16px;
+  padding: 18px;
+}
+.ph-label { color: #EAF2FB; font-size: 15px; font-weight: bold; margin-bottom: 8px; }
+.ph-hint { color: rgba(166, 196, 229, 0.7); font-size: 12px; margin: 8px 16px; }
+.ph-input {
+  height: 46px;
+  background-color: #0B1C2E;
+  color: #EAF2FB;
+  border-radius: 10px;
+  padding-left: 12px;
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+.ph-btn {
+  height: 46px;
+  background-color: #2E7CF6;
+  border-radius: 12px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 6px;
+}
+.ph-link { margin-top: 12px; align-items: center; }
+.ph-link-text { color: #A6C4E5; font-size: 14px; }
+.ph-error { color: #FF6B6B; font-size: 12px; margin-bottom: 6px; }
+/* #endif */
+</style>

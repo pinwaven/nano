@@ -376,6 +376,7 @@ The `HaloRing.getRealtime()` implementation caches the paired metric: when reque
 - `src/mini/nano-miniapp/utils/wearable/halo/index.js` — `HaloRing` class extending `WearableDevice`
 - `src/mini/nano-miniapp/utils/wearable/index.js` — factory registers brand `'halo'` (accepts legacy `'x3'` as an alias)
 - `src/mini/nano-miniapp/utils/wearable/sync.js` — `syncWearableData()` maps a `WearableSnapshot` to `health_events` and POSTs to `/api/health-events/sync`
+  - Temperature rows: a slot's reading time is `timestamp` (full sync) or, when that is absent, a full `date` ('YYYY-MM-DD HH:MM:SS' — the incremental `getTemperatureHistory(since)` and every V8 slot). `recorded_at` uses whichever is present; before 2026-10-02 only `timestamp` was read, so those rows carried the sync time (repaired by `temp/fix-temp-recorded-at.js`). The xapp's `utils/wearable/sync.uts` does the same.
 
 **What the current sync pulls on each connection (`handleSyncWearable`):**
 

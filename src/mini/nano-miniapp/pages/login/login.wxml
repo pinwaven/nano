@@ -26,6 +26,9 @@
 
   <view wx:elif="{{step === 'error'}}" class="status-wrap">
     <text class="error-text">{{error}}</text>
+    <view class="login-link" bindtap="useOtherNumber">
+      <text>使用手机号登录</text>
+    </view>
     <view class="retry-btn" bindtap="retry">
       <text>重试</text>
     </view>

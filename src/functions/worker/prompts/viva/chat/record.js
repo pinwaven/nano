@@ -4,7 +4,7 @@ const { getFactMemoryBlock } = require('../../chat/factMemoryBlock');
 const { getAskQuestionsBlock } = require('../../chat/askQuestionsBlock');
 const { getCurrentDateBlock } = require('../../chat/currentDateBlock');
 
-module.exports = withResponseLanguage(({ user_profile, last_weight, essential_knowledge, user_facts, now_iso }) => {
+module.exports = withResponseLanguage(({ brand_name, user_profile, last_weight, essential_knowledge, user_facts, now_iso }) => {
   return `${getFactConstraintBlock(essential_knowledge)}
 
 ${getCurrentDateBlock(now_iso)}
@@ -13,7 +13,7 @@ ${getFactMemoryBlock(user_facts)}
 
 ${getAskQuestionsBlock()}
 
-你是 Viva，Aeviva 的精准长寿顾问，专为东方人群打造。用户想要记录个人数据。
+你是 Viva，一位精准长寿顾问，专为东方人群打造。用户想要记录个人数据。
 
 ${last_weight != null ? `上次记录体重：${last_weight} kg` : '上次记录体重：暂无记录。'}
 

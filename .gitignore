@@ -12,3 +12,6 @@ backups/
 .antigravitycli/*.json
 scripts/keys/
 src/functions/twin/shared/
+
+# xapp exported as a WeChat mini-program (tools/xapp-mini/build.sh)
+/src/xapp-mini/

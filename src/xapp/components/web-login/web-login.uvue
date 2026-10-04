@@ -1,0 +1,423 @@
+<template>
+  <!-- Web build's login screen — the twin of the web user-app's components/LoginScreen.jsx,
+       same markup and class names, so the user-app's style.css (static/web/user-app.css)
+       styles it. pages/login renders it only under #ifdef WEB; native keeps its own card.
+       Phone / email OTP with the coach-invite step (require_invite, like the user-app), WeChat
+       QR login (/qr-login/init + status polling), the 中/EN toggle and the logged-out card. -->
+  <view class="login-screen">
+    <view class="login-glow"></view>
+    <view class="login-top-bar">
+      <view class="lang-toggle" v-on:click="toggleLang">
+        <text :class="lang == 'zh' ? 'lang-active' : ''">中</text>
+        <text class="lang-sep">/</text>
+        <text :class="lang == 'en' ? 'lang-active' : ''">EN</text>
+      </view>
+    </view>
+    <view class="login-brand">
+      <view class="login-logo-ring">
+        <image :src="brandLogo" class="login-logo" mode="aspectFit" />
+      </view>
+      <text class="login-title">{{ brandName }}</text>
+      <text class="login-subtitle">{{ t('subtitle') }}</text>
+    </view>
+
+    <view v-if="showLoggedOut" class="login-card">
+      <text class="login-card-label">{{ t('welcomeBack') }}</text>
+      <view class="login-btn" v-on:click="onResume"><text>{{ continueAs() }}</text></view>
+      <view class="login-btn login-btn--ghost" style="margin-top: 10px" v-on:click="leaveLoggedOut('phone')"><text>{{ t('useOtherPhone') }}</text></view>
+      <view class="login-btn login-btn--ghost" style="margin-top: 10px" v-on:click="leaveLoggedOut('email')"><text>{{ t('useEmailLogin') }}</text></view>
+    </view>
+
+    <view v-if="!showLoggedOut" class="login-tab-bar">
+      <view class="login-tab-btn" :class="tab == 'phone' ? 'login-tab-btn--active' : ''" v-on:click="switchTab('phone')"><text>{{ t('loginTabPhone') }}</text></view>
+      <view class="login-tab-btn" :class="tab == 'email' ? 'login-tab-btn--active' : ''" v-on:click="switchTab('email')"><text>{{ t('loginTabEmail') }}</text></view>
+      <view class="login-tab-btn" :class="tab == 'qr' ? 'login-tab-btn--active' : ''" v-on:click="switchTab('qr')"><text>{{ t('loginTabQr') }}</text></view>
+    </view>
+
+    <!-- Phone / email + OTP -->
+    <view v-if="!showLoggedOut && tab != 'qr'" class="login-card">
+      <text class="login-card-label">{{ t('signIn') }}</text>
+
+      <template v-if="otpStep == 'phone'">
+        <view class="login-field">
+          <text class="login-label">{{ isEmail ? t('emailLabel') : t('phoneLabel') }}</text>
+          <input v-if="isEmail" class="login-input" type="text" :placeholder="t('emailPlaceholder')" v-model="email" :focus="true" v-on:confirm="sendCode" />
+          <input v-else class="login-input" type="tel" :placeholder="t('phonePlaceholder')" v-model="phone" :focus="true" v-on:confirm="sendCode" />
+        </view>
+        <text v-if="error.length > 0" class="login-error">{{ error }}</text>
+        <view class="login-btn" :class="(isEmail ? email : phone).trim().length == 0 || loading ? 'is-disabled' : ''" v-on:click="sendCode">
+          <view v-if="loading" class="login-btn-spinner"></view>
+          <text>{{ loading ? t('verifying') : t('sendCode') }}</text>
+        </view>
+      </template>
+
+      <template v-if="otpStep == 'code'">
+        <view class="login-field">
+          <text class="login-label">{{ t('codeLabel') }}</text>
+          <input class="login-input" type="number" :maxlength="6" :placeholder="t('otpCodePlaceholder')" v-model="code" :focus="true" v-on:confirm="verifyCode" />
+        </view>
+        <text v-if="error.length > 0" class="login-error">{{ error }}</text>
+        <view class="login-btn" :class="code.trim().length == 0 || loading ? 'is-disabled' : ''" v-on:click="verifyCode">
+          <view v-if="loading" class="login-btn-spinner"></view>
+          <text>{{ loading ? t('verifying') : t('confirm') }}</text>
+        </view>
+        <view class="login-qr-hint">
+          <text v-if="resendCooldown > 0">{{ resendIn() }}</text>
+          <text v-else class="login-link-btn" v-on:click="sendCode">{{ t('resendCode') }}</text>
+          <text class="login-footer-dot"> · </text>
+          <text class="login-link-btn" v-on:click="changeNumber">{{ isEmail ? t('changeEmail') : t('changeNumber') }}</text>
+        </view>
+        <text v-if="isEmail" class="login-qr-hint">{{ t('emailSpamHint') }}</text>
+      </template>
+
+      <template v-if="otpStep == 'invite'">
+        <text class="login-card-label">{{ t('inviteTitle') }}</text>
+        <text class="login-qr-desc">{{ t('inviteDesc') }}</text>
+        <view class="login-field">
+          <text class="login-label">{{ t('inviteLabel') }}</text>
+          <input class="login-input" type="number" :maxlength="6" :placeholder="t('invitePlaceholder')" v-model="inviteCode" :focus="true" v-on:confirm="submitInvite" />
+        </view>
+        <text v-if="error.length > 0" class="login-error">{{ error }}</text>
+        <view class="login-btn" :class="inviteCode.length != 6 || loading ? 'is-disabled' : ''" v-on:click="submitInvite">
+          <view v-if="loading" class="login-btn-spinner"></view>
+          <text>{{ loading ? t('verifying') : t('joinWithInvite') }}</text>
+        </view>
+        <view class="login-qr-hint">
+          <text class="login-link-btn" v-on:click="changeNumber">{{ isEmail ? t('changeEmail') : t('changeNumber') }}</text>
+        </view>
+      </template>
+    </view>
+
+    <!-- WeChat QR -->
+    <view v-if="!showLoggedOut && tab == 'qr'" class="login-card login-card--qr">
+      <text class="login-card-label">{{ t('qrTitle') }}</text>
+      <text class="login-qr-desc">{{ t('qrDesc') }}</text>
+      <view v-if="qrStatus == 'loading'" class="login-qr-placeholder"><view class="login-qr-spinner"></view></view>
+      <view v-if="qrStatus == 'pending' && qrImg.length > 0" class="login-qr-wrap">
+        <image class="login-qr-img" :src="qrImg" mode="aspectFit" />
+      </view>
+      <view v-if="qrStatus == 'confirmed'" class="login-qr-success">
+        <text class="login-qr-success-icon">✓</text>
+        <text>{{ t('qrSuccess') }}</text>
+      </view>
+      <view v-if="qrStatus == 'expired' || qrStatus == 'error'" class="login-qr-expired">
+        <text>{{ qrStatus == 'expired' ? t('qrExpired') : (qrError.length > 0 ? qrError : t('errNetwork')) }}</text>
+        <view class="login-btn" style="margin-top: 12px" v-on:click="initQr"><text>{{ t('qrRefresh') }}</text></view>
+      </view>
+      <text class="login-qr-hint">{{ t('qrHint') }}</text>
+    </view>
+
+    <view class="login-footer"><text>{{ t('loginFooter') }}</text></view>
+  </view>
+</template>
+
+<script>
+import { BASE } from '../../utils/config.uts'
+import { state } from '../../utils/state.uts'
+import { getBody, postBody } from '../../utils/request.uts'
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+const QR_POLL_MS = 2500
+
+// The user-app's i18n entries this screen reads (i18n/legacy.js + index.js WEB_EXTRA + main.js).
+const T_ZH : UTSJSONObject = {
+  subtitle: '您的精准健康伴侣', signIn: '登录您的账户', phoneLabel: '手机号码', phonePlaceholder: '138 0000 0000',
+  verifying: '验证中…', errNetwork: '连接失败，请检查网络后重试。', loginTabPhone: '手机号', loginTabEmail: '邮箱',
+  loginTabQr: '微信扫码', emailLabel: '邮箱地址', emailPlaceholder: 'name@example.com', changeEmail: '更换邮箱',
+  errInvalidEmail: '请输入有效的邮箱地址', errTooManyAttempts: '错误次数过多，请重新获取验证码',
+  errChannelNotSupported: '该账号暂不支持邮箱登录，请使用手机号登录。', emailSpamHint: '没收到？请查看垃圾邮件文件夹。',
+  codeLabel: '验证码', otpCodePlaceholder: '6位验证码', sendCode: '发送验证码', resendCode: '重新发送', changeNumber: '更换号码',
+  errInvalidPhone: '请输入有效的手机号码', errInvalidCode: '验证码错误或已过期', errRateLimited: '尝试次数过多，请稍后再试',
+  errSendFailed: '验证码发送失败，请重试', inviteTitle: '输入教练邀请码', inviteDesc: '邀请码会将新账户关联到邀请您的教练和机构。',
+  inviteLabel: '教练邀请码', invitePlaceholder: '6位邀请码', joinWithInvite: '创建账户', errInvalidInvite: '邀请码无效或已失效',
+  errSignupExpired: '本次注册已过期，请重新验证手机号或邮箱。', qrTitle: '微信扫码登录', qrDesc: '打开微信，用相机扫描二维码即可登录。',
+  qrHint: '二维码有效期 5 分钟', qrSuccess: '登录成功，正在跳转…', qrExpired: '二维码已过期', qrRefresh: '重新生成',
+  confirm: '确认', loginFooter: '哈佛大学创新实验室 · 成员企业', useOtherPhone: '使用其他手机号登录',
+  useEmailLogin: '使用邮箱登录', welcomeBack: '欢迎回来',
+}
+const T_EN : UTSJSONObject = {
+  subtitle: 'Your Precision Health Companion', signIn: 'Sign in to your account', phoneLabel: 'Phone Number',
+  phonePlaceholder: '138 0000 0000', verifying: 'Verifying…', errNetwork: 'Connection failed. Please check your network and try again.',
+  loginTabPhone: 'Phone', loginTabEmail: 'Email', loginTabQr: 'WeChat QR', emailLabel: 'Email Address',
+  emailPlaceholder: 'name@example.com', changeEmail: 'Change email', errInvalidEmail: 'Please enter a valid email address',
+  errTooManyAttempts: 'Too many wrong attempts — request a new code',
+  errChannelNotSupported: 'Email login is not available for this account. Please sign in by phone.',
+  emailSpamHint: 'Not in your inbox? Check the spam folder.', codeLabel: 'Verification Code', otpCodePlaceholder: '6-digit code',
+  sendCode: 'Send Code', resendCode: 'Resend Code', changeNumber: 'Change number', errInvalidPhone: 'Please enter a valid phone number',
+  errInvalidCode: 'Incorrect or expired code', errRateLimited: 'Too many attempts. Please wait before trying again.',
+  errSendFailed: 'Could not send verification code. Please try again.', inviteTitle: 'Enter your coach invitation code',
+  inviteDesc: 'Your code connects your new account to the coach and organization that invited you.',
+  inviteLabel: 'Coach invitation code', invitePlaceholder: '6-digit code', joinWithInvite: 'Create Account',
+  errInvalidInvite: 'Invalid or expired invitation code',
+  errSignupExpired: 'This signup session has expired. Please verify your phone or email again.', qrTitle: 'Scan with WeChat',
+  qrDesc: 'Open WeChat, scan this QR code with your camera to log in instantly.', qrHint: 'QR code expires in 5 minutes',
+  qrSuccess: 'Login confirmed! Redirecting…', qrExpired: 'This QR code has expired.', qrRefresh: 'Generate New Code',
+  confirm: 'Confirm', loginFooter: 'Harvard Innovation Labs · Member Company', useOtherPhone: 'Use another phone number',
+  useEmailLogin: 'Sign in with email', welcomeBack: 'Welcome back',
+}
+
+export default {
+  name: 'WebLogin',
+  emits: ['login', 'resume'],
+  data() {
+    return {
+      lang: 'en',
+      tab: 'phone', // phone | email | qr
+      otpStep: 'phone', // phone | code | invite
+      phone: '',
+      email: '',
+      code: '',
+      inviteCode: '',
+      signupProof: '',
+      error: '',
+      loading: false,
+      resendCooldown: 0,
+      showLoggedOut: false,
+      maskedPhone: '',
+      brandName: 'NANO',
+      brandLogo: '/static/waven-logo-icon.png',
+      qrImg: '',
+      qrSession: '',
+      qrStatus: 'idle', // idle | loading | pending | confirmed | expired | error
+      qrError: '',
+      _cooldownTimer: 0 as number,
+      _pollTimer: 0 as number,
+      _expireTimer: 0 as number,
+    }
+  },
+  computed: {
+    isEmail() : boolean { return this.tab == 'email' },
+  },
+  mounted() {
+    // Same defaults as the user-app's AppContext: the stored channel's locale, else English.
+    const channel = state.channel
+    const locale = channel != null ? channel.getString('locale') : null
+    this.lang = locale == 'zh' ? 'zh' : (channel != null ? 'zh' : 'en')
+    // Logged-out card: only a snapshot that carries its own session can be resumed.
+    const raw = uni.getStorageSync('nano_last_session')
+    if (raw != null && raw instanceof UTSJSONObject) {
+      const ls = raw as UTSJSONObject
+      const mp = ls.getString('maskedPhone') ?? ''
+      if (ls.getJSON('user') != null && mp.length > 0 && ls.getString('session_token') != null) {
+        this.showLoggedOut = true
+        this.maskedPhone = mp
+      }
+      const lc = ls.getJSON('channel')
+      if (channel == null && lc != null) this._applyBrand(lc)
+    }
+    if (channel != null) this._applyBrand(channel)
+    this._readUrlParams()
+  },
+  unmounted() {
+    this._stopQr()
+    if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+  },
+  methods: {
+    t(key : string) : string {
+      const v = (this.lang == 'zh' ? T_ZH : T_EN).getString(key)
+      return v != null ? v : key
+    },
+    continueAs() : string { return this.lang == 'zh' ? `继续使用 ${this.maskedPhone}` : `Continue as ${this.maskedPhone}` },
+    resendIn() : string { return this.lang == 'zh' ? `${this.resendCooldown}秒后重新发送` : `Resend in ${this.resendCooldown}s` },
+    toggleLang() {
+      this.lang = this.lang == 'zh' ? 'en' : 'zh'
+      state.lang = this.lang
+    },
+    _applyBrand(ch : UTSJSONObject) {
+      const name = ch.getString('name')
+      const logo = ch.getString('logo_url')
+      if (name != null && name.length > 0) this.brandName = name
+      if (logo != null && logo.length > 0) this.brandLogo = logo
+    },
+    // ?invite=<6 digits> (or a stored referral) prefills the invite step; ?channel=<key> shows
+    // that channel's landing branding — display only, never persisted as the account's channel.
+    _readUrlParams() {
+      // #ifdef WEB
+      const params = new URLSearchParams(window.location.search)
+      const inv = params.get('invite') ?? `${uni.getStorageSync('nano_ref') ?? ''}`
+      if (/^\d{6}$/.test(inv)) this.inviteCode = inv
+      const key = (params.get('channel') ?? '').trim()
+      if (key.length > 0 && /^[a-zA-Z0-9_-]{1,100}$/.test(key)) {
+        getBody(`${BASE}/api/channel-branding?key_name=${encodeURIComponent(key)}`).then((res) => {
+          const ch = res != null && res.getBoolean('success') == true ? res.getJSON('channel') : null
+          if (ch != null) this._applyBrand(ch)
+        })
+      }
+      // #endif
+    },
+    onResume() { this.$emit('resume') },
+    leaveLoggedOut(next : string) {
+      this.showLoggedOut = false
+      this.tab = next
+    },
+    switchTab(next : string) {
+      if (next == this.tab) return
+      this.changeNumber()
+      this.tab = next
+      if (next == 'qr') this.initQr()
+      else this._stopQr()
+    },
+    changeNumber() {
+      this.otpStep = 'phone'
+      this.code = ''
+      this.signupProof = ''
+      this.error = ''
+      if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+      this._cooldownTimer = 0
+      this.resendCooldown = 0
+    },
+    _startCooldown(seconds : number) {
+      this.resendCooldown = seconds
+      if (this._cooldownTimer != 0) clearInterval(this._cooldownTimer)
+      this._cooldownTimer = setInterval(() => {
+        if (this.resendCooldown <= 1) {
+          clearInterval(this._cooldownTimer)
+          this._cooldownTimer = 0
+          this.resendCooldown = 0
+        } else {
+          this.resendCooldown = this.resendCooldown - 1
+        }
+      }, 1000)
+    },
+    _cleanPhone() : string { return this.phone.trim().replace(/[\s\-()]/g, '') },
+    _cleanEmail() : string { return this.email.trim().toLowerCase() },
+    _identity() : UTSJSONObject {
+      return this.isEmail
+        ? { email: this._cleanEmail(), language: this.lang } as UTSJSONObject
+        : { phone: this._cleanPhone() } as UTSJSONObject
+    },
+
+    async sendCode() {
+      if (this.loading) return
+      if (this.isEmail) {
+        if (!EMAIL_RE.test(this._cleanEmail())) { this.error = this.t('errInvalidEmail'); return }
+      } else if (!/^1\d{10}$/.test(this._cleanPhone())) {
+        this.error = this.t('errInvalidPhone'); return
+      }
+      this.loading = true
+      this.error = ''
+      const res = await postBody(`${BASE}/api/${this.isEmail ? 'email-otp' : 'phone-otp'}/send`, this._identity())
+      this.loading = false
+      if (res == null) { this.error = this.t('errNetwork'); return }
+      if (res.getBoolean('success') != true) {
+        const err = res.getString('error')
+        this.error = err == 'rate_limited' ? this.t('errRateLimited')
+          : err == 'invalid_email' ? this.t('errInvalidEmail')
+          : this.t('errSendFailed')
+        return
+      }
+      this.otpStep = 'code'
+      this._startCooldown(60)
+    },
+
+    async verifyCode() {
+      if (this.code.trim().length == 0 || this.loading) return
+      this.loading = true
+      this.error = ''
+      const payload = this._identity()
+      payload['code'] = this.code.trim()
+      payload['require_invite'] = true
+      if (this.inviteCode.length > 0) payload['invite_code'] = this.inviteCode
+      const res = await postBody(`${BASE}/api/${this.isEmail ? 'email-otp' : 'phone-otp'}/verify`, payload)
+      this.loading = false
+      if (res == null) { this.error = this.t('errNetwork'); return }
+      const proof = res.getString('signup_proof')
+      if (res.getBoolean('invite_required') == true && proof != null) {
+        this.signupProof = proof
+        this.otpStep = 'invite'
+        return
+      }
+      if (res.getBoolean('invalid_code') == true && proof != null) {
+        this.signupProof = proof
+        this.otpStep = 'invite'
+        this.error = this.t('errInvalidInvite')
+        return
+      }
+      if (res.getBoolean('success') != true) {
+        const err = res.getString('error')
+        this.error = err == 'too_many_attempts' ? this.t('errTooManyAttempts')
+          : err == 'channel_not_supported' ? this.t('errChannelNotSupported')
+          : this.t('errInvalidCode')
+        return
+      }
+      uni.removeStorageSync('nano_ref')
+      this.$emit('login', res)
+    },
+
+    async submitInvite() {
+      if (!/^\d{6}$/.test(this.inviteCode)) { this.error = this.t('errInvalidInvite'); return }
+      if (this.loading) return
+      this.loading = true
+      this.error = ''
+      const payload = this._identity()
+      payload['signup_proof'] = this.signupProof
+      payload['invite_code'] = this.inviteCode
+      const res = await postBody(`${BASE}/api/${this.isEmail ? 'email-otp' : 'phone-otp'}/verify`, payload)
+      this.loading = false
+      if (res == null) { this.error = this.t('errNetwork'); return }
+      if (res.getBoolean('success') != true) {
+        if (res.getString('error') == 'invalid_signup_proof') {
+          this.error = this.t('errSignupExpired')
+          this.otpStep = 'phone'
+          this.signupProof = ''
+          this.code = ''
+        } else {
+          const err = res.getString('error')
+          this.error = res.getBoolean('invalid_code') == true ? this.t('errInvalidInvite')
+            : err == 'channel_not_supported' ? this.t('errChannelNotSupported')
+            : this.t('errNetwork')
+          const p2 = res.getString('signup_proof')
+          if (p2 != null) this.signupProof = p2
+        }
+        return
+      }
+      uni.removeStorageSync('nano_ref')
+      this.$emit('login', res)
+    },
+
+    // ── WeChat QR login: the miniapp's pages/qrlogin confirms a session this screen polls ──
+    _stopQr() {
+      if (this._pollTimer != 0) clearInterval(this._pollTimer)
+      if (this._expireTimer != 0) clearTimeout(this._expireTimer)
+      this._pollTimer = 0
+      this._expireTimer = 0
+    },
+    async initQr() {
+      this._stopQr()
+      this.qrImg = ''
+      this.qrSession = ''
+      this.qrStatus = 'loading'
+      this.qrError = ''
+      const r = await postBody(`${BASE}/api/qr-login/init`, {} as UTSJSONObject)
+      if (r == null || r.getBoolean('success') != true) {
+        this.qrStatus = 'error'
+        this.qrError = r != null ? (r.getString('error') ?? '') : ''
+        return
+      }
+      const sid = r.getString('session_id') ?? ''
+      this.qrImg = r.getString('qr_image') ?? ''
+      this.qrSession = sid
+      this.qrStatus = 'pending'
+      this._pollTimer = setInterval(() => {
+        getBody(`${BASE}/api/qr-login/status?session_id=${encodeURIComponent(sid)}`).then((p) => {
+          if (p == null) return // transient network errors: keep polling
+          const s = p.getString('status')
+          if (s == 'confirmed' && p.getJSON('user') != null) {
+            this._stopQr()
+            this.qrStatus = 'confirmed'
+            setTimeout(() => { this.$emit('login', p) }, 800)
+          } else if (s == 'expired') {
+            this._stopQr()
+            this.qrStatus = 'expired'
+          }
+        })
+      }, QR_POLL_MS)
+      const expiresIn = r.getNumber('expires_in') ?? 300
+      this._expireTimer = setTimeout(() => {
+        this._stopQr()
+        this.qrStatus = 'expired'
+      }, expiresIn * 1000)
+    },
+  }
+}
+</script>

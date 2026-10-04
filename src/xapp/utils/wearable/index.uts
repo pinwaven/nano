@@ -1,0 +1,37 @@
+// Wearable factory — ported from miniapp utils/wearable/index.js.
+// Halo + V8 only (AGENTS §18): colmi/aizo adapters were deliberately NOT ported to xapp;
+// they stay maintained only in the miniapp for users already bound there.
+// 'x3' remains accepted as the legacy alias for 'halo' (pre-rename storage/server values).
+//
+// The app installs its platform's BleTransport (see transport.uts; App.uvue → transport-mp.uts
+// on xapp-mini, transport-android.uts on Android) once at startup via installBleTransport(); createWearable then
+// falls back to it when no transport is passed explicitly.
+
+import { BleTransport } from './transport.uts'
+import { HaloRing } from './halo/index.uts'
+import { V8Band } from './v8/index.uts'
+
+let installedTransport : BleTransport | null = null
+
+export function installBleTransport(t : BleTransport) {
+  installedTransport = t
+}
+
+export function hasBleTransport() : boolean {
+  return installedTransport != null
+}
+
+// Read accessor for call sites that need the transport itself (BLEManager-driven discovery
+// in the bind flow predates any ring class); null when nothing was installed.
+export function getInstalledBleTransport() : BleTransport | null {
+  return installedTransport
+}
+
+export function createWearable(brand : string, transport : BleTransport | null = null) : HaloRing | V8Band {
+  const t = transport != null ? transport : installedTransport
+  if (brand == 'colmi' || brand == 'aizo') throw new Error(`Wearable brand '${brand}' is not ported to xapp (Halo/V8 only, AGENTS §18)`)
+  if (t == null) throw new Error('BLE transport not installed — call installBleTransport() with a UTS BLE plugin adapter first')
+  if (brand == 'halo' || brand == 'x3') return new HaloRing(t!)
+  if (brand == 'v8') return new V8Band(t!)
+  throw new Error(`Unknown wearable brand: ${brand}`)
+}
