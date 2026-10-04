@@ -12,7 +12,6 @@ Page({
     step: 'checking',
     loading: true,
     error: '',
-    canRecoverByPhone: false,
     codeInput: '',
     codeLoading: false,
     channel: null,
@@ -56,7 +55,6 @@ Page({
   // to the channel's display name so it rides the existing channel_slug path in /wx-login.
   _channelSlug: null,
   _cooldownTimer: null,
-  _pendingNewUser: null,
 
   async onLoad(options) {
     if (options.coach_id) this._coachId = options.coach_id
@@ -145,35 +143,24 @@ Page({
         throw new Error(res.data?.error || '登录失败，请重试')
       }
 
-      // Deliberate sign-ups use phone verification; an automatically created
-      // branded account without UnionID offers a way to link an older account.
+      // Only a deliberate in-app sign-up (typed/shared invite code, or a coach link)
+      // routes through phone verification. A brand-new account silently created by
+      // channel branding (channel_slug, no explicit invite/coach) is treated like any
+      // other successful login — straight to main, same as a guest.
       if (res.data.new_user && (this._inviteCode || this._coachId)) {
         this._finishNewUser(res.data)
-        return
-      }
-      if (res.data.new_user && res.data.needs_existing_account_choice) {
-        this._pendingNewUser = res.data
-        this.setData({ step: 'accountChoice', loading: false })
         return
       }
 
       this._finishLogin(res.data)
     } catch (e) {
       if (IS_DEV) console.error('wxLogin error', e)
-      const needsPhone = e.message === 'wechat_identity_conflict_requires_verified_login'
-      this.setData({ loading: false, step: 'error', canRecoverByPhone: needsPhone,
-        error: needsPhone ? '请验证手机号以连接已有账号' : (e.message || '登录失败，请重试') })
+      this.setData({ loading: false, step: 'error', error: e.message || '登录失败，请重试' })
     }
   },
 
   retry() {
     this.wxLogin()
-  },
-
-  continueNewAccount() {
-    if (!this._pendingNewUser) return
-    this._finishLogin(this._pendingNewUser)
-    this._pendingNewUser = null
   },
 
   onCodeInput(e) {
@@ -195,10 +182,6 @@ Page({
       }
       this._finishLogin(res.data)
     } catch (e) {
-      if (e.message === 'wechat_identity_conflict_requires_verified_login') {
-        this.useOtherNumber()
-        return
-      }
       wx.showToast({ title: e.message || '邀请码无效', icon: 'none' })
       this.setData({ codeLoading: false })
     }
@@ -310,10 +293,6 @@ Page({
 
   backToLoggedOut() {
     clearInterval(this._cooldownTimer)
-    if (this._pendingNewUser) {
-      this.setData({ step: 'accountChoice', phoneError: '' })
-      return
-    }
     const lastSession = wx.getStorageSync('nano_last_session')
     this.setData({ step: 'loggedOut', maskedPhone: lastSession?.maskedPhone || '', phoneError: '' })
   },
@@ -434,20 +413,9 @@ Page({
     if (!code || phoneLoading) return
     this.setData({ phoneLoading: true, phoneError: '' })
     try {
-      // wx.login fails in a standalone Donut shell (no mini-program runtime). The
-      // server treats miniapp_code as optional (phone-otp.js linkVerifiedMiniappLogin),
-      // so a native phone+OTP login proceeds without linking a WeChat identity.
-      let miniappCode = ''
-      try { miniappCode = (await this._getCode()).code } catch (e) { miniappCode = '' }
-      const { appId } = wx.getAccountInfoSync().miniProgram
-      const res = await this._phoneReq(`${BASE}/api/phone-otp/verify`, {
-        phone, code, miniapp_code: miniappCode, app_id: appId,
-        existing_only: !!(this._pendingNewUser || this.data.canRecoverByPhone),
-      })
+      const res = await this._phoneReq(`${BASE}/api/phone-otp/verify`, { phone, code })
       if (!res.data?.success) {
-        const msg = res.data?.error === 'invalid_code' ? '验证码不正确'
-          : res.data?.error === 'account_not_found' ? '该手机号没有已有账号，请返回创建新账号'
-          : '验证失败，请重试'
+        const msg = res.data?.error === 'invalid_code' ? '验证码不正确' : '验证失败，请重试'
         this.setData({ phoneLoading: false, phoneError: msg, code: '' })
         return
       }
