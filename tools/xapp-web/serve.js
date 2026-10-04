@@ -10,7 +10,7 @@ const path = require('path');
 const arg = (name, def) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : def; };
 const PORT = Number(arg('--port', 5180));
 const TARGET = new URL(arg('--target', 'https://nano-dev.gcn.net'));
-const DIST = path.resolve(__dirname, '../../src/xapp/unpackage/dist/build/web');
+const DIST = path.resolve(__dirname, '../../dist/xapp/web');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json', '.ttf': 'font/ttf', '.woff2': 'font/woff2' };
 

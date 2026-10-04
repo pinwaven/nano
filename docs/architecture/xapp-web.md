@@ -39,7 +39,7 @@ tools/xapp-web/build.sh
   ├─ node tools/xapp-web/sync-css.mjs → src/xapp/static/web/user-app.css   (generated, git-ignored)
   └─ HBuilderX's compiler: plugins/uniapp-cli-vite/…/vite-plugin-uni/bin/uni.js build -p h5
        UNI_PLATFORM=h5 UNI_UTS_PLATFORM=web UNI_INPUT_DIR=src/xapp …   (env captured from xcli)
-     → src/xapp/unpackage/dist/build/web
+     → dist/xapp/web
 tools/xapp-web/serve.js  static files + /api proxy → nano-dev (or --target)
 ```
 

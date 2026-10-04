@@ -8,7 +8,8 @@ the tooling for the web build. Its goal is to look and behave like the **web use
 ## Build and serve
 
 ```bash
-tools/xapp-web/build.sh                          # → src/xapp/unpackage/dist/build/web
+tools/xapp-web/build.sh                          # → dist/xapp/web
+# Equivalent npm entry point: npm run build:xapp:web
 node tools/xapp-web/serve.js --port 5180         # static + /api proxy → nano-dev
 node tools/web-review/review.js http://localhost:5180/ --viewport mobile,desktop --user-token u.…
 ```
@@ -18,7 +19,7 @@ node tools/web-review/review.js http://localhost:5180/ --viewport mobile,desktop
   - `xcli publish web` needs a DCloud-registered `appid` (the manifest has none);
   - on Linux, `xcli launch web` stops its dev server as soon as the compile finishes.
 
-  Needs `~/HBuilderX` (override with `HBX=`).
+  Finds `/Applications/HBuilderX.app` on macOS or `~/HBuilderX` on Linux (override with `HBX=`).
 - **`serve.js`** serves the bundle and proxies `/api` to a backend. The web build calls the API
   same-origin (`BASE = ''` in `utils/config.uts` under `#ifdef WEB`). The worker's CORS preflight
   answers with two `Access-Control-Allow-Origin` values, which browsers reject, so a
