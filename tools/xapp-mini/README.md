@@ -7,12 +7,14 @@ source as the native app, running inside WeChat.
 ## Build
 
 ```bash
-tools/xapp-mini/build.sh                             # → src/xapp-mini (git-ignored), appid touristappid
+tools/xapp-mini/build.sh                             # → dist/xapp/mini (git-ignored), appid touristappid
 APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools project on i9 uses (WX_APPID)
+# Equivalent npm entry point: npm run build:xapp:mini
 ```
 
 - **`build.sh`** runs HBuilderX's compiler in build mode (minified), with the command and
   environment that `xcli launch mp-weixin` spawns (captured from `/proc` on HBuilderX 5.26).
+  It finds `/Applications/HBuilderX.app` on macOS or `~/HBuilderX` on Linux; set `HBX=` to override.
   - It then writes `project.config.json`: `projectname: xapp-mini`, the appid, `urlCheck: false`.
   - `xcli launch mp-weixin --project src/xapp --compile true` also works on Linux, but it only
     produces an unminified dev compile in `src/xapp/unpackage/dist/dev/mp-weixin`.
@@ -28,10 +30,10 @@ APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools pr
 The build runs on the EC2 box, and WeChat DevTools runs on the Mac:
 
 ```bash
-rsync -a --delete <ec2-host>:waven/nano/src/xapp-mini/ ~/waven/xapp-mini/   # on the Mac
+rsync -a --delete <ec2-host>:waven/nano/dist/xapp/mini/ ~/waven/xapp-mini/   # on the Mac
 # or push from the EC2 box through the reverse tunnel to i9 (see the i9 notes in ~/.claude/CLAUDE.md):
 rsync -a --delete --exclude project.private.config.json -e "ssh -i ~/.ssh/us1_to_i9 -p 2222" \
-  src/xapp-mini/ pin@localhost:waven/xapp-mini/
+  dist/xapp/mini/ pin@localhost:waven/xapp-mini/
 ```
 
 Then import `~/waven/xapp-mini` in WeChat DevTools.

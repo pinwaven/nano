@@ -5,7 +5,7 @@
 # src/xapp/unpackage/dist/dev/mp-weixin, and `xcli publish mp-weixin` wants an appid + upload
 # key. This runs the exact command and environment `xcli launch mp-weixin` spawns (captured
 # from /proc on HBuilderX 5.26), in build mode, then stamps the project config.
-# Output: src/xapp-mini — open that folder in WeChat DevTools.
+# Output: dist/xapp/mini — open that folder in WeChat DevTools.
 #
 #   tools/xapp-mini/build.sh                         # production build, appid touristappid
 #   APPID=wx84bd7d00a6fd626e tools/xapp-mini/build.sh   # real appid: real-device preview, wx.login
@@ -13,21 +13,33 @@
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 X="$ROOT/src/xapp"
-OUT="$ROOT/src/xapp-mini"
-HBX=${HBX:-$HOME/HBuilderX}
-PLUGIN="$HBX/plugins/uniapp-cli-vite"
+OUT="$ROOT/dist/xapp/mini"
+HBX=${HBX:-}
+if [ -z "$HBX" ]; then
+  if [ -d /Applications/HBuilderX.app/Contents/HBuilderX/plugins/uniapp-cli-vite ]; then
+    HBX=/Applications/HBuilderX.app
+  else
+    HBX="$HOME/HBuilderX"
+  fi
+fi
+case "$HBX" in
+  *.app) HBX_ROOT="$HBX/Contents/HBuilderX" ;;
+  *) HBX_ROOT="$HBX" ;;
+esac
+PLUGIN="$HBX_ROOT/plugins/uniapp-cli-vite"
 APPID=${APPID:-touristappid}
-[ -d "$PLUGIN" ] || { echo "HBuilderX not found at $HBX (set HBX=)"; exit 1; }
+[ -d "$PLUGIN" ] || { echo "HBuilderX compiler not found at $PLUGIN (set HBX=)"; exit 1; }
 
 rm -rf "$OUT"
+mkdir -p "$(dirname "$OUT")"
 # Deps (vue, @dcloudio/*) resolve from the plugin's node_modules, so run from there.
-(cd "$PLUGIN" && env -i PATH="$HBX/plugins/node:/usr/bin:/bin" HOME="$HOME" LD_LIBRARY_PATH="$HBX" \
-  NODE_SKIP_PLATFORM_CHECK=1 HBUILDER_EXTENSIONS_DIR="$HBX/plugins" HX_Version=5.26 \
+(cd "$PLUGIN" && env -i PATH="$HBX_ROOT/plugins/node:/usr/bin:/bin" HOME="$HOME" LD_LIBRARY_PATH="$HBX_ROOT" \
+  NODE_SKIP_PLATFORM_CHECK=1 HBUILDER_EXTENSIONS_DIR="$HBX_ROOT/plugins" HX_Version=5.26 \
   NODE_ENV=production UNI_PLATFORM=mp-weixin \
   UNI_INPUT_DIR="$X" UNI_OUTPUT_DIR="$OUT" \
   HX_DEPENDENCIES_DIR="$X/unpackage/cache/uts_cache" UNI_APP_X_CACHE_DIR="$X/unpackage/cache/.mp-weixin" \
   UNI_HBUILDERX_LANGID=en UNI_CLOUD_SPACES='[]' NO_COLOR=true \
-  "$HBX/plugins/node/node" --no-warnings "$PLUGIN/node_modules/@dcloudio/vite-plugin-uni/bin/uni.js" build -p mp-weixin)
+  "$HBX_ROOT/plugins/node/node" --no-warnings "$PLUGIN/node_modules/@dcloudio/vite-plugin-uni/bin/uni.js" build -p mp-weixin)
 
 # The compiler writes a touristappid config named after manifest.json; make it this project.
 node -e '
