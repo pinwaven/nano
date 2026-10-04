@@ -18,6 +18,25 @@ const DOTS = [
     { key_name: 'DOT-N11', key_name_zh: '原粒11号', name_zh: '代谢焕新', name: 'Metabolic Renew' },
 ];
 
+test('English prose localizes the Chinese Dots category even without a formulary', () => {
+    const reply = 'I will match them precisely to Waven原粒 like Metabolic Renew (Dot #11).';
+    assert.strictEqual(humanizeDotCodes(reply, [], 'en'),
+        'I will match them precisely to Waven Dots like Metabolic Renew (Dot #11).');
+    assert.strictEqual(humanizeDotCodes('Waven 原粒 and 原粒', [], 'en'), 'Waven Dots and Dots');
+    assert.strictEqual(humanizeDotCodes(reply, DOTS, 'zh'), reply);
+});
+
+test('English dot translations use supplied names and preserve structured cards', () => {
+    const card = ':::formula\nDOT-N11|代谢焕新|#8A9AAB|17|0\n:::';
+    const reply = `Choose 原粒11号 (代谢焕新), not D-N77.\n${card}`;
+    assert.strictEqual(humanizeDotCodes(reply, DOTS, 'en'),
+        `Choose Metabolic Renew (Metabolic Renew), not D-N77.\n${card}`);
+    assert.strictEqual(humanizeDotCodes('Unknown 原粒77号 and 未知产品', DOTS, 'en'),
+        'Unknown 原粒77号 and 未知产品', 'do not invent missing catalog translations');
+    assert.strictEqual(humanizeDotCodes('Waven原粒', [], 'en'),
+        humanizeDotCodes(humanizeDotCodes('Waven原粒', [], 'en'), [], 'en'));
+});
+
 test('prose codes are rewritten, in both code spellings and both languages', () => {
     // The real prod leak, message 60798.
     const prose = '故D-N6、D-N9、D-N11作为代谢年龄与细胞年龄双维核心，给予高强度支持。';

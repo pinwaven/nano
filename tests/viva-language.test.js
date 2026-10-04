@@ -11,6 +11,7 @@ for (const name of templates) {
         biomarkers: {}, bioage: {}, subAges: {}, dots: [], dotsByDimension: {}, healthConditions: [], period: 'morning' });
       assert.match(prompt, language === 'en' ? /RESPONSE LANGUAGE: English/ : /回复语言：简体中文/);
       assert.match(prompt, /Preserve required JSON keys/);
+      if (language === 'en') assert.match(prompt, /PRODUCT TERMINOLOGY:.*Waven Dots/);
       assert.doesNotMatch(prompt, /全程(?:用|使用)简体中文|必须使用中文（简体）回复/);
     }
   });

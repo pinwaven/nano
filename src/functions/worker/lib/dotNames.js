@@ -54,11 +54,23 @@ function buildDotNameMap(dotsFormulary, lang) {
  */
 function humanizeDotCodes(text, dotsFormulary, lang = 'zh') {
     if (!text || typeof text !== 'string') return text;
-    if (!CODE_RE.test(text)) { CODE_RE.lastIndex = 0; return text; }
-    CODE_RE.lastIndex = 0;
-
     const map = buildDotNameMap(dotsFormulary, lang);
-    if (map.size === 0) return text;
+    // English replies can copy Chinese terminology from the shared knowledge block even
+    // without any internal code ("Waven原粒 like Metabolic Renew"). Use only catalog-provided
+    // translations for individual names; the product category has a fixed English name.
+    const englishNames = new Map();
+    if (lang === 'en') {
+        for (const d of dotsFormulary || []) {
+            if (!d?.name || /[\u4e00-\u9fff]/.test(d.name)) continue;
+            for (const alias of [d.name_zh, d.key_name_zh]) {
+                if (alias && /[\u4e00-\u9fff]/.test(alias)) englishNames.set(alias, d.name);
+            }
+        }
+    }
+    const aliases = [...englishNames.keys()].sort((a, b) => b.length - a.length);
+    const aliasRe = aliases.length
+        ? new RegExp(aliases.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g')
+        : null;
 
     let inFence = false;
     const out = text.split('\n').map(line => {
@@ -67,7 +79,13 @@ function humanizeDotCodes(text, dotsFormulary, lang = 'zh') {
             if (CLOSE_RE.test(line)) inFence = false;
             return line;
         }
-        return line.replace(CODE_RE, (whole, num) => map.get(num) || whole);
+        let prose = line.replace(CODE_RE, (whole, num) => map.get(num) || whole);
+        if (lang === 'en') {
+            if (aliasRe) prose = prose.replace(aliasRe, name => englishNames.get(name));
+            prose = prose.replace(/Waven\s*原粒(?!\s*\d)/gi, 'Waven Dots')
+                .replace(/原粒(?!\s*\d)/g, 'Dots');
+        }
+        return prose;
     });
     return out.join('\n');
 }
