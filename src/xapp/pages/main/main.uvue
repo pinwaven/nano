@@ -8491,7 +8491,9 @@ export default {
 .pin-filled { border-color: #6375EC; }
 .pin-active { border-color: #A0B4FF; }
 .pin-digit { color: #EEF2FF; font-size: 18px; font-weight: bold; }
-.pin-capture { position: absolute; left: 0; top: 0; width: 100%; height: 54px; opacity: 0; color: #EEF2FF; }
+/* opacity alone is not enough: iOS WeChat draws a focused <input> as a native overlay that ignores it,
+   so the typed digits showed over the first box. Transparent text + 1px font, as the miniapp does. */
+.pin-capture { position: absolute; left: 0; top: 0; width: 100%; height: 54px; opacity: 0; color: rgba(0, 0, 0, 0); font-size: 1px; background-color: rgba(0, 0, 0, 0); }
 .guest-sheet-error { width: 100%; background-color: rgba(239, 68, 68, 0.12); border-radius: 8px; padding: 8px 10px; margin-top: 10px; }
 .guest-sheet-error-text { color: #FFB3B3; font-size: 12px; }
 .guest-sheet-btn { width: 100%; background-color: transparent; border-radius: 14px; margin-top: 16px; align-items: center; padding: 18px 18px 18px 18px; background-image: linear-gradient(135deg, rgb(99, 117, 236) 0%, rgb(139, 159, 255) 100%); box-shadow: rgba(99, 117, 236, 0.45) 0px 4px 20px 0px; }
