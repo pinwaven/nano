@@ -6,6 +6,8 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+> **Prod worker deploy 2026-10-04** — from `us1` at `ac35fd4`: Viva brand-neutral (names the company only when asked) and no Chinese in her English replies. The worker tree otherwise matches what was already live — the Sep 30 WeChat-identity wip it carries is reverted by `f192e16`, checked by diffing against the prod build before deploying.
+
 > **Prod deploy 2026-10-03 (2nd)** — worker, twin and admin panel from the live code (`c38333f` + `ac7266b` `d667c3b` `b6a5fcd`) plus only the uncommitted work of the afternoon: Viva's per-channel brand with neutral business lines, the empty-English-reply fix, `/heartbeat` channel/coach, the admin panel's brand field. Migrations `migration_knowledge_neutral_support.sql` and `migration_super_otp_audit_log_on_delete.sql` applied; SuperiorMed's `brand_name` set. Still not on prod: the Sep 30 WeChat-identity wip (`6e4ed8a`) and its fix `60b942b`. The Sep 25 Academy label fix (`05d1670`) followed in a separate admin-panel-only deploy the same day. Later the same day, worker and twin again from that live code plus only `_alignHistoryBrand` (earlier "Aeviva" replies overriding a channel's brand).
 
 > **Prod worker deploy 2026-10-03** — from `c38333f` plus only `ac7266b` (WeChat business-domain files, already live), `d667c3b` (`PATCH /users/:id` accepts `language`) and `b6a5fcd` (Viva follows a language switch). The Sep 30 wip work and the admin panel are still not on prod.
