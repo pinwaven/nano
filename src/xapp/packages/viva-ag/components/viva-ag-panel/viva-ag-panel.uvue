@@ -172,10 +172,10 @@
 //  - setInterval(15s) → a setTimeout chain (port convention), timer id kept as a number field.
 //  - wx.request → utils/request.uts getBody/postBody (null body == the miniapp's rejected promise).
 
-import { BASE } from '../../utils/config.uts'
-import { getBody, postBody } from '../../utils/request.uts'
-import { mdToHtml, inlineTagStyles } from '../../utils/markdown.uts'
-import HealthDocuments from '../health-documents/health-documents.uvue'
+import { BASE } from '../../../../utils/config.uts'
+import { getBody, postBody } from '../../../../utils/request.uts'
+import { mdToHtml, inlineTagStyles } from '../../../../utils/markdown.uts'
+import HealthDocuments from '../../../../components/health-documents/health-documents.uvue'
 
 const T_ZH : UTSJSONObject = {
   heroDesc: '深度分析您的完整数字孪生，包括上传的体检与就医记录。分析需要较长时间，完成后会在对话中通知您。',
@@ -386,6 +386,9 @@ export default {
     commandText(_v : string) { this._recomputeSubmit() },
   },
   mounted() {
+    // #ifdef MP-WEIXIN
+    this.$emit('packageready')
+    // #endif
     const t = this.lang == 'en' ? T_EN : T_ZH
     this.t = t
     this.presets = [

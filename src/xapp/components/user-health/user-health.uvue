@@ -10,7 +10,7 @@
         <text class="uh-tab-text" :class="healthSubTab == 'twin' ? 'uh-tab-text-active' : ''">{{ tt('agTabTwin') }}</text>
       </view>
       <view class="uh-tab" :class="healthSubTab == 'ag' ? 'uh-tab-active' : ''" v-on:click="switchHealthSubTab('ag')">
-        <text class="uh-tab-text" :class="healthSubTab == 'ag' ? 'uh-tab-text-active' : ''">{{ tt('agTabAg') }}</text>
+        <text class="uh-tab-text" :class="healthSubTab == 'ag' ? 'uh-tab-text-active' : ''">{{ agPackageLoading ? tt('agTabLoading') : tt('agTabAg') }}</text>
       </view>
     </view>
 
@@ -997,8 +997,11 @@
       :deviceId="wearableId" :deviceName="wearableName" :lang="lang" :theme="theme"
       :viewId="stripViewId" :coachId="coachId" :readOnly="mode != 'self'"
       v-on:close="closeEcgRecord" v-on:saved="onEcgSaved" v-on:deleted="onEcgDeleted" />
+    <view v-if="agPackageLoading" class="center-wrap">
+      <view class="pulse-dot"></view><view class="pulse-dot"></view><view class="pulse-dot"></view>
+    </view>
     <viva-ag-panel v-if="showAgTab && healthSubTab == 'ag'" :userId="userId" :lang="lang" :theme="theme"
-      v-on:gotochat="onAgGoToChat" />
+      v-on:packageready="onAgPackageReady" v-on:gotochat="onAgGoToChat" />
 
     <!-- Health Report Detail Sheet -->
     <view v-if="activeReport != null" class="rpt-overlay" v-on:click="onCloseReport">
@@ -1293,7 +1296,7 @@ import { flagOutliers, interpolateFlagged, OutlierConfig, SeriesPoint } from '..
 import AvatarPicker from '../avatar-picker/avatar-picker.uvue'
 import HealthDocuments from '../health-documents/health-documents.uvue'
 import StripRecord from '../strip-record/strip-record.uvue'
-import VivaAgPanel from '../viva-ag-panel/viva-ag-panel.uvue'
+import VivaAgPanel from '../../packages/viva-ag/components/viva-ag-panel/viva-ag-panel.uvue'
 import { paintChart, ChartSpec, ChartSeries, paintBioAge, BioAgeSpec } from '../../utils/mp-chart.uts'
 
 const BM_META : UTSJSONObject[] = [
@@ -1350,7 +1353,7 @@ const T_ZH : UTSJSONObject = {
   tests: '次检测',
   noBmData: '暂无生物标志物数据。', noHistory: '暂无检测记录。',
   guestHealthCta: '激活账户后，查看您的健康数据与生物年龄',
-  agTabTwin: '数字孪生', agTabAg: 'Viva AG',
+  agTabTwin: '数字孪生', agTabAg: 'Viva AG', agTabLoading: '加载中…',
   guestJoinBtn: '激活账户',
   editProfile: '编辑资料', changeAvatar: '换头像', save: '保存', cancel: '取消',
   name: '姓名', otherPlaceholder: '请说明', saveOk: '已保存', saveFail: '保存失败',
@@ -1521,7 +1524,7 @@ const T_EN : UTSJSONObject = {
   tests: 'tests',
   noBmData: 'No biomarker data available yet.', noHistory: 'No test history yet.',
   guestHealthCta: 'Activate your account to view your health data and Bio Age',
-  agTabTwin: 'Digital Twin', agTabAg: 'Viva AG',
+  agTabTwin: 'Digital Twin', agTabAg: 'Viva AG', agTabLoading: 'Loading…',
   guestJoinBtn: 'Activate Account',
   editProfile: 'Edit Profile', changeAvatar: 'Photo', save: 'Save', cancel: 'Cancel',
   name: 'Name', otherPlaceholder: 'Please specify', saveOk: 'Saved', saveFail: 'Save failed',
@@ -3312,6 +3315,9 @@ export default {
       t: T_ZH as UTSJSONObject,
       isZh: true,
       healthSubTab: 'twin',
+      agPackageLoading: false,
+      _agPackageLoadSeq: 0,
+      _agPackageTimer: 0,
       showAgTab: false,
       bioLoading: true,
       bAge: '',
@@ -3612,6 +3618,8 @@ export default {
     // permission prompts instead — nothing registers here.
   },
   unmounted() {
+    this._agPackageLoadSeq++
+    if (this._agPackageTimer != 0) clearTimeout(this._agPackageTimer)
     if (_privacyResolve != null) { /* miniapp cleared app._onPrivacyRequest */ }
   },
 
@@ -3756,6 +3764,12 @@ export default {
     _recomputeShowAgTab() {
       const showAgTab = this.vivaAgEnabled && this.mode == 'self' && !this.isGuest
       this.showAgTab = showAgTab
+      if (!showAgTab) {
+        this._agPackageLoadSeq++
+        this.agPackageLoading = false
+        if (this._agPackageTimer != 0) clearTimeout(this._agPackageTimer)
+        this._agPackageTimer = 0
+      }
       if (!showAgTab && this.healthSubTab != 'twin') this.healthSubTab = 'twin'
     },
 
@@ -5292,7 +5306,33 @@ export default {
       this.$emit('gotochat', detail ?? ({ } as UTSJSONObject))
     },
 
+    onAgPackageReady() {
+      if (this.healthSubTab != 'ag') return
+      this.agPackageLoading = false
+      if (this._agPackageTimer != 0) clearTimeout(this._agPackageTimer)
+      this._agPackageTimer = 0
+    },
+
     switchHealthSubTab(tab : string) {
+      // #ifdef MP-WEIXIN
+      if (tab == 'ag' && (!this.showAgTab || this.agPackageLoading)) return
+      this._agPackageLoadSeq++
+      if (this._agPackageTimer != 0) clearTimeout(this._agPackageTimer)
+      this._agPackageTimer = 0
+      this.agPackageLoading = tab == 'ag' && this.healthSubTab != 'ag'
+      if (this.agPackageLoading) {
+        const loadSeq = this._agPackageLoadSeq
+        // WeChat downloads a cross-subpackage component when its placeholder is rendered.
+        // Let the user retry if loading stalls; late downloads cannot reactivate a closed tab.
+        this._agPackageTimer = setTimeout(() => {
+          if (loadSeq != this._agPackageLoadSeq || !this.agPackageLoading) return
+          this._agPackageTimer = 0
+          this.agPackageLoading = false
+          this.healthSubTab = 'twin'
+          uni.showToast({ title: this.isZh ? '加载失败，请重试' : 'Loading failed. Please retry.', icon: 'none' })
+        }, 20000)
+      }
+      // #endif
       this.healthSubTab = tab
     },
 

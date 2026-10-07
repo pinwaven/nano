@@ -22,6 +22,11 @@
       "pages": [
         { "path": "coach", "style": { "navigationStyle": "custom", "backgroundColor": "#0B1C2E" } }
       ]
+    },
+    {
+      "root": "packages/viva-ag",
+      "name": "viva-ag",
+      "pages": []
     }
   ],
   // #endif

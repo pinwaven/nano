@@ -42,6 +42,11 @@ stays the production frontend untouched.
 
 ## Status — PORT COMPLETE + FULL ANDROID COMPILE GREEN (trial stage), 2026-10-01
 
+Viva AG's panel now lives in `packages/viva-ag/components/viva-ag-panel/` (2026-10-07,
+VERSION `1007-13`). xapp-mini loads it as a cross-subpackage component while keeping the
+inline Health subtab; native/web import it normally. The mini build script configures the
+required native placeholder in UserHealth's generated JSON.
+
 The Kino simulator was removed from xapp on 2026-10-07 (VERSION `1007-5`), including its
 menu entry, passcode, overlay, simulated analysis, timers and styles. Real chip registration
 and the separate cartridge simulator remain available.

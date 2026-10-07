@@ -16,8 +16,9 @@ src/xapp/
 ├── manifest.json        # appid __UNI__316095D; packagename net.gcn.nano
 ├── pages.json           # pages + pull-refresh, same routes as app.json
 ├── pages/               # main (5 tabs), coach, login, verify-phone, …
-├── components/          # user-health, health-documents, viva-ag-panel, strip-record,
+├── components/          # user-health, health-documents, strip-record,
 │                        # toolbox, avatar-picker
+├── packages/viva-ag/    # shared AG panel; asynchronous component subpackage on xapp-mini
 ├── utils/               # config/state/request/session/markdown/tool-actions/main-t (i18n dict),
 │                        # wearable/ (halo, v8, sync, transport interface + mp/android adapters)
 ├── uni_modules/waven-ble/ # Android BLE UTS plugin (BluetoothLeScanner/BluetoothGatt + op queue)

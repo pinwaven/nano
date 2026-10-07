@@ -43,6 +43,7 @@ mkdir -p "$(dirname "$OUT")"
 
 # Consolidate repeated CSS rules in the mini output before DevTools packages it.
 node "$ROOT/tools/xapp-mini/optimize-css.cjs" "$OUT"
+node "$ROOT/tools/xapp-mini/configure-subpackages.cjs" "$OUT"
 
 # The compiler writes a touristappid config named after manifest.json; make it this project.
 node -e '
