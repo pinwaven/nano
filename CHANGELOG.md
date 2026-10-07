@@ -6,6 +6,8 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+- **xapp-mini: lazy code loading** · 2026-10-07: enable `lazyCodeLoading: "requiredComponents"` for page/component code injection on demand. Fresh M3 project launch, login, four main tabs, seven lab reports, Coach subpackage navigation, 22 clients, five Coach tabs and shared client Health details pass without runtime errors. Preview succeeds: main 1,540,233 bytes; Coach 204,280; total 1,744,513. Original dev user restored after testing. xapp VERSION `1007-9`.
+
 - **xapp-mini: Coach panel subpackage** · 2026-10-07: package the Coach page under `pages/coach` and enable mini-program subpackage optimization. Its `/pages/coach/coach` route stays the same; native and web keep the page in their normal route lists. Main package falls from 1,744,436 to 1,540,194 bytes; Coach is 204,280 bytes (total 1,744,474). Live checks also exposed an existing Babel generator-hoisting collision in `_loadAll`: keep the invitation-array binding at function scope so it cannot shadow imported API config. Mini/web builds and M3 preview pass; Coach menu navigation, 22 clients, five tabs and shared client Health details work without runtime errors. Original dev user restored after testing. xapp VERSION `1007-8`.
 
 - **xapp: compact avatar gallery data** · 2026-10-07: reconstruct all 200 gallery URLs from shared parts without changing signatures or expiry; add a repeatable generator from the miniapp manifest. Together with CSS consolidation, preview shrinks from 1,776,141 to 1,744,436 bytes (31,705 bytes / 1.8%). Mini/web builds pass; M3 verifies all 200 URLs, thumbnail loading, four tabs and seven health reports without runtime errors. xapp VERSION `1007-6`.

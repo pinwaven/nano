@@ -22,10 +22,12 @@ APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools pr
     is needed. Reload the project after changing these compiler settings.
   - `optimize-css.cjs` consolidates generated WXSS rules with CSSO before packaging. It only
     replaces files when they become smaller; source styles and native/web builds are unchanged.
+  - `mp-weixin.lazyCodeLoading: "requiredComponents"` injects page/component code on demand.
+    This is a startup optimization; it does not remove code from the uploaded packages.
   - `xcli launch mp-weixin --project src/xapp --compile true` also works on Linux, but it only
     produces an unminified dev compile in `src/xapp/unpackage/dist/dev/mp-weixin`.
   - `xcli publish mp-weixin` needs an appid and an upload key, and uploads.
-- **Size:** main package 1,540,194 bytes; Coach subpackage 204,280 bytes; total 1,744,474 bytes
+- **Size:** main package 1,540,233 bytes; Coach subpackage 204,280 bytes; total 1,744,513 bytes
   in the verified M3 preview (2026-10-07). Babel ES6 conversion, compact avatar data and CSS
   consolidation stay enabled. Each package is below WeChat's 2 MB limit.
 - **Coach subpackage:** `pages.json` registers `pages/coach` as the `coach` subpackage only
