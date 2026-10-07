@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Lab order import CloudEvent",
+  "type": "object",
+  "required": ["specversion", "id", "source", "type", "datacontenttype", "data"],
+  "properties": {
+    "specversion": {"const": "1.0"},
+    "id": {"type": "string", "minLength": 1},
+    "source": {"enum": ["acs.lab", "acs.lab.dev"]},
+    "type": {"const": "lab.order.import"},
+    "datacontenttype": {"const": "application/json"},
+    "data": {
+      "type": "object", "required": ["order_id"], "additionalProperties": false,
+      "properties": {"order_id": {"type": "string", "pattern": "^[1-9][0-9]*$"}}
+    }
+  }
+}

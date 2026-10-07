@@ -28,7 +28,7 @@ async function computeWearableInsights(userId, pool) {
     }
 }
 
-async function updateHealthTwin(userId, pool) {
+async function updateHealthTwin(userId, pool, { throwOnError = false } = {}) {
     try {
         // 7-day rolling aggregates across all categories in one pass
         const aggResult = await pool.query(`
@@ -186,6 +186,7 @@ async function updateHealthTwin(userId, pool) {
     } catch (err) {
         // Non-fatal: log and continue so the main request still succeeds
         console.log(JSON.stringify({ level: 'ERROR', msg: 'updateHealthTwin failed', userId, error: err.message }));
+        if (throwOnError) throw err;
     }
 }
 
