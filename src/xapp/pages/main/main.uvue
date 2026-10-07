@@ -1091,297 +1091,13 @@
       </view>
       <!-- end STORE -->
 
-      <!-- ════ LEARN (Academy + Wellness) ════ -->
+      <!-- LEARN: retain after first visit so playback and course state survive tab switches. -->
       <view v-show="tab == 'learn'" class="learn-tab"
             v-on:touchstart="onTabTouchStart" v-on:touchmove="onTabTouchMove"
             v-on:touchend="onTabTouchEnd" v-on:touchcancel="onTabTouchEnd">
-
-        <view class="inner-tab-bar">
-          <view class="inner-tab" :class="learnSubTab == 'academy' ? 'inner-tab-active' : ''" v-on:click="switchLearnSubTab('academy')"><text class="inner-tab-text" :class="learnSubTab == 'academy' ? 'inner-tab-text-on' : ''">{{ tr('learnAcademyTab') }}</text></view>
-          <view class="inner-tab" :class="learnSubTab == 'wellness' ? 'inner-tab-active' : ''" v-on:click="switchLearnSubTab('wellness')"><text class="inner-tab-text" :class="learnSubTab == 'wellness' ? 'inner-tab-text-on' : ''">{{ tr('learnBoxTab') }}</text></view>
-        </view>
-
-        <scroll-view v-if="learnSubTab == 'academy'" direction="vertical" class="academy-subtab-scroll">
-          <view class="training-tab">
-            <view v-if="trainingLoading" class="loading-row"><text class="loading-text">{{ tr('loading') }}</text></view>
-
-            <view v-else-if="trainingView == 'list'">
-              <view v-if="trainingDashboard != null" class="academy-status-card">
-                <view class="academy-card-glow-tl"></view>
-                <view class="academy-card-glow-br"></view>
-                <view class="academy-card-header">
-                  <text class="academy-card-header-label">{{ lang == 'zh' ? '学院状态' : 'ACADEMY STATUS' }}</text>
-                  <view class="academy-card-tier-badge"><text class="academy-card-tier-text">{{ trainingDashboard != null ? trainingDashboard!.getString('_tierLabel') : '' }}</text></view>
-                </view>
-                <view class="academy-card-hero">
-                  <text class="academy-card-credits-num">{{ trainingDashboard != null ? trainingDashboard!.getNumber('total_credits') : 0 }}</text>
-                  <text class="academy-card-credits-label">{{ lang == 'zh' ? '学分' : 'CREDITS' }}</text>
-                </view>
-                <view class="academy-card-divider"></view>
-                <view class="academy-card-stats">
-                  <view class="academy-card-stat">
-                    <text class="academy-card-stat-num">{{ trainingDashboard != null ? trainingDashboard!.getNumber('completed_lessons') : 0 }}</text>
-                    <text class="academy-card-stat-label">{{ lang == 'zh' ? '完成课程' : 'LESSONS' }}</text>
-                  </view>
-                  <view class="academy-card-stat-sep"></view>
-                  <view class="academy-card-stat">
-                    <text class="academy-card-stat-num">{{ trainingDashboard != null ? trainingDashboard!.getNumber('certifications_count') : 0 }}</text>
-                    <text class="academy-card-stat-label">{{ lang == 'zh' ? '证书' : 'CERTS' }}</text>
-                  </view>
-                </view>
-              </view>
-
-              <view v-if="trainingPaths.length > 0" class="training-section-header">
-                <text class="training-section-title">{{ lang == 'zh' ? '学习路径' : 'Learning Paths' }}</text>
-              </view>
-              <view v-for="(tp, tpi) in trainingPaths" :key="tpi" class="training-path-card" v-on:click="trainingOpenCourse(tpi, true)">
-                <view class="training-path-header">
-                  <text class="training-path-title">{{ tp.getString('title') }}</text>
-                  <text class="training-path-tier">{{ tp.getString('_tierLabel') }}</text>
-                </view>
-                <view v-if="tp.getString('description') != null" class="training-path-desc"><text>{{ tp.getString('description') }}</text></view>
-                <view class="training-path-progress-bar">
-                  <view class="training-path-progress-fill" :style="'width:' + pathPct(tp) + '%'"></view>
-                </view>
-                <text class="training-path-progress-label">{{ tp.getNumber('_done') }}/{{ tp.getNumber('_total') }} {{ lang == 'zh' ? '课程' : 'courses' }}</text>
-              </view>
-
-              <view class="training-section-header"><text class="training-section-title">{{ tr('training.courses') }}</text></view>
-              <view v-if="trainingCourses.length == 0" class="empty-state"><text class="empty-text">{{ tr('training.noTraining') }}</text></view>
-              <view v-for="(c, ci) in trainingCourses" :key="ci" class="training-course-card" :class="c.getBoolean('_locked') == true ? ' training-course-card-locked' : ''" v-on:click="trainingOpenCourse(ci, false)">
-                <view class="training-course-cover">
-                  <text class="training-course-cover-text">{{ c.getString('title') }}</text>
-                  <view class="training-lesson-badge"><text class="training-lesson-badge-text">{{ c.getString('_lessonCountLabel') }}</text></view>
-                  <view v-if="c.getBoolean('_locked') == true" class="training-course-lock-badge"><text class="training-course-lock-icon">🔒</text></view>
-                </view>
-                <view class="training-course-body">
-                  <view class="training-course-meta">
-                    <text class="training-course-title">{{ c.getString('title') }}</text>
-                    <text v-if="c.getString('description') != null" class="training-course-desc">{{ c.getString('description') }}</text>
-                    <view class="training-course-meta-row">
-                      <text class="training-course-level">{{ c.getString('_levelLabel') }}</text>
-                      <text class="training-course-credits">+{{ c.getNumber('credit_value') }} {{ lang == 'zh' ? '学分' : 'cr' }}</text>
-                    </view>
-                    <text v-if="c.getBoolean('_locked') == true && c.getString('prerequisite_title') != null" class="training-course-prereq-hint">
-                      {{ lang == 'zh' ? '前置：' : 'Requires: ' }}{{ c.getString('prerequisite_title') }}
-                    </text>
-                  </view>
-                </view>
-              </view>
-
-              <view v-if="trainingCertifications.length > 0" class="training-section-header">
-                <text class="training-section-title">{{ lang == 'zh' ? '我的证书' : 'My Certifications' }}</text>
-              </view>
-              <view v-for="(cert, cti) in trainingCertifications" :key="cti" class="training-cert-card" v-on:click="showCertDetail(cti)">
-                <text class="training-cert-icon">🏅</text>
-                <view class="training-cert-info">
-                  <text class="training-cert-title">{{ cert.getString('title') }}</text>
-                  <text v-if="cert.getString('tier') != null" class="training-cert-tier">{{ cert.getString('_tierLabel') }}</text>
-                </view>
-                <text class="training-cert-chevron">›</text>
-              </view>
-
-              <!-- Certificate detail overlay -->
-              <view v-if="certDetailOpen" class="cert-overlay" v-on:click="hideCertDetail">
-                <view class="cert-detail-card" v-on:click.stop="noop">
-                  <view class="cert-detail-header">
-                    <view class="cert-status-badge">
-                      <text class="cert-status-check">✓</text>
-                      <text class="cert-status-text">{{ lang == 'zh' ? '证书有效' : 'Certificate Valid' }}</text>
-                    </view>
-                    <view class="cert-close-btn" v-on:click="hideCertDetail"><text>✕</text></view>
-                  </view>
-                  <view v-if="certDetailItem != null && (`${certDetailItem!.getString('templateImageUrl')}`.length) > 0" class="cert-bg-wrap">
-                    <image :src="`${certDetailItem!.getString('templateImageUrl')}`" class="cert-bg-preview" mode="widthFix" />
-                  </view>
-                  <view class="cert-field-list">
-                    <view class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '姓名' : 'Name' }}</text><text class="cert-value">{{ certName }}</text></view>
-                    <view class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '学员编号' : 'Student ID' }}</text><text class="cert-value cert-mono">{{ certDetailItem != null ? certDetailItem!.getString('user_id') : '—' }}</text></view>
-                    <view v-if="certDetailItem != null && certDetailItem!.getString('course_display_name') != null" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '课程名称' : 'Course' }}</text><text class="cert-value">{{ certDetailItem!.getString('course_display_name') }}</text></view>
-                    <view class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '证书名称' : 'Certificate' }}</text><text class="cert-value">{{ certDetailItem != null ? certDetailItem!.getString('title') : '' }}</text></view>
-                    <view v-if="certDetailItem != null && certDetailItem!.getString('certificate_number') != null" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '证书编号' : 'Cert No.' }}</text><text class="cert-value cert-mono cert-number">{{ certDetailItem!.getString('certificate_number') }}</text></view>
-                    <view v-if="certDetailItem != null && certDetailItem!.getString('assessment_period') != null" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '考核时间' : 'Assessment' }}</text><text class="cert-value">{{ certDetailItem!.getString('assessment_period') }}</text></view>
-                    <view v-if="certDetailItem != null && certDetailItem!.getNumber('score') != null" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '考试分数' : 'Score' }}</text><text class="cert-value">{{ certDetailItem!.getNumber('score') }}</text></view>
-                    <view class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '证书状态' : 'Status' }}</text><text class="cert-value cert-valid">{{ lang == 'zh' ? '有效' : 'Valid' }}</text></view>
-                    <view v-if="certDetailItem != null && certDetailItem!.getString('issuing_org') != null" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '颁发机构' : 'Issuing Org' }}</text><text class="cert-value">{{ certDetailItem!.getString('issuing_org') }}</text></view>
-                    <view v-if="certDetailItem != null && certDetailItem!.getString('school_org') != null" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '办学机构' : 'Institute' }}</text><text class="cert-value">{{ certDetailItem!.getString('school_org') }}</text></view>
-                    <view v-if="certDetailItem != null && (`${certDetailItem!.getString('issueDateDisplay')}`.length) > 0" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '颁发时间' : 'Issue Date' }}</text><text class="cert-value">{{ certDetailItem!.getString('issueDateDisplay') }}</text></view>
-                    <view v-if="certDetailItem != null && (`${certDetailItem!.getString('expiryDateDisplay')}`.length) > 0" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '有效期至' : 'Expires' }}</text><text class="cert-value">{{ certDetailItem!.getString('expiryDateDisplay') }}</text></view>
-                  </view>
-                  <view v-if="certDetailItem != null && certDetailItem!.getString('cert_oss_key') != null" class="cert-download-btn" v-on:click="downloadCert(`${certDetailItem!.getString('cert_oss_key')}`)">
-                    <text class="cert-download-label">↓ {{ lang == 'zh' ? '下载电子证书' : 'Download Certificate' }}</text>
-                  </view>
-                </view>
-              </view>
-
-              <view class="training-section-header"><text class="training-section-title">{{ tr('training.library') }}</text></view>
-              <view v-if="trainingLibrary.length == 0" class="empty-state"><text class="empty-text">{{ tr('training.noLibrary') }}</text></view>
-              <view v-for="(lib, li) in trainingLibrary" :key="li" class="training-library-row" v-on:click="trainingOpenLibraryItem(li)">
-                <text class="training-library-icon">📄</text>
-                <text class="training-library-title">{{ lib.getString('title') }}</text>
-                <text class="training-library-chevron">›</text>
-              </view>
-            </view>
-
-            <view v-else-if="trainingView == 'lessons'">
-              <view class="training-back-row" v-on:click="trainingBackToList"><text class="training-back-text">{{ tr('training.backToCourses') }}</text></view>
-              <view class="training-course-header">
-                <text class="training-course-header-title">{{ trainingCurrentCourse != null ? trainingCurrentCourse!.getString('title') : '' }}</text>
-                <text v-if="trainingCurrentCourse != null && trainingCurrentCourse!.getString('description') != null" class="training-course-header-desc">{{ trainingCurrentCourse!.getString('description') }}</text>
-                <view class="training-course-meta-row">
-                  <text class="training-course-level">{{ trainingCurrentCourse != null ? trainingCurrentCourse!.getString('_levelLabel') : '' }}</text>
-                  <text class="training-course-credits">+{{ trainingCurrentCourse != null ? trainingCurrentCourse!.getNumber('credit_value') : 0 }} {{ lang == 'zh' ? '学分' : 'cr' }}</text>
-                </view>
-              </view>
-              <view v-if="trainingLessons.length == 0" class="empty-state"><text class="empty-text">{{ tr('training.noLessons') }}</text></view>
-              <view v-for="(lsn, lni) in trainingLessons" :key="lni" class="training-lesson-row" v-on:click="trainingOpenLesson(lni)">
-                <view class="training-lesson-num"><text class="training-lesson-num-text">{{ lni + 1 }}</text></view>
-                <view class="training-lesson-info">
-                  <text class="training-lesson-title">{{ lsn.getString('title') }}</text>
-                  <text v-if="lsn.getString('description') != null" class="training-lesson-desc">{{ lsn.getString('description') }}</text>
-                  <view class="training-lesson-meta-row">
-                    <text class="training-lesson-type-badge">{{ lsn.getString('content_type') == 'video' ? '🎬' : (lsn.getString('content_type') == 'text' ? '📄' : '🧩') }}</text>
-                    <text class="training-lesson-credits-label">+{{ lsn.getNumber('credit_value') }} {{ lang == 'zh' ? '学分' : 'cr' }}</text>
-                    <text v-if="lsn.getBoolean('has_quiz') == true" class="training-lesson-quiz-badge">📝 {{ lang == 'zh' ? '含测验' : 'Quiz' }}</text>
-                  </view>
-                </view>
-                <view v-if="isLessonCompleted(lni)" class="training-lesson-done"><text class="training-lesson-done-text">✓</text></view>
-                <text v-else class="training-lesson-chevron">›</text>
-              </view>
-            </view>
-
-            <view v-else-if="trainingView == 'player'">
-              <view class="training-back-row" v-on:click="trainingBackToLessons"><text class="training-back-text">{{ tr('training.backToLessons') }}</text></view>
-              <view v-if="trainingCurrentLesson != null && (trainingCurrentLesson!.getString('content_type') == 'video' || trainingCurrentLesson!.getString('content_type') == null)">
-                <view class="training-video-container">
-                  <video v-if="trainingVideoUrl.length > 0" class="training-video" :src="trainingVideoUrl" :controls="true" object-fit="contain" />
-                  <view v-else class="training-video-loading"><text class="training-video-loading-text">{{ tr('loading') }}</text></view>
-                </view>
-              </view>
-              <view v-else-if="trainingCurrentLesson != null && (trainingCurrentLesson!.getString('content_type') == 'text' || trainingCurrentLesson!.getString('content_type') == 'interactive')">
-                <view class="training-text-content">
-                  <text class="training-text-body">{{ trainingTextContent.length > 0 ? trainingTextContent : tr('loading') }}</text>
-                </view>
-              </view>
-              <view class="training-lesson-detail">
-                <text class="training-lesson-detail-title">{{ trainingCurrentLesson != null ? trainingCurrentLesson!.getString('title') : '' }}</text>
-                <text v-if="trainingCurrentLesson != null && trainingCurrentLesson!.getString('description') != null" class="training-lesson-detail-desc">{{ trainingCurrentLesson!.getString('description') }}</text>
-
-                <view v-if="trainingQuizQuestions.length > 0" class="training-quiz-section">
-                  <text class="training-quiz-title">{{ lang == 'zh' ? '📝 课后测验' : '📝 Quiz' }}</text>
-                  <view v-if="trainingQuizResult != null" class="training-quiz-result" :class="trainingQuizResult!.getBoolean('passed') == true ? 'training-quiz-passed' : 'training-quiz-failed'">
-                    <text class="training-quiz-result-score">{{ trainingQuizResult!.getNumber('score') }}%</text>
-                    <text class="training-quiz-result-label">{{ trainingQuizResult!.getBoolean('passed') == true ? (lang == 'zh' ? '通过！' : 'Passed!') : (lang == 'zh' ? '未通过，请重试' : 'Not passed, try again') }}</text>
-                    <text v-if="(trainingQuizResult!.getNumber('credits_earned') ?? 0) > 0" class="training-quiz-result-credits">+{{ trainingQuizResult!.getNumber('credits_earned') }} {{ lang == 'zh' ? '学分' : 'credits' }}</text>
-                    <view v-if="trainingQuizReview.length > 0" class="training-quiz-review">
-                      <view v-for="(rv, rvi) in trainingQuizReview" :key="rvi" class="training-quiz-review-item" :class="rv.getBoolean('is_correct') == true ? ' training-quiz-review-correct' : ' training-quiz-review-wrong'">
-                        <text class="training-quiz-review-icon">{{ rv.getBoolean('is_correct') == true ? '✓' : '✗' }}</text>
-                        <view class="training-quiz-review-body">
-                          <text class="training-quiz-review-q">{{ rv.getString('question') }}</text>
-                          <text v-if="rv.getBoolean('is_correct') != true" class="training-quiz-review-your-ans">{{ lang == 'zh' ? '你的答案：' : 'Your answer: ' }}{{ rv.getString('user_answer') }}</text>
-                          <text class="training-quiz-review-correct-ans">{{ lang == 'zh' ? '正确答案：' : 'Correct: ' }}{{ rv.getString('correct_answer') }}</text>
-                          <text v-if="(`${rv.getString('explanation')}`.length) > 0" class="training-quiz-review-explanation">{{ rv.getString('explanation') }}</text>
-                        </view>
-                      </view>
-                    </view>
-                  </view>
-
-                  <view v-if="trainingQuizResult == null || trainingQuizResult!.getBoolean('passed') != true">
-                    <view v-for="(q, qi) in trainingQuizQuestions" :key="qi" class="training-quiz-question">
-                      <text v-if="q.getString('scenario') != null" class="training-quiz-scenario">{{ q.getString('scenario') }}</text>
-                      <text class="training-quiz-q-text">{{ qi + 1 }}. {{ q.getString('question') }}</text>
-                      <view v-for="(opt, oi2) in arrOf(q, 'options')" :key="oi2" class="training-quiz-option" :class="quizAnswerFor(q) == oi2 ? 'training-quiz-option-selected' : ''" v-on:click="trainingSelectAnswer(idStr(q, 'id'), oi2)">
-                        <view class="training-quiz-option-radio" :class="quizAnswerFor(q) == oi2 ? 'training-quiz-option-radio-checked' : ''"></view>
-                        <text class="training-quiz-option-text">{{ opt.getString('text') }}</text>
-                      </view>
-                    </view>
-                    <view class="training-quiz-submit-btn" :class="trainingQuizSubmitting ? 'training-mark-btn-busy' : ''" v-on:click="trainingSubmitQuiz">
-                      <text class="training-mark-btn-text">{{ trainingQuizSubmitting ? tr('loading') : (lang == 'zh' ? '提交答案' : 'Submit Answers') }}</text>
-                    </view>
-                  </view>
-                </view>
-
-                <view v-if="currentLessonCompleted" class="training-completed-badge">
-                  <text class="training-completed-badge-text">{{ tr('training.markedComplete') }}</text>
-                </view>
-                <view v-else-if="trainingQuizQuestions.length == 0" class="training-mark-btn" :class="trainingMarkingComplete ? 'training-mark-btn-busy' : ''" v-on:click="trainingMarkComplete">
-                  <text class="training-mark-btn-text">{{ trainingMarkingComplete ? tr('loading') : tr('training.markComplete') }}</text>
-                </view>
-                <view v-else-if="trainingQuizResult != null && trainingQuizResult!.getBoolean('passed') == true" class="training-mark-btn" :class="trainingMarkingComplete ? 'training-mark-btn-busy' : ''" v-on:click="trainingMarkComplete">
-                  <text class="training-mark-btn-text">{{ trainingMarkingComplete ? tr('loading') : tr('training.markComplete') }}</text>
-                </view>
-              </view>
-            </view>
-
-            <view v-else-if="trainingView == 'library-viewer'">
-              <view class="training-back-row" v-on:click="trainingBackToList"><text class="training-back-text">{{ tr('training.backToCourses') }}</text></view>
-              <view class="training-library-header">
-                <text class="training-library-header-title">{{ trainingCurrentLibraryItem != null ? trainingCurrentLibraryItem!.getString('title') : '' }}</text>
-              </view>
-              <view class="training-library-content-scroll">
-                <text class="training-library-content-text">{{ trainingLibraryContent.length > 0 ? trainingLibraryContent : tr('loading') }}</text>
-              </view>
-            </view>
-          </view>
-        </scroll-view>
-
-        <scroll-view v-else direction="vertical" class="wellness-subtab-scroll">
-          <view v-if="wellnessLoading" class="wellness-loading"><text class="loading-dots">···</text></view>
-          <view v-else>
-            <view v-if="wellnessAssets.length == 0 && deviceApkUrl.length == 0" class="wellness-empty">
-              <text class="wellness-empty-text">{{ tr('wellnessEmpty') }}</text>
-            </view>
-            <view v-for="(a, ai) in wellnessAssets" :key="ai" class="wellness-section">
-              <view v-if="a.getString('mediaType') == 'audio'" class="sleep-track-card" v-on:click="playAudioAsset(ai)">
-                <view class="sleep-track-icon"><text class="sleep-icon-glyph">{{ trackPlaying(a) ? '⏸' : '▶' }}</text></view>
-                <view class="sleep-track-info">
-                  <text class="sleep-track-name">{{ a.getString('title_zh') != null ? a.getString('title_zh') : a.getString('title') }}</text>
-                  <text v-if="a.getNumber('duration_seconds') != null" class="sleep-track-dur">{{ durLabel(a.getNumber('duration_seconds')) }}</text>
-                </view>
-                <view v-if="trackActive(a)" class="sleep-track-active-dot"></view>
-              </view>
-              <view v-else-if="a.getString('mediaType') == 'video'" class="media-asset-card" v-on:click="openMediaAsset(ai)">
-                <view class="media-asset-icon media-asset-icon--video"><text class="media-asset-glyph">▶</text></view>
-                <view class="media-asset-info">
-                  <text class="media-asset-name">{{ a.getString('title_zh') != null ? a.getString('title_zh') : a.getString('title') }}</text>
-                  <text v-if="a.getNumber('duration_seconds') != null" class="media-asset-sub">{{ durLabel(a.getNumber('duration_seconds')) }}</text>
-                </view>
-                <view class="media-asset-btn"><text class="media-asset-btn-text">{{ tr('wellnessOpenLink') }}</text></view>
-              </view>
-              <view v-else class="media-asset-card" v-on:click="openMediaAsset(ai)">
-                <view class="media-asset-icon media-asset-icon--doc"><text class="media-asset-glyph">↓</text></view>
-                <view class="media-asset-info">
-                  <text class="media-asset-name">{{ a.getString('title_zh') != null ? a.getString('title_zh') : a.getString('title') }}</text>
-                </view>
-                <view class="media-asset-btn"><text class="media-asset-btn-text">{{ tr('wellnessOpenLink') }}</text></view>
-              </view>
-            </view>
-
-            <!-- #ifdef WEB -->
-            <!-- The web user-app's Kino APK card (LearnTab) — copy the download link. -->
-            <view v-if="deviceApkUrl.length > 0" class="wellness-section" style="padding-bottom: 0">
-              <view class="media-asset-card" v-on:click="copyApkUrl">
-                <view class="media-asset-icon media-asset-icon--doc"><text class="media-asset-glyph">↓</text></view>
-                <view class="media-asset-info"><text class="media-asset-name">Kino APK {{ deviceApkVersion }}</text></view>
-                <view class="media-asset-btn"><text class="media-asset-btn-text">{{ tr('wellnessOpenLink') }}</text></view>
-              </view>
-            </view>
-            <!-- #endif -->
-
-            <view v-if="sleepCurrentTrack != null" class="sleep-now-playing">
-              <view class="sleep-np-info">
-                <text class="sleep-np-label">{{ tr('nowPlaying') }}</text>
-                <text class="sleep-np-title">{{ sleepCurrentTrack!.getString('title_zh') != null ? sleepCurrentTrack!.getString('title_zh') : sleepCurrentTrack!.getString('title') }}</text>
-              </view>
-              <view class="sleep-np-controls">
-                <view class="sleep-np-btn" v-on:click="stopAudioAsset"><text class="sleep-np-btn-icon">⏹</text></view>
-              </view>
-            </view>
-
-          </view>
-        </scroll-view>
+        <view v-if="learnPackageLoading" class="loading-row"><text class="loading-text">{{ tr('loading') }}</text></view>
+        <learn-panel v-if="learnVisited && !isGuest" :user="user" :lang="lang" :theme="theme" :active="tab == 'learn'" :completed-lesson-id="learnCompletedLessonId" v-on:packageready="onLearnPackageReady" />
       </view>
-      <!-- end LEARN -->
     </view>
     <!-- end tab-content -->
 
@@ -1619,9 +1335,10 @@ import { RespEnvelope, ToolCtx, ToolOpts, getToolList, runTestChip, runFormulaDs
 import {
   T_MAIN_ZH, T_MAIN_EN, tMainTr, textSizeLevels,
   programLessonTooShort, pkgDay, pkgOrderedOn, pkgTierUpTo, codeSoldOn, codeOverTier, codeTierMatch,
-  formulaOwnedPkg, formulaOrderedPkg, formulaBuyPkgCta, lessonCount, CART_SETS
+  formulaOwnedPkg, formulaOrderedPkg, formulaBuyPkgCta, CART_SETS
 } from '../../utils/main-t.uts'
 import UserHealth, { UserHealthComponentPublicInstance } from '../../components/user-health/user-health.uvue'
+import LearnPanel from '../../packages/learn/components/learn-panel/learn-panel.uvue'
 import Toolbox from '../../components/toolbox/toolbox.uvue'
 // avatar-picker / health-documents / viva-ag-panel / strip-record are children of user-health in
 // the miniapp (main.wxml uses only <user-health> and <toolbox>), so they are NOT imported here;
@@ -2204,7 +1921,7 @@ const WEIGHT_TMPL_ID = 'EMj8N9HC4_a2dYyUxDR87AF0nRvme8uB7IPhOi56Zl4'
 
 export default {
   name: 'MainPage',
-  components: { UserHealth, Toolbox },
+  components: { UserHealth, Toolbox, LearnPanel },
   data() {
     return {
       user: null as UTSJSONObject | null,
@@ -2363,7 +2080,10 @@ export default {
       neoBound: false,
       // Kill switch for the whole Neo dispenser entry point — hardware not shipping (main.js data).
       neoAvailable: false,
-      learnSubTab: 'academy',
+      learnVisited: false,
+      learnCompletedLessonId: 0,
+      learnPackageLoading: false,
+      _learnPackageTimer: 0,
       planBrowseOpen: false,
       events: [] as UTSJSONObject[],
       mySignupEventIds: [] as number[],
@@ -2380,41 +2100,6 @@ export default {
       planQuestionsPlanId: '',
       upcomingReminders: [] as UTSJSONObject[],
       remindersLoading: false,
-
-      // Magic Box (wellness) tab
-      wellnessLoading: false,
-      wellnessAssets: [] as UTSJSONObject[],
-      sleepPlaying: false,
-      sleepCurrentTrack: null as UTSJSONObject | null,
-      sleepPosition: 0,
-      sleepDuration: 0,
-      deviceApkVersion: '',
-      deviceApkUrl: '',
-
-      // Academy tab
-      trainingCourses: [] as UTSJSONObject[],
-      trainingLibrary: [] as UTSJSONObject[],
-      trainingCompletedIds: [] as number[],
-      trainingLessons: [] as UTSJSONObject[],
-      trainingView: 'list',
-      trainingCurrentCourse: null as UTSJSONObject | null,
-      trainingCurrentLesson: null as UTSJSONObject | null,
-      trainingVideoUrl: '',
-      trainingTextContent: '',
-      trainingLibraryContent: '',
-      trainingCurrentLibraryItem: null as UTSJSONObject | null,
-      trainingLoading: false,
-      trainingMarkingComplete: false,
-      trainingDashboard: null as UTSJSONObject | null,
-      trainingPaths: [] as UTSJSONObject[],
-      trainingCertifications: [] as UTSJSONObject[],
-      certDetailOpen: false,   // renamed from miniapp data key `showCertDetail` — the method of that name collides with it
-      certDetailItem: null as UTSJSONObject | null,
-      trainingQuizQuestions: [] as UTSJSONObject[],
-      trainingQuizAnswers: {} as UTSJSONObject,
-      trainingQuizResult: null as UTSJSONObject | null,
-      trainingQuizReview: [] as UTSJSONObject[],
-      trainingQuizSubmitting: false,
 
       // ── private instance state (was outside `data` in main.js) ──
       _pollingTimer: 0 as number,
@@ -2459,9 +2144,6 @@ export default {
       _weightSubAccepted: false, // xapp-mini: wx.requestSubscribeMessage; native: always false
       _dotsAllDays: [] as UTSJSONObject[],
       _pinch: null as PinchStepper | null,
-      // TODO(port): confirm InnerAudioContext type name at compile (wellness audio, see _initBgAudio).
-      _audio: null as InnerAudioContext | null,
-      _bgm: null as any | null, // xapp-mini: wx.getBackgroundAudioManager()
     }
   },
   computed: {
@@ -2574,22 +2256,8 @@ export default {
       if (de != null && de!.length > 0) return de!
       return d!.getString('goal_en') ?? ''
     },
-    currentLessonCompleted() : boolean {
-      const l = this.trainingCurrentLesson
-      if (l == null) return false
-      const id = l!.getNumber('id')
-      if (id == null) return false
-      return this.trainingCompletedIds.indexOf(id!) >= 0
-    },
-    certName() : string {
-      const c = this.certDetailItem
-      if (c != null) {
-        const un = c!.getString('_userName')
-        if (un != null && un!.length > 0) return un!
-      }
-      const u = this.user
-      return u != null ? (u!.getString('nickname') ?? '—') : '—'
-    },
+
+
   },
   onLoad(_options : OnLoadOptions) {
     const user = state.user
@@ -2748,6 +2416,7 @@ export default {
   },
 
   onUnload() {
+    if (this._learnPackageTimer != 0) clearTimeout(this._learnPackageTimer)
     this._cancelChatScroll()
     this._stopTypingDots()
     this._stopPolling()
@@ -2830,13 +2499,8 @@ export default {
     arrLen(obj : UTSJSONObject, key : string) : number {
       return obj.getArray<UTSJSONObject>(key)?.length ?? 0
     },
-    trackActive(a : UTSJSONObject) : boolean {
-      const cur = this.sleepCurrentTrack
-      return cur != null && cur!.getNumber('id') == a.getNumber('id')
-    },
-    trackPlaying(a : UTSJSONObject) : boolean {
-      return this.trackActive(a) && this.sleepPlaying
-    },
+
+
     // Structural text-scale: uvue has no CSS-variable cascade, so the fs-0..3 ladder is applied
     // inline to the main text runs (TODO(port): full fs-N cascade parity with main.wxss).
     // xapp-mini has the cascade (the miniapp's --fs-N rules at the end of the style block), and an
@@ -2971,6 +2635,12 @@ export default {
       this._startFormulaDots(new ToolOpts())
     },
 
+    onLearnPackageReady() {
+      this.learnPackageLoading = false
+      if (this._learnPackageTimer != 0) clearTimeout(this._learnPackageTimer)
+      this._learnPackageTimer = 0
+    },
+
     async switchTab(tab : string) {
       if (tab == 'store' && !this.isGuest) {
         // A GCN-storefront channel opens the store as a separate navigated page (pages/appview)
@@ -3004,9 +2674,17 @@ export default {
           this._loadCartridges(user, this.lang)
         }
       }
-      if (tab == 'learn') {
-        if (this.learnSubTab == 'academy' && this.trainingCourses.length == 0) this._loadAcademy()
-        if (this.learnSubTab == 'wellness' && this.wellnessAssets.length == 0) this._loadWellness()
+      if (tab == 'learn' && !this.isGuest && !this.learnVisited) {
+        this.learnPackageLoading = true
+        this.learnVisited = true
+        this._learnPackageTimer = setTimeout(() => {
+          this._learnPackageTimer = 0
+          if (!this.learnPackageLoading) return
+          this.learnPackageLoading = false
+          this.learnVisited = false
+          if (this.tab == 'learn') this.tab = 'chat'
+          uni.showToast({ title: this.lang == 'zh' ? '加载失败，请重试' : 'Loading failed. Please retry.', icon: 'none' })
+        }, 20000)
       }
     },
 
@@ -3306,7 +2984,7 @@ export default {
         } as UTSJSONObject, 0)
         if (w != null) w!.reported = seconds
         const lid = parseInt(lessonId)
-        if (this.trainingCompletedIds.indexOf(lid) < 0) this.trainingCompletedIds = this.trainingCompletedIds.concat([lid])
+        this.learnCompletedLessonId = lid
         return res.data
       } catch (e : any) { return null }
     },
@@ -3787,11 +3465,6 @@ export default {
       uni.showToast({ title: this.tr('neoNotFoundMsg'), icon: 'none', duration: 2000 })
     },
 
-    switchLearnSubTab(subTab : string) {
-      this.learnSubTab = subTab
-      if (subTab == 'academy' && this.trainingCourses.length == 0) this._loadAcademy()
-      if (subTab == 'wellness' && this.wellnessAssets.length == 0) this._loadWellness()
-    },
 
     // ── Logo menu ──
     toggleMenu() { this.menuOpen = !this.menuOpen },
@@ -5715,11 +5388,6 @@ export default {
       if (sel.length > 0 && sel != 'null') return sel
       return this.idStr(item, 'id')
     },
-    durLabel(seconds : number | null) : string {
-      const s = seconds ?? 0
-      if (s >= 60) return `${Math.floor(s / 60)} 分钟`
-      return `${s} 秒`
-    },
 
     handleAddToCart(index : number) {
       if (this.isGuest) { this.openGuestSheet(); return }
@@ -6589,520 +6257,6 @@ export default {
       this._updateUser(detail as UTSJSONObject)
     },
 
-    // ── Wellness tab ──
-    // xapp-mini plays through wx.getBackgroundAudioManager, as the miniapp. TODO(port): native has
-    // no equivalent yet — uni.createInnerAudioContext keeps playing only while foregrounded. Wiring kept
-    // identical in shape (onPlay/onPause/onStop/onEnded/onTimeUpdate).
-    async _loadWellness() {
-      this.wellnessLoading = true
-      try {
-        const user = this.user
-        const cid = user != null ? user!.getNumber('channel_id') : null
-        const assetsRes = await this._req(`${BASE}/api/digital-assets${cid != null ? `?channel_id=${cid}` : ''}`, 'GET', null, 0)
-        const raw = assetsRes.data != null ? (assetsRes.data!.getArray<UTSJSONObject>('assets') ?? ([] as UTSJSONObject[])) : ([] as UTSJSONObject[])
-        const assets : UTSJSONObject[] = []
-        for (const a of raw) {
-          const ct = a.getString('content_type') ?? ''
-          let mediaType = 'other'
-          if (ct.startsWith('audio/')) mediaType = 'audio'
-          else if (ct.startsWith('video/')) mediaType = 'video'
-          const row = this._copyRow(a)
-          row['mediaType'] = mediaType
-          assets.push(row)
-        }
-        const apkRes = await this._req(`${BASE}/api/kino-upgrade`, 'GET', null, 0)
-        const apk = apkRes.data
-        this.wellnessAssets = assets
-        this.deviceApkVersion = apk != null ? (apk!.getString('version') ?? '') : ''
-        this.deviceApkUrl = apk != null ? (apk!.getString('url') ?? '') : ''
-        this.wellnessLoading = false
-      } catch (err : any) {
-        this.wellnessLoading = false
-      }
-    },
-
-    _initBgAudio() {
-      // #ifdef MP-WEIXIN
-      // xapp-mini: WeChat's background audio manager, as the miniapp — playback carries on with
-      // the screen off or the app in the background (requiredBackgroundModes: audio).
-      if (this._bgm != null) return
-      const bgm = wx.getBackgroundAudioManager()
-      bgm.onPlay(() => { this.sleepPlaying = true })
-      bgm.onPause(() => { this.sleepPlaying = false })
-      bgm.onStop(() => { this.sleepPlaying = false; this.sleepPosition = 0 })
-      bgm.onEnded(() => { this.sleepPlaying = false; this.sleepPosition = 0 })
-      bgm.onTimeUpdate(() => {
-        this.sleepPosition = Math.floor(bgm.currentTime as number)
-        const dur = Math.floor(bgm.duration as number)
-        if (dur > 0) this.sleepDuration = dur
-      })
-      this._bgm = bgm
-      return
-      // #endif
-      if (this._audio != null) return
-      const ctx = uni.createInnerAudioContext()
-      ctx.onPlay(() => { this.sleepPlaying = true })
-      ctx.onPause(() => { this.sleepPlaying = false })
-      ctx.onStop(() => { this.sleepPlaying = false; this.sleepPosition = 0 })
-      ctx.onEnded(() => { this.sleepPlaying = false; this.sleepPosition = 0 })
-      ctx.onTimeUpdate(() => {
-        this.sleepPosition = Math.floor(ctx.currentTime)
-        const dur = Math.floor(ctx.duration)
-        if (dur > 0) this.sleepDuration = dur
-      })
-      this._audio = ctx
-    },
-
-    playAudioAsset(index : number) {
-      const track = index < this.wellnessAssets.length ? this.wellnessAssets[index] : null
-      if (track == null) return
-      const cur = this.sleepCurrentTrack
-      this._initBgAudio()
-      // #ifdef MP-WEIXIN
-      const bgm = this._bgm
-      if (bgm == null) return
-      if (cur != null && cur!.getNumber('id') == track!.getNumber('id') && this.sleepPlaying) {
-        bgm.pause()
-        return
-      }
-      const src = track!.getString('url')
-      if (src == null) return
-      // title is required by the background manager (it shows on the lock screen); src starts it.
-      bgm.title = track!.getString('title_zh') ?? (track!.getString('title') ?? '')
-      bgm.coverImgUrl = ''
-      bgm.src = src!
-      this.sleepCurrentTrack = track
-      this.sleepPosition = 0
-      this.sleepDuration = track!.getNumber('duration_seconds') ?? 0
-      return
-      // #endif
-      const ctx = this._audio
-      if (ctx == null) return
-      if (cur != null && cur!.getNumber('id') == track!.getNumber('id') && this.sleepPlaying) {
-        ctx.pause()
-        return
-      }
-      const url = track!.getString('url')
-      if (url == null) return
-      ctx.src = url!
-      // InnerAudioContext has no title field on uni-app x (WeChat-era metadata) — skipped.
-      this.sleepCurrentTrack = track
-      this.sleepPosition = 0
-      this.sleepDuration = track!.getNumber('duration_seconds') ?? 0
-    },
-
-    stopAudioAsset() {
-      // #ifdef MP-WEIXIN
-      if (this._bgm != null) this._bgm.stop()
-      // #endif
-      const ctx = this._audio
-      if (ctx != null) ctx.stop()
-      this.sleepCurrentTrack = null
-      this.sleepPlaying = false
-      this.sleepPosition = 0
-    },
-
-    // The miniapp copied the asset URL for a browser (media-asset-btn = 复制链接); same native.
-    openMediaAsset(index : number) {
-      const asset = index < this.wellnessAssets.length ? this.wellnessAssets[index] : null
-      if (asset == null) return
-      const url = asset!.getString('url')
-      if (url == null || url!.length == 0) return
-      uni.setClipboardData({
-        data: url!,
-        success: () => { uni.showToast({ title: '链接已复制，请在浏览器打开', icon: 'none', duration: 2500 }) },
-      })
-    },
-
-    copyApkUrl() {
-      if (this.deviceApkUrl.length == 0) return
-      uni.setClipboardData({
-        data: this.deviceApkUrl,
-        success: () => { uni.showToast({ title: '链接已复制，请在浏览器打开', icon: 'none', duration: 2500 }) },
-      })
-    },
-
-    // ── Academy tab ──
-    async _loadAcademy() {
-      const user = this.user
-      const userId = user != null ? (user!.getString('user_id') ?? '') : ''
-      if (userId.length == 0) return
-      this.trainingLoading = true
-      try {
-        // Promise.allSettled in the source → sequential awaits with per-call try/catch; same
-        // partial-failure semantics (each list defaults to empty when its fetch fails).
-        let rawCourses : UTSJSONObject[] = []
-        let library : UTSJSONObject[] = []
-        let progressRows : UTSJSONObject[] = []
-        let rawDashboard : UTSJSONObject | null = null
-        let paths : UTSJSONObject[] = []
-        let certs : UTSJSONObject[] = []
-        try {
-          const r = await this._req(`${BASE}/api/academy/courses`, 'GET', null, 0)
-          rawCourses = r.data != null ? (r.data!.getArray<UTSJSONObject>('courses') ?? ([] as UTSJSONObject[])) : ([] as UTSJSONObject[])
-        } catch (e : any) {}
-        try {
-          const r = await this._req(`${BASE}/api/academy/library`, 'GET', null, 0)
-          library = r.data != null ? (r.data!.getArray<UTSJSONObject>('items') ?? ([] as UTSJSONObject[])) : ([] as UTSJSONObject[])
-        } catch (e : any) {}
-        try {
-          const r = await this._req(`${BASE}/api/academy/progress?user_id=${userId}`, 'GET', null, 0)
-          progressRows = r.data != null ? (r.data!.getArray<UTSJSONObject>('progress') ?? ([] as UTSJSONObject[])) : ([] as UTSJSONObject[])
-        } catch (e : any) {}
-        try {
-          const r = await this._req(`${BASE}/api/academy/coach-dashboard?user_id=${userId}`, 'GET', null, 0)
-          rawDashboard = r.data
-        } catch (e : any) {}
-        try {
-          const r = await this._req(`${BASE}/api/academy/learning-paths`, 'GET', null, 0)
-          paths = r.data != null ? (r.data!.getArray<UTSJSONObject>('paths') ?? ([] as UTSJSONObject[])) : ([] as UTSJSONObject[])
-        } catch (e : any) {}
-        try {
-          const r = await this._req(`${BASE}/api/academy/coach-certifications?user_id=${userId}`, 'GET', null, 0)
-          certs = r.data != null ? (r.data!.getArray<UTSJSONObject>('certifications') ?? ([] as UTSJSONObject[])) : ([] as UTSJSONObject[])
-        } catch (e : any) {}
-
-        const t = this.lang == 'zh' ? T_MAIN_ZH : T_MAIN_EN
-        const tl = t.getJSON('training')!
-        const tierLabels = tl!.getJSON('tierLabels')!
-        const publishedCourses = rawCourses.filter((c : UTSJSONObject) : boolean => c.getString('status') == 'published')
-        const completedIds : number[] = []
-        for (const p of progressRows) {
-          const lid = p.getNumber('lesson_id')
-          if (lid != null) completedIds.push(lid!)
-        }
-        // Per-course completion counts; a course is fully completed when ALL its lessons are done.
-        const completedByCourse = new Map<number, number>()
-        for (const p of progressRows) {
-          const cid = p.getNumber('course_id')
-          if (cid != null) completedByCourse.set(cid!, (completedByCourse.get(cid!) ?? 0) + 1)
-        }
-        const completedCourseIds = new Set<number>()
-        for (const c of publishedCourses) {
-          const lc = c.getNumber('lesson_count') ?? 0
-          const cid = c.getNumber('id')
-          if (cid != null && lc > 0 && (completedByCourse.get(cid!) ?? 0) >= lc) completedCourseIds.add(cid!)
-        }
-        const courses : UTSJSONObject[] = []
-        for (const c of publishedCourses) {
-          const row = this._copyRow(c)
-          const lc = c.getNumber('lesson_count') ?? 0
-          row['_lessonCountLabel'] = lessonCount(this.lang, lc!)
-          const level = c.getString('level') ?? ''
-          const tierLabel = tierLabels.getString(level)
-          row['_levelLabel'] = tierLabel != null && tierLabel!.length > 0 ? tierLabel : level
-          const prereq = c.getNumber('prerequisite_course_id')
-          row['_locked'] = prereq != null && !completedCourseIds.has(prereq!)
-          courses.push(row)
-        }
-        let dashboard : UTSJSONObject | null = null
-        if (rawDashboard != null) {
-          dashboard = this._copyRow(rawDashboard!)
-          const tier = `${rawDashboard!.getString('tier') ?? ''}`
-          const tl2 = tierLabels.getString(tier)
-          dashboard!['_tierLabel'] = tl2 != null && tl2!.length > 0 ? tl2 : tier
-        }
-        const certifications : UTSJSONObject[] = []
-        for (const c of certs) {
-          const row = this._copyRow(c)
-          const tier = c.getString('tier') ?? ''
-          const tl3 = tierLabels.getString(tier)
-          row['_tierLabel'] = tl3 != null && tl3!.length > 0 ? tl3 : tier
-          certifications.push(row)
-        }
-        const enrichedPaths : UTSJSONObject[] = []
-        for (const p of paths) {
-          const pCourses = p.getArray<UTSJSONObject>('courses') ?? ([] as UTSJSONObject[])
-          let done = 0
-          for (const pc of pCourses) {
-            const cid = pc.getNumber('course_id')
-            if (cid != null && completedCourseIds.has(cid!)) done++
-          }
-          const row = this._copyRow(p)
-          row['_total'] = pCourses.length
-          row['_done'] = done
-          const tier = p.getString('tier') ?? ''
-          const tl4 = tierLabels.getString(tier)
-          row['_tierLabel'] = tl4 != null && tl4!.length > 0 ? tl4 : tier
-          enrichedPaths.push(row)
-        }
-        this.trainingCourses = courses
-        this.trainingLibrary = library
-        this.trainingCompletedIds = completedIds
-        this.trainingDashboard = dashboard
-        this.trainingPaths = enrichedPaths
-        this.trainingCertifications = certifications
-      } catch (e : any) {
-        uni.showToast({ title: this.tr('training.loadError'), icon: 'none' })
-      } finally {
-        this.trainingLoading = false
-      }
-    },
-
-    pathPct(p : UTSJSONObject) : number {
-      const total = p.getNumber('_total') ?? 0
-      const done = p.getNumber('_done') ?? 0
-      return total > 0 ? Math.round(done / total * 100) : 0
-    },
-    isLessonCompleted(index : number) : boolean {
-      const lsn = index < this.trainingLessons.length ? this.trainingLessons[index] : null
-      if (lsn == null) return false
-      const id = lsn!.getNumber('id')
-      if (id == null) return false
-      return this.trainingCompletedIds.indexOf(id!) >= 0
-    },
-    quizAnswerFor(q : UTSJSONObject) : number {
-      const v = this.trainingQuizAnswers.getNumber(idOf(q, 'id'))
-      return v != null ? v! : -1
-    },
-
-    async trainingOpenCourse(index : number, isPath : boolean) {
-      const source = isPath ? this.trainingPaths : this.trainingCourses
-      const course = index < source.length ? source[index] : null
-      if (course == null) return
-      if (course!.getBoolean('_locked') == true) {
-        const prereq = course!.getString('prerequisite_title') ?? (this.lang == 'zh' ? '前置课程' : 'prerequisite course')
-        uni.showToast({ title: this.lang == 'zh' ? `请先完成：${prereq}` : `Complete first: ${prereq}`, icon: 'none', duration: 2500 })
-        return
-      }
-      this.trainingCurrentCourse = course
-      this.trainingLessons = [] as UTSJSONObject[]
-      this.trainingView = 'lessons'
-      try {
-        const cid = course!.getNumber('id') ?? ''
-        const res = await this._req(`${BASE}/api/academy/lessons?course_id=${cid}`, 'GET', null, 0)
-        this.trainingLessons = res.data != null ? (res.data!.getArray<UTSJSONObject>('lessons') ?? ([] as UTSJSONObject[])) : ([] as UTSJSONObject[])
-      } catch (e : any) {
-        uni.showToast({ title: this.tr('training.loadError'), icon: 'none' })
-      }
-    },
-
-    async trainingOpenLesson(index : number) {
-      const lesson = index < this.trainingLessons.length ? this.trainingLessons[index] : null
-      if (lesson == null) return
-      this.trainingCurrentLesson = lesson
-      this.trainingVideoUrl = ''
-      this.trainingTextContent = ''
-      this.trainingQuizQuestions = [] as UTSJSONObject[]
-      this.trainingQuizAnswers = {} as UTSJSONObject
-      this.trainingQuizResult = null
-      this.trainingQuizReview = [] as UTSJSONObject[]
-      this.trainingView = 'player'
-      try {
-        const lid = lesson!.getNumber('id') ?? ''
-        const detailRes = await this._req(`${BASE}/api/academy/lessons/${lid}`, 'GET', null, 0)
-        const detail = detailRes.data
-        const quizQuestions = detail != null ? (detail!.getArray<UTSJSONObject>('quiz_questions') ?? ([] as UTSJSONObject[])) : ([] as UTSJSONObject[])
-        const contentType = lesson!.getString('content_type') ?? ''
-        if (contentType == 'text' || contentType == 'interactive') {
-          const inner = detail != null ? detail!.getJSON('lesson') : null
-          this.trainingTextContent = inner != null ? (inner!.getString('text_content') ?? '') : ''
-          this.trainingQuizQuestions = quizQuestions
-          return
-        }
-        const ossKey = lesson!.getString('oss_key')
-        if (ossKey != null && ossKey!.length > 0) {
-          const presignRes = await this._req(`${BASE}/api/oss/presign?action=get&key=${encodeURIComponent(ossKey!)}`, 'GET', null, 0)
-          this.trainingVideoUrl = presignRes.data != null ? (presignRes.data!.getString('url') ?? '') : ''
-          this.trainingQuizQuestions = quizQuestions
-        }
-      } catch (e : any) {
-        uni.showToast({ title: this.tr('training.loadError'), icon: 'none' })
-      }
-    },
-
-    trainingSelectAnswer(questionId : string, optionIndex : number) {
-      const answers = this._copyRow(this.trainingQuizAnswers)
-      answers[questionId] = optionIndex
-      this.trainingQuizAnswers = answers
-    },
-
-    async trainingSubmitQuiz() {
-      const lesson = this.trainingCurrentLesson
-      const user = this.user
-      if (lesson == null || user == null) return
-      if (this.trainingQuizAnswers.toMap().size == 0) { uni.showToast({ title: '请先回答问题', icon: 'none' }); return }
-      this.trainingQuizSubmitting = true
-      try {
-        const answerObj = new UTSJSONObject()
-        this.trainingQuizAnswers.toMap().forEach((v : any | null, k : string) => { answerObj[k] = v })
-        const res = await this._req(`${BASE}/api/academy/quiz-attempts`, 'POST', {
-          user_id: user!.getString('user_id'), lesson_id: lesson!.getNumber('id'), answers: answerObj,
-        } as UTSJSONObject, 0)
-        const result = res.data
-        const correctAnswers = result != null ? (result!.getArray<UTSJSONObject>('correct_answers') ?? ([] as UTSJSONObject[])) : ([] as UTSJSONObject[])
-        const review : UTSJSONObject[] = []
-        for (const q of this.trainingQuizQuestions) {
-          const qid = q.getNumber('id')
-          let ca : UTSJSONObject | null = null
-          for (const x of correctAnswers) { if (x.getNumber('question_id') == qid) { ca = x; break } }
-          const options = q.getArray<UTSJSONObject>('options') ?? ([] as UTSJSONObject[])
-          const ansIdx = qid != null ? this.trainingQuizAnswers.getNumber(`${qid}`) : null
-          let userAnswer = '—'
-          if (ca != null && ansIdx != null && ansIdx! >= 0 && ansIdx! < options.length) {
-            userAnswer = options[ansIdx!].getString('text') ?? '—'
-          }
-          let correctAnswer = ''
-          if (ca != null) {
-            const ci = ca!.getNumber('correct_index')
-            if (ci != null && ci! >= 0 && ci! < options.length) correctAnswer = options[ci!].getString('text') ?? ''
-          }
-          review.push({
-            question: q.getString('question'),
-            user_answer: userAnswer,
-            correct_answer: correctAnswer,
-            explanation: ca != null ? (ca!.getString('explanation') ?? '') : '',
-            is_correct: ca != null && ca!.getBoolean('is_correct') == true,
-          } as UTSJSONObject)
-        }
-        this.trainingQuizResult = result != null ? result : new UTSJSONObject()
-        this.trainingQuizReview = review
-        if (result != null && result!.getBoolean('passed') == true) {
-          const lid = lesson!.getNumber('id')
-          if (lid != null) { await this._doMarkComplete(lid!); this._loadAcademy() }
-        }
-      } catch (e : any) {
-        uni.showToast({ title: this.tr('training.loadError'), icon: 'none' })
-      } finally {
-        this.trainingQuizSubmitting = false
-      }
-    },
-
-    async _doMarkComplete(lessonId : number) {
-      const user = this.user
-      if (user == null) return
-      if (this.trainingCompletedIds.indexOf(lessonId) >= 0) return
-      try {
-        await this._req(`${BASE}/api/academy/progress`, 'POST', { user_id: user!.getString('user_id'), lesson_id: lessonId } as UTSJSONObject, 0)
-        this.trainingCompletedIds = [...this.trainingCompletedIds, lessonId]
-      } catch (e : any) { /* silent */ }
-    },
-
-    async trainingMarkComplete() {
-      const lesson = this.trainingCurrentLesson
-      if (lesson == null) return
-      if (lesson!.getBoolean('has_quiz') == true && this.trainingQuizQuestions.length > 0 && (this.trainingQuizResult == null || this.trainingQuizResult!.getBoolean('passed') != true)) {
-        uni.showToast({ title: '请先完成测验', icon: 'none' }); return
-      }
-      const lid = lesson!.getNumber('id')
-      if (lid != null && this.trainingCompletedIds.indexOf(lid!) >= 0) return
-      this.trainingMarkingComplete = true
-      try {
-        if (lid != null) await this._doMarkComplete(lid!)
-        uni.showToast({ title: this.tr('training.markedComplete'), icon: 'success' })
-        this._loadAcademy()
-      } catch (e : any) {
-        uni.showToast({ title: this.tr('training.loadError'), icon: 'none' })
-      } finally {
-        this.trainingMarkingComplete = false
-      }
-    },
-
-    async trainingOpenLibraryItem(index : number) {
-      const item = index < this.trainingLibrary.length ? this.trainingLibrary[index] : null
-      if (item == null) return
-      this.trainingCurrentLibraryItem = item
-      this.trainingLibraryContent = ''
-      this.trainingView = 'library-viewer'
-      try {
-        const res = await this._req(`${BASE}/api/academy/library/${item!.getNumber('id')}/content`, 'GET', null, 0)
-        this.trainingLibraryContent = res.data != null ? (res.data!.getString('content') ?? JSON.stringify(res.data)) : ''
-      } catch (e : any) {
-        uni.showToast({ title: this.tr('training.loadError'), icon: 'none' })
-      }
-    },
-
-    trainingBackToList() {
-      this.trainingView = 'list'
-      this.trainingCurrentCourse = null
-      this.trainingCurrentLesson = null
-      this.trainingVideoUrl = ''
-      this.trainingQuizQuestions = [] as UTSJSONObject[]
-      this.trainingQuizAnswers = {} as UTSJSONObject
-      this.trainingQuizResult = null
-      this.trainingQuizReview = [] as UTSJSONObject[]
-    },
-
-    // API responses serialize DATE columns as full ISO datetimes parsed in the backend's
-    // Asia/Shanghai process timezone — e.g. "2026-07-05T16:00:00.000Z" for a stored 2026-07-06.
-    // Shift by the fixed +8h (no DST in China) before reading fields, so the day comes out right
-    // on any device timezone.
-    _formatCertDate(dateStr : string | null) : string {
-      if (dateStr == null || dateStr!.length == 0) return ''
-      const t = _parseMs(dateStr)
-      if (isNaN(t)) return dateStr!
-      const shanghai = new Date(t + 8 * 60 * 60 * 1000)
-      const y = shanghai.getUTCFullYear()
-      const day = shanghai.getUTCDate()
-      if (this.lang == 'zh') return `${y}年${shanghai.getUTCMonth() + 1}月${day}日`
-      return `${MONTH_EN[shanghai.getUTCMonth()]} ${day}, ${y}`
-    },
-
-    async showCertDetail(index : number) {
-      const cert = index < this.trainingCertifications.length ? this.trainingCertifications[index] : null
-      if (cert == null) return
-      // cert_oss_key is the backend-composited image (name/dates burned in) — prefer it;
-      // template_image_oss_key is the blank template, only a fallback when generation hasn't run.
-      const certKey = cert!.getString('cert_oss_key') ?? ''
-      const tmplKey = cert!.getString('template_image_oss_key') ?? ''
-      const displayKey = certKey.length > 0 ? certKey : tmplKey
-      let templateImageUrl = ''
-      if (displayKey.length > 0) {
-        try {
-          const res = await this._req(`${BASE}/api/oss/presign?action=get&key=${encodeURIComponent(displayKey)}`, 'GET', null, 0)
-          templateImageUrl = res.data != null ? (res.data!.getString('url') ?? '') : ''
-        } catch (e : any) {}
-      }
-      const row = this._copyRow(cert!)
-      row['templateImageUrl'] = templateImageUrl
-      row['issueDateDisplay'] = this._formatCertDate(cert!.getString('issue_date'))
-      row['expiryDateDisplay'] = this._formatCertDate(cert!.getString('expiry_date'))
-      this.certDetailOpen = true
-      this.certDetailItem = row
-    },
-
-    hideCertDetail() {
-      this.certDetailOpen = false
-      this.certDetailItem = null
-    },
-
-    async downloadCert(key : string) {
-      if (key.length == 0) return
-      uni.showLoading({ title: this.lang == 'zh' ? '准备中…' : 'Loading…' })
-      try {
-        const res = await this._req(`${BASE}/api/oss/presign?action=get&key=${encodeURIComponent(key)}`, 'GET', null, 0)
-        const url = res.data != null ? res.data!.getString('url') : null
-        if (url == null || url!.length == 0) throw new Error('No URL')
-        uni.hideLoading()
-        // #ifdef MP-WEIXIN
-        // xapp-mini: download and hand to WeChat's document viewer, as the miniapp.
-        const filePath = await new Promise<string>((resolve, reject) => {
-          uni.downloadFile({ url: url!, success: (r) => { if (r.statusCode == 200) resolve(r.tempFilePath); else reject(new Error(`http ${r.statusCode}`)) }, fail: (e) => { reject(e) } })
-        })
-        wx.openDocument({ filePath: filePath, showMenu: true } as any)
-        return
-        // #endif
-        // TODO(port): no in-app PDF viewer is wired on the native side yet; pay-qr's
-        // save-to-album precedent doesn't fit a PDF. Copy link for now.
-        uni.setClipboardData({ data: url!, success: () => { uni.showToast({ title: '链接已复制，请在浏览器打开', icon: 'none', duration: 2500 }) } })
-      } catch (e : any) {
-        uni.hideLoading()
-        uni.showToast({ title: this.lang == 'zh' ? '下载失败' : 'Download failed', icon: 'none' })
-      }
-    },
-
-    trainingBackToLessons() {
-      this.trainingView = 'lessons'
-      this.trainingCurrentLesson = null
-      this.trainingVideoUrl = ''
-      this.trainingCurrentLibraryItem = null
-      this.trainingLibraryContent = ''
-      this.trainingQuizQuestions = [] as UTSJSONObject[]
-      this.trainingQuizAnswers = {} as UTSJSONObject
-      this.trainingQuizResult = null
-      this.trainingQuizReview = [] as UTSJSONObject[]
-    },
-
     // ── HTTP helper (mirrors coach.uvue._req / the miniapp's _req, body-level) ──
     // The miniapp's _req resolves on HTTP 4xx too and callers read res.data.success — so this
     // returns RespEnvelope {statusCode, data}. Sandbox sessions inject sandbox:true on every
@@ -7779,190 +6933,21 @@ export default {
 .cart-checkout-text { color: #FFFFFF; font-size: 14px; font-weight: bold; }
 
 /* ── Learn tab ── */
-.academy-subtab-scroll { flex: 1; }
-.wellness-subtab-scroll { flex: 1; padding: 0px 0px 0px 0px; }
-.training-tab { padding: 10px 16px 10px 16px; }
 .loading-row { align-items: center; padding: 20px 0; }
 .loading-text { color: #A6C4E5; font-size: 13px; }
-.academy-status-card { position: relative; overflow: hidden; background-image: linear-gradient(150deg, rgb(26, 31, 98) 0%, rgb(29, 53, 101) 50%, rgb(22, 46, 74) 100%); border: 1px solid rgba(139, 159, 255, 0.38); border-radius: 16px; padding: 16px 16px 14px; box-shadow: 0px 6px 24px 0px rgba(99, 117, 236, 0.32), 0px 1px 0px 0px rgba(255, 255, 255, 0.06) inset; margin: 12px 14px 8px 14px; }
-.academy-card-glow-tl { position: absolute; top: -35px; right: -25px; width: 114px; height: 114px; background-color: rgba(139, 159, 255, 0.10); border-radius: 57px; }
 /* #ifdef MP-WEIXIN */
-.academy-card-glow-tl { background-image: radial-gradient(circle, rgba(139, 159, 255, 0.22) 0%, rgba(0, 0, 0, 0) 70%); }
 /* #endif */
-.academy-card-glow-br { position: absolute; bottom: -25px; left: -15px; width: 93px; height: 93px; background-color: rgba(99, 117, 236, 0.08); border-radius: 46.5px; }
 /* #ifdef MP-WEIXIN */
-.academy-card-glow-br { background-image: radial-gradient(circle, rgba(99, 117, 236, 0.15) 0%, rgba(0, 0, 0, 0) 70%); }
 /* #endif */
-.academy-card-header { flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 16px; color: rgb(238, 242, 255); }
-.academy-card-header-label { color: rgba(139, 159, 255, 0.5); font-size: 10px; font-weight: bold; letter-spacing: 1px; }
-.academy-card-tier-badge { background-image: linear-gradient(135deg, rgba(139,159,255,0.22), rgba(99,117,236,0.12)); border: 1px solid rgba(139, 159, 255, 0.38); border-radius: 20px; padding: 3px 11px; }
-.academy-card-tier-text { color: #A0B2FF; font-size: 10px; font-weight: bold; letter-spacing: 1px; }
 /* #ifdef MP-WEIXIN */
-.academy-card-tier-text { text-transform: capitalize; }
 /* #endif */
-.academy-card-hero { align-items: center; padding-bottom: 14px; }
-.academy-card-credits-num { color: #FFFFFF; font-size: 41px; font-weight: bold; letter-spacing: -1px; }
-.academy-card-credits-label { color: rgba(139, 159, 255, 0.5); font-size: 8px; font-weight: bold; letter-spacing: 2px; margin-top: 6px; }
-.academy-card-divider { height: 1px; background-image: linear-gradient(90deg, rgba(0, 0, 0, 0), rgba(139, 159, 255, 0.28), rgba(0, 0, 0, 0)); margin-bottom: 12px; }
-.academy-card-stats { flex-direction: row; align-items: center; }
-.academy-card-stat { flex: 1; align-items: center; color: rgb(238, 242, 255); }
-.academy-card-stat-sep { width: 1px; height: 24px; background-color: rgba(139, 159, 255, 0.18); }
-.academy-card-stat-num { color: #FFFFFF; font-size: 18px; font-weight: bold; }
-.academy-card-stat-label { color: rgba(139, 159, 255, 0.5); font-size: 8px; font-weight: 600; letter-spacing: 1px; margin-top: 3px; }
-.training-section-header { margin-top: 14px; }
-.training-section-title { color: rgb(122, 154, 191); font-size: 11px; font-weight: bold; letter-spacing: 1px; }
 /* #ifdef MP-WEIXIN */
-.training-section-title { text-transform: uppercase; }
 /* #endif */
-.training-path-card { background-color: #162E4A; border-radius: 8px; padding: 10px 10px 8px 10px; margin: 8px 0px 8px 0px; border-style: solid; border-width: 1px; border-color: rgba(99, 117, 236, 0.18); }
-.training-path-header { flex-direction: row; align-items: center; justify-content: space-between; margin: 0px 0px 4px 0px; }
-.training-path-title { color: #EEF2FF; font-size: 14px; font-weight: bold; flex: 1; }
-.training-path-tier { color: rgb(129, 140, 248); font-size: 10px; padding: 1px 6px 1px 6px; border-radius: 10px; background-color: rgba(99, 101, 241, 0.15); }
 /* #ifdef MP-WEIXIN */
-.training-path-tier { text-transform: capitalize; }
 /* #endif */
-.training-path-desc { color: #A6C4E5; font-size: 11px; margin-top: 3px; }
-.training-path-progress-bar { height: 4px; border-radius: 2px; background-color: rgba(255, 255, 255, 0.1); margin: 8px 0px 4px 0px; }
-.training-path-progress-fill { height: 4px; border-radius: 2px; background-color: transparent; background-image: linear-gradient(90deg, rgb(99, 117, 236), rgb(139, 159, 255)); }
-.training-path-progress-label { color: rgba(166, 196, 229, 0.4); font-size: 11px; margin-top: 3px; }
 .empty-state { align-items: center; padding: 0px 0px 0px 0px; }
-.training-course-card { background-color: #162E4A; border-radius: 12px; margin-top: 8px; }
-.training-course-card-locked { opacity: 0.55; }
-.training-course-cover { position: relative; border-radius: 0px; background-color: transparent; align-items: flex-start; justify-content: space-between; color: rgb(238, 242, 255); border-top-width: 0px; border-right-width: 0px; border-bottom-width: 1px; border-left-width: 0px; border-bottom-color: rgba(99, 117, 236, 0.15); background-image: linear-gradient(135deg, rgb(26, 47, 90) 0%, rgb(10, 24, 48) 100%); padding: 18px 16px 14px 16px; border-style: solid; flex-direction: row; }
-.training-course-cover-text { flex: 1; color: rgb(232, 240, 248); font-size: 15px; font-weight: bold; line-height: 21px; margin: 0px 8px 0px 0px; }
-.training-lesson-badge { flex-shrink: 0; background-color: rgba(99, 117, 236, 0.2); border-radius: 10px; padding: 2px 8px; color: rgb(238, 242, 255); border-style: solid; border-width: 1px; border-color: rgba(99, 117, 236, 0.4); }
-.training-lesson-badge-text { color: rgb(139, 159, 255); font-size: 10px; }
-.training-course-lock-badge { position: absolute; right: 8px; bottom: 8px; }
-.training-course-lock-icon { font-size: 14px; }
-.training-course-body { padding: 10px 16px 10px 16px; }
-.training-course-meta { flex: 1; }
-.training-course-title { color: rgb(232, 240, 248); font-size: 14px; font-weight: bold; }
-.training-course-desc { color: rgb(122, 154, 191); font-size: 12px; margin-top: 2px; }
-.training-course-meta-row { flex-direction: row; align-items: center; margin-top: 4px; }
-.training-course-level { color: rgb(129, 140, 248); font-size: 10px; background-color: rgba(99, 101, 241, 0.15); border-radius: 10px; padding: 1px 5px 1px 5px; }
 /* #ifdef MP-WEIXIN */
-.training-course-level { text-transform: capitalize; }
 /* #endif */
-.training-course-credits { color: rgb(16, 185, 129); font-size: 10px; margin-left: 8px; }
-.training-course-prereq-hint { color: #FBBF24; font-size: 10px; margin-top: 3px; }
-.training-cert-card { flex-direction: row; align-items: center; background-color: #162E4A; border-radius: 12px; padding: 12px; margin-top: 8px; }
-.training-cert-icon { font-size: 18px; margin-right: 10px; }
-.training-cert-info { flex: 1; }
-.training-cert-title { color: #EEF2FF; font-size: 13px; font-weight: bold; }
-.training-cert-tier { color: #A0B4FF; font-size: 10px; }
-.training-cert-chevron { color: #A6C4E5; font-size: 16px; }
-.cert-overlay { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-color: rgba(4, 10, 18, 0.8); align-items: center; justify-content: center; }
-.cert-detail-card { background-color: #0F2235; border-radius: 14px; padding: 16px; width: 90%; max-height: 480px; }
-.cert-detail-header { flex-direction: row; align-items: center; justify-content: space-between; }
-.cert-status-badge { flex-direction: row; align-items: center; background-color: rgba(16, 185, 129, 0.15); border-radius: 8px; padding: 3px 8px; }
-.cert-status-check { color: #6EE7B7; font-size: 12px; margin-right: 4px; }
-.cert-status-text { color: #6EE7B7; font-size: 11px; }
-.cert-close-btn { padding: 4px 8px; }
-.cert-close-label { color: #A6C4E5; font-size: 14px; }
-.cert-bg-wrap { margin-top: 10px; }
-.cert-bg-preview { width: 100%; border-radius: 8px; }
-.cert-field-list { margin-top: 10px; }
-.cert-field { flex-direction: row; padding: 5px 0; border-bottom: 1px solid rgba(127, 127, 127, 0.08); }
-.cert-label { color: #A6C4E5; font-size: 11px; width: 90px; }
-.cert-value { color: #EEF2FF; font-size: 12px; flex: 1; }
-.cert-mono { font-family: monospace; }
-.cert-number { color: #A0B4FF; }
-.cert-valid { color: #6EE7B7; }
-.cert-download-btn { background-color: #6375EC; border-radius: 10px; padding: 10px; margin-top: 12px; align-items: center; }
-.cert-download-label { color: #FFFFFF; font-size: 13px; }
-.training-library-row { flex-direction: row; align-items: center; background-color: rgb(15, 37, 64); border-radius: 8px; padding: 14px 10px 14px 10px; margin: 8px 0px 8px 0px; border-style: solid; border-width: 1px; border-color: rgb(30, 58, 95); }
-.training-library-icon { margin-right: 8px; color: rgb(238, 242, 255); }
-.training-library-title { color: rgb(232, 240, 248); font-size: 14px; flex: 1; }
-.training-library-chevron { color: rgb(74, 106, 138); font-size: 18px; }
-.training-back-row { padding: 4px 0 8px; }
-.training-back-text { color: #A0B4FF; font-size: 13px; }
-.training-course-header { margin-bottom: 8px; }
-.training-course-header-title { color: #EEF2FF; font-size: 16px; font-weight: bold; }
-.training-course-header-desc { color: #A6C4E5; font-size: 12px; margin-top: 3px; }
-.training-lesson-row { flex-direction: row; align-items: center; background-color: #162E4A; border-radius: 10px; padding: 10px; margin-top: 8px; }
-.training-lesson-num { width: 28px; height: 28px; border-radius: 14px; background-color: rgba(99, 117, 236, 0.2); align-items: center; justify-content: center; margin-right: 10px; }
-.training-lesson-num-text { color: #A0B4FF; font-size: 12px; }
-.training-lesson-info { flex: 1; }
-.training-lesson-title { color: #EEF2FF; font-size: 13px; }
-.training-lesson-desc { color: #A6C4E5; font-size: 11px; }
-.training-lesson-meta-row { flex-direction: row; align-items: center; margin-top: 3px; }
-.training-lesson-type-badge { font-size: 11px; margin-right: 6px; }
-.training-lesson-credits-label { color: #6EE7B7; font-size: 10px; }
-.training-lesson-quiz-badge { color: #FBBF24; font-size: 10px; margin-left: 6px; }
-.training-lesson-done { width: 22px; height: 22px; border-radius: 11px; background-color: rgba(16, 185, 129, 0.2); align-items: center; justify-content: center; }
-.training-lesson-done-text { color: #6EE7B7; font-size: 12px; }
-.training-lesson-chevron { color: #A6C4E5; font-size: 15px; }
-.training-video-container { border-radius: 12px; overflow: hidden; }
-.training-video { width: 100%; height: 200px; }
-.training-video-loading { height: 160px; align-items: center; justify-content: center; background-color: #162E4A; border-radius: 12px; }
-.training-video-loading-text { color: #A6C4E5; font-size: 12px; }
-.training-text-content { background-color: #162E4A; border-radius: 12px; padding: 12px; }
-.training-text-body { color: #EEF2FF; font-size: 13px; line-height: 20px; }
-.training-lesson-detail { margin-top: 10px; }
-.training-lesson-detail-title { color: #EEF2FF; font-size: 15px; font-weight: bold; }
-.training-lesson-detail-desc { color: #A6C4E5; font-size: 12px; margin-top: 3px; }
-.training-quiz-section { background-color: #12283F; border-radius: 12px; padding: 12px; margin-top: 10px; }
-.training-quiz-title { color: #EEF2FF; font-size: 13px; font-weight: bold; }
-.training-quiz-result { border-radius: 10px; padding: 10px; margin-top: 8px; align-items: center; }
-.training-quiz-passed { background-color: rgba(16, 185, 129, 0.12); }
-.training-quiz-failed { background-color: rgba(239, 68, 68, 0.12); }
-.training-quiz-result-score { color: #EEF2FF; font-size: 22px; font-weight: bold; }
-.training-quiz-result-label { color: #A6C4E5; font-size: 12px; }
-.training-quiz-result-credits { color: #6EE7B7; font-size: 12px; }
-.training-quiz-review { margin-top: 8px; width: 100%; }
-.training-quiz-review-item { border-radius: 8px; padding: 8px; margin-top: 6px; flex-direction: row; }
-.training-quiz-review-correct { background-color: rgba(16, 185, 129, 0.1); }
-.training-quiz-review-wrong { background-color: rgba(239, 68, 68, 0.1); }
-.training-quiz-review-icon { color: #EEF2FF; font-size: 13px; margin-right: 8px; }
-.training-quiz-review-body { flex: 1; }
-.training-quiz-review-q { color: #EEF2FF; font-size: 12px; }
-.training-quiz-review-your-ans { color: #FFB3B3; font-size: 11px; }
-.training-quiz-review-correct-ans { color: #6EE7B7; font-size: 11px; }
-.training-quiz-review-explanation { color: #A6C4E5; font-size: 11px; }
-.training-quiz-question { margin-top: 10px; }
-.training-quiz-scenario { color: #A6C4E5; font-size: 11px; font-style: italic; }
-.training-quiz-q-text { color: #EEF2FF; font-size: 13px; margin-top: 4px; }
-.training-quiz-option { flex-direction: row; align-items: center; background-color: #162E4A; border-radius: 10px; padding: 9px 10px; margin-top: 6px; border: 1px solid rgba(99, 117, 236, 0.15); }
-.training-quiz-option-selected { border-color: #6375EC; background-color: rgba(99, 117, 236, 0.16); }
-.training-quiz-option-radio { width: 14px; height: 14px; border-radius: 7px; border: 1px solid #64748B; margin-right: 8px; }
-.training-quiz-option-radio-checked { background-color: #6375EC; border-color: #6375EC; }
-.training-quiz-option-text { color: #EEF2FF; font-size: 12px; flex: 1; }
-.training-quiz-submit-btn { background-color: #6375EC; border-radius: 10px; padding: 10px; margin-top: 12px; align-items: center; }
-.training-mark-btn { background-color: #10B981; border-radius: 10px; padding: 10px; margin-top: 12px; align-items: center; }
-.training-mark-btn-busy { opacity: 0.6; }
-.training-mark-btn-text { color: #FFFFFF; font-size: 13px; font-weight: bold; }
-.training-completed-badge { background-color: rgba(16, 185, 129, 0.15); border-radius: 10px; padding: 10px; margin-top: 12px; align-items: center; }
-.training-completed-badge-text { color: #6EE7B7; font-size: 13px; font-weight: bold; }
-.training-library-header { margin-bottom: 8px; }
-.training-library-header-title { color: #EEF2FF; font-size: 15px; font-weight: bold; }
-.training-library-content-scroll { max-height: 380px; }
-.training-library-content-text { color: #EEF2FF; font-size: 13px; line-height: 21px; }
-.wellness-loading { align-items: center; padding: 20px 0; }
-.wellness-section { margin-bottom: 10px; }
-.wellness-empty { align-items: center; padding: 30px 14px; }
-.wellness-empty-text { color: #A6C4E5; font-size: 13px; }
-.sleep-track-card { flex-direction: row; align-items: center; background-color: #162E4A; border-radius: 12px; padding: 12px; margin-top: 8px; }
-.sleep-track-icon { width: 34px; height: 34px; border-radius: 17px; background-color: rgba(99, 117, 236, 0.2); align-items: center; justify-content: center; margin-right: 10px; }
-.sleep-icon-glyph { color: #A0B4FF; font-size: 14px; }
-.sleep-track-info { flex: 1; }
-.sleep-track-name { color: #EEF2FF; font-size: 13px; }
-.sleep-track-dur { color: #A6C4E5; font-size: 11px; }
-.sleep-track-active-dot { width: 8px; height: 8px; border-radius: 4px; background-color: #6EE7B7; }
-.media-asset-card { flex-direction: row; align-items: center; background-color: #162E4A; border-radius: 9px; padding: 12px 10px 12px 10px; margin: 8px 0px 8px 0px; border-style: solid; border-width: 1px; border-color: rgba(166, 196, 229, 0.1); }
-.media-asset-icon { width: 34px; height: 34px; border-radius: 0px; background-color: rgba(245, 158, 11, 0.15); align-items: center; justify-content: center; margin-right: 10px; flex-direction: row; }
-.media-asset-glyph { color: rgb(245, 158, 11); font-size: 13px; }
-.media-asset-info { flex: 1; }
-.media-asset-name { color: #EEF2FF; font-size: 14px; font-weight: bold; }
-.media-asset-sub { color: #A6C4E5; font-size: 11px; }
-.media-asset-btn { background-color: rgba(166, 196, 229, 0.1); border-radius: 10px; padding: 6px 10px; color: rgb(238, 242, 255); border-style: solid; border-width: 1px; border-color: rgba(166, 196, 229, 0.2); }
-.media-asset-btn-text { color: rgb(166, 196, 229); font-size: 11px; font-weight: bold; }
-.sleep-now-playing { flex-direction: row; align-items: center; justify-content: space-between; background-color: #12283F; border: 1px solid rgba(99, 117, 236, 0.3); border-radius: 12px; padding: 10px 12px; }
-.sleep-np-info { flex: 1; }
-.sleep-np-label { color: #A0B4FF; font-size: 10px; }
-.sleep-np-title { color: #EEF2FF; font-size: 13px; }
-.sleep-np-controls { flex-direction: row; }
-.sleep-np-btn { width: 32px; height: 32px; border-radius: 16px; background-color: rgba(239, 68, 68, 0.2); align-items: center; justify-content: center; }
-.sleep-np-btn-icon { color: #FF6B6B; font-size: 13px; }
 .library-float-back { position: absolute; right: 12px; top: 120px; }
 
 /* ── bottom tab bar ── */
@@ -8093,25 +7078,7 @@ export default {
 .code-wx-addr { margin: 18px 0 6px; }
 /* Learn tab (学院), measured against the miniapp: soft glows with no tint behind them, its 800/600
    weights, and its line boxes (inline text inside 16px blocks). */
-.academy-card-glow-tl, .academy-card-glow-br { background-color: transparent; border-radius: 50%; }
-.academy-card-credits-num { font-weight: 800; line-height: 41px; }
-.academy-card-stat-num { font-weight: 800; line-height: 18px; }
-.academy-card-tier-text { line-height: 21px; }
-.training-section-header { margin-top: 12px; margin-bottom: 8px; }
-.training-section-title { line-height: 19px; }
-.training-path-card { margin-top: 0; }
-.training-path-title, .training-course-title { font-weight: 600; }
-.training-path-progress-label { margin-top: 0; line-height: 13px; }
-.training-course-desc { line-height: 18px; margin-top: 0; }
-.training-course-meta-row { margin-top: 6px; }
-.training-lesson-badge-text { line-height: 19px; }
-.training-course-card { background-color: #0F2540; border: 1rpx solid #1E3A5F; border-radius: 10px; margin-top: 0; margin-bottom: 10px; }
 /* 魔盒: the miniapp pads each asset section rather than spacing cards, and its icons are round. */
-.wellness-section { padding: 16px 14px 0; margin-bottom: 0; }
-.media-asset-card { margin-top: 0; }
-.media-asset-icon { border-radius: 999px; }
-.media-asset-name, .media-asset-btn-text { font-weight: 600; }
-.media-asset-btn-text { line-height: 19px; }
 /* Header menu, measured against the miniapp. */
 .menu-credit-label, .menu-credit-value { flex-shrink: 0; white-space: nowrap; }
 .header-user { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -8252,63 +7219,6 @@ export default {
 .theme-light .plan-task-chip.plan-task-done .plan-task-check { color: var(--success); }
 .theme-light .event-badge-signed text { color: var(--success); }
 .theme-light .event-btn-cancel text { color: var(--info-pale); }
-.theme-light .training-section-title { color: var(--steel); }
-.theme-light .training-lesson-badge-text { color: var(--info-pale); }
-.theme-light .training-course-desc { color: var(--steel); }
-.theme-light .training-course-prereq-hint { color: var(--warn); }
-.theme-light .training-course-header-desc { color: var(--steel); }
-.theme-light .training-lesson-num-text { color: var(--info-pale); }
-.theme-light .training-lesson-desc { color: var(--steel); }
-.theme-light .training-lesson-done-text { color: var(--success-deep); }
-.theme-light .training-video-loading-text { color: var(--steel); }
-.theme-light .training-lesson-detail-desc { color: var(--steel); }
-.theme-light .training-completed-badge-text { color: var(--success-deep); }
-.theme-light .training-path-card { background: var(--navy-lift); border: 1rpx solid var(--navy-border); }
-.theme-light .training-path-title { color: var(--text); }
-.theme-light .training-path-tier { color: var(--info); }
-.theme-light .training-path-desc { color: var(--text-muted); }
-.theme-light .training-path-progress-label { color: var(--text-muted); }
-.theme-light .training-course-level { color: var(--info); }
-.theme-light .training-course-credits { color: var(--success-deep); }
-.theme-light .training-lesson-credits-label { color: var(--success-deep); }
-.theme-light .training-lesson-quiz-badge { color: var(--warn); }
-.theme-light .training-text-content { background: var(--navy-lift); }
-.theme-light .training-quiz-section { border-top: 1rpx solid var(--navy-border); }
-.theme-light .training-quiz-title { color: var(--text); }
-.theme-light .training-quiz-question { background: var(--navy-lift); }
-.theme-light .training-quiz-scenario { border-bottom: 1rpx solid var(--navy-border); }
-.theme-light .training-quiz-q-text { color: var(--text); }
-.theme-light .training-quiz-option-text { color: var(--text); }
-.theme-light .training-quiz-result-score { color: var(--text); }
-.theme-light .training-quiz-result-label { color: var(--text-muted); }
-.theme-light .training-quiz-result-credits { color: var(--success-deep); }
-.theme-light .training-quiz-review-correct .training-quiz-review-icon { color: var(--success-deep); }
-.theme-light .training-quiz-review-wrong .training-quiz-review-icon { color: var(--danger); }
-.theme-light .training-quiz-review-your-ans { color: var(--danger); }
-.theme-light .training-quiz-review-correct-ans { color: var(--success-deep); }
-.theme-light .training-cert-card { background: var(--navy-lift); }
-.theme-light .training-cert-title { color: var(--text); }
-.theme-light .training-cert-tier { color: var(--warn); }
-.theme-light .training-cert-chevron { color: var(--text-muted); }
-.theme-light .cert-detail-card { background: var(--navy-card); }
-.theme-light .cert-status-check { color: var(--success-deep); }
-.theme-light .cert-status-text { color: var(--success-deep); }
-.theme-light .cert-close-btn { color: var(--text-muted); }
-.theme-light .cert-label { color: var(--text-muted); }
-.theme-light .cert-value { color: var(--text); }
-.theme-light .cert-valid { color: var(--success-deep) !important; }
-.theme-light .wellness-section-title { color: var(--text); }
-.theme-light .wellness-empty-text { color: var(--text-muted); }
-.theme-light .sleep-track-card { background: var(--navy-lift); }
-.theme-light .sleep-track-name { color: var(--text); }
-.theme-light .sleep-track-dur { color: var(--text-muted); }
-.theme-light .sleep-np-title { color: var(--text); }
-.theme-light .media-asset-card { background: var(--navy-lift); }
-.theme-light .media-asset-icon--video .media-asset-glyph { color: var(--danger); }
-.theme-light .media-asset-icon--doc .media-asset-glyph { color: var(--warn); }
-.theme-light .media-asset-name { color: var(--text); }
-.theme-light .media-asset-sub { color: var(--text-muted); }
-.theme-light .media-asset-btn-text { color: var(--text-sub); }
 .theme-light .device-apk-card { background: var(--navy-lift); }
 .theme-light .device-apk-name { color: var(--text); }
 .theme-light .device-apk-version { color: var(--text-muted); }
@@ -8491,7 +7401,6 @@ export default {
 .theme-light .csim-dot-badge { background: rgba(0, 0, 0, 0.04); }
 .theme-light .csim-badge-name { color: var(--text-muted); }
 .theme-light .csim-cancel { color: var(--text-muted); }
-.theme-light .cert-field { border-bottom-color: rgba(201, 149, 106, 0.1); }
 .theme-light .page-privacy-box { background: var(--navy-card); }
 .theme-light .page-privacy-title { color: var(--text); }
 .theme-light .page-privacy-body { color: var(--text-muted); }
@@ -8610,84 +7519,12 @@ export default {
 .theme-light .reminder-source-ai    .reminder-source-text { color: #4f5fcc; }
 .theme-light .event-badge-signed text { color: #036748; }
 .theme-light .event-btn-cancel text { color: #4f5fcc; }
-.theme-light .training-section-title { color: var(--text-sub); }
-.theme-light .training-course-card { background: var(--navy-card); border-color: var(--navy-border); }
-.theme-light .training-course-cover { background: linear-gradient(135deg, rgba(var(--blue-rgb), 0.14) 0%, rgba(var(--blue-rgb), 0.05) 100%); border-bottom-color: rgba(var(--blue-rgb), 0.15); }
-.theme-light .training-course-cover-text { color: var(--text); }
-.theme-light .training-lesson-badge { background: rgba(var(--blue-rgb), 0.2); border-color: rgba(var(--blue-rgb), 0.4); }
-.theme-light .training-lesson-badge-text { color: var(--blue); }
-.theme-light .training-course-title { color: var(--text); }
-.theme-light .training-course-desc { color: var(--text-sub); }
-.theme-light .training-library-row { background: var(--navy-card); border-color: var(--navy-border); }
-.theme-light .training-library-title { color: var(--text); }
-.theme-light .training-library-chevron { color: var(--text-muted); }
-.theme-light .training-back-text { color: var(--blue); }
-.theme-light .training-course-header { border-bottom-color: rgba(var(--blue-rgb), 0.15); }
-.theme-light .training-course-header-title { color: var(--text); }
-.theme-light .training-course-header-desc { color: var(--text-sub); }
-.theme-light .training-lesson-row { background: var(--navy-card); border-color: var(--navy-border); }
-.theme-light .training-lesson-num { background: rgba(var(--blue-rgb), 0.15); border-color: rgba(var(--blue-rgb), 0.3); }
-.theme-light .training-lesson-num-text { color: var(--blue); }
-.theme-light .training-lesson-title { color: var(--text); }
-.theme-light .training-lesson-desc { color: var(--text-sub); }
-.theme-light .training-lesson-no-video { color: var(--text-muted); }
-.theme-light .training-lesson-done-text { color: #036748; }
-.theme-light .training-lesson-chevron { color: var(--text-muted); }
-.theme-light .training-lesson-detail-title { color: var(--text); }
-.theme-light .training-lesson-detail-desc { color: var(--text-sub); }
-.theme-light .training-completed-badge-text { color: #036748; }
-.theme-light .training-library-header { border-bottom-color: rgba(var(--blue-rgb), 0.15); }
-.theme-light .training-library-header-title { color: var(--text); }
 .theme-light .library-float-back { background: var(--bg-input); border-color: rgba(var(--blue-rgb), 0.5); }
 .theme-light .library-float-back-arrow { color: var(--blue); }
 .theme-light .library-float-back-label { color: var(--blue); }
-.theme-light .training-library-content-text { color: var(--text-sub); }
-.theme-light .academy-status-card { background: linear-gradient(150deg, rgba(var(--blue-rgb), 0.16) 0%, rgba(var(--blue-rgb), 0.08) 50%, var(--navy-lift) 100%); border-color: rgba(var(--blue-rgb), 0.35); box-shadow: 0 12rpx 40rpx rgba(var(--blue-rgb), 0.18), inset 0 1rpx 0 rgba(255, 255, 255, 0.6); }
-.theme-light .academy-card-glow-tl { background: radial-gradient(circle, rgba(var(--blue-rgb), 0.18) 0%, transparent 70%); }
-.theme-light .academy-card-glow-br { background: radial-gradient(circle, rgba(var(--blue-rgb), 0.12) 0%, transparent 70%); }
-.theme-light .academy-card-header-label,
-.theme-light .academy-card-credits-label,
-.theme-light .academy-card-stat-label { color: var(--text-muted); }
-.theme-light .academy-card-tier-badge { background: linear-gradient(135deg, rgba(var(--blue-rgb), 0.22), rgba(var(--blue-rgb), 0.12)); border-color: rgba(var(--blue-rgb), 0.38); }
-.theme-light .academy-card-tier-text { color: var(--blue); }
-.theme-light .academy-card-credits-num,
-.theme-light .academy-card-stat-num { color: var(--text); }
-.theme-light .academy-card-divider { background: linear-gradient(90deg, transparent, rgba(var(--blue-rgb), 0.3), transparent); }
-.theme-light .academy-card-stat-sep { background: rgba(var(--blue-rgb), 0.18); }
-.theme-light .training-path-tier,
-.theme-light .training-course-level { color: #4f46e5; background: rgba(79, 70, 229, 0.12); }
-.theme-light .training-path-progress-bar { background: rgba(0, 0, 0, 0.06); }
-.theme-light .training-course-credits { color: #036748; }
-.theme-light .training-lesson-credits-label { color: #036748; }
-.theme-light .training-text-body { color: var(--text-sub); }
-.theme-light .training-quiz-scenario { color: var(--text-sub); }
-.theme-light .training-quiz-option { background: rgba(0, 0, 0, 0.03); }
-.theme-light .training-quiz-option-radio { border-color: var(--text-muted); }
-.theme-light .training-quiz-option-radio-checked { border-color: var(--blue); background: var(--blue); }
-.theme-light .training-quiz-result-credits { color: #036748; }
-.theme-light .training-quiz-review { border-top-color: rgba(0, 0, 0, 0.08); }
-.theme-light .training-quiz-review-item { border-bottom-color: rgba(0, 0, 0, 0.06); }
-.theme-light .training-quiz-review-correct .training-quiz-review-icon { color: #036748; }
-.theme-light .training-quiz-review-q { color: var(--text); }
-.theme-light .training-quiz-review-correct-ans { color: #036748; }
-.theme-light .training-quiz-review-explanation { color: var(--text-sub); }
-.theme-light .cert-status-check { color: #036748; }
-.theme-light .cert-status-text { color: #036748; }
-.theme-light .cert-valid { color: #059669 !important; }
-.theme-light .cert-number { color: #4338ca !important; }
-.theme-light .cert-download-btn text { color: #4338ca; }
 .theme-light .sleep-track-card,
 .theme-light .media-asset-card,
 .theme-light .device-apk-card { border-color: rgba(var(--wave-rgb), 0.1); }
-.theme-light .sleep-track-icon { background: rgba(var(--blue-rgb), 0.18); }
-.theme-light .sleep-icon-glyph { color: var(--blue); }
-.theme-light .sleep-track-active-dot { background: var(--blue); }
-.theme-light .sleep-now-playing { background: rgba(var(--blue-rgb), 0.15); border-color: rgba(var(--blue-rgb), 0.3); }
-.theme-light .sleep-np-label { color: var(--blue); }
-.theme-light .sleep-np-btn { background: rgba(var(--blue-rgb), 0.2); }
-.theme-light .sleep-np-btn-icon { color: var(--blue); }
-.theme-light .media-asset-glyph { color: var(--text); }
-.theme-light .media-asset-btn { background: rgba(var(--wave-rgb), 0.1); border-color: rgba(var(--wave-rgb), 0.2); }
 .theme-light .device-apk-btn-text { color: #036748; }
 .theme-light .chat-history-loading .chat-history-text { color: #5D4C32; }
 .theme-light .slider-step-btn { color: #5D4C32; }
@@ -8708,8 +7545,6 @@ export default {
 /* #ifdef MP-WEIXIN */
 /* Light-theme colours measured from the miniapp where xapp-mini's own (dark-measured) literals
    would otherwise win: the miniapp gets these by inheriting var(--text) etc. */
-.theme-light .academy-card-header { color: rgb(44, 44, 44); }
-.theme-light .academy-card-stat { color: rgb(44, 44, 44); }
 .theme-light .ai-disclaimer { color: rgb(44, 44, 44); }
 .theme-light .empty-text { color: rgb(44, 44, 44); }
 .theme-light .fcard { color: rgb(44, 44, 44); }
@@ -8731,10 +7566,6 @@ export default {
 .theme-light .fcard-title { color: rgb(122, 74, 40); }
 .theme-light .inner-tab { color: rgb(44, 44, 44); }
 .theme-light .inner-tab-text { color: rgb(96, 112, 144); }
-.theme-light .media-asset-btn { color: rgb(44, 44, 44); }
-.theme-light .media-asset-btn-text { color: rgb(121, 96, 68); }
-.theme-light .media-asset-card { background-color: rgb(245, 237, 227); }
-.theme-light .media-asset-name { color: rgb(44, 44, 44); }
 .theme-light .menu-fs-a0 { color: rgb(44, 44, 44); }
 .theme-light .menu-fs-a1 { color: rgb(121, 96, 68); }
 .theme-light .menu-fs-a2 { color: rgb(121, 96, 68); }
@@ -8758,12 +7589,6 @@ export default {
 .theme-light .tcard { color: rgb(44, 44, 44); }
 .theme-light .tcard-body { color: rgb(44, 44, 44); }
 .theme-light .tcard-title { color: rgb(122, 74, 40); }
-.theme-light .training-course-cover { color: rgb(44, 44, 44); background-image: linear-gradient(135deg, rgba(152, 95, 51, 0.14) 0%, rgba(152, 95, 51, 0.05) 100%); }
-.theme-light .training-lesson-badge { color: rgb(44, 44, 44); }
-.theme-light .training-library-icon { color: rgb(44, 44, 44); }
-.theme-light .training-path-card { background-color: rgb(245, 237, 227); border-top-color: rgba(152, 95, 51, 0.22); border-left-color: rgba(152, 95, 51, 0.22); border-bottom-color: rgba(152, 95, 51, 0.22); border-right-color: rgba(152, 95, 51, 0.22); }
-.theme-light .training-path-progress-label { color: rgb(133, 108, 71); }
-.theme-light .training-path-title { color: rgb(44, 44, 44); }
 /* Text the miniapp colours by inheritance, which xapp's <text> does not do: each child the port gave
    its own class and a dark literal takes its nearest ancestor's light colour
    (tools/xapp-mini/style-gen/lightinherit.js; .pkg-cta-text-ghost set by hand to the miniapp's
@@ -9007,85 +7832,8 @@ export default {
 .event-meta { font-size: var(--fs-24, 24rpx); }
 .event-desc { font-size: var(--fs-24, 24rpx); line-height: 1.5; }
 .event-btn text { font-size: var(--fs-24, 24rpx); }
-.training-section-title { font-size: var(--fs-22, 22rpx); }
-.training-course-cover-text { font-size: var(--fs-30, 30rpx); line-height: 1.4; }
-.training-lesson-badge-text { font-size: var(--fs-20, 20rpx); }
-.training-course-lock-icon { font-size: var(--fs-28, 28rpx); }
-.training-course-title { font-size: var(--fs-28, 28rpx); }
-.training-course-desc { font-size: var(--fs-24, 24rpx); line-height: 1.5; }
-.training-course-prereq-hint { font-size: var(--fs-20, 20rpx); }
-.training-library-icon { font-size: var(--fs-32, 32rpx); }
-.training-library-title { font-size: var(--fs-28, 28rpx); }
-.training-library-chevron { font-size: var(--fs-36, 36rpx); }
-.training-back-text { font-size: var(--fs-26, 26rpx); }
-.training-course-header-title { font-size: var(--fs-36, 36rpx); }
-.training-course-header-desc { font-size: var(--fs-26, 26rpx); line-height: 1.5; }
-.training-lesson-num-text { font-size: var(--fs-22, 22rpx); }
-.training-lesson-title { font-size: var(--fs-28, 28rpx); }
-.training-lesson-desc { font-size: var(--fs-24, 24rpx); }
-.training-lesson-no-video { font-size: var(--fs-22, 22rpx); }
-.training-lesson-done-text { font-size: var(--fs-24, 24rpx); }
-.training-lesson-chevron { font-size: var(--fs-36, 36rpx); }
-.training-video-loading-text { font-size: var(--fs-26, 26rpx); }
-.training-lesson-detail-title { font-size: var(--fs-32, 32rpx); }
-.training-lesson-detail-desc { font-size: var(--fs-26, 26rpx); line-height: 1.6; }
-.training-completed-badge-text { font-size: var(--fs-28, 28rpx); }
-.training-mark-btn-text { font-size: var(--fs-30, 30rpx); }
-.training-library-header-title { font-size: var(--fs-36, 36rpx); }
 .library-float-back-arrow { font-size: var(--fs-36, 36rpx); line-height: 1; }
 .library-float-back-label { font-size: var(--fs-26, 26rpx); }
-.training-library-content-text { font-size: var(--fs-26, 26rpx); line-height: 1.8; }
-.academy-card-header-label { font-size: var(--fs-20, 20rpx); }
-.academy-card-tier-text { font-size: var(--fs-20, 20rpx); }
-.academy-card-credits-num { font-size: var(--fs-80, 80rpx); line-height: 1; }
-.academy-card-credits-label { font-size: var(--fs-16, 16rpx); }
-.academy-card-stat-num { font-size: var(--fs-36, 36rpx); line-height: 1; }
-.academy-card-stat-label { font-size: var(--fs-16, 16rpx); }
-.training-path-title { font-size: var(--fs-28, 28rpx); }
-.training-path-tier { font-size: var(--fs-20, 20rpx); }
-.training-path-desc { font-size: var(--fs-24, 24rpx); }
-.training-path-progress-label { font-size: var(--fs-22, 22rpx); }
-.training-course-level { font-size: var(--fs-20, 20rpx); }
-.training-course-credits { font-size: var(--fs-20, 20rpx); }
-.training-lesson-type-badge { font-size: var(--fs-22, 22rpx); }
-.training-lesson-credits-label { font-size: var(--fs-20, 20rpx); }
-.training-lesson-quiz-badge { font-size: var(--fs-20, 20rpx); }
-.training-text-body { font-size: var(--fs-27, 27rpx); line-height: 1.8; }
-.training-quiz-title { font-size: var(--fs-28, 28rpx); }
-.training-quiz-scenario { font-size: var(--fs-24, 24rpx); line-height: 1.7; }
-.training-quiz-q-text { font-size: var(--fs-27, 27rpx); line-height: 1.5; }
-.training-quiz-option-text { font-size: var(--fs-26, 26rpx); line-height: 1.5; }
-.training-quiz-result-score { font-size: var(--fs-52, 52rpx); }
-.training-quiz-result-label { font-size: var(--fs-26, 26rpx); }
-.training-quiz-result-credits { font-size: var(--fs-26, 26rpx); }
-.training-quiz-review-icon { font-size: var(--fs-28, 28rpx); }
-.training-quiz-review-q { font-size: var(--fs-24, 24rpx); line-height: 1.5; }
-.training-quiz-review-your-ans { font-size: var(--fs-22, 22rpx); }
-.training-quiz-review-correct-ans { font-size: var(--fs-22, 22rpx); }
-.training-quiz-review-explanation { font-size: var(--fs-22, 22rpx); line-height: 1.6; }
-.training-cert-icon { font-size: var(--fs-44, 44rpx); }
-.training-cert-title { font-size: var(--fs-27, 27rpx); }
-.training-cert-tier { font-size: var(--fs-22, 22rpx); }
-.training-cert-chevron { font-size: var(--fs-36, 36rpx); }
-.cert-status-check { font-size: var(--fs-28, 28rpx); }
-.cert-status-text { font-size: var(--fs-26, 26rpx); }
-.cert-close-btn { font-size: var(--fs-36, 36rpx); }
-.cert-label { font-size: var(--fs-24, 24rpx); }
-.cert-value { font-size: var(--fs-26, 26rpx); line-height: 1.5; }
-.cert-mono { font-size: var(--fs-23, 23rpx) !important; }
-.cert-download-btn text { font-size: var(--fs-28, 28rpx); }
-.wellness-section-title { font-size: var(--fs-30, 30rpx); }
-.wellness-empty-text { font-size: var(--fs-26, 26rpx); }
-.sleep-icon-glyph { font-size: var(--fs-28, 28rpx); }
-.sleep-track-name { font-size: var(--fs-28, 28rpx); }
-.sleep-track-dur { font-size: var(--fs-22, 22rpx); }
-.sleep-np-label { font-size: var(--fs-20, 20rpx); }
-.sleep-np-title { font-size: var(--fs-26, 26rpx); }
-.sleep-np-btn-icon { font-size: var(--fs-24, 24rpx); }
-.media-asset-glyph { font-size: var(--fs-26, 26rpx); }
-.media-asset-name { font-size: var(--fs-28, 28rpx); }
-.media-asset-sub { font-size: var(--fs-22, 22rpx); }
-.media-asset-btn-text { font-size: var(--fs-22, 22rpx); }
 .device-apk-name { font-size: var(--fs-28, 28rpx); }
 .device-apk-version { font-size: var(--fs-22, 22rpx); }
 .device-apk-btn-text { font-size: var(--fs-22, 22rpx); }
@@ -9133,4 +7881,3 @@ export default {
 .menu-credit-row { padding: 24rpx 32rpx; }
 /* #endif */
 </style>
-

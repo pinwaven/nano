@@ -25,13 +25,13 @@ APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools pr
   - `mp-weixin.lazyCodeLoading: "requiredComponents"` injects page/component code on demand.
     This is a startup optimization; it does not remove code from the uploaded packages.
   - `configure-subpackages.cjs` adds a native `componentPlaceholder` to the generated
-    UserHealth JSON. HBuilderX exposes placeholders on pages but this reference is inside a
+    UserHealth and main-page JSON. The AG reference is inside a
     component, so use this build script for the mini output.
   - `xcli launch mp-weixin --project src/xapp --compile true` also works on Linux, but it only
     produces an unminified dev compile in `src/xapp/unpackage/dist/dev/mp-weixin`.
   - `xcli publish mp-weixin` needs an appid and an upload key, and uploads.
-- **Size:** main package 1,498,007 bytes; Coach subpackage 204,280 bytes; Viva AG subpackage
-  43,808 bytes; total 1,746,095 bytes
+- **Size:** main package 1,420,960 bytes; Learn subpackage 83,475 bytes;
+  Coach subpackage 204,280 bytes; Viva AG subpackage 43,808 bytes; total 1,752,523 bytes
   in the verified M3 preview (2026-10-07). Babel ES6 conversion, compact avatar data and CSS
   consolidation stay enabled. Each package is below WeChat's 2 MB limit.
 - **Coach subpackage:** `pages.json` registers `pages/coach` as the `coach` subpackage only
@@ -41,6 +41,11 @@ APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools pr
 - **Viva AG subpackage:** `packages/viva-ag` contains the panel as a component-only package.
   The existing Health subtab renders it asynchronously on tap, with loading/timeout/retry
   handling. No new page navigation is introduced. Native/web import the same component normally.
+- **Learn subpackage:** `packages/learn` contains the Academy and Wellness panel, including
+  its API logic and styles. The inline tab loads it on first visit, then retains it across
+  tab switches for course state and audio playback. A native placeholder and ready event
+  provide loading feedback, with a 20-second timeout and retry on the next tap. Chat lesson
+  completions update the panel through a prop. Native/web use the same component normally.
 - **Backend:** chosen at runtime from `envVersion`, as the miniapp does (`utils/config.uts`): the
   DevTools build talks to nano-dev, an uploaded 体验版 or the released build to nano (prod). The
   header and login screen show the VERSION marker in DevTools and 体验版, and in release the

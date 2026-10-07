@@ -42,6 +42,10 @@ stays the production frontend untouched.
 
 ## Status — PORT COMPLETE + FULL ANDROID COMPILE GREEN (trial stage), 2026-10-01
 
+Learn's Academy/Wellness panel now lives in `packages/learn/components/learn-panel/`
+(2026-10-07, VERSION `1007-14`). xapp-mini loads it on the first inline Learn visit and
+retains course/audio state across tab switches; native/web use the same extracted component.
+
 Viva AG's panel now lives in `packages/viva-ag/components/viva-ag-panel/` (2026-10-07,
 VERSION `1007-13`). xapp-mini loads it as a cross-subpackage component while keeping the
 inline Health subtab; native/web import it normally. The mini build script configures the

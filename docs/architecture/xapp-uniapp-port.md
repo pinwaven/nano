@@ -18,6 +18,7 @@ src/xapp/
 ├── pages/               # main (5 tabs), coach, login, verify-phone, …
 ├── components/          # user-health, health-documents, strip-record,
 │                        # toolbox, avatar-picker
+├── packages/learn/      # shared Academy/Wellness panel; lazy component subpackage on xapp-mini
 ├── packages/viva-ag/    # shared AG panel; asynchronous component subpackage on xapp-mini
 ├── utils/               # config/state/request/session/markdown/tool-actions/main-t (i18n dict),
 │                        # wearable/ (halo, v8, sync, transport interface + mp/android adapters)

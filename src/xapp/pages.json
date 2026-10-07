@@ -27,6 +27,11 @@
       "root": "packages/viva-ag",
       "name": "viva-ag",
       "pages": []
+    },
+    {
+      "root": "packages/learn",
+      "name": "learn",
+      "pages": []
     }
   ],
   // #endif
