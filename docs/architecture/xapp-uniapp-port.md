@@ -15,7 +15,7 @@ covers discovery, the run/verify runbook, and the porting rules that the compile
 src/xapp/
 ├── manifest.json        # appid __UNI__316095D; packagename net.gcn.nano
 ├── pages.json           # pages + pull-refresh, same routes as app.json
-├── pages/               # main (5 tabs + Kino overlay), coach, login, verify-phone, …
+├── pages/               # main (5 tabs), coach, login, verify-phone, …
 ├── components/          # user-health, health-documents, viva-ag-panel, strip-record,
 │                        # toolbox, avatar-picker
 ├── utils/               # config/state/request/session/markdown/tool-actions/main-t (i18n dict),

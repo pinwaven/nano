@@ -42,6 +42,10 @@ stays the production frontend untouched.
 
 ## Status — PORT COMPLETE + FULL ANDROID COMPILE GREEN (trial stage), 2026-10-01
 
+The Kino simulator was removed from xapp on 2026-10-07 (VERSION `1007-5`), including its
+menu entry, passcode, overlay, simulated analysis, timers and styles. Real chip registration
+and the separate cartridge simulator remain available.
+
 ALL miniapp surfaces are ported: 11 pages (incl. `main` at 8,062 lines with the five tabs, the
 Kino simulator overlay, async chat §22 and dictionary `utils/main-t.uts`), 7 components
 (user-health 7,169 / health-documents / viva-ag-panel / strip-record / toolbox / avatar-picker
@@ -75,7 +79,7 @@ Verification state of the whole tree (no device run yet):
    xapp-mini (`getFileSystemManager`); its native (`#ifdef APP`) branch still returns null, so image
    and document uploads fail on Android/iOS. Also `viva-ag-panel` text reads and `openDocument`.
 4. Feature parity gaps (each `TODO(port)`-tagged): WechatSI ASR mic, wx.chooseAddress, NFC tag
-   emulation in the Kino sim, subscribe-message weight reminders, mp-html link-tap, custom
+   emulation in the cartridge simulator, subscribe-message weight reminders, mp-html link-tap, custom
    avatar generation (§20), background audio, light-theme styling pass.
 
 ## Device-vs-simulator parity sweep (2026-10-01, VERSION 1001-6)

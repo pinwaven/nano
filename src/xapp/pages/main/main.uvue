@@ -5,7 +5,7 @@
      - wx.chooseAddress (使用微信地址) and the privacy modal (wx.onNeedPrivacyAuthorization) are
        xapp-mini only; native has manual address entry and OS permission prompts;
      - capsule geometry / edge-swipe animation args dropped where native doesn't need them.
-     Kept verbatim: all five tabs, the Kino overlay flow, onboarding gating, every modal/sheet,
+     Kept verbatim: all five tabs, onboarding gating, every modal/sheet,
      the ::: card render chain (metric/takeaway/dots/formula/product/grocery/lesson/checkin),
      the async two-channel chat delivery UI (§22), the pinch text-scale, and the 100px
      chat-inner bottom padding that fixes the clipped-last-message bug (AGENTS §23 — 200rpx ≈ 100px). -->
@@ -94,13 +94,6 @@
           <text class="menu-item-icon">✧</text>
           <text class="menu-item-label">{{ tr('vivaRedeemMenu') }}</text>
         </view>
-        <!-- #ifndef WEB -->
-        <view v-if="isAdmin || isSuperadmin" class="menu-divider"></view>
-        <view v-if="isAdmin || isSuperadmin" class="menu-item" v-on:click="openKinoSim">
-          <text class="menu-item-icon">⬡</text>
-          <text class="menu-item-label">{{ tr('kinoSimMenu') }}</text>
-        </view>
-        <!-- #endif -->
         <view class="menu-divider"></view>
         <view class="menu-item" v-on:click="toggleTheme">
           <text class="menu-item-icon">{{ theme == 'dark' ? '☀' : '🌑' }}</text>
@@ -1455,113 +1448,6 @@
       </view>
     </view>
 
-    <!-- ── Kino Passcode Overlay ── -->
-    <view v-if="kinoPassOpen" class="kpass-overlay">
-      <view class="kpass-box" :style="'margin-top:' + (statusBarHeight + 44) + 'px'">
-        <text class="kpass-logo">⬡</text>
-        <text class="kpass-title">{{ tr('kinoSimPassTitle') }}</text>
-        <view class="kpass-dots">
-          <view class="kpass-dot" :class="kinoPassInput.length > 0 ? 'kpass-dot-filled' : ''" :style="kinoPassError ? 'background:#ef4444' : ''"></view>
-          <view class="kpass-dot" :class="kinoPassInput.length > 1 ? 'kpass-dot-filled' : ''" :style="kinoPassError ? 'background:#ef4444' : ''"></view>
-          <view class="kpass-dot" :class="kinoPassInput.length > 2 ? 'kpass-dot-filled' : ''" :style="kinoPassError ? 'background:#ef4444' : ''"></view>
-          <view class="kpass-dot" :class="kinoPassInput.length > 3 ? 'kpass-dot-filled' : ''" :style="kinoPassError ? 'background:#ef4444' : ''"></view>
-        </view>
-        <text v-if="kinoPassError" class="kpass-error">{{ tr('kinoSimPassError') }}</text>
-        <view v-else style="height:18px"></view>
-        <view class="kpass-numpad">
-          <view v-for="(k, ki) in passKeys" :key="ki" class="kpass-key" v-on:click="handlePassKey(`${k}`)"><text class="kpass-key-label">{{ k }}</text></view>
-          <view class="kpass-key kpass-key-empty"></view>
-          <view class="kpass-key" v-on:click="handlePassKey('0')"><text class="kpass-key-label">0</text></view>
-          <view class="kpass-key kpass-key-del" v-on:click="handlePassDelete"><text class="kpass-del-icon">⌫</text></view>
-        </view>
-        <view class="kpass-cancel" v-on:click="closeKinoPass"><text class="kpass-cancel-label">{{ tr('logout') }}</text></view>
-      </view>
-    </view>
-
-    <!-- ── Kino Simulator Overlay ── full-screen <view> over the page; flow kept exactly:
-         passcode → ready → chip scan → analyzing → complete (slide + results tabs) / failed. -->
-    <view v-if="kinoSimOpen" class="ksm-overlay">
-      <view class="ksm-container">
-        <view class="ksm-header" :style="'padding-top:' + statusBarHeight + 'px'">
-          <view>
-            <text class="ksm-title">{{ tr('kinoSimTitle') }}</text>
-            <text class="ksm-serial">S/N: KNA2-00000</text>
-          </view>
-          <view class="ksm-close" v-on:click="closeKinoSim"><text class="ksm-close-label">✕</text></view>
-        </view>
-        <scroll-view direction="vertical" class="ksm-body">
-          <view class="ksm-body-inner">
-            <view class="ksm-device-wrap" :class="'ksm-state-' + kinoSimStatus">
-              <view class="ksm-ring-face" :style="ksmRingStyle">
-                <view v-if="kinoSimStatus == 'complete' && kinoSimBmList.length > 0" class="ksm-face-slide" :class="kinoSimSlideVisible ? 'ksm-slide-visible' : ''">
-                  <text class="ksm-slide-index">{{ kinoSimSlideIndex + 1 }} / {{ kinoSimBmList.length }}</text>
-                  <text class="ksm-slide-label">{{ slideLabel }}</text>
-                  <text class="ksm-slide-val">{{ slideValue }}</text>
-                  <text class="ksm-slide-unit">{{ slideUnit }}</text>
-                </view>
-                <view v-else class="ksm-face-static">
-                  <text class="ksm-face-label">STATUS</text>
-                  <text class="ksm-face-status" :class="'ksm-face-status-' + kinoSimStatus">
-                    {{ kinoSimStatus == 'ready' ? tr('kinoSimStatusReady') : (kinoSimStatus == 'analyzing' ? tr('kinoSimStatusAnalyzing') : (kinoSimStatus == 'complete' ? tr('kinoSimStatusComplete') : tr('kinoSimStatusFailed'))) }}
-                  </text>
-                  <text v-if="kinoSimScannedUserName.length > 0" class="ksm-face-patient-label">{{ tr('kinoSimPatientLabel') }}</text>
-                  <text class="ksm-face-user">{{ kinoSimScannedUserName.length > 0 ? kinoSimScannedUserName : '—' }}</text>
-                </view>
-              </view>
-            </view>
-
-            <view v-if="kinoSimStatus == 'complete' && kinoSimBmList.length > 0" class="ksm-results">
-              <view class="ksm-tabs">
-                <view class="ksm-tab" :class="kinoSimActiveTab == 'bioage' ? 'ksm-tab-active' : ''" v-on:click="onKinoSimTabChange('bioage')"><text>{{ tr('kinoSimTabBioAge') }}</text></view>
-                <view class="ksm-tab" :class="kinoSimActiveTab == 'biomarkers' ? 'ksm-tab-active' : ''" v-on:click="onKinoSimTabChange('biomarkers')"><text>{{ tr('kinoSimTabBm') }}</text></view>
-              </view>
-              <view v-if="kinoSimActiveTab == 'bioage'" class="ksm-tab-content">
-                <view class="ksm-bioage-row">
-                  <view class="ksm-bioage-chip">
-                    <text class="ksm-bioage-num" :style="'color:' + kinoSimBioAgeColor">{{ kinoSimBioAge }}</text>
-                    <text class="ksm-bioage-chip-label">{{ tr('kinoSimBioAgeLabel') }}</text>
-                  </view>
-                  <view class="ksm-bioage-chip ksm-bioage-chip-dim">
-                    <text class="ksm-bioage-num" style="color:#A6C4E5">{{ kinoSimChronoAge }}</text>
-                    <text class="ksm-bioage-chip-label">{{ tr('kinoSimChronoLabel') }}</text>
-                  </view>
-                </view>
-                <view v-for="(sa, sai) in kinoSimSubAgeList" :key="sai" class="ksm-sub-row">
-                  <view class="ksm-sub-dot" :style="'background:' + sa.getString('color')"></view>
-                  <text class="ksm-sub-label">{{ sa.getString('label') }}</text>
-                  <text class="ksm-sub-val" :style="'color:' + sa.getString('color')">{{ sa.getString('value') }}</text>
-                </view>
-              </view>
-              <view v-if="kinoSimActiveTab == 'biomarkers'" class="ksm-tab-content">
-                <view v-for="(bm, bi) in kinoSimBmList" :key="bi" class="ksm-bm-row">
-                  <text class="ksm-bm-label">{{ bm.getString('label') }}</text>
-                  <text class="ksm-bm-val">{{ bm.getString('value') }} <text class="ksm-bm-unit">{{ bm.getString('unit') }}</text></text>
-                </view>
-              </view>
-            </view>
-
-            <view class="ksm-btn" :class="'ksm-btn-' + kinoSimStatus" v-on:click="handleKinoSimStart">
-              <text v-if="kinoSimStatus == 'analyzing'" class="ksm-btn-label">···</text>
-              <text v-else-if="kinoSimStatus == 'complete'" class="ksm-btn-label">{{ tr('kinoSimBtnRunAnother') }}</text>
-              <text v-else class="ksm-btn-label">{{ tr('kinoSimBtnStart') }}</text>
-            </view>
-
-            <view class="ksm-quit-btn" v-on:click="closeKinoSim"><text class="ksm-quit-label">✕  {{ tr('kinoSimQuit') }}</text></view>
-
-            <view class="ksm-debug-toggle" v-on:click="toggleKinoSimDebug">
-              <text class="ksm-debug-toggle-text">{{ kinoSimDebug ? '▲ DEBUG' : '▼ DEBUG' }}</text>
-            </view>
-            <view v-if="kinoSimDebug && kinoSimError.length > 0" class="ksm-debug-box">
-              <text class="ksm-debug-label">ERROR</text>
-              <text class="ksm-debug-msg">{{ kinoSimError }}</text>
-            </view>
-            <view v-else-if="kinoSimDebug" class="ksm-debug-box"><text class="ksm-debug-msg">No errors.</text></view>
-            <view style="height:24px"></view>
-          </view>
-        </scroll-view>
-      </view>
-    </view>
-
     <!-- ── Bottom Tab Bar ── -->
     <view class="tab-bar">
       <view class="tab-btn" :class="tab == 'chat' ? 'tab-active' : ''" v-on:click="switchTab('chat')">
@@ -1728,7 +1614,7 @@ for (const tg of _colorTags) {
   if (cur != null) MD_TAG_STYLE.set(tg, cur + ';' + _HTML_COLOR)
 }
 // #endif
-import { buildSeriesIndex, sparkForLabel, appendReading, Point, Spark } from '../../utils/biomarker-series.uts'
+import { buildSeriesIndex, sparkForLabel, Point, Spark } from '../../utils/biomarker-series.uts'
 import { RespEnvelope, ToolCtx, ToolOpts, getToolList, runTestChip, runFormulaDs, runHealthAdvice, doUpload } from '../../utils/tool-actions.uts'
 import {
   T_MAIN_ZH, T_MAIN_EN, tMainTr, textSizeLevels,
@@ -1742,8 +1628,6 @@ import Toolbox from '../../components/toolbox/toolbox.uvue'
 // the parallel user-health port wires them with the same contracts.
 // TODO(port): avatar-picker custom-mood upload flow (AGENTS §20) rides the async chat event and
 // lands with the user-health port; gallery-only picker is what verify-phone uses today.
-
-const KINO_SIM_SERIAL = 'KNA2-00000'
 
 // Which channel trees have a GCN storefront, keyed on the ROOT of the channel tree (AGENTS §33).
 const GCN_STORE_HOST_FOR_CHANNEL = new Map<string, string>()
@@ -1762,22 +1646,7 @@ function _channelRootKey(channel : UTSJSONObject | null) : string | null {
 
 const MONTH_EN : string[] = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
-const BM_META : UTSJSONObject[] = [
-  { key: 'hsCRP', unit: 'mg/L', color: '#ef4444' } as UTSJSONObject,
-  { key: 'GDF15', unit: 'pg/mL', color: '#f97316' } as UTSJSONObject,
-  { key: 'IL6', unit: 'pg/mL', color: '#a855f7' } as UTSJSONObject,
-  { key: 'GA', unit: '%', color: '#6375EC' } as UTSJSONObject,
-  { key: 'CystatinC', unit: 'mg/L', color: '#0ea5e9' } as UTSJSONObject,
-  { key: 'CD38', unit: 'xBaseline', color: '#10b981' } as UTSJSONObject,
-]
-
 const SUB_AGE_KEYS : string[] = ['ResilienceAge', 'CellularAge', 'MetabolicAge', 'MicroVascularAge']
-const SUB_AGE_COLORS = new Map<string, string>()
-SUB_AGE_COLORS.set('ResilienceAge', '#c084d4')
-SUB_AGE_COLORS.set('CellularAge', '#10b981')
-SUB_AGE_COLORS.set('MetabolicAge', '#6375EC')
-SUB_AGE_COLORS.set('MicroVascularAge', '#0ea5e9')
-
 // Notification types whose text is ALSO written to chat_messages, so the catch-up poll can
 // legitimately re-deliver the same text — only these take part in _markRenderedAi/_isRenderedAi.
 // Deliberately EXCLUDES coach_reminder / questionnaire_ready (no chat_messages row at all).
@@ -1915,14 +1784,6 @@ function mapCartridges(cartridges : UTSJSONObject[], lang : string) : UTSJSONObj
     } as UTSJSONObject)
   }
   return out
-}
-
-function bioAgeColor(bio : number | null, chrono : number | null) : string {
-  if (bio == null || chrono == null) return '#EEF2FF'
-  const diff = bio! - chrono!
-  if (diff > 2) return '#ef4444'
-  if (diff < -2) return '#10b981'
-  return '#f59e0b'
 }
 
 function _execAll(re : RegExp, s : string) : string[][] {
@@ -2381,28 +2242,6 @@ export default {
       historyLoading: false,
       userAvatarLetter: 'U',
 
-      // Kino Simulator passcode + overlay
-      kinoPassOpen: false,
-      kinoPassInput: '',
-      kinoPassError: false,
-      passKeys: [1, 2, 3, 4, 5, 6, 7, 8, 9] as number[],
-      kinoSimOpen: false,
-      kinoSimStatus: 'ready',
-      kinoSimDebug: false,
-      kinoSimError: '',
-      kinoSimBmList: [] as UTSJSONObject[],
-      kinoSimSubAgeList: [] as UTSJSONObject[],
-      kinoSimBioAge: '',
-      kinoSimChronoAge: '—',
-      kinoSimBioAgeColor: '#A6C4E5',
-      kinoSimActiveTab: 'bioage',
-      kinoSimSlideIndex: 0,
-      kinoSimSlideVisible: true,
-      kinoSimScannedUserId: '',
-      kinoSimScannedUserName: '',
-      kinoSimChipId: '',
-      kinoSimDeviceId: '',
-
       // Onboarding / questionnaire
       obStep: '',
       obQuestion: null as UTSJSONObject | null,
@@ -2579,7 +2418,6 @@ export default {
 
       // ── private instance state (was outside `data` in main.js) ──
       _pollingTimer: 0 as number,
-      _kinoSlideTimer: 0 as number,
       _seenIds: new Set<number>(),
       _renderedAiKeys: new Map<string, number>(),
       _rawStoreItems: null as UTSJSONObject[] | null,
@@ -2698,28 +2536,6 @@ export default {
       const en = cfg!.getString('placeholder_en')
       if (this.lang == 'zh') return zh != null ? zh! : (en != null ? en! : '')
       return en != null ? en! : (zh != null ? zh! : '')
-    },
-    ksmRingStyle() : string {
-      if (this.kinoSimStatus == 'analyzing') return 'border-color:#F59E0B'
-      if (this.kinoSimStatus == 'complete') return 'border-color:#10B981'
-      if (this.kinoSimStatus == 'failed') return 'border-color:#EF4444'
-      return 'border-color:rgba(99, 117, 236, 0.4)'
-    },
-    slideLabel() : string {
-      const list = this.kinoSimBmList
-      if (this.kinoSimSlideIndex >= list.length) return ''
-      return list[this.kinoSimSlideIndex].getString('label') ?? ''
-    },
-    slideValue() : string {
-      const list = this.kinoSimBmList
-      if (this.kinoSimSlideIndex >= list.length) return '—'
-      const v = list[this.kinoSimSlideIndex]['value']
-      return v != null ? `${v}` : '—'
-    },
-    slideUnit() : string {
-      const list = this.kinoSimBmList
-      if (this.kinoSimSlideIndex >= list.length) return ''
-      return list[this.kinoSimSlideIndex].getString('unit') ?? ''
     },
     planTargetSubAges() : string[] {
       const d = this.planDetailData
@@ -2929,14 +2745,12 @@ export default {
   onHide() {
     this._cancelChatScroll()
     this._stopPolling()
-    this._stopKinoSlide()
   },
 
   onUnload() {
     this._cancelChatScroll()
     this._stopTypingDots()
     this._stopPolling()
-    this._stopKinoSlide()
     setPrivacyHandler(null)
   },
 
@@ -4127,7 +3941,7 @@ export default {
     onTouchEnd(e : UniTouchEvent) {
       if (this._multiTouch) return
       if (!this.isCoach) return
-      if (this.menuOpen || this.kinoSimOpen || this.guestSheetOpen) return
+      if (this.menuOpen || this.guestSheetOpen) return
       if (this._touchX < this._screenW - 40) return // only swipes starting at the right edge
       const ct = e.changedTouches
       if (ct.length < 1) return
@@ -4231,246 +4045,6 @@ export default {
       const slug = this.gcnStoreSlug.length > 0 ? this.gcnStoreSlug : 'aeviva'
       const host = API_ORIGIN.includes('-dev.') ? `https://${slug}-dev.gcn.net` : `https://${slug}.gcn.net`
       this.openUserApp(`${host}/dashboard.html`, context)
-    },
-
-    // ── Kino Simulator ──
-    async _resolveKinoSimDevice() {
-      try {
-        const res = await this._req(`${BASE}/api/kino-devices`, 'GET', null, 0)
-        const devices = res.data != null ? (res.data!.getArray<UTSJSONObject>('devices') ?? ([] as UTSJSONObject[])) : ([] as UTSJSONObject[])
-        for (const dev of devices) {
-          if (dev.getString('serial_number') == KINO_SIM_SERIAL) {
-            const sn = dev.getString('serial_number')
-            if (sn != null) this.kinoSimDeviceId = sn!
-          }
-        }
-      } catch (e : any) {}
-    },
-
-    openKinoSim() {
-      if (this.isSuperadmin) {
-        this.menuOpen = false
-        this.kinoSimOpen = true
-        this._resolveKinoSimDevice()
-      } else {
-        this.menuOpen = false
-        this.kinoPassOpen = true
-        this.kinoPassInput = ''
-        this.kinoPassError = false
-      }
-    },
-
-    closeKinoPass() {
-      this.kinoPassOpen = false
-      this.kinoPassInput = ''
-      this.kinoPassError = false
-    },
-
-    handlePassKey(digit : string) {
-      if (this.kinoPassError || this.kinoPassInput.length >= 4) return
-      const next = this.kinoPassInput + digit
-      if (next.length < 4) { this.kinoPassInput = next; return }
-      // 4th digit entered — check immediately
-      if (next == '1709') {
-        this.kinoPassInput = next
-        setTimeout(() => {
-          this.kinoPassOpen = false
-          this.kinoPassInput = ''
-          this.kinoSimOpen = true
-          this._resolveKinoSimDevice()
-        }, 180)
-      } else {
-        this.kinoPassInput = next
-        this.kinoPassError = true
-        setTimeout(() => {
-          this.kinoPassInput = ''
-          this.kinoPassError = false
-        }, 900)
-      }
-    },
-
-    handlePassDelete() {
-      if (this.kinoPassInput.length == 0) return
-      this.kinoPassInput = this.kinoPassInput.substring(0, this.kinoPassInput.length - 1)
-      this.kinoPassError = false
-    },
-
-    toggleKinoSimDebug() { this.kinoSimDebug = !this.kinoSimDebug },
-
-    closeKinoSim() {
-      this._stopKinoSlide()
-      this.kinoSimOpen = false
-      this.kinoSimStatus = 'ready'
-      this.kinoSimDebug = false
-      this.kinoSimError = ''
-      this.kinoSimBmList = [] as UTSJSONObject[]
-      this.kinoSimSubAgeList = [] as UTSJSONObject[]
-      this.kinoSimBioAge = ''
-      this.kinoSimChronoAge = '—'
-      this.kinoSimBioAgeColor = '#A6C4E5'
-      this.kinoSimActiveTab = 'bioage'
-      this.kinoSimSlideIndex = 0
-      this.kinoSimSlideVisible = true
-      this.kinoSimScannedUserId = ''
-      this.kinoSimScannedUserName = ''
-      this.kinoSimChipId = ''
-    },
-
-    _stopKinoSlide() {
-      if (this._kinoSlideTimer != 0) clearInterval(this._kinoSlideTimer)
-      this._kinoSlideTimer = 0
-    },
-
-    _startKinoSlide() {
-      this._stopKinoSlide()
-      const len = BM_META.length
-      this._kinoSlideTimer = setInterval(() => {
-        this.kinoSimSlideVisible = false
-        setTimeout(() => {
-          this.kinoSimSlideIndex = (this.kinoSimSlideIndex + 1) % len
-          this.kinoSimSlideVisible = true
-        }, 300)
-      }, 2300)
-    },
-
-    onKinoSimTabChange(tabKey : string) { this.kinoSimActiveTab = tabKey },
-
-    handleKinoSimStart() {
-      if (this.kinoSimStatus == 'analyzing') return
-      if (this.kinoSimStatus == 'complete') {
-        this._stopKinoSlide()
-        this.kinoSimStatus = 'ready'
-        this.kinoSimError = ''
-        this.kinoSimBmList = [] as UTSJSONObject[]
-        this.kinoSimSubAgeList = [] as UTSJSONObject[]
-        this.kinoSimBioAge = ''
-        this.kinoSimChronoAge = '—'
-        this.kinoSimBioAgeColor = '#A6C4E5'
-        this.kinoSimActiveTab = 'bioage'
-        this.kinoSimSlideIndex = 0
-        this.kinoSimSlideVisible = true
-        this.kinoSimScannedUserId = ''
-        this.kinoSimScannedUserName = ''
-        this.kinoSimChipId = ''
-        return
-      }
-      scanQr({
-        onlyFromCamera: false,
-        success: (scanRes) => { (async () : Promise<void> => {
-          const chipId = scanRes.result
-          this.kinoSimStatus = 'analyzing'
-          try {
-            const chipRes = await this._req(`${BASE}/api/kino-chip?chip_id=${encodeURIComponent(chipId)}`, 'GET', null, 0)
-            if (chipRes.statusCode != 200 || chipRes.data == null || chipRes.data!.getBoolean('found') != true) {
-              this.kinoSimStatus = 'failed'
-              this.kinoSimError = 'Chip not bound to any user. Ask the user to scan and bind the chip first via the chat Test Chip tool.'
-              return
-            }
-            if (chipRes.data!.getBoolean('used') == true) {
-              this.kinoSimStatus = 'failed'
-              this.kinoSimError = 'chip already used'
-              return
-            }
-            const chipUserId = chipRes.data!.getString('user_id') ?? ''
-            const chipNickname = chipRes.data!.getString('nickname') ?? ''
-            this.kinoSimScannedUserId = chipUserId
-            this.kinoSimScannedUserName = chipNickname
-            this.kinoSimChipId = chipId
-            await this._runKinoAnalysis(chipUserId)
-          } catch (e : any) {
-            this.kinoSimStatus = 'failed'
-            this.kinoSimError = `${e}`
-          }
-        })() },
-        fail: (_) => {}
-      })
-    },
-
-    // POST /api/biomarkers with an empty test_data makes the estimator run against the user's
-    // existing readings — the sim's "analysis". BiomarkerValues in the response ARE data.validated
-    // (§17), so the sparkline fold-in is honest without a refetch. Sparks already attached to older
-    // messages are left alone — they belong to the reading those messages describe.
-    async _runKinoAnalysis(targetUserId : string) {
-      try {
-        const body = {
-          openid: targetUserId,
-          test_type: 'kino_chip',
-          test_data: {} as UTSJSONObject,
-        } as UTSJSONObject
-        // source sent `kino_device_id: id || undefined` — key ABSENT when unset, not null.
-        if (this.kinoSimDeviceId.length > 0) body['kino_device_id'] = this.kinoSimDeviceId
-        const res = await this._req(`${BASE}/api/biomarkers`, 'POST', body, 0)
-        if (res.statusCode != 200 && res.statusCode != 201) {
-          throw new Error(`POST /biomarkers HTTP ${res.statusCode}: ${res.data != null ? JSON.stringify(res.data) : ''}`)
-        }
-        const biomarkers = res.data != null ? res.data!.getJSON('biomarkers') : null
-        const biomarkerId = res.data != null ? res.data!.getNumber('biomarker_id') : null
-        if (biomarkers != null && this._bioSeries != null) appendReading(this._bioSeries!, biomarkers, null)
-        let bioageProfile = res.data != null ? res.data!.getJSON('bioage_profile') : null
-        if (bioageProfile == null) {
-          try {
-            const bmRes = await this._req(`${BASE}/api/biomarkers?openid=${encodeURIComponent(targetUserId)}`, 'GET', null, 0)
-            const records = bmRes.data != null ? (bmRes.data!.getArray<UTSJSONObject>('records') ?? ([] as UTSJSONObject[])) : ([] as UTSJSONObject[])
-            if (records.length > 0) {
-              const latest = records[records.length - 1]
-              const dataJ = latest.getJSON('data')
-              bioageProfile = dataJ != null ? dataJ!.getJSON('bioage_profile') : null
-            }
-          } catch (e : any) {}
-        }
-        const t = this.t
-        const bmLabels = t.getJSON('bmLabels')!
-        const bmList : UTSJSONObject[] = []
-        for (const meta of BM_META) {
-          const key = meta.getString('key') ?? ''
-          const label = bmLabels.getString(key) ?? key
-          bmList.push({
-            key: key, label: label, unit: meta.getString('unit'),
-            value: biomarkers != null ? biomarkers!.getNumber(key) : null,
-          } as UTSJSONObject)
-        }
-        const subAgeLabels = t.getJSON('subAgeLabels')!
-        const subAges = bioageProfile != null ? bioageProfile!.getJSON('SubAges') : null
-        const subAgeList : UTSJSONObject[] = []
-        if (subAges != null) {
-          for (const key of SUB_AGE_KEYS) {
-            const v = subAges!.getNumber(key)
-            subAgeList.push({
-              key: key,
-              label: subAgeLabels.getString(key) ?? key,
-              color: SUB_AGE_COLORS.get(key) ?? '#A6C4E5',
-              value: v != null ? v!.toFixed(1) : '—',
-            } as UTSJSONObject)
-          }
-        }
-        const rawBioAge = bioageProfile != null ? bioageProfile!.getNumber('BioAge') : null
-        const rawChronoAge = bioageProfile != null ? bioageProfile!.getNumber('ChronoAge') : null
-        if (this.kinoSimChipId.length > 0) {
-          try {
-            const resultBody = {
-              chip_id: this.kinoSimChipId,
-              data: { biomarkers: biomarkers, bioage_profile: bioageProfile } as UTSJSONObject,
-              bio_age: rawBioAge,
-              biomarker_id: biomarkerId,
-            } as UTSJSONObject
-            if (this.kinoSimDeviceId.length > 0) resultBody['kino_device_id'] = this.kinoSimDeviceId
-            await this._req(`${BASE}/api/kino-result`, 'POST', resultBody, 0)
-          } catch (e : any) {}
-        }
-        this.kinoSimStatus = 'complete'
-        this.kinoSimBmList = bmList
-        this.kinoSimSubAgeList = subAgeList
-        this.kinoSimBioAge = rawBioAge != null ? rawBioAge!.toFixed(1) : '—'
-        this.kinoSimChronoAge = rawChronoAge != null ? `${rawChronoAge}` : '—'
-        this.kinoSimBioAgeColor = bioAgeColor(rawBioAge, rawChronoAge)
-        this.kinoSimActiveTab = 'bioage'
-        this.kinoSimSlideIndex = 0
-        this.kinoSimSlideVisible = true
-        this._startKinoSlide()
-      } catch (e : any) {
-        this.kinoSimStatus = 'failed'
-        this.kinoSimError = `${e}`
-      }
     },
 
     // ── Logout / sandbox ──
@@ -8419,85 +7993,10 @@ export default {
 .csim-cancel { align-items: center; padding: 12px 0 4px; }
 .csim-cancel-label { color: #A6C4E5; font-size: 13px; }
 
-/* ── Kino passcode + simulator overlays ── */
-.kpass-overlay { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-color: rgba(6, 15, 25, 0.96); align-items: center; }
-.kpass-box { align-items: center; padding: 0 40px; width: 100%; }
-.kpass-logo { color: #6375EC; font-size: 36px; margin-bottom: 10px; }
-.kpass-title { color: #A6C4E5; font-size: 14px; letter-spacing: 2px; margin-bottom: 24px; }
-.kpass-dots { flex-direction: row; margin-bottom: 12px; }
-.kpass-dot { width: 12px; height: 12px; border-radius: 6px; background-color: rgba(166, 196, 229, 0.25); margin-left: 6px; margin-right: 6px; }
-.kpass-dot-filled { background-color: #A6C4E5; }
-.kpass-error { color: #FF6B6B; font-size: 12px; margin-bottom: 8px; }
-.kpass-numpad { flex-direction: row; flex-wrap: wrap; justify-content: center; width: 260px; }
-.kpass-key { width: 74px; height: 62px; border-radius: 12px; background-color: #162E4A; align-items: center; justify-content: center; margin: 4px; }
-.kpass-key-label { color: #EEF2FF; font-size: 22px; }
-.kpass-key-empty { background-color: transparent; }
-.kpass-key-del { background-color: rgba(239, 68, 68, 0.15); }
-.kpass-del-icon { color: #FF6B6B; font-size: 18px; }
-.kpass-cancel { margin-top: 18px; padding: 8px 20px; }
-.kpass-cancel-label { color: #A6C4E5; font-size: 13px; }
 
-.ksm-overlay { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-color: #060F19; }
 /* #ifdef MP-WEIXIN */
-.ksm-overlay { background-image: radial-gradient(at 50% 0%, rgb(26, 49, 85) 0%, rgb(11, 28, 46) 65%); }
 /* #endif */
-.ksm-container { flex: 1; }
-.ksm-header { flex-direction: row; align-items: center; justify-content: space-between; padding-left: 18px; padding-right: 18px; padding-bottom: 10px; border-style: solid; border-top-width: 0px; border-right-width: 0px; border-bottom-width: 1px; border-left-width: 0px; border-bottom-color: rgba(99, 117, 236, 0.18); background-color: rgba(11, 28, 46, 0.7); }
-.ksm-title { color: #EEF2FF; font-size: 13px; font-weight: bold; letter-spacing: 4px; }
-.ksm-serial { color: rgb(74, 85, 104); font-size: 9px; letter-spacing: 1px; margin: 2px 0px 0px 0px; }
-.ksm-close { color: rgb(166, 196, 229); padding: 0px 0px 0px 0px; border-style: solid; border-width: 1px; border-color: rgba(99, 117, 236, 0.3); border-radius: 16px; background-color: rgba(99, 117, 236, 0.1); flex-direction: row; align-items: center; justify-content: center; }
-.ksm-close-label { color: #A6C4E5; font-size: 16px; }
-.ksm-close { width: 32px; height: 32px; }
-.ksm-body { flex: 1; }
-.ksm-body-inner { align-items: center; padding: 18px 22px 24px 22px; }
-.ksm-device-wrap { width: 176px; height: 176px; align-items: center; justify-content: center; }
-.ksm-ring-face { width: 160px; height: 160px; border-radius: 80px; background-color: rgb(255, 255, 255); align-items: center; justify-content: center; border-width: 0px; box-shadow: 0px 2px 12px 0px rgba(99, 117, 236, 0.06) inset, 0px 4px 24px 0px rgba(99, 117, 236, 0.18); }
 
-.ksm-face-slide { align-items: center; opacity: 1; }
-.ksm-slide-index { color: #7F97B5; font-size: 10px; }
-.ksm-slide-label { color: #A6C4E5; font-size: 12px; margin-top: 4px; }
-.ksm-slide-val { color: #EEF2FF; font-size: 26px; font-weight: bold; }
-.ksm-slide-unit { color: #7F97B5; font-size: 10px; }
-.ksm-face-static { align-items: center; }
-.ksm-face-label { color: rgba(26, 62, 95, 0.4); font-size: 8px; letter-spacing: 3px; margin: 0px 0px 2px 0px; }
-.ksm-face-status { font-size: 15px; font-weight: bold; color: rgb(26, 62, 95); margin-top: 2px; }
-.ksm-face-status-ready { }
-.ksm-face-status-analyzing { color: #6375EC; }
-.ksm-face-status-complete { color: #1A8A6A; }
-.ksm-face-status-failed { color: #E86060; }
-.ksm-face-patient-label { color: #7F97B5; font-size: 9px; margin-top: 6px; }
-.ksm-face-user { color: rgb(99, 117, 236); font-size: 11px; margin: 5px 0px 0px 0px; }
-.ksm-results { width: 100%; margin-top: 14px; }
-.ksm-tabs { flex-direction: row; border-bottom: 1px solid #1E3A5F; }
-.ksm-tab { flex: 1; align-items: center; padding: 8px 0; }
-.ksm-tab-label { color: #64748B; font-size: 12px; }
-.ksm-tab-label-on { color: #A0B4FF; font-size: 12px; font-weight: bold; }
-.ksm-tab-content { margin-top: 10px; width: 100%; }
-.ksm-bioage-row { flex-direction: row; justify-content: space-around; }
-.ksm-bioage-chip { align-items: center; }
-.ksm-bioage-chip-dim { opacity: 0.7; }
-.ksm-bioage-num { font-size: 26px; font-weight: bold; }
-.ksm-bioage-chip-label { color: #7F97B5; font-size: 9px; letter-spacing: 1px; margin-top: 2px; }
-.ksm-sub-row { flex-direction: row; align-items: center; margin-top: 8px; }
-.ksm-sub-dot { width: 8px; height: 8px; border-radius: 4px; margin-right: 8px; }
-.ksm-sub-label { color: #A6C4E5; font-size: 12px; flex: 1; }
-.ksm-sub-val { font-size: 13px; font-weight: bold; }
-.ksm-bm-row { flex-direction: row; justify-content: space-between; margin-top: 6px; }
-.ksm-bm-label { color: #A6C4E5; font-size: 12px; }
-.ksm-bm-val { color: #EEF2FF; font-size: 12px; }
-.ksm-bm-unit { color: #7F97B5; font-size: 10px; }
-.ksm-btn { width: 100%; border-radius: 12px; background-color: transparent; margin-top: 16px; align-items: center; font-size: 14px; color: rgb(255, 255, 255); font-weight: bold; padding: 14px 0px 14px 0px; background-image: linear-gradient(135deg, rgb(99, 117, 236) 0%, rgb(123, 143, 255) 100%); box-shadow: 0px 4px 20px 0px rgba(99, 117, 236, 0.45); flex-direction: row; justify-content: center; }
-.ksm-btn-label { color: #FFFFFF; font-size: 14px; font-weight: bold; }
-.ksm-btn-analyzing { background-color: #475569; }
-.ksm-btn-complete { background-color: #10B981; }
-.ksm-btn-failed { background-color: #EF4444; }
-.ksm-quit-btn { padding: 10px 0px 10px 0px; margin: 12px 0px 0px 0px; }
-.ksm-quit-label { color: #A6C4E5; font-size: 12px; }
-.ksm-debug-toggle { text-align: center; padding: 6px 0px 6px 0px; margin: 8px 16px 0px 16px; }
-.ksm-debug-toggle-text { color: rgba(26, 62, 95, 0.3); font-size: 9px; font-weight: bold; letter-spacing: 1px; text-align: center; }
-.ksm-debug-box { width: 100%; background-color: rgba(239, 68, 68, 0.08); border-radius: 8px; padding: 8px; margin-top: 6px; }
-.ksm-debug-label { color: #FF6B6B; font-size: 9px; font-weight: bold; }
-.ksm-debug-msg { color: #FFB3B3; font-size: 10px; }
 
 /* ── guest / redeem sheets ── */
 .guest-sheet-mask { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-color: rgba(4, 10, 18, 0.72); justify-content: flex-end; }
@@ -8731,10 +8230,6 @@ export default {
 .theme-light .order-status-delivered { color: var(--success); }
 .theme-light .cancel-order-btn text { color: var(--danger); }
 .theme-light .checkout-wx-addr-text { color: var(--info-pale); }
-.theme-light .kpass-error { color: var(--danger-muted); }
-.theme-light .ksm-face-status-failed { color: var(--danger-muted); }
-.theme-light .ksm-debug-label { color: var(--danger-muted); }
-.theme-light .ksm-debug-msg { color: var(--danger-pale); }
 .theme-light .plans-browse-btn-text { color: var(--info-pale); }
 .theme-light .plan-type-primary   .plan-type-text { color: var(--info-pale); }
 .theme-light .plan-type-secondary .plan-type-text { color: var(--success); }
@@ -8996,32 +8491,6 @@ export default {
 .theme-light .csim-dot-badge { background: rgba(0, 0, 0, 0.04); }
 .theme-light .csim-badge-name { color: var(--text-muted); }
 .theme-light .csim-cancel { color: var(--text-muted); }
-.theme-light .kpass-overlay { background: var(--bg-gradient); }
-.theme-light .kpass-title { color: var(--text-sub); }
-.theme-light .kpass-dot { border-color: rgba(201, 149, 106, 0.5); }
-.theme-light .kpass-key { background: rgba(201, 149, 106, 0.08); border-color: rgba(201, 149, 106, 0.22); color: var(--text); }
-.theme-light .kpass-key-del { background: rgba(201, 149, 106, 0.05); }
-.theme-light .kpass-del-icon { color: var(--text-sub); }
-.theme-light .kpass-cancel { color: var(--text-muted); }
-.theme-light .ksm-overlay { background: var(--bg-gradient); }
-.theme-light .ksm-header { background: var(--bg-surface); border-bottom-color: var(--navy-border); }
-.theme-light .ksm-title { color: var(--text); }
-.theme-light .ksm-serial { color: var(--text-muted); }
-.theme-light .ksm-close { border-color: rgba(201, 149, 106, 0.3); background: rgba(201, 149, 106, 0.1); color: var(--text-sub); }
-.theme-light .ksm-results { background: var(--navy-card); border-color: rgba(201, 149, 106, 0.18); }
-.theme-light .ksm-tabs { border-bottom-color: rgba(201, 149, 106, 0.18); }
-.theme-light .ksm-tab { color: var(--text-muted); }
-.theme-light .ksm-tab-active { color: var(--blue); background: rgba(201, 149, 106, 0.08); border-bottom-color: var(--blue); }
-.theme-light .ksm-bioage-chip { background: var(--navy-lift); border-color: rgba(201, 149, 106, 0.18); }
-.theme-light .ksm-bioage-chip-dim { background: rgba(250, 247, 242, 0.5); }
-.theme-light .ksm-bioage-chip-label { color: var(--text-muted); }
-.theme-light .ksm-sub-row,
-.theme-light .ksm-bm-row { border-bottom-color: rgba(201, 149, 106, 0.08); }
-.theme-light .ksm-sub-label,
-.theme-light .ksm-bm-label { color: var(--text-sub); }
-.theme-light .ksm-bm-val { color: var(--text); }
-.theme-light .ksm-bm-unit { color: var(--text-muted); }
-.theme-light .ksm-quit-btn { color: var(--text-muted); }
 .theme-light .cert-field { border-bottom-color: rgba(201, 149, 106, 0.1); }
 .theme-light .page-privacy-box { background: var(--navy-card); }
 .theme-light .page-privacy-title { color: var(--text); }
@@ -9098,9 +8567,6 @@ export default {
 .theme-light .checkout-addr-form { border-top-color: rgba(var(--blue-rgb), 0.12); }
 .theme-light .order-delivery-info { background: rgba(var(--blue-rgb), 0.05); }
 .theme-light .tracking-section { border-top-color: rgba(var(--blue-rgb), 0.1); }
-.theme-light .kpass-logo { color: var(--blue); }
-.theme-light .kpass-dot-filled { background: var(--blue); border-color: var(--blue); }
-.theme-light .ksm-dot { background: var(--blue); }
 .theme-light .guest-lock-card { background: rgba(var(--blue-rgb), 0.06); border-color: rgba(var(--blue-rgb), 0.18); }
 .theme-light .guest-lock-title { color: var(--text-sub); }
 .theme-light .avatar-pick-btn { background: rgba(var(--blue-rgb), 0.12); border-color: rgba(var(--blue-rgb), 0.5); }
@@ -9316,10 +8782,6 @@ export default {
 .theme-light .browse-enrolled-label { color: #4f5fcc; }
 .theme-light .copy-badge-label { color: var(--blue); }
 .theme-light .csim-cancel-label { color: var(--text-muted); }
-.theme-light .kpass-key-label { color: var(--text); }
-.theme-light .kpass-cancel-label { color: var(--text-muted); }
-.theme-light .ksm-close-label { color: var(--text-sub); }
-.theme-light .ksm-quit-label { color: var(--text-muted); }
 .theme-light .guest-sheet-error-text { color: #dc2626; }
 /* #endif */
 /* #ifdef MP-WEIXIN */
@@ -9483,36 +8945,6 @@ export default {
 .csim-badge-key { font-size: var(--fs-17, 17rpx); }
 .csim-badge-name { font-size: var(--fs-17, 17rpx); }
 .csim-cancel, .csim-cancel-label { font-size: var(--fs-26, 26rpx); }
-.kpass-logo { font-size: var(--fs-72, 72rpx); }
-.kpass-title { font-size: var(--fs-28, 28rpx); }
-.kpass-error { font-size: var(--fs-24, 24rpx); line-height: 36rpx; }
-.kpass-key, .kpass-key-label { font-size: var(--fs-40, 40rpx); }
-.kpass-del-icon { font-size: var(--fs-36, 36rpx); }
-.kpass-cancel, .kpass-cancel-label { font-size: var(--fs-26, 26rpx); }
-.ksm-title { font-size: var(--fs-26, 26rpx); }
-.ksm-serial { font-size: var(--fs-18, 18rpx); }
-.ksm-close, .ksm-close-label { font-size: var(--fs-32, 32rpx); }
-.ksm-face-label { font-size: var(--fs-16, 16rpx); }
-.ksm-face-status { font-size: var(--fs-30, 30rpx); }
-.ksm-debug-toggle-text { font-size: var(--fs-18, 18rpx); }
-.ksm-debug-label { font-size: var(--fs-18, 18rpx); }
-.ksm-debug-msg { font-size: var(--fs-20, 20rpx); line-height: 1.5; }
-.ksm-face-patient-label { font-size: var(--fs-14, 14rpx); }
-.ksm-face-user { font-size: var(--fs-22, 22rpx); }
-.ksm-slide-index { font-size: var(--fs-16, 16rpx); }
-.ksm-slide-label { font-size: var(--fs-18, 18rpx); }
-.ksm-slide-val { font-size: var(--fs-48, 48rpx); line-height: 1; }
-.ksm-slide-unit { font-size: var(--fs-18, 18rpx); }
-.ksm-tab { font-size: var(--fs-24, 24rpx); }
-.ksm-bioage-num { font-size: var(--fs-48, 48rpx); line-height: 1; }
-.ksm-bioage-chip-label { font-size: var(--fs-14, 14rpx); }
-.ksm-sub-label { font-size: var(--fs-24, 24rpx); }
-.ksm-sub-val { font-size: var(--fs-26, 26rpx); }
-.ksm-bm-label { font-size: var(--fs-24, 24rpx); }
-.ksm-bm-val { font-size: var(--fs-26, 26rpx); }
-.ksm-bm-unit { font-size: var(--fs-20, 20rpx); }
-.ksm-btn, .ksm-btn-label { font-size: var(--fs-28, 28rpx); }
-.ksm-quit-btn { font-size: var(--fs-26, 26rpx); }
 .guest-signup-btn-text { font-size: var(--fs-26, 26rpx); }
 .guest-lock-icon { font-size: var(--fs-72, 72rpx); }
 .guest-lock-title { font-size: var(--fs-28, 28rpx); line-height: 1.7; }
@@ -9701,5 +9133,4 @@ export default {
 .menu-credit-row { padding: 24rpx 32rpx; }
 /* #endif */
 </style>
-
 

@@ -112,7 +112,7 @@ existing script, and keeps its native template under `#ifndef WEB`:
 | Voice input | `utils/web-speech.uts`: press-and-hold Web Speech, merged into the input like `main.js:_onMicStop` | the user-app's `VoiceInput`; native still toasts (ASR TODO) |
 | Upload bytes | `utils/file-bytes.uts` `readFileBytes()`: `fetch(blobURL).arrayBuffer()` | native file read is still a TODO; returns `null` there |
 | Window width | `main.uts` wraps the global `uni.getWindowInfo()` to report the frame's size on desktop | rpx ratio, chart widths and the Dots strip scroll were sized from the browser window |
-| Logo menu | 渠道管理 (admin) and 网页后台 (superadmin) open `/admin/` in a new tab; email management on every channel; Kino simulator hidden; dropdown position from CSS | the user-app's `LogoMenu` |
+| Logo menu | 渠道管理 (admin) and 网页后台 (superadmin) open `/admin/` in a new tab; email management on every channel; Kino simulator removed; dropdown position from CSS | the user-app's `LogoMenu` |
 | 魔盒 | Kino APK download card | the user-app's `LearnTab` (the miniapp lost the card from its markup) |
 | Markdown colour | the dark-text `MD_TAG_STYLE` injection in `main.uvue` is native-only | uni's native rich-text doesn't inherit colour; on web it does, and the injection broke light theme |
 

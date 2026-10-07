@@ -6,6 +6,8 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+- **xapp: Kino simulator removed** · 2026-10-07: remove its admin menu entry, passcode and simulator overlays, simulated biomarker submission, timers, state, translations and styles from the shared xapp source. Real Kino chip registration and the separate cartridge simulator remain available. Mini and web builds pass; M3 verifies the admin menu has no simulator, all four tabs and seven lab reports load without runtime errors, and preview succeeds (1,776,141 bytes). xapp VERSION `1007-5`.
+
 - **xapp-mini: ES6 conversion enabled with Babel** · 2026-10-07: enable `es6` with `swc: false` and `disableSWC: true`, replacing the extra ES2019 build step with DevTools' legacy compiler. Verified Babel-generated runtime code on M3, all four tabs and seven health reports without runtime errors, and successful preview at 1,805,222 bytes (under 2 MB). xapp VERSION `1007-4`.
 
 - **xapp-mini: preview JavaScript compatibility** · 2026-10-07: compile generated JavaScript to ES2019 with HBuilderX's bundled esbuild and validate every file before syncing. WeChat preview packaging rejected `??` in avatar-picker while the simulator accepted it; DevTools' SWC ES5 conversion stays disabled to avoid its startup regression. M3 preview succeeds (1,601,686 bytes); all four tabs and the imported lab reports load without runtime errors. xapp VERSION `1007-3`.
