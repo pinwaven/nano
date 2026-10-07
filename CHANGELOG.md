@@ -6,6 +6,8 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+- **xapp-mini: centered 洞察 score** · 2026-10-07: remove the `/100` suffix from the Health tab's insight score and center the number in its circle. xapp VERSION `1007-2`.
+
 - **QCS / 量康 dev backfill** · 2026-10-05: all 53 dev orders imported and committed: 91 structured reports, 1,984 items, 69 twin observations, 53 PDF documents, and 24 extraction jobs. Existing dev Health-tab APIs return the new records; an owner-scoped PDF URL was verified by a ranged GET (`application/pdf`, `%PDF-`). PDF extraction is asynchronous; missing per-test PDFs stay recorded as waiting warnings. Production is unchanged.
 
 - **QCS / 量康 lab-order import (not deployed)** · 2026-10-05: private callback and status endpoints, environment-scoped EventBridge processing, and a ten-minute reconciliation timer import completed lab orders into standard reports, report items, and validated lab observations, then refresh the digital twin atomically. Saved PDFs appear through the existing Health-tab documents component; PDF-only/IgG reports enter the existing extraction queue. Revision tracking prevents duplicate imports and handles corrected results; unknown/detection-limit values remain raw, with real test dates and explicit unit conversion. Tracked migration applied on dev only. All 53 orders verified in a rolled-back dev transaction (91 reports, 1,984 items, 69 twin observations, 53 PDFs, 24 extraction jobs), including replay/correction checks. Runbook: `docs/architecture/lab-order-import.md`.

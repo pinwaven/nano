@@ -448,7 +448,9 @@
             <view v-if="iv('score') >= 0" class="ins-readiness">
               <view class="ins-score-wrap" :style="'border-color:' + sget(insightsView, 'levelColor') + ';'">
                 <text class="ins-score" :style="'color:' + tc(sget(insightsView, 'levelColor'))">{{ iv('score') }}</text>
+                <!-- #ifndef MP-WEIXIN -->
                 <text class="ins-score-of">/100</text>
+                <!-- #endif -->
               </view>
               <view class="ins-readiness-body">
                 <view class="ins-readiness-row">
@@ -8091,6 +8093,10 @@ export default {
 /* …and the miniapp text that sets no size of its own but inherits one (xapp's <text> inherits nothing). */
 .ecg-card-list-when { font-size: var(--fs-22, 22rpx); }
 .ecg-card-list-val { font-size: var(--fs-22, 22rpx); }
+/* #endif */
+/* #ifdef MP-WEIXIN */
+.ins-score-wrap { padding: 0; align-items: center; justify-content: center; }
+.ins-score { text-align: center; line-height: 1.2; }
 /* #endif */
 /* #ifdef APP-ANDROID */
 /* Keep the decimal age readable inside the narrow native side-by-side chips. */
