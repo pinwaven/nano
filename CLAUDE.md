@@ -39,6 +39,10 @@ This ensures that only developers in the IDE touch the dev environment, while al
 
 ### WeChat DevTools Automation (for driving/testing the miniapp)
 
+**When working on us1 (`us1.gcn.net`), use M3 by default for WeChat DevTools tests**, including xapp-mini. Connect with `ssh m3` through its permanent reverse tunnel (`127.0.0.1:2224`). Build xapp-mini on us1, sync it to M3's `~/waven/nano/dist/xapp/mini/`, and open that compiled folder. M3's CLI service port is `22038`; xapp-mini automation is `22091`. Use i9/m4 only when explicitly requested or needed for a device/parity task. Full connection, sync, automation, console-error and screenshot workflow: [M3 DevTools runbook](tools/wechat-automator/m3.md).
+
+On remote Macs, attach to the user's signed-in DevTools instance; if it is closed or signed out, have the user open it from the Dock and sign in. The local cold-start guidance below does not override this remote workflow.
+
 WeChat DevTools' "Service Port" (Settings → Security Settings) is open on **`22038`** — this is the IDE's CLI HTTP port (`cli open`/`cli preview`/etc.), not the automation websocket by itself. To actually drive the running miniapp (e.g. via the `miniprogram-automator` Node package) for testing UI changes, automation must additionally be enabled with its own port:
 
 ```bash
@@ -47,7 +51,7 @@ WeChat DevTools' "Service Port" (Settings → Security Settings) is open on **`2
 
 Then `automator.connect({ wsEndpoint: 'ws://127.0.0.1:<port>' })` (not `22038`) attaches to it. `automator.launch({ cliPath, projectPath, port })` does the open+auto+connect flow in one call and is the more reliable path from a cold start — a plain `cli auto` against an already-open project can leave the simulator's app launch hanging (`routeTo appLaunch timeout` in the IDE's `WeappLog` logs) if the project window is in a stale state; quitting (`cli quit --project <path>`) and relaunching via `automator.launch` resolves it.
 
-**Don't re-derive this by hand each session** — [`tools/wechat-automator/`](tools/wechat-automator/README.md) wraps the above into a reusable `launch()`/`connect()` helper, plus a documented list of gotchas found via live debugging (screenshots don't work in this environment, synthetic touch doesn't trigger real scroll-view scrolling, `wx.storage` persists the logged-in user across relaunches). Use it instead of reinventing the connection dance; only write throwaway one-off repro/verify scripts to your scratchpad, not into that tool.
+**Don't re-derive this by hand each session** — [`tools/wechat-automator/`](tools/wechat-automator/README.md) wraps the above into a reusable `launch()`/`connect()` helper, plus a documented list of gotchas found via live debugging (`mp.screenshot()` can fail; window captures work on M3, synthetic touch doesn't trigger real scroll-view scrolling, `wx.storage` persists the logged-in user across relaunches). Use it instead of reinventing the connection dance; only write throwaway one-off repro/verify scripts to your scratchpad, not into that tool.
 
 ### WeChat Domain Setup
 

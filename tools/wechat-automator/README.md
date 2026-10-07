@@ -8,6 +8,15 @@ This wraps the manual flow documented in the root `CLAUDE.md` ("WeChat DevTools 
 single reusable module, so each debugging session doesn't have to rediscover the connection dance
 and its gotchas from scratch.
 
+## Default host from us1
+
+Use **M3** (`ssh m3`) by default for DevTools tests from us1. xapp-mini runs from
+`/Users/pin/waven/nano/dist/xapp/mini`, using CLI service port `22038` and automation port `22091`.
+Follow the [M3 runbook](m3.md) for build/sync, remote attachment, test scripts and console capture.
+The helper's `launch()` targets the production miniapp source directory; for xapp-mini, enable
+automation on its compiled project with the documented CLI command, then use `connect(22091)`
+on M3. Keep one-off test scripts under `temp/`.
+
 ## Setup
 
 ```bash

@@ -6,7 +6,13 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+- **xapp-mini: ES6 conversion enabled with Babel** · 2026-10-07: enable `es6` with `swc: false` and `disableSWC: true`, replacing the extra ES2019 build step with DevTools' legacy compiler. Verified Babel-generated runtime code on M3, all four tabs and seven health reports without runtime errors, and successful preview at 1,805,222 bytes (under 2 MB). xapp VERSION `1007-4`.
+
+- **xapp-mini: preview JavaScript compatibility** · 2026-10-07: compile generated JavaScript to ES2019 with HBuilderX's bundled esbuild and validate every file before syncing. WeChat preview packaging rejected `??` in avatar-picker while the simulator accepted it; DevTools' SWC ES5 conversion stays disabled to avoid its startup regression. M3 preview succeeds (1,601,686 bytes); all four tabs and the imported lab reports load without runtime errors. xapp VERSION `1007-3`.
+
 - **xapp-mini: centered 洞察 score** · 2026-10-07: remove the `/100` suffix from the Health tab's insight score and center the number in its circle. xapp VERSION `1007-2`.
+
+- **xapp-mini: startup console error fixed (not deployed)** · 2026-10-07: disable WeChat DevTools' additional ES6-to-ES5 conversion for HBuilderX's compiled output. The extra SWC pass caused `ReferenceError: C is not defined` on startup on M3. xapp VERSION `1007-1`.
 
 - **QCS / 量康 dev backfill** · 2026-10-05: all 53 dev orders imported and committed: 91 structured reports, 1,984 items, 69 twin observations, 53 PDF documents, and 24 extraction jobs. Existing dev Health-tab APIs return the new records; an owner-scoped PDF URL was verified by a ranged GET (`application/pdf`, `%PDF-`). PDF extraction is asynchronous; missing per-test PDFs stay recorded as waiting warnings. Production is unchanged.
 

@@ -8,7 +8,7 @@ source as the native app, running inside WeChat.
 
 ```bash
 tools/xapp-mini/build.sh                             # → dist/xapp/mini (git-ignored), appid touristappid
-APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools project on i9 uses (WX_APPID)
+APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools project on M3 uses (WX_APPID)
 # Equivalent npm entry point: npm run build:xapp:mini
 ```
 
@@ -16,10 +16,14 @@ APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools pr
   environment that `xcli launch mp-weixin` spawns (captured from `/proc` on HBuilderX 5.26).
   It finds `/Applications/HBuilderX.app` on macOS or `~/HBuilderX` on Linux; set `HBX=` to override.
   - It then writes `project.config.json`: `projectname: xapp-mini`, the appid, `urlCheck: false`.
+  - `es6: true`, `swc: false`, `disableSWC: true` enable DevTools' legacy Babel conversion.
+    SWC caused `ReferenceError: C is not defined` on startup on M3 (2026-10-07). Babel handles
+    `??`/optional chaining for preview packaging too, so no extra JavaScript conversion step
+    is needed. Reload the project after changing these compiler settings.
   - `xcli launch mp-weixin --project src/xapp --compile true` also works on Linux, but it only
     produces an unminified dev compile in `src/xapp/unpackage/dist/dev/mp-weixin`.
   - `xcli publish mp-weixin` needs an appid and an upload key, and uploads.
-- **Size:** about 1.6 MB, under WeChat's 2 MB main-package limit, with no subpackages.
+- **Size:** 1,805,222 bytes in the verified M3 preview with Babel ES6 conversion (2026-10-07), under WeChat's 2 MB main-package limit, with no subpackages.
 - **Backend:** chosen at runtime from `envVersion`, as the miniapp does (`utils/config.uts`): the
   DevTools build talks to nano-dev, an uploaded 体验版 or the released build to nano (prod). The
   header and login screen show the VERSION marker in DevTools and 体验版, and in release the
@@ -27,18 +31,20 @@ APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools pr
 
 ## Open it
 
-The build runs on the EC2 box, and WeChat DevTools runs on the Mac:
+**From us1, M3 is the default DevTools host.** Build here, then sync the compiled output:
 
 ```bash
-rsync -a --delete <ec2-host>:waven/nano/dist/xapp/mini/ ~/waven/xapp-mini/   # on the Mac
-# or push from the EC2 box through the reverse tunnel to i9 (see the i9 notes in ~/.claude/CLAUDE.md):
-rsync -a --delete --exclude project.private.config.json -e "ssh -i ~/.ssh/us1_to_i9 -p 2222" \
-  dist/xapp/mini/ pin@localhost:waven/xapp-mini/
+APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh
+rsync -a --delete --exclude project.private.config.json \
+  dist/xapp/mini/ m3:waven/nano/dist/xapp/mini/
+ssh m3 '/Applications/wechatwebdevtools.app/Contents/MacOS/cli auto --project /Users/pin/waven/nano/dist/xapp/mini --auto-port 22091 --port 22038'
 ```
 
-Then import `~/waven/xapp-mini` in WeChat DevTools.
-- Later syncs: add `--exclude project.private.config.json`, or `--delete` removes DevTools' own
-  per-machine settings.
+Open/import `~/waven/nano/dist/xapp/mini` on M3. Repeat build → sync → recompile for each
+change; `git pull` alone does not refresh the git-ignored output. Preserve
+`project.private.config.json` during every sync. See the [M3 DevTools runbook](../wechat-automator/m3.md)
+for SSH access, running test scripts, console errors, screenshots and tunnel recovery.
+
 - Build with the same `APPID=` the DevTools project uses; otherwise each sync resets it to
   `touristappid`.
 - **`touristappid`:** the simulator works (domain checks are off), but there is no real-device
