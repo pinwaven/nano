@@ -32,6 +32,9 @@
     }
   },
   "mp-weixin": {
+    "optimization": {
+      "subPackages": true
+    },
     "__usePrivacyCheck__": true,
     "requiredBackgroundModes": [
       "audio"

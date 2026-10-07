@@ -6,6 +6,8 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+- **xapp-mini: Coach panel subpackage** · 2026-10-07: package the Coach page under `pages/coach` and enable mini-program subpackage optimization. Its `/pages/coach/coach` route stays the same; native and web keep the page in their normal route lists. Main package falls from 1,744,436 to 1,540,194 bytes; Coach is 204,280 bytes (total 1,744,474). Live checks also exposed an existing Babel generator-hoisting collision in `_loadAll`: keep the invitation-array binding at function scope so it cannot shadow imported API config. Mini/web builds and M3 preview pass; Coach menu navigation, 22 clients, five tabs and shared client Health details work without runtime errors. Original dev user restored after testing. xapp VERSION `1007-8`.
+
 - **xapp: compact avatar gallery data** · 2026-10-07: reconstruct all 200 gallery URLs from shared parts without changing signatures or expiry; add a repeatable generator from the miniapp manifest. Together with CSS consolidation, preview shrinks from 1,776,141 to 1,744,436 bytes (31,705 bytes / 1.8%). Mini/web builds pass; M3 verifies all 200 URLs, thumbnail loading, four tabs and seven health reports without runtime errors. xapp VERSION `1007-6`.
 
 - **xapp-mini: CSS consolidation** · 2026-10-07: consolidate compiled WXSS rules with CSSO, retaining the original whenever the result would grow. Generated styles shrink by 10,037 bytes. On M3, 128 sampled elements retain identical computed styles across both themes and smallest/largest text sizes.

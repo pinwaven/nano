@@ -3,7 +3,9 @@
     { "path": "pages/login/login", "style": { "navigationStyle": "custom", "backgroundColor": "#0B1C2E" } },
     { "path": "pages/verify-phone/verify-phone", "style": { "navigationStyle": "custom", "backgroundColor": "#0B1C2E" } },
     { "path": "pages/main/main", "style": { "navigationStyle": "custom", "backgroundColor": "#0B1C2E", "enablePullDownRefresh": true } },
+    // #ifndef MP-WEIXIN
     { "path": "pages/coach/coach", "style": { "navigationStyle": "custom", "backgroundColor": "#0B1C2E" } },
+    // #endif
     { "path": "pages/referral/referral", "style": { "navigationStyle": "custom", "backgroundColor": "#0B1C2E" } },
     { "path": "pages/phones/phones", "style": { "navigationStyle": "custom", "backgroundColor": "#0B1C2E" } },
     { "path": "pages/emails/emails", "style": { "navigationStyle": "custom", "backgroundColor": "#0B1C2E" } },
@@ -12,6 +14,17 @@
     { "path": "pages/pay-qr/pay-qr", "style": { "navigationStyle": "custom", "backgroundColor": "#0B1C2E" } },
     { "path": "pages/qrlogin/qrlogin", "style": { "navigationStyle": "custom", "backgroundColor": "#0B1C2E" } }
   ],
+  // #ifdef MP-WEIXIN
+  "subPackages": [
+    {
+      "root": "pages/coach",
+      "name": "coach",
+      "pages": [
+        { "path": "coach", "style": { "navigationStyle": "custom", "backgroundColor": "#0B1C2E" } }
+      ]
+    }
+  ],
+  // #endif
   "globalStyle": {
     "navigationStyle": "custom",
     "navigationBarTextStyle": "white",

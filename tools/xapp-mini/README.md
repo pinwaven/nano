@@ -25,7 +25,13 @@ APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools pr
   - `xcli launch mp-weixin --project src/xapp --compile true` also works on Linux, but it only
     produces an unminified dev compile in `src/xapp/unpackage/dist/dev/mp-weixin`.
   - `xcli publish mp-weixin` needs an appid and an upload key, and uploads.
-- **Size:** 1,744,436 bytes in the verified M3 preview with Babel ES6 conversion, compact avatar data and consolidated CSS (2026-10-07), under WeChat's 2 MB main-package limit, with no subpackages.
+- **Size:** main package 1,540,194 bytes; Coach subpackage 204,280 bytes; total 1,744,474 bytes
+  in the verified M3 preview (2026-10-07). Babel ES6 conversion, compact avatar data and CSS
+  consolidation stay enabled. Each package is below WeChat's 2 MB limit.
+- **Coach subpackage:** `pages.json` registers `pages/coach` as the `coach` subpackage only
+  on MP-WEIXIN, with `mp-weixin.optimization.subPackages` enabled in `manifest.json`.
+  Navigation still uses `/pages/coach/coach`; WeChat loads the package on entry. Shared
+  components/runtime stay in the main package. Native/web retain the normal page route.
 - **Backend:** chosen at runtime from `envVersion`, as the miniapp does (`utils/config.uts`): the
   DevTools build talks to nano-dev, an uploaded 体验版 or the released build to nano (prod). The
   header and login screen show the VERSION marker in DevTools and 体验版, and in release the

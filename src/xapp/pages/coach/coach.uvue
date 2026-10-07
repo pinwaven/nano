@@ -1792,10 +1792,10 @@ export default {
       this.clients = built
       this.clientFilterStages = this._buildFilterStages(built)
       const inv : UTSJSONObject[] = []
-      if (invitesRes.data != null) {
-        const arr = invitesRes.data!.getArray<UTSJSONObject>('invitations')
-        if (arr != null) { for (const v of arr!) inv.push(v) }
-      }
+      // Keep this binding at function scope: after HBuilderX minifies a nested block,
+      // DevTools Babel's generator pass can hoist it over the imported config binding.
+      const invitationRows = invitesRes.data != null ? invitesRes.data!.getArray<UTSJSONObject>('invitations') : null
+      if (invitationRows != null) { for (const v of invitationRows!) inv.push(v) }
       this.invites = inv
       this.clientsLoadState = ''
       this.diagText = ''
