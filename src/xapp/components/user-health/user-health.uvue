@@ -911,7 +911,7 @@
             <view class="pulse-dot"></view><view class="pulse-dot"></view><view class="pulse-dot"></view>
           </view>
           <view v-else-if="healthReports.length > 0" class="rpt-list">
-            <view v-for="(item, i) in healthReports" :key="i" class="rpt-card" v-on:click="onReportTap(an(item, 'id'))">
+            <view v-for="(item, i) in healthReports" :key="i" class="rpt-card" v-on:click="onReportTap(sget(item, 'id'))">
               <image v-if="sget(item, 'image_url').length > 0" class="rpt-thumb" :src="sget(item, 'image_url')" mode="aspectFill"
                      v-on:click.stop="previewReportImage(sget(item, 'image_url'))" />
               <view class="rpt-card-left" :style="'border-left-color:' + tc(sget(item, 'type_color')) + ';'">
@@ -4725,7 +4725,8 @@ export default {
         const lang = this.lang.length > 0 ? this.lang : 'zh'
         const t = tOf(lang)
         const reports : UTSJSONObject[] = raw.map((r : UTSJSONObject) : UTSJSONObject => ({
-          id: r.get('id'),
+          // BIGSERIAL IDs arrive as strings; preserve them for the detail URL.
+          id: r.getString('id') ?? snum(r, 'id'),
           institution: r.getString('institution') != null && r.getString('institution')!.length > 0 ? r.getString('institution') : '—',
           report_date: fmtDate(r.get('report_date'), lang),
           report_date_raw: r.getString('report_date'),
@@ -4955,8 +4956,8 @@ export default {
       }
     },
 
-    async onReportTap(id : number) {
-      if (id == 0) return
+    async onReportTap(id : string) {
+      if (id.length == 0 || id == '0') return
       const userId = this.userId
       const lang = this.lang.length > 0 ? this.lang : 'zh'
       const t = tOf(lang)
@@ -7335,6 +7336,22 @@ export default {
 .rpt-ev-unit { color: rgba(166, 196, 229, 0.5); font-size: 9px; }
 .rpt-ev-status { border-style: solid; border-width: 1px; border-radius: 6px; padding: 2px 6px; margin-left: 6px; }
 .rpt-ev-status-text { font-size: 9px; font-weight: bold; }
+/* #ifdef MP-WEIXIN */
+/* Keep imported text results from consuming the marker-name column. */
+.rpt-sheet-title-group, .rpt-ev-left, .rpt-ev-info { min-width: 0; }
+.rpt-sheet-title-group, .rpt-ev-info { display: flex; flex-direction: column; }
+.rpt-sheet-type-badge, .rpt-close-btn, .rpt-ev-dot { flex-shrink: 0; }
+.rpt-ev-row { align-items: flex-start; padding-top: 10px; padding-bottom: 10px; }
+.rpt-ev-left { align-items: flex-start; margin-right: 12px; }
+.rpt-ev-dot { margin-top: 5px; }
+.rpt-ev-name, .rpt-ev-ref { display: block; overflow-wrap: anywhere; }
+.rpt-ev-name { line-height: 1.5; }
+.rpt-ev-ref { margin-top: 3px; line-height: 1.4; }
+.rpt-ev-right { width: 40%; min-width: 0; flex-shrink: 0; flex-direction: column; align-items: flex-end; }
+.rpt-ev-val, .rpt-ev-unit { max-width: 100%; text-align: right; overflow-wrap: anywhere; word-break: break-all; line-height: 1.4; }
+.rpt-ev-unit { margin-top: 3px; }
+.rpt-ev-status { margin-left: 0; margin-top: 4px; }
+/* #endif */
 
 /* The miniapp's chart sheet: a bottom sheet the full width of the screen (user-health.wxss .wchart-*) */
 .wchart-overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; background-color: rgba(6, 15, 25, 0.75); z-index: 120; justify-content: flex-end; align-items: stretch; }
