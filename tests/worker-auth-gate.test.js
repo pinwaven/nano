@@ -111,6 +111,52 @@ describe('worker bearer gate', () => {
   });
 });
 
+describe('lab order import routes', () => {
+  let imported;
+  beforeEach(() => {
+    clearWorkerModules();
+    process.env.API_BEARER_TOKEN = BEARER;
+    process.env.TOKEN_SIGNING_SECRET = SECRET;
+    process.env.LAB_IMPORT_TOKEN = 'private-lab-import';
+    process.env.EVENT_SOURCE_SUFFIX = '.dev';
+    installDbMock(emptyDb);
+    imported = [];
+    const filename = path.join(WORKER, 'lib/lab-order-import.js');
+    require.cache[filename] = { id: filename, filename, loaded: true, exports: { createImporter: () => ({
+      queue: async id => { imported.push(id); return { statusCode: 202, success: true, status: 'queued' }; },
+      status: async () => ({ success: true, import: { status: 'imported' } }),
+      reconcile: async () => ({ success: true, scanned: 1 }),
+      run: async id => { if (id === 'fail') throw new Error('retry me'); imported.push(id); },
+    }) } };
+  });
+  afterEach(() => {
+    for (const key of ['API_BEARER_TOKEN','TOKEN_SIGNING_SECRET','LAB_IMPORT_TOKEN','EVENT_SOURCE_SUFFIX']) delete process.env[key];
+  });
+  test('only private service or signed superadmin can queue, never the compiled app bearer', async () => {
+    assert.equal((await call('POST','/api/lab-orders/53/import')).status,401);
+    assert.equal((await call('POST','/api/lab-orders/53/import',{token:BEARER})).status,403);
+    const { signSuperadminToken } = require(path.join(WORKER,'lib/auth.js'));
+    assert.equal((await call('POST','/api/lab-orders/53/import',{token:signSuperadminToken({sub:1,username:'root'})})).status,202);
+    assert.equal((await call('POST','/api/lab-orders/53/import',{token:'private-lab-import'})).status,202);
+    assert.deepEqual(imported,['53','53']);
+  });
+  test('service credential cannot use unrelated routes; status and reconciliation work', async () => {
+    const opts={token:'private-lab-import'};
+    assert.equal((await call('GET','/api/users',opts)).status,403);
+    assert.equal((await call('GET','/api/lab-orders/53/import',opts)).data.import.status,'imported');
+    assert.equal((await call('POST','/api/lab-orders/reconcile',opts)).data.scanned,1);
+    assert.equal((await call('DELETE','/api/lab-orders/53/import',opts)).status,405);
+  });
+  test('native timer and scoped CloudEvents dispatch; worker errors propagate for retries', async () => {
+    const {handler}=require(path.join(WORKER,'index.js'));
+    assert.equal((await handler(Buffer.from(JSON.stringify({triggerName:'lab-order-reconcile',payload:'lab-order-reconcile'})))).scanned,1);
+    await handler({specversion:'1.0',source:'acs.lab.dev',type:'lab.order.import',data:{order_id:'53'}});
+    await handler({specversion:'1.0',source:'acs.lab',type:'lab.order.import',data:{order_id:'54'}});
+    assert.deepEqual(imported,['53']);
+    await assert.rejects(handler({specversion:'1.0',source:'acs.lab.dev',type:'lab.order.import',data:{order_id:'fail'}}),/retry me/);
+  });
+});
+
 describe('token signing', () => {
   beforeEach(clearWorkerModules);
   afterEach(() => { delete process.env.TOKEN_SIGNING_SECRET; });

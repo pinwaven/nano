@@ -97,6 +97,7 @@ resources:
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
         # Signs nano's own sessions (ch./sa.) — never API_BEARER_TOKEN, which is public.
         TOKEN_SIGNING_SECRET: ${env(TOKEN_SIGNING_SECRET)}
+        LAB_IMPORT_TOKEN: ${env(LAB_IMPORT_TOKEN)}
         GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
         # Generous on dev: the code default (3/day, handlers/viva_ag.js) makes the feature
         # untestable after three runs — hit live during dev testing. Prod sets its own value
@@ -157,6 +158,12 @@ resources:
           triggerConfig:
             authType: anonymous
             methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        - triggerName: lab-order-reconcile
+          triggerType: timer
+          triggerConfig:
+            enable: true
+            cronExpression: "0 */10 * * * *"
+            payload: "lab-order-reconcile"
         - triggerName: eb-trigger
           triggerType: eventbridge
           triggerConfig:

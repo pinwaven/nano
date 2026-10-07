@@ -96,6 +96,7 @@ resources:
         API_BEARER_TOKEN: ${env(API_BEARER_TOKEN)}
         # Signs nano's own sessions (ch./sa.) — never API_BEARER_TOKEN, which is public. Separate from dev on purpose: a dev token must not open prod.
         TOKEN_SIGNING_SECRET: ${env(TOKEN_SIGNING_SECRET_PROD)}
+        LAB_IMPORT_TOKEN: ${env(LAB_IMPORT_TOKEN_PROD)}
         GCN_API_TOKEN: ${env(GCN_API_TOKEN)}
         # External queue credentials now belong only to the twin function.
         # Per-user daily cap on external deep analyses. Each run is expensive, so this is a
@@ -146,6 +147,12 @@ resources:
           triggerConfig:
             authType: anonymous
             methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        - triggerName: lab-order-reconcile
+          triggerType: timer
+          triggerConfig:
+            enable: true
+            cronExpression: "0 */10 * * * *"
+            payload: "lab-order-reconcile"
         - triggerName: eb-trigger
           triggerType: eventbridge
           triggerConfig:

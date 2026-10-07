@@ -15,6 +15,8 @@ const {
 const { getNowShanghai, calculateAge } = require('./lib/time-utils');
 const { loadCaller, authorizeUserRequest, authorizeChatSpeaker } = require('./lib/userAccess');
 const { updateHealthTwin } = require('./lib/healthTwinUpdater');
+const { createImporter: createLabOrderImporter } = require('./lib/lab-order-import');
+const labOrderImporter = createLabOrderImporter();
 // The two external job queues (Viva AG, document extraction) are answered by the twin function
 // (src/functions/twin), not here: every route between Curia and nano lives there (CLAUDE.md §48).
 const { BiomarkerEstimator } = require('./lib/estimator/BiomarkerEstimator');
@@ -209,6 +211,11 @@ exports.handler = async (req, resp, context) => {
         try { event = JSON.parse(req.toString()); } catch (e) {}
     }
 
+    // Native FC timer; HTTP requests cannot claim the timer path.
+    if (event?.triggerName === 'lab-order-reconcile' && !event.rawPath && !event.requestContext) {
+        return await labOrderImporter.reconcile();
+    }
+
     // EventBridge CloudEvent detection — route before HTTP processing
     if (event && event.specversion && event.source) {
         let cloudData = event.data;
@@ -217,7 +224,10 @@ exports.handler = async (req, resp, context) => {
             try { cloudData = JSON.parse(Buffer.from(cloudData, 'base64').toString('utf8')); }
             catch (e) { try { cloudData = JSON.parse(cloudData); } catch (e2) {} }
         }
-        if (event.source === LAB_EVENT_SOURCE && event.type === 'biomarker.lab_complete') {
+        if (event.source === LAB_EVENT_SOURCE && event.type === 'lab.order.import') {
+            // Throw on failure so EventBridge can retry; the durable sweep is the fallback.
+            await labOrderImporter.run(cloudData?.order_id);
+        } else if (event.source === LAB_EVENT_SOURCE && event.type === 'biomarker.lab_complete') {
             try {
                 await handleLabImportEvent(cloudData, fetchTagDerivationContext);
             } catch (err) {
@@ -365,7 +375,11 @@ exports.handler = async (req, resp, context) => {
     let gateFailure = null;   // { statusCode, error } — rejects only a non-public path
     if (rawPath && (!isPublicPath || token)) {
         const superadminSession = token.startsWith('sa.') ? verifySuperadminToken(token) : null;
-        if (expectedBearer && token === expectedBearer) {
+        if (process.env.LAB_IMPORT_TOKEN && token === process.env.LAB_IMPORT_TOKEN) {
+            if (!/^\/lab-orders\/(?:[1-9]\d*\/import|reconcile)$/.test(path)) {
+                gateFailure = { statusCode: 403, error: 'Forbidden' };
+            } else { adminCtx.role = 'lab_importer'; }
+        } else if (expectedBearer && token === expectedBearer) {
             // The shared app bearer, compiled into every released miniapp and the web user-app.
             // Still superadmin during the grace window while clients move to per-user sessions;
             // every use is logged so the cut-off (LEGACY_APP_BEARER=reject) can wait for zero.
@@ -492,6 +506,19 @@ exports.handler = async (req, resp, context) => {
             // may call it — which during the grace window already grants superadmin, so minting
             // a session here widens nothing — and it dies with that bearer.
             result = await handleSessionUpgrade(adminCtx, parsedBody);
+        } else if (/^\/lab-orders\/(?:[1-9]\d*\/import|reconcile)$/.test(path)) {
+            // Never accept the app's compiled legacy bearer for server-to-server imports.
+            if (!['lab_importer', 'superadmin'].includes(adminCtx.role) || adminCtx.legacyAppBearer) {
+                result = { statusCode: 403, success: false, error: 'Forbidden' };
+            } else if (sandbox) {
+                result = { success: true, sandbox: true };
+            } else if (path === '/lab-orders/reconcile' && method === 'POST') {
+                result = await labOrderImporter.reconcile(parsedBody?.limit);
+            } else if (path !== '/lab-orders/reconcile' && method === 'POST') {
+                result = await labOrderImporter.queue(path.split('/')[2]);
+            } else if (path !== '/lab-orders/reconcile' && method === 'GET') {
+                result = await labOrderImporter.status(path.split('/')[2]);
+            } else { result = { statusCode: 405, success: false, error: 'Method not allowed' }; }
         } else if (sandbox && method !== 'GET' && path !== '/chat' && path !== '/health-advice') {
             result = { success: true, sandbox: true };
         } else if (method === 'GET') {
