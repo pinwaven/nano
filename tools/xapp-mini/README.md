@@ -25,7 +25,7 @@ APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools pr
   - `xcli launch mp-weixin --project src/xapp --compile true` also works on Linux, but it only
     produces an unminified dev compile in `src/xapp/unpackage/dist/dev/mp-weixin`.
   - `xcli publish mp-weixin` needs an appid and an upload key, and uploads.
-- **Size:** 1,805,222 bytes in the verified M3 preview with Babel ES6 conversion (2026-10-07), under WeChat's 2 MB main-package limit, with no subpackages.
+- **Size:** 1,744,436 bytes in the verified M3 preview with Babel ES6 conversion, compact avatar data and consolidated CSS (2026-10-07), under WeChat's 2 MB main-package limit, with no subpackages.
 - **Backend:** chosen at runtime from `envVersion`, as the miniapp does (`utils/config.uts`): the
   DevTools build talks to nano-dev, an uploaded 体验版 or the released build to nano (prod). The
   header and login screen show the VERSION marker in DevTools and 体验版, and in release the
@@ -56,6 +56,10 @@ for SSH access, running test scripts, console errors, screenshots and tunnel rec
   version.
 
 ## What differs from the miniapp
+
+- **Avatar gallery data:** shared URL parts keep the manifest compact. Regenerate
+  `src/xapp/utils/avatar-gallery.uts` from the production miniapp's manifest with
+  `node tools/xapp-mini/generate-avatar-gallery.cjs`; all signed URLs remain identical.
 
 It is the native port's behaviour (`#ifndef WEB` branches), not the miniapp's, except where noted:
 - **Login and guest mode are the miniapp's** (`pages/login/login.uvue`, `#ifdef MP-WEIXIN`).

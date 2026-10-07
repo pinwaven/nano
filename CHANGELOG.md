@@ -6,6 +6,8 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+- **xapp: compact avatar gallery data** · 2026-10-07: reconstruct all 200 gallery URLs from shared parts without changing signatures or expiry; add a repeatable generator from the miniapp manifest. Together with CSS consolidation, preview shrinks from 1,776,141 to 1,744,436 bytes (31,705 bytes / 1.8%). Mini/web builds pass; M3 verifies all 200 URLs, thumbnail loading, four tabs and seven health reports without runtime errors. xapp VERSION `1007-6`.
+
 - **xapp-mini: CSS consolidation** · 2026-10-07: consolidate compiled WXSS rules with CSSO, retaining the original whenever the result would grow. Generated styles shrink by 10,037 bytes. On M3, 128 sampled elements retain identical computed styles across both themes and smallest/largest text sizes.
 
 - **xapp: Kino simulator removed** · 2026-10-07: remove its admin menu entry, passcode and simulator overlays, simulated biomarker submission, timers, state, translations and styles from the shared xapp source. Real Kino chip registration and the separate cartridge simulator remain available. Mini and web builds pass; M3 verifies the admin menu has no simulator, all four tabs and seven lab reports load without runtime errors, and preview succeeds (1,776,141 bytes). xapp VERSION `1007-5`.
