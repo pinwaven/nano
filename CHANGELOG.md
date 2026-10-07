@@ -6,6 +6,8 @@ All user-facing changes must be reflected in **both** `src/web/user-app` and `sr
 
 ## [Unreleased]
 
+- **xapp-mini: CSS consolidation** · 2026-10-07: consolidate compiled WXSS rules with CSSO, retaining the original whenever the result would grow. Generated styles shrink by 10,037 bytes. On M3, 128 sampled elements retain identical computed styles across both themes and smallest/largest text sizes.
+
 - **xapp: Kino simulator removed** · 2026-10-07: remove its admin menu entry, passcode and simulator overlays, simulated biomarker submission, timers, state, translations and styles from the shared xapp source. Real Kino chip registration and the separate cartridge simulator remain available. Mini and web builds pass; M3 verifies the admin menu has no simulator, all four tabs and seven lab reports load without runtime errors, and preview succeeds (1,776,141 bytes). xapp VERSION `1007-5`.
 
 - **xapp-mini: ES6 conversion enabled with Babel** · 2026-10-07: enable `es6` with `swc: false` and `disableSWC: true`, replacing the extra ES2019 build step with DevTools' legacy compiler. Verified Babel-generated runtime code on M3, all four tabs and seven health reports without runtime errors, and successful preview at 1,805,222 bytes (under 2 MB). xapp VERSION `1007-4`.

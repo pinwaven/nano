@@ -41,6 +41,9 @@ mkdir -p "$(dirname "$OUT")"
   UNI_HBUILDERX_LANGID=en UNI_CLOUD_SPACES='[]' NO_COLOR=true \
   "$HBX_ROOT/plugins/node/node" --no-warnings "$PLUGIN/node_modules/@dcloudio/vite-plugin-uni/bin/uni.js" build -p mp-weixin)
 
+# Consolidate repeated CSS rules in the mini output before DevTools packages it.
+node "$ROOT/tools/xapp-mini/optimize-css.cjs" "$OUT"
+
 # The compiler writes a touristappid config named after manifest.json; make it this project.
 node -e '
 const fs = require("fs"), p = process.argv[1] + "/project.config.json";

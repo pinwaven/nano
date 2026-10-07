@@ -20,6 +20,8 @@ APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools pr
     SWC caused `ReferenceError: C is not defined` on startup on M3 (2026-10-07). Babel handles
     `??`/optional chaining for preview packaging too, so no extra JavaScript conversion step
     is needed. Reload the project after changing these compiler settings.
+  - `optimize-css.cjs` consolidates generated WXSS rules with CSSO before packaging. It only
+    replaces files when they become smaller; source styles and native/web builds are unchanged.
   - `xcli launch mp-weixin --project src/xapp --compile true` also works on Linux, but it only
     produces an unminified dev compile in `src/xapp/unpackage/dist/dev/mp-weixin`.
   - `xcli publish mp-weixin` needs an appid and an upload key, and uploads.
