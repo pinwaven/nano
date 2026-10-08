@@ -12,7 +12,7 @@
 #   HBX=/path/to/HBuilderX tools/xapp-mini/build.sh
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-X="$ROOT/src/xapp"
+X=$(node "$ROOT/tools/xapp-mini/prepare-source.mjs")
 OUT="$ROOT/dist/xapp/mini"
 HBX=${HBX:-}
 if [ -z "$HBX" ]; then

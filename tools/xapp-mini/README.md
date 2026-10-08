@@ -15,6 +15,10 @@ APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools pr
 - **`build.sh`** runs HBuilderX's compiler in build mode (minified), with the command and
   environment that `xcli launch mp-weixin` spawns (captured from `/proc` on HBuilderX 5.26).
   It finds `/Applications/HBuilderX.app` on macOS or `~/HBuilderX` on Linux; set `HBX=` to override.
+  - `prepare-source.mjs` stages the current source under `temp/xapp-mini-source` and restores
+    ordinary mini class bindings before compiling. Android's target-view style hooks stay
+    native-only; compiling those hooks into the mini caused DevTools to stop responding.
+    Use this build script for xapp-mini rather than exporting the shared tree directly.
   - It then writes `project.config.json`: `projectname: xapp-mini`, the appid, `urlCheck: false`.
   - `es6: true`, `swc: false`, `disableSWC: true` enable DevTools' legacy Babel conversion.
     SWC caused `ReferenceError: C is not defined` on startup on M3 (2026-10-07). Babel handles
