@@ -1095,3 +1095,56 @@ no miniapp change. *Know, don't change:* `fetchFormulationTiers` is not store-sc
 rows are the global catalog — the same source the formula card uses, so chat and card agree, but
 the block describes packages and never tells the user where to buy one.
 
+
+## 28h. Every Capsule Carries Its Own QR (2026-10-08)
+
+A plan's 56 capsules (28 days × AM/PM) are not interchangeable: N7 isolation days, pulse windows
+and per-week levelling make them differ by day, and locked dots make the slot matter. Each capsule
+is a Nespresso-style pod with a 27 mm aluminium foil lid; the lid now carries the capsule's own QR,
+and the user scans it in the app (xapp-mini only — the production miniapp is unchanged) before
+taking it. The server confirms or blocks.
+
+The outside-of-box `WVB…` code is unchanged: it still shows ingredients/ownership and claims the
+box, which starts the cycle. A capsule scan only ever records a dose on an already-active plan.
+
+**The code.** `capsule_codes` (`migration_capsule_codes.sql`): `WVC` + 10 Crockford base32
+(no I/L/O/U), random, unique; one row per `(plan_id, day_index 1..28, slot AM|PM)`. Keyed by plan
+and day index, never by date — codes exist before the box is claimed, and `start_date` only becomes
+real then. The plan id survives activation (`_activateProposedPlan`/`_commitAgFormulation` update
+the row in place). The QR holds the bare code: every character is QR-alphanumeric, so it fits a
+version-1 symbol at ECC M — ~0.76 mm modules at the 16 mm the sheet prints.
+
+**Minting is lazy and idempotent** (`ensurePlanCapsuleCodes`, `lib/capsuleCodes.js`): the first
+`GET /formulation-capsule-codes?c=WVB…` fills any missing pair; `UNIQUE(plan_id, day_index, slot)`
+makes a concurrent run a no-op and a code collision is retried. That route is **GCN-service only**
+(`GCN_ALLOWED_PATHS`; a user session 403s). GCN proxies it as
+`GET /api/mall/formulation/capsule-codes`, authorised against its own order (the line's
+compounding partner, the order's store partner, or a sector admin), and the supplier dashboard's
+打印胶囊标签 button opens `capsule-labels.html` — 56 circles of 27 mm on one A4 sheet, pack order,
+each labelled `第N天 · 早/晚` with the code's last 4 characters. Print at 100 %.
+
+**The clock** (Shanghai): AM is 04:00–14:59, PM 15:00–03:59, and the day rolls at 04:00, so an
+evening capsule after midnight still counts for its own day. `GET /nutrition-plan` returns
+`capsule_today {day_index, date, slot, am_taken, pm_taken, scan_enabled}` from the same clock — the
+client never decides the slot itself (its old local-noon guess remains only for a plan with no
+`capsule_today`).
+
+**`POST /capsule-scan {openid, code}`** (`handlers/capsules.js`, in `USER_ROUTES`). Every block is
+hard; the order is the order the user should hear it:
+`invalid_code` → `capsule_not_found` → `not_your_capsule` → `batch_recalled` (every batch for the
+plan recalled) → `plan_not_active` (box not yet claimed, or superseded) → `before_cycle` /
+`cycle_ended` → `already_taken` → `wrong_day` → `wrong_slot`. "Already taken" precedes "wrong
+slot" so a second scan of this morning's capsule at 16:00 reads as a double dose. **Missed capsules
+are not made up**: yesterday's capsule is a `wrong_day` like tomorrow's. Another person's capsule
+returns only the reason, nothing about the capsule.
+
+An accepted scan marks `capsule_codes.taken_at/taken_by` (guarded `WHERE taken_at IS NULL`, so a
+double tap cannot record two doses) and the matching `nutrition_schedules` row's
+`is_taken`/`taken_at` — **the first writer those columns have ever had**; `get_nutrition_schedule`,
+the twin bundle and chat's `taken_count` were reading an always-false column. `taken_by` is the
+session user: a coach scanning for a managed customer (§49) is recorded as the coach. Blocks are
+logged as `capsule_scan_blocked`.
+
+**Known limit.** Codes belong to a plan, so a batch of quantity > 1 for one plan prints the same 56
+codes on every box, and the second box's capsules read as already taken. One order is one box
+today; if that changes, key codes by box.

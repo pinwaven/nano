@@ -106,7 +106,19 @@ user physically has the capsules) · `superseded`.
   any plan with no schedules regardless of status, so a superseded label still renders (with a
   badge); `handleGetFormulationCheckoutSnapshot` stays gated on `active`/`proposed`.
 
-### Packages, orders, redeem codes
+### Capsule codes (per-capsule foil QR, xapp-mini) — lifecycle doc §28h
+
+- `capsule_codes`: `WVC` + 10 Crockford base32, one per `(plan_id, day_index, slot)`. Keyed by
+  plan + day index, **never by date** (codes predate the claim). Minted lazily and idempotently
+  by `ensurePlanCapsuleCodes` on the first `GET /formulation-capsule-codes` — GCN-service only,
+  never in `USER_ROUTES`. The WVB box code is unchanged and still the only thing that claims.
+- The clock lives in one place, `capsuleClock` (`lib/capsuleCodes.js`): Shanghai, AM 04:00–14:59,
+  day rolls at 04:00. `GET /nutrition-plan`'s `capsule_today` uses it; clients never pick the slot.
+- `POST /capsule-scan` blocks are all hard, in `decideCapsuleScan`'s order; missed capsules are
+  never made up. An accepted scan is the **only writer** of `nutrition_schedules.is_taken`, and is
+  guarded on `taken_at IS NULL`.
+
+
 
 - **Nano never prices this product.** GCN sums the dot breakdown and applies the buyer's tier.
   The card carries no price; the model is never given one.
