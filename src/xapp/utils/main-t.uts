@@ -109,6 +109,26 @@ export const T_MAIN_ZH : UTSJSONObject = {
   scanBoxErr_batch_recalled: '该批次已被召回，请勿服用，我们会尽快与您联系。',
   scanBoxErr_formulation_not_approved: '该配方尚未通过专家审核，请稍后再试。',
   gotIt: '知道了',
+  capsuleTitle: '今日胶囊',
+  capsuleScanBtn: '扫码服用',
+  capsuleScanHint: '服用前请扫描胶囊铝膜上的二维码',
+  capsuleTaken: '已服用',
+  capsuleDue: '待服用',
+  capsuleMissed: '已错过',
+  capsuleLater: '15:00 后',
+  capsuleAllDone: '今天的胶囊都已服用',
+  capsuleWorking: '正在核对…',
+  capsuleOkTitle: '可以服用',
+  capsuleOkClose: '好的',
+  capsuleFailTitle: '请勿服用这粒胶囊',
+  capsuleErrGeneric: '暂时无法核对这粒胶囊，请稍后再试。核对前请勿服用。',
+  capsuleErr_invalid_code: '这不是胶囊铝膜上的二维码。',
+  capsuleErr_capsule_not_found: '未找到这粒胶囊，请确认扫描的是胶囊铝膜上的二维码。',
+  capsuleErr_not_your_capsule: '这粒胶囊是为其他人定制的，配方基于对方的检测数据，请勿服用。',
+  capsuleErr_batch_recalled: '该批次已被召回，请勿服用，我们会尽快与您联系。',
+  capsuleErr_plan_not_active: '这盒原粒还未激活。请先扫描盒身二维码激活方案。',
+  capsuleErr_before_cycle: '这个周期还没有开始。',
+  capsuleErr_cycle_ended: '这个 28 天周期已经结束。',
   formulateFirstTitle: '先定制属于你的配方',
   formulateFirstDetail: '根据你的检测与日常数据，生成 28 天专属原粒方案',
   formulateFirstBtn: '开始定制营养素',
@@ -443,6 +463,26 @@ export const T_MAIN_EN : UTSJSONObject = {
   scanBoxErr_batch_recalled: "This batch has been recalled — please don't take it. We'll be in touch shortly.",
   scanBoxErr_formulation_not_approved: "This formulation hasn't cleared expert review yet. Please try again shortly.",
   gotIt: 'Got it',
+  capsuleTitle: "Today's capsules",
+  capsuleScanBtn: 'Scan to take',
+  capsuleScanHint: 'Scan the QR on the capsule foil before taking it',
+  capsuleTaken: 'Taken',
+  capsuleDue: 'Due now',
+  capsuleMissed: 'Missed',
+  capsuleLater: 'After 15:00',
+  capsuleAllDone: "Today's capsules are all taken",
+  capsuleWorking: 'Checking…',
+  capsuleOkTitle: 'OK to take',
+  capsuleOkClose: 'Done',
+  capsuleFailTitle: "Don't take this capsule",
+  capsuleErrGeneric: "Couldn't check this capsule just now. Please try again — don't take it until it checks out.",
+  capsuleErr_invalid_code: "That isn't a code from a capsule foil.",
+  capsuleErr_capsule_not_found: "We couldn't find that capsule — check you scanned the QR on the capsule foil.",
+  capsuleErr_not_your_capsule: "This capsule was formulated for someone else, from their test results. Please don't take it.",
+  capsuleErr_batch_recalled: "This batch has been recalled — please don't take it. We'll be in touch shortly.",
+  capsuleErr_plan_not_active: "This box isn't activated yet. Scan the QR on the box first.",
+  capsuleErr_before_cycle: "This cycle hasn't started yet.",
+  capsuleErr_cycle_ended: 'This 28-day cycle has ended.',
   formulateFirstTitle: 'Build your formula first',
   formulateFirstDetail: 'Generates a 28-day Dots plan from your test results and daily data',
   formulateFirstBtn: 'Formulate My Dots',
@@ -703,6 +743,38 @@ export function tMainTr(t : UTSJSONObject, path : string) : string {
 
 export function programLessonTooShort(lang : string, left : number) : string {
   return lang == 'zh' ? `请完整观看课程（还差约 ${left} 秒）` : `Please watch the whole lesson (about ${left}s left)`
+}
+
+// Per-capsule QR scan. slot is 'AM' | 'PM'.
+function capsuleSlotWord(lang : string, slot : string) : string {
+  if (lang == 'zh') return slot == 'PM' ? '晚上' : '早上'
+  return slot == 'PM' ? 'evening' : 'morning'
+}
+
+export function capsuleLabel(lang : string, day : number, slot : string) : string {
+  return lang == 'zh' ? `第 ${day} 天 · ${capsuleSlotWord(lang, slot)}` : `Day ${day} · ${capsuleSlotWord(lang, slot)}`
+}
+
+export function capsuleTodayTitle(lang : string, day : number) : string {
+  return lang == 'zh' ? `今日胶囊 · 第 ${day} 天` : `Today's capsules · Day ${day}`
+}
+
+export function capsuleWrongDay(lang : string, capDay : number, capSlot : string, today : number, curSlot : string) : string {
+  return lang == 'zh'
+    ? `这是第 ${capDay} 天${capsuleSlotWord(lang, capSlot)}的胶囊。现在应服用第 ${today} 天${capsuleSlotWord(lang, curSlot)}的胶囊。错过的胶囊无需补服。`
+    : `This is the Day ${capDay} ${capsuleSlotWord(lang, capSlot)} capsule. Now is the Day ${today} ${capsuleSlotWord(lang, curSlot)} capsule. Missed capsules don't need to be made up.`
+}
+
+export function capsuleWrongSlot(lang : string, capSlot : string, curSlot : string) : string {
+  return lang == 'zh'
+    ? `这是${capsuleSlotWord(lang, capSlot)}的胶囊，现在应服用${capsuleSlotWord(lang, curSlot)}的胶囊。早上胶囊 4:00–15:00 服用，晚上胶囊 15:00 之后服用。`
+    : `This is the ${capsuleSlotWord(lang, capSlot)} capsule; now is the time for the ${capsuleSlotWord(lang, curSlot)} one. Morning capsules are taken 4:00–15:00, evening capsules after 15:00.`
+}
+
+export function capsuleAlreadyTaken(lang : string, capDay : number, capSlot : string) : string {
+  return lang == 'zh'
+    ? `第 ${capDay} 天${capsuleSlotWord(lang, capSlot)}的胶囊已经服用过了，请勿重复服用。`
+    : `The Day ${capDay} ${capsuleSlotWord(lang, capSlot)} capsule has already been taken. Don't take another.`
 }
 
 export function pkgDay(lang : string, n : number, total : number) : string {

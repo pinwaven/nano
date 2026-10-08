@@ -175,7 +175,18 @@ through `getFileSystemManager` (`utils/file-bytes.uts`). Bluetooth (Halo/V8) run
 `utils/wearable/transport-mp.uts`, installed from `App.uvue` (VERSION 1002-1). Login on mp-weixin is the miniapp's `wx.login` flow, including guest mode for mini-program
 review (VERSION 1002-4); native keeps phone/email OTP and has no guest mode. Details and gaps: [`tools/xapp-mini/README.md`](../../tools/xapp-mini/README.md).
 
-## Android APK packaging
+## xapp-only features (no miniapp counterpart)
+
+Since 2026-10-08 xapp-mini may take features the production miniapp does not have; existing
+features still match the miniapp.
+
+- **Per-capsule QR scan** (VERSION 1008-8/9): the 今日胶囊 card at the top of Plans ▸ Dots reads
+  `capsule_today` from `GET /nutrition-plan` and scans a capsule's foil QR (`handleScanCapsule` →
+  `POST /api/capsule-scan`) before it is taken; refused scans show a red `uni.showModal`, accepted
+  ones a sheet listing the capsule's dots. Not fenced to mp-weixin — the same code runs on Android
+  and web (`scanQr`). Rules: `docs/architecture/dots-formulation-lifecycle.md` §28h.
+
+
 
 `tools/xapp-android/build.sh` packages a signed APK through HBuilderX and copies it to
 `dist/xapp/android/`. The empty manifest app ID must be registered before this can run;

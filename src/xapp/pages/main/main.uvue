@@ -591,6 +591,29 @@
         </view>
 
         <scroll-view v-else-if="plansDotsSubTab == 'dots'" direction="vertical" class="dots-subtab-scroll">
+          <!-- Today's capsules: scan the QR on each capsule's foil before taking it. First on the
+               tab because it is the twice-a-day action. The server blocks someone else's capsule,
+               a wrong day, a wrong slot and a second dose. -->
+          <view v-if="!isGuest && capsuleToday != null && capsuleToday!.getBoolean('scan_enabled') == true" :class="nativeClass('capsule-card', (null))">
+            <text :class="nativeClass('capsule-title', (null))">{{ capsuleTitleText() }}</text>
+            <view class="capsule-slots">
+              <view :class="nativeClass('capsule-slot', ('capsule-slot-' + capsuleSlotState('AM')))">
+                <text :class="nativeClass('capsule-slot-name', (null))">{{ tr('morning') }}</text>
+                <text :class="nativeClass('capsule-slot-state', ('capsule-state-' + capsuleSlotState('AM')))">{{ capsuleSlotStateText('AM') }}</text>
+              </view>
+              <view :class="nativeClass('capsule-slot capsule-slot-last', ('capsule-slot-' + capsuleSlotState('PM')))">
+                <text :class="nativeClass('capsule-slot-name', (null))">{{ tr('evening') }}</text>
+                <text :class="nativeClass('capsule-slot-state', ('capsule-state-' + capsuleSlotState('PM')))">{{ capsuleSlotStateText('PM') }}</text>
+              </view>
+            </view>
+            <view v-if="capsuleSlotState(`${capsuleToday!.getString('slot')}`) == 'due'" :class="nativeClass('capsule-scan-btn', (null))" v-on:click="handleScanCapsule">
+              <image :class="nativeClass('capsule-scan-icon', (null))" :src="iconSrc('scan')" mode="aspectFit" />
+              <text class="capsule-scan-text">{{ tr('capsuleScanBtn') }}</text>
+            </view>
+            <text v-if="capsuleSlotState(`${capsuleToday!.getString('slot')}`) == 'due'" :class="nativeClass('capsule-hint', (null))">{{ tr('capsuleScanHint') }}</text>
+            <text v-else-if="capsuleToday!.getBoolean('pm_taken') == true" :class="nativeClass('capsule-hint', (null))">{{ tr('capsuleAllDone') }}</text>
+          </view>
+
           <!-- Neo dispenser is not shipping yet; bind prompt stays off behind neoAvailable
                (permanently false in data). Kept rather than deleted — one entry point to it. -->
           <view v-if="neoAvailable && !neoBound && !isGuest" :class="nativeClass('guest-lock-card neo-bind-card', (null))" v-on:click="handleBindNeoDevice">
@@ -736,6 +759,27 @@
         </scroll-view>
       </view>
       <!-- end PLANS+DOTS -->
+
+      <!-- Capsule scan accepted: what this capsule is and what's in it. -->
+      <view v-if="capsuleOk != null" class="modal-overlay" v-on:click="closeCapsuleOk">
+        <view :class="nativeClass('modal-sheet capsule-ok-sheet', (null))" v-on:click.stop="noop">
+          <view class="capsule-ok-hdr">
+            <text class="capsule-ok-check">✓</text>
+            <view class="capsule-ok-hdr-text">
+              <text :class="nativeClass('capsule-ok-title', (null))">{{ tr('capsuleOkTitle') }}</text>
+              <text :class="nativeClass('capsule-ok-sub', (null))">{{ capsuleOk!.getString('label') }}</text>
+            </view>
+          </view>
+          <view class="dot-chips capsule-ok-dots">
+            <view v-for="(dot, dj) in arrOf(capsuleOk!, 'dots')" :key="dj" :class="nativeClass('dot-chip', (null))">
+              <view class="dot-swatch" :style="'background:' + (dot.getString('color_hex') ?? '#888')"></view>
+              <text :class="nativeClass('dot-key', (null))">{{ lang == 'zh' ? dot.getString('name_zh') : dot.getString('name') }}</text>
+              <text :class="nativeClass('dot-count', (null))">×{{ dot.getNumber('count') }}</text>
+            </view>
+          </view>
+          <view :class="nativeClass('modal-btn modal-btn-confirm capsule-ok-btn', (null))" v-on:click="closeCapsuleOk"><text class="modal-btn-confirm-label">{{ tr('capsuleOkClose') }}</text></view>
+        </view>
+      </view>
 
       <!-- Weight entry modal -->
       <view v-if="planWeightOpen" class="modal-overlay">
@@ -1337,7 +1381,8 @@ import { RespEnvelope, ToolCtx, ToolOpts, getToolList, runTestChip, runFormulaDs
 import {
   T_MAIN_ZH, T_MAIN_EN, tMainTr, textSizeLevels,
   programLessonTooShort, pkgDay, pkgOrderedOn, pkgTierUpTo, codeSoldOn, codeOverTier, codeTierMatch,
-  formulaOwnedPkg, formulaOrderedPkg, formulaBuyPkgCta, CART_SETS
+  formulaOwnedPkg, formulaOrderedPkg, formulaBuyPkgCta, CART_SETS,
+  capsuleLabel, capsuleTodayTitle, capsuleWrongDay, capsuleWrongSlot, capsuleAlreadyTaken
 } from '../../utils/main-t.uts'
 import UserHealth, { UserHealthComponentPublicInstance } from '../../components/user-health/user-health.uvue'
 import LearnPanel from '../../packages/learn/components/learn-panel/learn-panel.uvue'
@@ -2039,6 +2084,10 @@ export default {
       dispenseDate: '',
       dispenseHasToday: false,
       dispenseStatus: '',
+      // Per-capsule QR scan: GET /nutrition-plan's capsule_today (server clock decides the slot)
+      // and the confirmation sheet after an accepted scan.
+      capsuleToday: null as UTSJSONObject | null,
+      capsuleOk: null as UTSJSONObject | null,
       cartridges: [] as UTSJSONObject[],
       cartridgesLoading: true,
       packages: [] as UTSJSONObject[],
@@ -2663,6 +2712,88 @@ export default {
         // Silent on cancel — backing out of the camera is not a failure.
         fail: (_) => {}
       })
+    },
+
+    // ── Per-capsule QR scan ──
+    // 'taken' | 'due' | 'missed' | 'later' for today's AM/PM capsule, from the server's clock.
+    capsuleSlotState(slot : string) : string {
+      const c = this.capsuleToday
+      if (c == null) return 'later'
+      if (c!.getBoolean(slot == 'PM' ? 'pm_taken' : 'am_taken') == true) return 'taken'
+      const cur = c!.getString('slot') ?? 'AM'
+      if (cur == slot) return 'due'
+      return slot == 'AM' ? 'missed' : 'later'
+    },
+
+    capsuleSlotStateText(slot : string) : string {
+      const st = this.capsuleSlotState(slot)
+      if (st == 'taken') return '✓ ' + this.tr('capsuleTaken')
+      if (st == 'due') return this.tr('capsuleDue')
+      if (st == 'missed') return this.tr('capsuleMissed')
+      return this.tr('capsuleLater')
+    },
+
+    capsuleTitleText() : string {
+      const c = this.capsuleToday
+      return c == null ? this.tr('capsuleTitle') : capsuleTodayTitle(this.lang, c!.getNumber('day_index') ?? 1)
+    },
+
+    // The block message for a refused scan. Reasons carrying days/slots get a sentence built from
+    // them; the rest are static strings keyed capsuleErr_<reason>.
+    _capsuleBlockText(d : UTSJSONObject | null) : string {
+      if (d == null) return this.tr('capsuleErrGeneric')
+      const reason = d!.getString('reason') ?? ''
+      const capDay = d!.getNumber('capsule_day') ?? 0
+      const capSlot = d!.getString('capsule_slot') ?? 'AM'
+      if (reason == 'wrong_day') return capsuleWrongDay(this.lang, capDay, capSlot, d!.getNumber('today_day') ?? 0, d!.getString('current_slot') ?? 'AM')
+      if (reason == 'wrong_slot') return capsuleWrongSlot(this.lang, capSlot, d!.getString('current_slot') ?? 'AM')
+      if (reason == 'already_taken') return capsuleAlreadyTaken(this.lang, capDay, capSlot)
+      return this._dynT('capsuleErr_' + reason, this.tr('capsuleErrGeneric'))
+    },
+
+    // Scan the QR on a capsule's foil before taking it. Online only: no answer means "don't take
+    // it yet", never a silent pass.
+    handleScanCapsule() {
+      const user = this.user
+      if (user == null) return
+      const uid = user!.getString('user_id') ?? ''
+      if (uid.length == 0) return
+      setScanTitle(this.tr('capsuleScanBtn'))
+      scanQr({
+        onlyFromCamera: false,
+        success: (res) => { (async () : Promise<void> => {
+          uni.showLoading({ title: this.tr('capsuleWorking'), mask: true })
+          try {
+            const r = await this._req(`${BASE}/api/capsule-scan`, 'POST', { openid: uid, code: res.result } as UTSJSONObject, 0)
+            uni.hideLoading()
+            const d = r.data
+            if (d != null && d!.getBoolean('success') == true) {
+              const ok = new UTSJSONObject()
+              ok['label'] = capsuleLabel(this.lang, d!.getNumber('capsule_day') ?? 0, d!.getString('capsule_slot') ?? 'AM')
+              ok['dots'] = d!.getArray<UTSJSONObject>('dots') ?? ([] as UTSJSONObject[])
+              this.capsuleOk = ok
+              this._loadDots(user!, this.lang)
+            } else {
+              uni.showModal({
+                title: this.tr('capsuleFailTitle'),
+                content: this._capsuleBlockText(d),
+                showCancel: false,
+                confirmText: this.tr('gotIt'),
+                confirmColor: '#E5484D',
+              })
+            }
+          } catch (e : any) {
+            uni.hideLoading()
+            uni.showModal({ title: this.tr('capsuleFailTitle'), content: this.tr('capsuleErrGeneric'), showCancel: false, confirmText: this.tr('gotIt') })
+          }
+        })() },
+        // Silent on cancel — backing out of the camera is not a failure.
+        fail: (_) => {}
+      })
+    },
+
+    closeCapsuleOk() {
+      this.capsuleOk = null
     },
 
     // dynamic-key lookup with an explicit fallback ('' means the key is missing → use fb).
@@ -5133,7 +5264,12 @@ export default {
 
         let todayDay : UTSJSONObject | null = null
         for (const day of allDays) { if (day.getBoolean('isToday') == true) { todayDay = day; break } }
-        const dispenseSlot = new Date().getHours() < 12 ? 'morning_cup' : 'evening_cup'
+        // The server's capsule clock (AM 04:00–14:59, PM after, Shanghai) when there is an active
+        // plan; the old local-noon guess only when there is not.
+        const capToday = d != null ? d!.getJSON('capsule_today') : null
+        const dispenseSlot = capToday != null
+          ? (capToday!.getString('slot') == 'PM' ? 'evening_cup' : 'morning_cup')
+          : (new Date().getHours() < 12 ? 'morning_cup' : 'evening_cup')
         let dispenseSlotDots : UTSJSONObject[] = []
         if (todayDay != null) {
           dispenseSlotDots = todayDay!.getArray<UTSJSONObject>(dispenseSlot == 'morning_cup' ? 'morning' : 'evening') ?? ([] as UTSJSONObject[])
@@ -5165,6 +5301,7 @@ export default {
         this.proposedDistinctDots = proposed != null ? proposed!.getNumber('distinct_dots') : null
         const tw = proposed != null ? proposed!.getArray<number>('tier_widths') : null
         this.proposedTierWidths = tw != null ? tw : null
+        this.capsuleToday = capToday
         this.dispenseSlot = dispenseSlot
         this.dispenseSlotDots = dispenseSlotDots
         this.dispenseDate = localISODate(new Date())
@@ -5177,6 +5314,7 @@ export default {
       } catch (e : any) {
         this.dotsLoading = false
         this.hasPlan = false
+        this.capsuleToday = null
         this.packages = [] as UTSJSONObject[]
         this.hasPackageInFlight = false
         this.hasProposedFormula = false
@@ -6750,6 +6888,29 @@ export default {
 .scan-box-title { color: #EEF2FF; font-size: 13px; font-weight: bold; }
 .scan-box-detail { color: rgba(166, 196, 229, 0.4); font-size: 11px; margin-top: 3px; }
 .scan-box-icon { width: 22px; height: 22px; margin-left: 12px; opacity: 0.9; }
+/* Per-capsule QR scan card + accepted-scan sheet */
+.capsule-card { background-color: rgba(99, 117, 236, 0.10); border: 1px solid rgba(139, 159, 255, 0.35); border-radius: 12px; padding: 14px 16px; margin: 12px 18px 12px 18px; }
+.capsule-title { color: #EEF2FF; font-size: 14px; font-weight: bold; line-height: 20px; }
+.capsule-slots { flex-direction: row; margin-top: 10px; }
+.capsule-slot { flex: 1; flex-direction: row; justify-content: space-between; align-items: center; border-radius: 8px; padding: 8px 10px; margin-right: 8px; background-color: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.07); }
+.capsule-slot-last { margin-right: 0px; }
+.capsule-slot-due { border-color: rgba(139, 159, 255, 0.8); background-color: rgba(99, 117, 236, 0.16); }
+.capsule-slot-name { color: rgba(238, 242, 255, 0.85); font-size: 12px; }
+.capsule-slot-state { font-size: 12px; font-weight: 600; color: rgba(166, 196, 229, 0.5); }
+.capsule-state-taken { color: #4CC38A; }
+.capsule-state-due { color: #8B9FFF; }
+.capsule-state-missed { color: rgba(229, 72, 77, 0.8); }
+.capsule-scan-btn { flex-direction: row; justify-content: center; align-items: center; height: 40px; border-radius: 52px; margin-top: 12px; background-image: linear-gradient(90deg, rgb(99, 117, 236), rgb(139, 159, 255)); }
+.capsule-scan-icon { width: 18px; height: 18px; margin-right: 8px; }
+.capsule-scan-text { color: #FFFFFF; font-size: 14px; font-weight: bold; letter-spacing: 1px; }
+.capsule-hint { color: rgba(166, 196, 229, 0.55); font-size: 11px; margin-top: 8px; text-align: center; }
+.capsule-ok-hdr { flex-direction: row; align-items: center; margin-bottom: 14px; }
+.capsule-ok-check { width: 40px; height: 40px; line-height: 40px; border-radius: 20px; text-align: center; color: #FFFFFF; font-size: 22px; font-weight: bold; background-color: #30A46C; margin-right: 12px; }
+.capsule-ok-hdr-text { flex: 1; }
+.capsule-ok-title { color: #4CC38A; font-size: 18px; font-weight: bold; }
+.capsule-ok-sub { color: rgba(238, 242, 255, 0.75); font-size: 13px; margin-top: 2px; }
+.capsule-ok-dots { margin-bottom: 18px; }
+.capsule-ok-btn { flex: none; margin-left: 0px; margin-right: 0px; }
 .dots-header { flex-direction: row; align-items: flex-end; justify-content: space-between; margin-top: 14px; padding: 14px 18px 10px 18px; }
 .dots-title { color: rgba(166, 196, 229, 0.4); font-size: 13px; font-weight: bold; letter-spacing: 1px; }
 /* #ifdef MP-WEIXIN */
@@ -7276,6 +7437,18 @@ export default {
 .theme-light .scan-box-card { background: rgba(var(--wave-rgb), 0.08); border: 2rpx solid rgba(var(--wave-rgb), 0.28); }
 .theme-light .scan-box-title { color: var(--text); }
 .theme-light .scan-box-detail { color: var(--text-muted); }
+.theme-light .capsule-card { background: rgba(var(--wave-rgb), 0.07); border-color: rgba(var(--wave-rgb), 0.3); }
+.theme-light .capsule-title { color: var(--text); }
+.theme-light .capsule-slot { background: rgba(0, 0, 0, 0.03); border-color: rgba(0, 0, 0, 0.06); }
+.theme-light .capsule-slot-due { background: rgba(var(--wave-rgb), 0.10); border-color: rgba(var(--wave-rgb), 0.55); }
+.theme-light .capsule-slot-name { color: var(--text); }
+.theme-light .capsule-slot-state { color: var(--text-muted); }
+.theme-light .capsule-state-taken { color: #218358; }
+.theme-light .capsule-state-due { color: rgb(var(--wave-rgb)); }
+.theme-light .capsule-state-missed { color: #CE2C31; }
+.theme-light .capsule-hint { color: var(--text-muted); }
+.theme-light .capsule-ok-title { color: #218358; }
+.theme-light .capsule-ok-sub { color: var(--text-muted); }
 .theme-light .pcard { background: rgba(var(--blue-rgb), 0.10); border: 1rpx solid rgba(var(--blue-rgb), 0.26); }
 .theme-light .pcard-title { color: var(--chat-accent); }
 .theme-light .pcard-row { border-top: 1rpx solid rgba(var(--blue-rgb), 0.18); }
