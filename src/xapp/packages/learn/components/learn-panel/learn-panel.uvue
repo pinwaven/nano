@@ -1,8 +1,8 @@
 <template>
-  <view class="learn-panel" :class="theme == 'light' ? 'theme-light' : ''">
-        <view class="inner-tab-bar">
-          <view class="inner-tab" :class="learnSubTab == 'academy' ? 'inner-tab-active' : ''" v-on:click="switchLearnSubTab('academy')"><text class="inner-tab-text" :class="learnSubTab == 'academy' ? 'inner-tab-text-on' : ''">{{ tr('learnAcademyTab') }}</text></view>
-          <view class="inner-tab" :class="learnSubTab == 'wellness' ? 'inner-tab-active' : ''" v-on:click="switchLearnSubTab('wellness')"><text class="inner-tab-text" :class="learnSubTab == 'wellness' ? 'inner-tab-text-on' : ''">{{ tr('learnBoxTab') }}</text></view>
+  <view :class="nativeClass('learn-panel', ([theme == 'light' ? 'theme-light' : '', 'fs-' + textScale]))">
+        <view :class="nativeClass('inner-tab-bar', (null))">
+          <view :class="nativeClass('inner-tab', (learnSubTab == 'academy' ? 'inner-tab-active' : ''))" v-on:click="switchLearnSubTab('academy')"><text :class="nativeClass('inner-tab-text', (learnSubTab == 'academy' ? 'inner-tab-text-on' : ''))">{{ tr('learnAcademyTab') }}</text></view>
+          <view :class="nativeClass('inner-tab', (learnSubTab == 'wellness' ? 'inner-tab-active' : ''))" v-on:click="switchLearnSubTab('wellness')"><text :class="nativeClass('inner-tab-text', (learnSubTab == 'wellness' ? 'inner-tab-text-on' : ''))">{{ tr('learnBoxTab') }}</text></view>
         </view>
 
         <scroll-view v-if="learnSubTab == 'academy'" direction="vertical" class="academy-subtab-scroll">
@@ -10,63 +10,63 @@
             <view v-if="trainingLoading" class="loading-row"><text class="loading-text">{{ tr('loading') }}</text></view>
 
             <view v-else-if="trainingView == 'list'">
-              <view v-if="trainingDashboard != null" class="academy-status-card">
+              <view v-if="trainingDashboard != null" :class="nativeClass('academy-status-card', (null))">
                 <view class="academy-card-glow-tl"></view>
                 <view class="academy-card-glow-br"></view>
-                <view class="academy-card-header">
-                  <text class="academy-card-header-label">{{ lang == 'zh' ? '学院状态' : 'ACADEMY STATUS' }}</text>
-                  <view class="academy-card-tier-badge"><text class="academy-card-tier-text">{{ trainingDashboard != null ? trainingDashboard!.getString('_tierLabel') : '' }}</text></view>
+                <view :class="nativeClass('academy-card-header', (null))">
+                  <text :class="nativeClass('academy-card-header-label', (null))">{{ lang == 'zh' ? '学院状态' : 'ACADEMY STATUS' }}</text>
+                  <view :class="nativeClass('academy-card-tier-badge', (null))"><text :class="nativeClass('academy-card-tier-text', (null))">{{ trainingDashboard != null ? trainingDashboard!.getString('_tierLabel') : '' }}</text></view>
                 </view>
                 <view class="academy-card-hero">
-                  <text class="academy-card-credits-num">{{ trainingDashboard != null ? trainingDashboard!.getNumber('total_credits') : 0 }}</text>
-                  <text class="academy-card-credits-label">{{ lang == 'zh' ? '学分' : 'CREDITS' }}</text>
+                  <text :class="nativeClass('academy-card-credits-num', (null))">{{ trainingDashboard != null ? trainingDashboard!.getNumber('total_credits') : 0 }}</text>
+                  <text :class="nativeClass('academy-card-credits-label', (null))">{{ lang == 'zh' ? '学分' : 'CREDITS' }}</text>
                 </view>
-                <view class="academy-card-divider"></view>
+                <view :class="nativeClass('academy-card-divider', (null))"></view>
                 <view class="academy-card-stats">
-                  <view class="academy-card-stat">
-                    <text class="academy-card-stat-num">{{ trainingDashboard != null ? trainingDashboard!.getNumber('completed_lessons') : 0 }}</text>
-                    <text class="academy-card-stat-label">{{ lang == 'zh' ? '完成课程' : 'LESSONS' }}</text>
+                  <view :class="nativeClass('academy-card-stat', (null))">
+                    <text :class="nativeClass('academy-card-stat-num', (null))">{{ trainingDashboard != null ? trainingDashboard!.getNumber('completed_lessons') : 0 }}</text>
+                    <text :class="nativeClass('academy-card-stat-label', (null))">{{ lang == 'zh' ? '完成课程' : 'LESSONS' }}</text>
                   </view>
-                  <view class="academy-card-stat-sep"></view>
-                  <view class="academy-card-stat">
-                    <text class="academy-card-stat-num">{{ trainingDashboard != null ? trainingDashboard!.getNumber('certifications_count') : 0 }}</text>
-                    <text class="academy-card-stat-label">{{ lang == 'zh' ? '证书' : 'CERTS' }}</text>
+                  <view :class="nativeClass('academy-card-stat-sep', (null))"></view>
+                  <view :class="nativeClass('academy-card-stat', (null))">
+                    <text :class="nativeClass('academy-card-stat-num', (null))">{{ trainingDashboard != null ? trainingDashboard!.getNumber('certifications_count') : 0 }}</text>
+                    <text :class="nativeClass('academy-card-stat-label', (null))">{{ lang == 'zh' ? '证书' : 'CERTS' }}</text>
                   </view>
                 </view>
               </view>
 
               <view v-if="trainingPaths.length > 0" class="training-section-header">
-                <text class="training-section-title">{{ lang == 'zh' ? '学习路径' : 'Learning Paths' }}</text>
+                <text :class="nativeClass('training-section-title', (null))">{{ lang == 'zh' ? '学习路径' : 'Learning Paths' }}</text>
               </view>
-              <view v-for="(tp, tpi) in trainingPaths" :key="tpi" class="training-path-card" v-on:click="trainingOpenCourse(tpi, true)">
+              <view v-for="(tp, tpi) in trainingPaths" :key="tpi" :class="nativeClass('training-path-card', (null))" v-on:click="trainingOpenCourse(tpi, true)">
                 <view class="training-path-header">
-                  <text class="training-path-title">{{ tp.getString('title') }}</text>
-                  <text class="training-path-tier">{{ tp.getString('_tierLabel') }}</text>
+                  <text :class="nativeClass('training-path-title', (null))">{{ tp.getString('title') }}</text>
+                  <text :class="nativeClass('training-path-tier', (null))">{{ tp.getString('_tierLabel') }}</text>
                 </view>
-                <view v-if="tp.getString('description') != null" class="training-path-desc"><text>{{ tp.getString('description') }}</text></view>
-                <view class="training-path-progress-bar">
+                <view v-if="tp.getString('description') != null" :class="nativeClass('training-path-desc', (null))"><text>{{ tp.getString('description') }}</text></view>
+                <view :class="nativeClass('training-path-progress-bar', (null))">
                   <view class="training-path-progress-fill" :style="'width:' + pathPct(tp) + '%'"></view>
                 </view>
-                <text class="training-path-progress-label">{{ tp.getNumber('_done') }}/{{ tp.getNumber('_total') }} {{ lang == 'zh' ? '课程' : 'courses' }}</text>
+                <text :class="nativeClass('training-path-progress-label', (null))">{{ tp.getNumber('_done') }}/{{ tp.getNumber('_total') }} {{ lang == 'zh' ? '课程' : 'courses' }}</text>
               </view>
 
-              <view class="training-section-header"><text class="training-section-title">{{ tr('training.courses') }}</text></view>
-              <view v-if="trainingCourses.length == 0" class="empty-state"><text class="empty-text">{{ tr('training.noTraining') }}</text></view>
-              <view v-for="(c, ci) in trainingCourses" :key="ci" class="training-course-card" :class="c.getBoolean('_locked') == true ? ' training-course-card-locked' : ''" v-on:click="trainingOpenCourse(ci, false)">
-                <view class="training-course-cover">
-                  <text class="training-course-cover-text">{{ c.getString('title') }}</text>
-                  <view class="training-lesson-badge"><text class="training-lesson-badge-text">{{ c.getString('_lessonCountLabel') }}</text></view>
-                  <view v-if="c.getBoolean('_locked') == true" class="training-course-lock-badge"><text class="training-course-lock-icon">🔒</text></view>
+              <view class="training-section-header"><text :class="nativeClass('training-section-title', (null))">{{ tr('training.courses') }}</text></view>
+              <view v-if="trainingCourses.length == 0" class="empty-state"><text :class="nativeClass('empty-text', (null))">{{ tr('training.noTraining') }}</text></view>
+              <view v-for="(c, ci) in trainingCourses" :key="ci" :class="nativeClass('training-course-card', (c.getBoolean('_locked') == true ? ' training-course-card-locked' : ''))" v-on:click="trainingOpenCourse(ci, false)">
+                <view :class="nativeClass('training-course-cover', (null))">
+                  <text :class="nativeClass('training-course-cover-text', (null))">{{ c.getString('title') }}</text>
+                  <view :class="nativeClass('training-lesson-badge', (null))"><text :class="nativeClass('training-lesson-badge-text', (null))">{{ c.getString('_lessonCountLabel') }}</text></view>
+                  <view v-if="c.getBoolean('_locked') == true" class="training-course-lock-badge"><text :class="nativeClass('training-course-lock-icon', (null))">🔒</text></view>
                 </view>
                 <view class="training-course-body">
                   <view class="training-course-meta">
-                    <text class="training-course-title">{{ c.getString('title') }}</text>
-                    <text v-if="c.getString('description') != null" class="training-course-desc">{{ c.getString('description') }}</text>
+                    <text :class="nativeClass('training-course-title', (null))">{{ c.getString('title') }}</text>
+                    <text v-if="c.getString('description') != null" :class="nativeClass('training-course-desc', (null))">{{ c.getString('description') }}</text>
                     <view class="training-course-meta-row">
-                      <text class="training-course-level">{{ c.getString('_levelLabel') }}</text>
-                      <text class="training-course-credits">+{{ c.getNumber('credit_value') }} {{ lang == 'zh' ? '学分' : 'cr' }}</text>
+                      <text :class="nativeClass('training-course-level', (null))">{{ c.getString('_levelLabel') }}</text>
+                      <text :class="nativeClass('training-course-credits', (null))">+{{ c.getNumber('credit_value') }} {{ lang == 'zh' ? '学分' : 'cr' }}</text>
                     </view>
-                    <text v-if="c.getBoolean('_locked') == true && c.getString('prerequisite_title') != null" class="training-course-prereq-hint">
+                    <text v-if="c.getBoolean('_locked') == true && c.getString('prerequisite_title') != null" :class="nativeClass('training-course-prereq-hint', (null))">
                       {{ lang == 'zh' ? '前置：' : 'Requires: ' }}{{ c.getString('prerequisite_title') }}
                     </text>
                   </view>
@@ -74,43 +74,43 @@
               </view>
 
               <view v-if="trainingCertifications.length > 0" class="training-section-header">
-                <text class="training-section-title">{{ lang == 'zh' ? '我的证书' : 'My Certifications' }}</text>
+                <text :class="nativeClass('training-section-title', (null))">{{ lang == 'zh' ? '我的证书' : 'My Certifications' }}</text>
               </view>
-              <view v-for="(cert, cti) in trainingCertifications" :key="cti" class="training-cert-card" v-on:click="showCertDetail(cti)">
-                <text class="training-cert-icon">🏅</text>
+              <view v-for="(cert, cti) in trainingCertifications" :key="cti" :class="nativeClass('training-cert-card', (null))" v-on:click="showCertDetail(cti)">
+                <text :class="nativeClass('training-cert-icon', (null))">🏅</text>
                 <view class="training-cert-info">
-                  <text class="training-cert-title">{{ cert.getString('title') }}</text>
-                  <text v-if="cert.getString('tier') != null" class="training-cert-tier">{{ cert.getString('_tierLabel') }}</text>
+                  <text :class="nativeClass('training-cert-title', (null))">{{ cert.getString('title') }}</text>
+                  <text v-if="cert.getString('tier') != null" :class="nativeClass('training-cert-tier', (null))">{{ cert.getString('_tierLabel') }}</text>
                 </view>
-                <text class="training-cert-chevron">›</text>
+                <text :class="nativeClass('training-cert-chevron', (null))">›</text>
               </view>
 
               <!-- Certificate detail overlay -->
               <view v-if="certDetailOpen" class="cert-overlay" v-on:click="hideCertDetail">
-                <view class="cert-detail-card" v-on:click.stop="noop">
+                <view :class="nativeClass('cert-detail-card', (null))" v-on:click.stop="noop">
                   <view class="cert-detail-header">
                     <view class="cert-status-badge">
-                      <text class="cert-status-check">✓</text>
-                      <text class="cert-status-text">{{ lang == 'zh' ? '证书有效' : 'Certificate Valid' }}</text>
+                      <text :class="nativeClass('cert-status-check', (null))">✓</text>
+                      <text :class="nativeClass('cert-status-text', (null))">{{ lang == 'zh' ? '证书有效' : 'Certificate Valid' }}</text>
                     </view>
-                    <view class="cert-close-btn" v-on:click="hideCertDetail"><text>✕</text></view>
+                    <view :class="nativeClass('cert-close-btn', (null))" v-on:click="hideCertDetail"><text>✕</text></view>
                   </view>
                   <view v-if="certDetailItem != null && (`${certDetailItem!.getString('templateImageUrl')}`.length) > 0" class="cert-bg-wrap">
                     <image :src="`${certDetailItem!.getString('templateImageUrl')}`" class="cert-bg-preview" mode="widthFix" />
                   </view>
                   <view class="cert-field-list">
-                    <view class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '姓名' : 'Name' }}</text><text class="cert-value">{{ certName }}</text></view>
-                    <view class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '学员编号' : 'Student ID' }}</text><text class="cert-value cert-mono">{{ certDetailItem != null ? certDetailItem!.getString('user_id') : '—' }}</text></view>
-                    <view v-if="certDetailItem != null && certDetailItem!.getString('course_display_name') != null" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '课程名称' : 'Course' }}</text><text class="cert-value">{{ certDetailItem!.getString('course_display_name') }}</text></view>
-                    <view class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '证书名称' : 'Certificate' }}</text><text class="cert-value">{{ certDetailItem != null ? certDetailItem!.getString('title') : '' }}</text></view>
-                    <view v-if="certDetailItem != null && certDetailItem!.getString('certificate_number') != null" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '证书编号' : 'Cert No.' }}</text><text class="cert-value cert-mono cert-number">{{ certDetailItem!.getString('certificate_number') }}</text></view>
-                    <view v-if="certDetailItem != null && certDetailItem!.getString('assessment_period') != null" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '考核时间' : 'Assessment' }}</text><text class="cert-value">{{ certDetailItem!.getString('assessment_period') }}</text></view>
-                    <view v-if="certDetailItem != null && certDetailItem!.getNumber('score') != null" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '考试分数' : 'Score' }}</text><text class="cert-value">{{ certDetailItem!.getNumber('score') }}</text></view>
-                    <view class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '证书状态' : 'Status' }}</text><text class="cert-value cert-valid">{{ lang == 'zh' ? '有效' : 'Valid' }}</text></view>
-                    <view v-if="certDetailItem != null && certDetailItem!.getString('issuing_org') != null" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '颁发机构' : 'Issuing Org' }}</text><text class="cert-value">{{ certDetailItem!.getString('issuing_org') }}</text></view>
-                    <view v-if="certDetailItem != null && certDetailItem!.getString('school_org') != null" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '办学机构' : 'Institute' }}</text><text class="cert-value">{{ certDetailItem!.getString('school_org') }}</text></view>
-                    <view v-if="certDetailItem != null && (`${certDetailItem!.getString('issueDateDisplay')}`.length) > 0" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '颁发时间' : 'Issue Date' }}</text><text class="cert-value">{{ certDetailItem!.getString('issueDateDisplay') }}</text></view>
-                    <view v-if="certDetailItem != null && (`${certDetailItem!.getString('expiryDateDisplay')}`.length) > 0" class="cert-field"><text class="cert-label">{{ lang == 'zh' ? '有效期至' : 'Expires' }}</text><text class="cert-value">{{ certDetailItem!.getString('expiryDateDisplay') }}</text></view>
+                    <view :class="nativeClass('cert-field', (null))"><text :class="nativeClass('cert-label', (null))">{{ lang == 'zh' ? '姓名' : 'Name' }}</text><text :class="nativeClass('cert-value', (null))">{{ certName }}</text></view>
+                    <view :class="nativeClass('cert-field', (null))"><text :class="nativeClass('cert-label', (null))">{{ lang == 'zh' ? '学员编号' : 'Student ID' }}</text><text :class="nativeClass('cert-value cert-mono', (null))">{{ certDetailItem != null ? certDetailItem!.getString('user_id') : '—' }}</text></view>
+                    <view v-if="certDetailItem != null && certDetailItem!.getString('course_display_name') != null" :class="nativeClass('cert-field', (null))"><text :class="nativeClass('cert-label', (null))">{{ lang == 'zh' ? '课程名称' : 'Course' }}</text><text :class="nativeClass('cert-value', (null))">{{ certDetailItem!.getString('course_display_name') }}</text></view>
+                    <view :class="nativeClass('cert-field', (null))"><text :class="nativeClass('cert-label', (null))">{{ lang == 'zh' ? '证书名称' : 'Certificate' }}</text><text :class="nativeClass('cert-value', (null))">{{ certDetailItem != null ? certDetailItem!.getString('title') : '' }}</text></view>
+                    <view v-if="certDetailItem != null && certDetailItem!.getString('certificate_number') != null" :class="nativeClass('cert-field', (null))"><text :class="nativeClass('cert-label', (null))">{{ lang == 'zh' ? '证书编号' : 'Cert No.' }}</text><text :class="nativeClass('cert-value cert-mono cert-number', (null))">{{ certDetailItem!.getString('certificate_number') }}</text></view>
+                    <view v-if="certDetailItem != null && certDetailItem!.getString('assessment_period') != null" :class="nativeClass('cert-field', (null))"><text :class="nativeClass('cert-label', (null))">{{ lang == 'zh' ? '考核时间' : 'Assessment' }}</text><text :class="nativeClass('cert-value', (null))">{{ certDetailItem!.getString('assessment_period') }}</text></view>
+                    <view v-if="certDetailItem != null && certDetailItem!.getNumber('score') != null" :class="nativeClass('cert-field', (null))"><text :class="nativeClass('cert-label', (null))">{{ lang == 'zh' ? '考试分数' : 'Score' }}</text><text :class="nativeClass('cert-value', (null))">{{ certDetailItem!.getNumber('score') }}</text></view>
+                    <view :class="nativeClass('cert-field', (null))"><text :class="nativeClass('cert-label', (null))">{{ lang == 'zh' ? '证书状态' : 'Status' }}</text><text :class="nativeClass('cert-value cert-valid', (null))">{{ lang == 'zh' ? '有效' : 'Valid' }}</text></view>
+                    <view v-if="certDetailItem != null && certDetailItem!.getString('issuing_org') != null" :class="nativeClass('cert-field', (null))"><text :class="nativeClass('cert-label', (null))">{{ lang == 'zh' ? '颁发机构' : 'Issuing Org' }}</text><text :class="nativeClass('cert-value', (null))">{{ certDetailItem!.getString('issuing_org') }}</text></view>
+                    <view v-if="certDetailItem != null && certDetailItem!.getString('school_org') != null" :class="nativeClass('cert-field', (null))"><text :class="nativeClass('cert-label', (null))">{{ lang == 'zh' ? '办学机构' : 'Institute' }}</text><text :class="nativeClass('cert-value', (null))">{{ certDetailItem!.getString('school_org') }}</text></view>
+                    <view v-if="certDetailItem != null && (`${certDetailItem!.getString('issueDateDisplay')}`.length) > 0" :class="nativeClass('cert-field', (null))"><text :class="nativeClass('cert-label', (null))">{{ lang == 'zh' ? '颁发时间' : 'Issue Date' }}</text><text :class="nativeClass('cert-value', (null))">{{ certDetailItem!.getString('issueDateDisplay') }}</text></view>
+                    <view v-if="certDetailItem != null && (`${certDetailItem!.getString('expiryDateDisplay')}`.length) > 0" :class="nativeClass('cert-field', (null))"><text :class="nativeClass('cert-label', (null))">{{ lang == 'zh' ? '有效期至' : 'Expires' }}</text><text :class="nativeClass('cert-value', (null))">{{ certDetailItem!.getString('expiryDateDisplay') }}</text></view>
                   </view>
                   <view v-if="certDetailItem != null && certDetailItem!.getString('cert_oss_key') != null" class="cert-download-btn" v-on:click="downloadCert(`${certDetailItem!.getString('cert_oss_key')}`)">
                     <text class="cert-download-label">↓ {{ lang == 'zh' ? '下载电子证书' : 'Download Certificate' }}</text>
@@ -118,112 +118,112 @@
                 </view>
               </view>
 
-              <view class="training-section-header"><text class="training-section-title">{{ tr('training.library') }}</text></view>
-              <view v-if="trainingLibrary.length == 0" class="empty-state"><text class="empty-text">{{ tr('training.noLibrary') }}</text></view>
-              <view v-for="(lib, li) in trainingLibrary" :key="li" class="training-library-row" v-on:click="trainingOpenLibraryItem(li)">
-                <text class="training-library-icon">📄</text>
-                <text class="training-library-title">{{ lib.getString('title') }}</text>
-                <text class="training-library-chevron">›</text>
+              <view class="training-section-header"><text :class="nativeClass('training-section-title', (null))">{{ tr('training.library') }}</text></view>
+              <view v-if="trainingLibrary.length == 0" class="empty-state"><text :class="nativeClass('empty-text', (null))">{{ tr('training.noLibrary') }}</text></view>
+              <view v-for="(lib, li) in trainingLibrary" :key="li" :class="nativeClass('training-library-row', (null))" v-on:click="trainingOpenLibraryItem(li)">
+                <text :class="nativeClass('training-library-icon', (null))">📄</text>
+                <text :class="nativeClass('training-library-title', (null))">{{ lib.getString('title') }}</text>
+                <text :class="nativeClass('training-library-chevron', (null))">›</text>
               </view>
             </view>
 
             <view v-else-if="trainingView == 'lessons'">
-              <view class="training-back-row" v-on:click="trainingBackToList"><text class="training-back-text">{{ tr('training.backToCourses') }}</text></view>
-              <view class="training-course-header">
-                <text class="training-course-header-title">{{ trainingCurrentCourse != null ? trainingCurrentCourse!.getString('title') : '' }}</text>
-                <text v-if="trainingCurrentCourse != null && trainingCurrentCourse!.getString('description') != null" class="training-course-header-desc">{{ trainingCurrentCourse!.getString('description') }}</text>
+              <view class="training-back-row" v-on:click="trainingBackToList"><text :class="nativeClass('training-back-text', (null))">{{ tr('training.backToCourses') }}</text></view>
+              <view :class="nativeClass('training-course-header', (null))">
+                <text :class="nativeClass('training-course-header-title', (null))">{{ trainingCurrentCourse != null ? trainingCurrentCourse!.getString('title') : '' }}</text>
+                <text v-if="trainingCurrentCourse != null && trainingCurrentCourse!.getString('description') != null" :class="nativeClass('training-course-header-desc', (null))">{{ trainingCurrentCourse!.getString('description') }}</text>
                 <view class="training-course-meta-row">
-                  <text class="training-course-level">{{ trainingCurrentCourse != null ? trainingCurrentCourse!.getString('_levelLabel') : '' }}</text>
-                  <text class="training-course-credits">+{{ trainingCurrentCourse != null ? trainingCurrentCourse!.getNumber('credit_value') : 0 }} {{ lang == 'zh' ? '学分' : 'cr' }}</text>
+                  <text :class="nativeClass('training-course-level', (null))">{{ trainingCurrentCourse != null ? trainingCurrentCourse!.getString('_levelLabel') : '' }}</text>
+                  <text :class="nativeClass('training-course-credits', (null))">+{{ trainingCurrentCourse != null ? trainingCurrentCourse!.getNumber('credit_value') : 0 }} {{ lang == 'zh' ? '学分' : 'cr' }}</text>
                 </view>
               </view>
-              <view v-if="trainingLessons.length == 0" class="empty-state"><text class="empty-text">{{ tr('training.noLessons') }}</text></view>
-              <view v-for="(lsn, lni) in trainingLessons" :key="lni" class="training-lesson-row" v-on:click="trainingOpenLesson(lni)">
-                <view class="training-lesson-num"><text class="training-lesson-num-text">{{ lni + 1 }}</text></view>
+              <view v-if="trainingLessons.length == 0" class="empty-state"><text :class="nativeClass('empty-text', (null))">{{ tr('training.noLessons') }}</text></view>
+              <view v-for="(lsn, lni) in trainingLessons" :key="lni" :class="nativeClass('training-lesson-row', (null))" v-on:click="trainingOpenLesson(lni)">
+                <view :class="nativeClass('training-lesson-num', (null))"><text :class="nativeClass('training-lesson-num-text', (null))">{{ lni + 1 }}</text></view>
                 <view class="training-lesson-info">
-                  <text class="training-lesson-title">{{ lsn.getString('title') }}</text>
-                  <text v-if="lsn.getString('description') != null" class="training-lesson-desc">{{ lsn.getString('description') }}</text>
+                  <text :class="nativeClass('training-lesson-title', (null))">{{ lsn.getString('title') }}</text>
+                  <text v-if="lsn.getString('description') != null" :class="nativeClass('training-lesson-desc', (null))">{{ lsn.getString('description') }}</text>
                   <view class="training-lesson-meta-row">
-                    <text class="training-lesson-type-badge">{{ lsn.getString('content_type') == 'video' ? '🎬' : (lsn.getString('content_type') == 'text' ? '📄' : '🧩') }}</text>
-                    <text class="training-lesson-credits-label">+{{ lsn.getNumber('credit_value') }} {{ lang == 'zh' ? '学分' : 'cr' }}</text>
-                    <text v-if="lsn.getBoolean('has_quiz') == true" class="training-lesson-quiz-badge">📝 {{ lang == 'zh' ? '含测验' : 'Quiz' }}</text>
+                    <text :class="nativeClass('training-lesson-type-badge', (null))">{{ lsn.getString('content_type') == 'video' ? '🎬' : (lsn.getString('content_type') == 'text' ? '📄' : '🧩') }}</text>
+                    <text :class="nativeClass('training-lesson-credits-label', (null))">+{{ lsn.getNumber('credit_value') }} {{ lang == 'zh' ? '学分' : 'cr' }}</text>
+                    <text v-if="lsn.getBoolean('has_quiz') == true" :class="nativeClass('training-lesson-quiz-badge', (null))">📝 {{ lang == 'zh' ? '含测验' : 'Quiz' }}</text>
                   </view>
                 </view>
-                <view v-if="isLessonCompleted(lni)" class="training-lesson-done"><text class="training-lesson-done-text">✓</text></view>
-                <text v-else class="training-lesson-chevron">›</text>
+                <view v-if="isLessonCompleted(lni)" class="training-lesson-done"><text :class="nativeClass('training-lesson-done-text', (null))">✓</text></view>
+                <text v-else :class="nativeClass('training-lesson-chevron', (null))">›</text>
               </view>
             </view>
 
             <view v-else-if="trainingView == 'player'">
-              <view class="training-back-row" v-on:click="trainingBackToLessons"><text class="training-back-text">{{ tr('training.backToLessons') }}</text></view>
+              <view class="training-back-row" v-on:click="trainingBackToLessons"><text :class="nativeClass('training-back-text', (null))">{{ tr('training.backToLessons') }}</text></view>
               <view v-if="trainingCurrentLesson != null && (trainingCurrentLesson!.getString('content_type') == 'video' || trainingCurrentLesson!.getString('content_type') == null)">
                 <view class="training-video-container">
                   <video v-if="trainingVideoUrl.length > 0" class="training-video" :src="trainingVideoUrl" :controls="true" object-fit="contain" />
-                  <view v-else class="training-video-loading"><text class="training-video-loading-text">{{ tr('loading') }}</text></view>
+                  <view v-else class="training-video-loading"><text :class="nativeClass('training-video-loading-text', (null))">{{ tr('loading') }}</text></view>
                 </view>
               </view>
               <view v-else-if="trainingCurrentLesson != null && (trainingCurrentLesson!.getString('content_type') == 'text' || trainingCurrentLesson!.getString('content_type') == 'interactive')">
-                <view class="training-text-content">
-                  <text class="training-text-body">{{ trainingTextContent.length > 0 ? trainingTextContent : tr('loading') }}</text>
+                <view :class="nativeClass('training-text-content', (null))">
+                  <text :class="nativeClass('training-text-body', (null))">{{ trainingTextContent.length > 0 ? trainingTextContent : tr('loading') }}</text>
                 </view>
               </view>
               <view class="training-lesson-detail">
-                <text class="training-lesson-detail-title">{{ trainingCurrentLesson != null ? trainingCurrentLesson!.getString('title') : '' }}</text>
-                <text v-if="trainingCurrentLesson != null && trainingCurrentLesson!.getString('description') != null" class="training-lesson-detail-desc">{{ trainingCurrentLesson!.getString('description') }}</text>
+                <text :class="nativeClass('training-lesson-detail-title', (null))">{{ trainingCurrentLesson != null ? trainingCurrentLesson!.getString('title') : '' }}</text>
+                <text v-if="trainingCurrentLesson != null && trainingCurrentLesson!.getString('description') != null" :class="nativeClass('training-lesson-detail-desc', (null))">{{ trainingCurrentLesson!.getString('description') }}</text>
 
-                <view v-if="trainingQuizQuestions.length > 0" class="training-quiz-section">
-                  <text class="training-quiz-title">{{ lang == 'zh' ? '📝 课后测验' : '📝 Quiz' }}</text>
-                  <view v-if="trainingQuizResult != null" class="training-quiz-result" :class="trainingQuizResult!.getBoolean('passed') == true ? 'training-quiz-passed' : 'training-quiz-failed'">
-                    <text class="training-quiz-result-score">{{ trainingQuizResult!.getNumber('score') }}%</text>
-                    <text class="training-quiz-result-label">{{ trainingQuizResult!.getBoolean('passed') == true ? (lang == 'zh' ? '通过！' : 'Passed!') : (lang == 'zh' ? '未通过，请重试' : 'Not passed, try again') }}</text>
-                    <text v-if="(trainingQuizResult!.getNumber('credits_earned') ?? 0) > 0" class="training-quiz-result-credits">+{{ trainingQuizResult!.getNumber('credits_earned') }} {{ lang == 'zh' ? '学分' : 'credits' }}</text>
-                    <view v-if="trainingQuizReview.length > 0" class="training-quiz-review">
-                      <view v-for="(rv, rvi) in trainingQuizReview" :key="rvi" class="training-quiz-review-item" :class="rv.getBoolean('is_correct') == true ? ' training-quiz-review-correct' : ' training-quiz-review-wrong'">
-                        <text class="training-quiz-review-icon">{{ rv.getBoolean('is_correct') == true ? '✓' : '✗' }}</text>
+                <view v-if="trainingQuizQuestions.length > 0" :class="nativeClass('training-quiz-section', (null))">
+                  <text :class="nativeClass('training-quiz-title', (null))">{{ lang == 'zh' ? '📝 课后测验' : '📝 Quiz' }}</text>
+                  <view v-if="trainingQuizResult != null" :class="nativeClass('training-quiz-result', (trainingQuizResult!.getBoolean('passed') == true ? 'training-quiz-passed' : 'training-quiz-failed'))">
+                    <text :class="nativeClass('training-quiz-result-score', (null))">{{ trainingQuizResult!.getNumber('score') }}%</text>
+                    <text :class="nativeClass('training-quiz-result-label', (null))">{{ trainingQuizResult!.getBoolean('passed') == true ? (lang == 'zh' ? '通过！' : 'Passed!') : (lang == 'zh' ? '未通过，请重试' : 'Not passed, try again') }}</text>
+                    <text v-if="(trainingQuizResult!.getNumber('credits_earned') ?? 0) > 0" :class="nativeClass('training-quiz-result-credits', (null))">+{{ trainingQuizResult!.getNumber('credits_earned') }} {{ lang == 'zh' ? '学分' : 'credits' }}</text>
+                    <view v-if="trainingQuizReview.length > 0" :class="nativeClass('training-quiz-review', (null))">
+                      <view v-for="(rv, rvi) in trainingQuizReview" :key="rvi" :class="nativeClass('training-quiz-review-item', (rv.getBoolean('is_correct') == true ? ' training-quiz-review-correct' : ' training-quiz-review-wrong'))">
+                        <text :class="nativeClass('training-quiz-review-icon', (null))">{{ rv.getBoolean('is_correct') == true ? '✓' : '✗' }}</text>
                         <view class="training-quiz-review-body">
-                          <text class="training-quiz-review-q">{{ rv.getString('question') }}</text>
-                          <text v-if="rv.getBoolean('is_correct') != true" class="training-quiz-review-your-ans">{{ lang == 'zh' ? '你的答案：' : 'Your answer: ' }}{{ rv.getString('user_answer') }}</text>
-                          <text class="training-quiz-review-correct-ans">{{ lang == 'zh' ? '正确答案：' : 'Correct: ' }}{{ rv.getString('correct_answer') }}</text>
-                          <text v-if="(`${rv.getString('explanation')}`.length) > 0" class="training-quiz-review-explanation">{{ rv.getString('explanation') }}</text>
+                          <text :class="nativeClass('training-quiz-review-q', (null))">{{ rv.getString('question') }}</text>
+                          <text v-if="rv.getBoolean('is_correct') != true" :class="nativeClass('training-quiz-review-your-ans', (null))">{{ lang == 'zh' ? '你的答案：' : 'Your answer: ' }}{{ rv.getString('user_answer') }}</text>
+                          <text :class="nativeClass('training-quiz-review-correct-ans', (null))">{{ lang == 'zh' ? '正确答案：' : 'Correct: ' }}{{ rv.getString('correct_answer') }}</text>
+                          <text v-if="(`${rv.getString('explanation')}`.length) > 0" :class="nativeClass('training-quiz-review-explanation', (null))">{{ rv.getString('explanation') }}</text>
                         </view>
                       </view>
                     </view>
                   </view>
 
                   <view v-if="trainingQuizResult == null || trainingQuizResult!.getBoolean('passed') != true">
-                    <view v-for="(q, qi) in trainingQuizQuestions" :key="qi" class="training-quiz-question">
-                      <text v-if="q.getString('scenario') != null" class="training-quiz-scenario">{{ q.getString('scenario') }}</text>
-                      <text class="training-quiz-q-text">{{ qi + 1 }}. {{ q.getString('question') }}</text>
-                      <view v-for="(opt, oi2) in arrOf(q, 'options')" :key="oi2" class="training-quiz-option" :class="quizAnswerFor(q) == oi2 ? 'training-quiz-option-selected' : ''" v-on:click="trainingSelectAnswer(idStr(q, 'id'), oi2)">
-                        <view class="training-quiz-option-radio" :class="quizAnswerFor(q) == oi2 ? 'training-quiz-option-radio-checked' : ''"></view>
-                        <text class="training-quiz-option-text">{{ opt.getString('text') }}</text>
+                    <view v-for="(q, qi) in trainingQuizQuestions" :key="qi" :class="nativeClass('training-quiz-question', (null))">
+                      <text v-if="q.getString('scenario') != null" :class="nativeClass('training-quiz-scenario', (null))">{{ q.getString('scenario') }}</text>
+                      <text :class="nativeClass('training-quiz-q-text', (null))">{{ qi + 1 }}. {{ q.getString('question') }}</text>
+                      <view v-for="(opt, oi2) in arrOf(q, 'options')" :key="oi2" :class="nativeClass('training-quiz-option', (quizAnswerFor(q) == oi2 ? 'training-quiz-option-selected' : ''))" v-on:click="trainingSelectAnswer(idStr(q, 'id'), oi2)">
+                        <view :class="nativeClass('training-quiz-option-radio', (quizAnswerFor(q) == oi2 ? 'training-quiz-option-radio-checked' : ''))"></view>
+                        <text :class="nativeClass('training-quiz-option-text', (null))">{{ opt.getString('text') }}</text>
                       </view>
                     </view>
-                    <view class="training-quiz-submit-btn" :class="trainingQuizSubmitting ? 'training-mark-btn-busy' : ''" v-on:click="trainingSubmitQuiz">
-                      <text class="training-mark-btn-text">{{ trainingQuizSubmitting ? tr('loading') : (lang == 'zh' ? '提交答案' : 'Submit Answers') }}</text>
+                    <view :class="nativeClass('training-quiz-submit-btn', (trainingQuizSubmitting ? 'training-mark-btn-busy' : ''))" v-on:click="trainingSubmitQuiz">
+                      <text :class="nativeClass('training-mark-btn-text', (null))">{{ trainingQuizSubmitting ? tr('loading') : (lang == 'zh' ? '提交答案' : 'Submit Answers') }}</text>
                     </view>
                   </view>
                 </view>
 
                 <view v-if="currentLessonCompleted" class="training-completed-badge">
-                  <text class="training-completed-badge-text">{{ tr('training.markedComplete') }}</text>
+                  <text :class="nativeClass('training-completed-badge-text', (null))">{{ tr('training.markedComplete') }}</text>
                 </view>
-                <view v-else-if="trainingQuizQuestions.length == 0" class="training-mark-btn" :class="trainingMarkingComplete ? 'training-mark-btn-busy' : ''" v-on:click="trainingMarkComplete">
-                  <text class="training-mark-btn-text">{{ trainingMarkingComplete ? tr('loading') : tr('training.markComplete') }}</text>
+                <view v-else-if="trainingQuizQuestions.length == 0" :class="nativeClass('training-mark-btn', (trainingMarkingComplete ? 'training-mark-btn-busy' : ''))" v-on:click="trainingMarkComplete">
+                  <text :class="nativeClass('training-mark-btn-text', (null))">{{ trainingMarkingComplete ? tr('loading') : tr('training.markComplete') }}</text>
                 </view>
-                <view v-else-if="trainingQuizResult != null && trainingQuizResult!.getBoolean('passed') == true" class="training-mark-btn" :class="trainingMarkingComplete ? 'training-mark-btn-busy' : ''" v-on:click="trainingMarkComplete">
-                  <text class="training-mark-btn-text">{{ trainingMarkingComplete ? tr('loading') : tr('training.markComplete') }}</text>
+                <view v-else-if="trainingQuizResult != null && trainingQuizResult!.getBoolean('passed') == true" :class="nativeClass('training-mark-btn', (trainingMarkingComplete ? 'training-mark-btn-busy' : ''))" v-on:click="trainingMarkComplete">
+                  <text :class="nativeClass('training-mark-btn-text', (null))">{{ trainingMarkingComplete ? tr('loading') : tr('training.markComplete') }}</text>
                 </view>
               </view>
             </view>
 
             <view v-else-if="trainingView == 'library-viewer'">
-              <view class="training-back-row" v-on:click="trainingBackToList"><text class="training-back-text">{{ tr('training.backToCourses') }}</text></view>
-              <view class="training-library-header">
-                <text class="training-library-header-title">{{ trainingCurrentLibraryItem != null ? trainingCurrentLibraryItem!.getString('title') : '' }}</text>
+              <view class="training-back-row" v-on:click="trainingBackToList"><text :class="nativeClass('training-back-text', (null))">{{ tr('training.backToCourses') }}</text></view>
+              <view :class="nativeClass('training-library-header', (null))">
+                <text :class="nativeClass('training-library-header-title', (null))">{{ trainingCurrentLibraryItem != null ? trainingCurrentLibraryItem!.getString('title') : '' }}</text>
               </view>
               <view class="training-library-content-scroll">
-                <text class="training-library-content-text">{{ trainingLibraryContent.length > 0 ? trainingLibraryContent : tr('loading') }}</text>
+                <text :class="nativeClass('training-library-content-text', (null))">{{ trainingLibraryContent.length > 0 ? trainingLibraryContent : tr('loading') }}</text>
               </view>
             </view>
           </view>
@@ -233,52 +233,52 @@
           <view v-if="wellnessLoading" class="wellness-loading"><text class="loading-dots">···</text></view>
           <view v-else>
             <view v-if="wellnessAssets.length == 0 && deviceApkUrl.length == 0" class="wellness-empty">
-              <text class="wellness-empty-text">{{ tr('wellnessEmpty') }}</text>
+              <text :class="nativeClass('wellness-empty-text', (null))">{{ tr('wellnessEmpty') }}</text>
             </view>
             <view v-for="(a, ai) in wellnessAssets" :key="ai" class="wellness-section">
-              <view v-if="a.getString('mediaType') == 'audio'" class="sleep-track-card" v-on:click="playAudioAsset(ai)">
-                <view class="sleep-track-icon"><text class="sleep-icon-glyph">{{ trackPlaying(a) ? '⏸' : '▶' }}</text></view>
+              <view v-if="a.getString('mediaType') == 'audio'" :class="nativeClass('sleep-track-card', (null))" v-on:click="playAudioAsset(ai)">
+                <view :class="nativeClass('sleep-track-icon', (null))"><text :class="nativeClass('sleep-icon-glyph', (null))">{{ trackPlaying(a) ? '⏸' : '▶' }}</text></view>
                 <view class="sleep-track-info">
-                  <text class="sleep-track-name">{{ a.getString('title_zh') != null ? a.getString('title_zh') : a.getString('title') }}</text>
-                  <text v-if="a.getNumber('duration_seconds') != null" class="sleep-track-dur">{{ durLabel(a.getNumber('duration_seconds')) }}</text>
+                  <text :class="nativeClass('sleep-track-name', (null))">{{ a.getString('title_zh') != null ? a.getString('title_zh') : a.getString('title') }}</text>
+                  <text v-if="a.getNumber('duration_seconds') != null" :class="nativeClass('sleep-track-dur', (null))">{{ durLabel(a.getNumber('duration_seconds')) }}</text>
                 </view>
-                <view v-if="trackActive(a)" class="sleep-track-active-dot"></view>
+                <view v-if="trackActive(a)" :class="nativeClass('sleep-track-active-dot', (null))"></view>
               </view>
-              <view v-else-if="a.getString('mediaType') == 'video'" class="media-asset-card" v-on:click="openMediaAsset(ai)">
-                <view class="media-asset-icon media-asset-icon--video"><text class="media-asset-glyph">▶</text></view>
+              <view v-else-if="a.getString('mediaType') == 'video'" :class="nativeClass('media-asset-card', (null))" v-on:click="openMediaAsset(ai)">
+                <view class="media-asset-icon media-asset-icon--video"><text :class="nativeClass('media-asset-glyph', (null))">▶</text></view>
                 <view class="media-asset-info">
-                  <text class="media-asset-name">{{ a.getString('title_zh') != null ? a.getString('title_zh') : a.getString('title') }}</text>
-                  <text v-if="a.getNumber('duration_seconds') != null" class="media-asset-sub">{{ durLabel(a.getNumber('duration_seconds')) }}</text>
+                  <text :class="nativeClass('media-asset-name', (null))">{{ a.getString('title_zh') != null ? a.getString('title_zh') : a.getString('title') }}</text>
+                  <text v-if="a.getNumber('duration_seconds') != null" :class="nativeClass('media-asset-sub', (null))">{{ durLabel(a.getNumber('duration_seconds')) }}</text>
                 </view>
-                <view class="media-asset-btn"><text class="media-asset-btn-text">{{ tr('wellnessOpenLink') }}</text></view>
+                <view :class="nativeClass('media-asset-btn', (null))"><text :class="nativeClass('media-asset-btn-text', (null))">{{ tr('wellnessOpenLink') }}</text></view>
               </view>
-              <view v-else class="media-asset-card" v-on:click="openMediaAsset(ai)">
-                <view class="media-asset-icon media-asset-icon--doc"><text class="media-asset-glyph">↓</text></view>
+              <view v-else :class="nativeClass('media-asset-card', (null))" v-on:click="openMediaAsset(ai)">
+                <view class="media-asset-icon media-asset-icon--doc"><text :class="nativeClass('media-asset-glyph', (null))">↓</text></view>
                 <view class="media-asset-info">
-                  <text class="media-asset-name">{{ a.getString('title_zh') != null ? a.getString('title_zh') : a.getString('title') }}</text>
+                  <text :class="nativeClass('media-asset-name', (null))">{{ a.getString('title_zh') != null ? a.getString('title_zh') : a.getString('title') }}</text>
                 </view>
-                <view class="media-asset-btn"><text class="media-asset-btn-text">{{ tr('wellnessOpenLink') }}</text></view>
+                <view :class="nativeClass('media-asset-btn', (null))"><text :class="nativeClass('media-asset-btn-text', (null))">{{ tr('wellnessOpenLink') }}</text></view>
               </view>
             </view>
 
             <!-- #ifdef WEB -->
             <!-- The web user-app's Kino APK card (LearnTab) — copy the download link. -->
             <view v-if="deviceApkUrl.length > 0" class="wellness-section" style="padding-bottom: 0">
-              <view class="media-asset-card" v-on:click="copyApkUrl">
-                <view class="media-asset-icon media-asset-icon--doc"><text class="media-asset-glyph">↓</text></view>
-                <view class="media-asset-info"><text class="media-asset-name">Kino APK {{ deviceApkVersion }}</text></view>
-                <view class="media-asset-btn"><text class="media-asset-btn-text">{{ tr('wellnessOpenLink') }}</text></view>
+              <view :class="nativeClass('media-asset-card', (null))" v-on:click="copyApkUrl">
+                <view class="media-asset-icon media-asset-icon--doc"><text :class="nativeClass('media-asset-glyph', (null))">↓</text></view>
+                <view class="media-asset-info"><text :class="nativeClass('media-asset-name', (null))">Kino APK {{ deviceApkVersion }}</text></view>
+                <view :class="nativeClass('media-asset-btn', (null))"><text :class="nativeClass('media-asset-btn-text', (null))">{{ tr('wellnessOpenLink') }}</text></view>
               </view>
             </view>
             <!-- #endif -->
 
-            <view v-if="sleepCurrentTrack != null" class="sleep-now-playing">
+            <view v-if="sleepCurrentTrack != null" :class="nativeClass('sleep-now-playing', (null))">
               <view class="sleep-np-info">
-                <text class="sleep-np-label">{{ tr('nowPlaying') }}</text>
-                <text class="sleep-np-title">{{ sleepCurrentTrack!.getString('title_zh') != null ? sleepCurrentTrack!.getString('title_zh') : sleepCurrentTrack!.getString('title') }}</text>
+                <text :class="nativeClass('sleep-np-label', (null))">{{ tr('nowPlaying') }}</text>
+                <text :class="nativeClass('sleep-np-title', (null))">{{ sleepCurrentTrack!.getString('title_zh') != null ? sleepCurrentTrack!.getString('title_zh') : sleepCurrentTrack!.getString('title') }}</text>
               </view>
               <view class="sleep-np-controls">
-                <view class="sleep-np-btn" v-on:click="stopAudioAsset"><text class="sleep-np-btn-icon">⏹</text></view>
+                <view :class="nativeClass('sleep-np-btn', (null))" v-on:click="stopAudioAsset"><text :class="nativeClass('sleep-np-btn-icon', (null))">⏹</text></view>
               </view>
             </view>
 
@@ -288,6 +288,8 @@
 </template>
 
 <script lang="uts">
+import { nativeClass as nativeVisualClass } from '../../../../utils/native-visual.uts'
+
 import { BASE } from '../../../../utils/config.uts'
 import { state } from '../../../../utils/state.uts'
 import { idOf } from '../../../../utils/json-id.uts'
@@ -323,6 +325,7 @@ export default {
     user: { type: Object as PropType<UTSJSONObject>, default: null },
     lang: { type: String, default: 'zh' },
     theme: { type: String, default: 'dark' },
+    textScale: { type: Number, default: 0 },
     active: { type: Boolean, default: true },
     completedLessonId: { type: Number, default: 0 },
   },
@@ -406,6 +409,9 @@ export default {
     },
   },
   methods: {
+    nativeClass(names : string, dynamic : any | null) : string {
+      return nativeVisualClass(names, dynamic, this.theme, this.textScale)
+    },
     switchLearnSubTab(subTab : string) {
       this.learnSubTab = subTab
       if (subTab == 'academy' && this.trainingCourses.length == 0) this._loadAcademy()
@@ -1452,4 +1458,10 @@ export default {
 /* #ifdef MP-WEIXIN */
 /* #endif */
 
+</style>
+
+<style>
+/* #ifdef APP */
+@import "../../../../unpackage/native-styles/packages-learn-components-learn-panel-learn-panel.css";
+/* #endif */
 </style>

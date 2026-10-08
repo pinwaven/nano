@@ -4,17 +4,19 @@
       <view
         v-for="(item, i) in toolItems"
         :key="i"
-        :class="disabled ? 'tool-item tool-item-disabled' : 'tool-item'"
+        :class="nativeClass('', (disabled ? 'tool-item tool-item-disabled' : 'tool-item'))"
         v-on:click="onTap(item.action)"
       >
-        <text class="tool-item-icon">{{ item.icon + '\uFE0E' }}</text>
-        <text class="tool-item-label">{{ item.label }}</text>
+        <text :class="nativeClass('tool-item-icon', (null))">{{ item.icon + '\uFE0E' }}</text>
+        <text :class="nativeClass('tool-item-label', (null))">{{ item.label }}</text>
       </view>
     </view>
   </view>
 </template>
 
 <script>
+import { nativeClass as nativeVisualClass } from '../../utils/native-visual.uts'
+
 // Ported from miniapp components/toolbox/toolbox.js — the chat toolbox popup (AGENTS §28
 // "配置原粒" entry, §37 image upload). Contract kept exact:
 //   props:  tools: Array of {action, icon, label} (host main.js builds e.g.
@@ -51,6 +53,9 @@ export default {
     }
   },
   methods: {
+    nativeClass(names : string, dynamic : any | null) : string {
+      return nativeVisualClass(names, dynamic, null, null)
+    },
     onTap(action : string) {
       const disabled = this.disabled
       console.log('[toolbox] onTap', JSON.stringify({ action: action, disabled: disabled } as UTSJSONObject))
@@ -135,5 +140,11 @@ export default {
    never would. Regenerate (tools/xapp-mini/style-gen: fsvars.js, then fsinherit.js) when the miniapp's sizes change. */
 .tool-item-icon { font-size: var(--fs-30, 30rpx); line-height: 1; }
 .tool-item-label { font-size: var(--fs-24, 24rpx); }
+/* #endif */
+</style>
+
+<style>
+/* #ifdef APP */
+@import "../../unpackage/native-styles/components-toolbox-toolbox.css";
 /* #endif */
 </style>

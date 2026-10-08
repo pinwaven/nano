@@ -1,62 +1,62 @@
 <template>
   <!-- #ifdef MP-WEIXIN -->
   <!-- xapp-mini: the miniapp's avatar-picker (markup, stylesheet and the custom-photo flow). -->
-  <view v-if="visible" class="ap-overlay" :class="theme == 'light' ? 'theme-light' : ''" v-on:click="onBackdropTap">
-    <view class="ap-sheet" v-on:click.stop="noop">
+  <view v-if="visible" :class="nativeClass('ap-overlay', (theme == 'light' ? 'theme-light' : ''))" v-on:click="onBackdropTap">
+    <view :class="nativeClass('ap-sheet', (null))" v-on:click.stop="noop">
       <view class="ap-header">
-        <text class="ap-title">{{ tr('title') }}</text>
-        <view class="ap-close" v-on:click="onBackdropTap"><text class="ap-close-icon">✕</text></view>
+        <text :class="nativeClass('ap-title', (null))">{{ tr('title') }}</text>
+        <view :class="nativeClass('ap-close', (null))" v-on:click="onBackdropTap"><text :class="nativeClass('ap-close-icon', (null))">✕</text></view>
       </view>
 
-      <view v-if="phase == 'uploading' || phase == 'generating'" class="ap-panel">
+      <view v-if="phase == 'uploading' || phase == 'generating'" :class="nativeClass('ap-panel', (null))">
         <view class="ap-panel-row">
-          <view class="ap-spinner"></view>
-          <text class="ap-panel-text">{{ phase == 'uploading' ? tr('uploading') : tr('generating') }}</text>
+          <view :class="nativeClass('ap-spinner', (null))"></view>
+          <text :class="nativeClass('ap-panel-text', (null))">{{ phase == 'uploading' ? tr('uploading') : tr('generating') }}</text>
         </view>
-        <text class="ap-panel-privacy">{{ tr('privacy') }}</text>
+        <text :class="nativeClass('ap-panel-privacy', (null))">{{ tr('privacy') }}</text>
         <view v-if="phase == 'generating'" class="ap-panel-actions">
-          <view class="ap-btn ap-btn-ghost" v-on:click="onClosePanel"><text>{{ tr('ok') }}</text></view>
+          <view :class="nativeClass('ap-btn ap-btn-ghost', (null))" v-on:click="onClosePanel"><text>{{ tr('ok') }}</text></view>
         </view>
       </view>
-      <view v-else-if="phase == 'preview'" class="ap-panel">
-        <text class="ap-panel-title">{{ tr('previewTitle') }}</text>
+      <view v-else-if="phase == 'preview'" :class="nativeClass('ap-panel', (null))">
+        <text :class="nativeClass('ap-panel-title', (null))">{{ tr('previewTitle') }}</text>
         <view class="ap-preview-row">
           <view v-for="(item, i) in preview" :key="i" class="ap-preview-item">
             <image class="ap-preview-img" :src="item.getString('url') ?? ''" mode="aspectFill" />
-            <text class="ap-preview-label">{{ item.getString('label') }}</text>
+            <text :class="nativeClass('ap-preview-label', (null))">{{ item.getString('label') }}</text>
           </view>
         </view>
-        <text class="ap-panel-hint">{{ tr('previewHint') }}</text>
+        <text :class="nativeClass('ap-panel-hint', (null))">{{ tr('previewHint') }}</text>
         <view class="ap-panel-actions">
-          <view class="ap-btn ap-btn-ghost" :class="busy ? 'ap-btn-disabled' : ''" v-on:click="onRegenerate"><text>{{ tr('regenerate') }}</text></view>
-          <view class="ap-btn ap-btn-primary" :class="busy ? 'ap-btn-disabled' : ''" v-on:click="onApply"><text>{{ tr('use') }}</text></view>
+          <view :class="nativeClass('ap-btn ap-btn-ghost', (busy ? 'ap-btn-disabled' : ''))" v-on:click="onRegenerate"><text>{{ tr('regenerate') }}</text></view>
+          <view :class="nativeClass('ap-btn ap-btn-primary', (busy ? 'ap-btn-disabled' : ''))" v-on:click="onApply"><text>{{ tr('use') }}</text></view>
         </view>
       </view>
-      <view v-else-if="phase == 'error'" class="ap-panel">
-        <text class="ap-panel-text ap-panel-error">{{ errorText }}</text>
+      <view v-else-if="phase == 'error'" :class="nativeClass('ap-panel', (null))">
+        <text :class="nativeClass('ap-panel-text ap-panel-error', (null))">{{ errorText }}</text>
         <view class="ap-panel-actions">
-          <view class="ap-btn ap-btn-ghost" v-on:click="onClosePanel"><text>✕</text></view>
-          <view class="ap-btn ap-btn-primary" v-on:click="onRegenerate"><text>{{ tr('tryAgain') }}</text></view>
+          <view :class="nativeClass('ap-btn ap-btn-ghost', (null))" v-on:click="onClosePanel"><text>✕</text></view>
+          <view :class="nativeClass('ap-btn ap-btn-primary', (null))" v-on:click="onRegenerate"><text>{{ tr('tryAgain') }}</text></view>
         </view>
       </view>
 
       <scroll-view class="ap-grid-scroll" direction="vertical">
         <view class="ap-grid">
-          <view v-if="allowUpload" class="ap-item ap-item-custom"
-                :class="[selectedId == 'custom' ? 'ap-item-selected' : '', customThumb.length > 0 ? '' : 'ap-item-custom-empty']"
+          <view v-if="allowUpload"
+                :class="nativeClass('ap-item ap-item-custom', ([selectedId == 'custom' ? 'ap-item-selected' : '', customThumb.length > 0 ? '' : 'ap-item-custom-empty']))"
                 v-on:click="onCustomTap">
             <image v-if="customThumb.length > 0" class="ap-item-img" :src="customThumb" mode="aspectFill" />
             <view v-else class="ap-item-custom-inner">
               <text class="ap-item-custom-icon">📷</text>
-              <text class="ap-item-custom-text">{{ tr('myPhoto') }}</text>
+              <text :class="nativeClass('ap-item-custom-text', (null))">{{ tr('myPhoto') }}</text>
             </view>
-            <view v-if="customThumb.length > 0" class="ap-item-custom-badge"><text>📷</text></view>
+            <view v-if="customThumb.length > 0" :class="nativeClass('ap-item-custom-badge', (null))"><text>📷</text></view>
           </view>
-          <view v-for="(a, i) in avatars" :key="i" class="ap-item" :class="a.id == selectedId ? 'ap-item-selected' : ''" v-on:click="onPick(a.id)">
+          <view v-for="(a, i) in avatars" :key="i" :class="nativeClass('ap-item', (a.id == selectedId ? 'ap-item-selected' : ''))" v-on:click="onPick(a.id)">
             <image class="ap-item-img" :src="a.thumb" mode="aspectFill" />
           </view>
         </view>
-        <text v-if="allowUpload && customThumb.length == 0 && phase == 'idle'" class="ap-grid-hint">{{ tr('myPhotoHint') }} · {{ tr('privacy') }}</text>
+        <text v-if="allowUpload && customThumb.length == 0 && phase == 'idle'" :class="nativeClass('ap-grid-hint', (null))">{{ tr('myPhotoHint') }} · {{ tr('privacy') }}</text>
       </scroll-view>
     </view>
   </view>
@@ -80,6 +80,8 @@
 </template>
 
 <script>
+import { nativeClass as nativeVisualClass } from '../../utils/native-visual.uts'
+
 // Avatar picker. Android/web: the gallery-only port (select / close). xapp-mini: the miniapp's
 // components/avatar-picker as a whole, including "use my photo" for the self view — pick → crop →
 // upload to a presigned URL → poll the generation → preview the four moods → apply
@@ -188,6 +190,9 @@ export default {
   },
   unmounted() { this._stopPolling() },
   methods: {
+    nativeClass(names : string, dynamic : any | null) : string {
+      return nativeVisualClass(names, dynamic, this.theme, null)
+    },
     tr(k : string) : string {
       const v = (this.lang == 'en' ? T_EN : T_ZH).getString(k)
       return v != null ? v : k
@@ -594,5 +599,11 @@ export default {
   color: #A6C4E5;
   font-size: 14px;
 }
+/* #endif */
+</style>
+
+<style>
+/* #ifdef APP */
+@import "../../unpackage/native-styles/components-avatar-picker-avatar-picker.css";
 /* #endif */
 </style>

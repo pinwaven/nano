@@ -44,6 +44,15 @@ When adding a new native feature or UTS plugin, update that integration as neede
 SDK libraries and generated Kotlin/assets are ignored; only build configuration,
 launcher code and the Gradle wrapper are tracked.
 
+Before exporting, `generate-native-styles.mjs` resolves the shared mini palette and
+accessibility tokens into native CSS under `src/xapp/unpackage/native-styles/`.
+The imported styles preserve source order, exclude unsupported native declarations,
+and normalize native shadows. Rebuild after changing shared mini visual rules.
+For direct HBuilderX runs, run `node tools/xapp-android/generate-native-styles.mjs`
+first. `utils/native-visual.uts` applies theme/scale modifiers on the styled views
+themselves, because ancestor selector changes do not refresh native descendants.
+Panels keep their mounted state when the theme or text size changes.
+
 ## Release signing
 
 The default APK is signed with Android's local debug key and is for testing.

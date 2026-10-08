@@ -1,24 +1,24 @@
 <template>
-  <view class="ag-root" :class="theme == 'light' ? 'theme-light' : ''">
+  <view :class="nativeClass('ag-root', (theme == 'light' ? 'theme-light' : ''))">
     <scroll-view direction="vertical" class="ag-scroll">
 
       <!-- Entitlement header -->
-      <view class="ag-hero">
-        <view class="ag-hero-badge"><text class="ag-hero-badge-txt">VIVA AG</text></view>
-        <text class="ag-hero-desc">{{ tr('heroDesc') }}</text>
-        <text v-if="expiryDisplay.length > 0" class="ag-hero-expiry">{{ tr('validUntil') }} {{ expiryDisplay }}</text>
+      <view :class="nativeClass('ag-hero', (null))">
+        <view :class="nativeClass('ag-hero-badge', (null))"><text class="ag-hero-badge-txt">VIVA AG</text></view>
+        <text :class="nativeClass('ag-hero-desc', (null))">{{ tr('heroDesc') }}</text>
+        <text v-if="expiryDisplay.length > 0" :class="nativeClass('ag-hero-expiry', (null))">{{ tr('validUntil') }} {{ expiryDisplay }}</text>
       </view>
 
       <!-- ── Needs your input ──
            The agent parked its job to ask a clarifying question. Placed above everything else
            because nothing on this panel will move until the user answers. The form itself lives
            in the chat tab (the existing questionnaire renderer); this only hands off to it. -->
-      <view v-if="awaitingJob != null" class="ag-section">
-        <view class="ag-ask">
-          <text class="ag-ask-title">{{ tr('askTitle') }}</text>
-          <text class="ag-ask-body">{{ tr('askBody') }}</text>
-          <text v-if="askDeadlineText.length > 0" class="ag-ask-deadline">{{ askDeadlineText }}</text>
-          <view class="ag-ask-cta" v-on:click="goAnswer"><text class="ag-ask-cta-txt">{{ tr('askCta') }}</text></view>
+      <view v-if="awaitingJob != null" :class="nativeClass('ag-section', (null))">
+        <view :class="nativeClass('ag-ask', (null))">
+          <text :class="nativeClass('ag-ask-title', (null))">{{ tr('askTitle') }}</text>
+          <text :class="nativeClass('ag-ask-body', (null))">{{ tr('askBody') }}</text>
+          <text v-if="askDeadlineText.length > 0" :class="nativeClass('ag-ask-deadline', (null))">{{ askDeadlineText }}</text>
+          <view :class="nativeClass('ag-ask-cta', (null))" v-on:click="goAnswer"><text :class="nativeClass('ag-ask-cta-txt', (null))">{{ tr('askCta') }}</text></view>
         </view>
       </view>
 
@@ -30,64 +30,64 @@
            A dots_formulation result keeps moving after the job says "completed": expert review,
            compounding, delivery, then the box scan that actually starts the plan. Without this the
            panel would go quiet for days. -->
-      <view v-if="formulation != null" class="ag-section">
-        <text class="ag-section-title">{{ tr('fmTitle') }}</text>
-        <view class="ag-fm" :class="'ag-fm-' + fmStatus">
+      <view v-if="formulation != null" :class="nativeClass('ag-section', (null))">
+        <text :class="nativeClass('ag-section-title', (null))">{{ tr('fmTitle') }}</text>
+        <view :class="nativeClass('ag-fm', ('ag-fm-' + fmStatus))">
           <view class="ag-fm-head">
-            <text class="ag-fm-status">{{ fmStatusLabel }}</text>
-            <text v-if="fmDotsText.length > 0" class="ag-fm-dots">{{ fmDotsText }}</text>
+            <text :class="nativeClass('ag-fm-status', (null))">{{ fmStatusLabel }}</text>
+            <text v-if="fmDotsText.length > 0" :class="nativeClass('ag-fm-dots', (null))">{{ fmDotsText }}</text>
           </view>
-          <text class="ag-fm-hint">{{ fmHint }}</text>
-          <text v-if="fmRationale.length > 0" class="ag-fm-rationale">{{ fmRationale }}</text>
+          <text :class="nativeClass('ag-fm-hint', (null))">{{ fmHint }}</text>
+          <text v-if="fmRationale.length > 0" :class="nativeClass('ag-fm-rationale', (null))">{{ fmRationale }}</text>
         </view>
       </view>
 
       <!-- ── Command ── -->
-      <view class="ag-section">
-        <text class="ag-section-title">{{ tr('newAnalysis') }}</text>
+      <view :class="nativeClass('ag-section', (null))">
+        <text :class="nativeClass('ag-section-title', (null))">{{ tr('newAnalysis') }}</text>
 
         <view class="ag-chips">
-          <view v-for="(p, i) in presets" :key="i" class="ag-chip" :class="commandKey == p.getString('key') ? 'ag-chip-on' : ''" v-on:click="selectPreset(`${p.getString('key')}`)">
-            <text class="ag-chip-txt" :class="commandKey == p.getString('key') ? 'ag-chip-txt-on' : ''">{{ p.getString('label') }}</text>
+          <view v-for="(p, i) in presets" :key="i" :class="nativeClass('ag-chip', (commandKey == p.getString('key') ? 'ag-chip-on' : ''))" v-on:click="selectPreset(`${p.getString('key')}`)">
+            <text :class="nativeClass('ag-chip-txt', (commandKey == p.getString('key') ? 'ag-chip-txt-on' : ''))">{{ p.getString('label') }}</text>
           </view>
         </view>
 
         <!-- miniapp: bindinput on a textarea; v-model + a watch on commandText is the same contract. -->
-        <textarea class="ag-input" v-model="commandText" :placeholder="tr('commandPlaceholder')" :maxlength="2000" auto-height />
+        <textarea :class="nativeClass('ag-input', (null))" v-model="commandText" :placeholder="tr('commandPlaceholder')" :maxlength="2000" auto-height />
 
-        <view class="ag-submit" :class="canSubmit ? '' : 'ag-submit-off'" v-on:click="submitJob">
-          <text class="ag-submit-txt">{{ submitting ? tr('submitting') : tr('submit') }}</text>
+        <view :class="nativeClass('ag-submit', (canSubmit ? '' : 'ag-submit-off'))" v-on:click="submitJob">
+          <text :class="nativeClass('ag-submit-txt', (null))">{{ submitting ? tr('submitting') : tr('submit') }}</text>
         </view>
-        <text v-if="hasActive" class="ag-note">{{ tr('oneAtATime') }}</text>
-        <text v-else-if="dailyLimitReached" class="ag-note">{{ tr('quotaUsedUp') }}</text>
-        <text v-else-if="commandKey.length == 0 && commandText.length == 0" class="ag-note">{{ tr('pickSomething') }}</text>
-        <text v-else class="ag-note">{{ quotaLeftText }}</text>
+        <text v-if="hasActive" :class="nativeClass('ag-note', (null))">{{ tr('oneAtATime') }}</text>
+        <text v-else-if="dailyLimitReached" :class="nativeClass('ag-note', (null))">{{ tr('quotaUsedUp') }}</text>
+        <text v-else-if="commandKey.length == 0 && commandText.length == 0" :class="nativeClass('ag-note', (null))">{{ tr('pickSomething') }}</text>
+        <text v-else :class="nativeClass('ag-note', (null))">{{ quotaLeftText }}</text>
       </view>
 
       <!-- ── Jobs ── -->
-      <view class="ag-section">
-        <text class="ag-section-title">{{ tr('history') }}</text>
+      <view :class="nativeClass('ag-section', (null))">
+        <text :class="nativeClass('ag-section-title', (null))">{{ tr('history') }}</text>
 
-        <text v-if="jobsLoading" class="ag-muted">{{ tr('loading') }}</text>
-        <text v-else-if="jobs.length == 0" class="ag-muted">{{ tr('noJobs') }}</text>
+        <text v-if="jobsLoading" :class="nativeClass('ag-muted', (null))">{{ tr('loading') }}</text>
+        <text v-else-if="jobs.length == 0" :class="nativeClass('ag-muted', (null))">{{ tr('noJobs') }}</text>
 
         <view v-else>
-          <view v-for="(job, ji) in jobs" :key="ji" class="ag-job" v-on:click="openJob(jobUidOf(job))">
+          <view v-for="(job, ji) in jobs" :key="ji" :class="nativeClass('ag-job', (null))" v-on:click="openJob(jobUidOf(job))">
             <view class="ag-job-head">
-              <text :class="'ag-pill ag-pill-' + statusOf(job)">{{ job.getString('statusLabel') }}</text>
-              <text class="ag-job-date">{{ job.getString('created_at') }}</text>
+              <text :class="nativeClass('', ('ag-pill ag-pill-' + statusOf(job)))">{{ job.getString('statusLabel') }}</text>
+              <text :class="nativeClass('ag-job-date', (null))">{{ job.getString('created_at') }}</text>
             </view>
-            <text class="ag-job-cmd">{{ job.getString('command') }}</text>
-            <text v-if="attributionOf(job).length > 0" class="ag-job-origin">{{ attributionOf(job) }}</text>
-            <text v-if="progressNoteOf(job).length > 0" class="ag-job-note">{{ progressNoteOf(job) }}</text>
-            <text v-else-if="summaryOf(job).length > 0" class="ag-job-note">{{ job.getString('summaryPreview') }}</text>
+            <text :class="nativeClass('ag-job-cmd', (null))">{{ job.getString('command') }}</text>
+            <text v-if="attributionOf(job).length > 0" :class="nativeClass('ag-job-origin', (null))">{{ attributionOf(job) }}</text>
+            <text v-if="progressNoteOf(job).length > 0" :class="nativeClass('ag-job-note', (null))">{{ progressNoteOf(job) }}</text>
+            <text v-else-if="summaryOf(job).length > 0" :class="nativeClass('ag-job-note', (null))">{{ job.getString('summaryPreview') }}</text>
 
             <view v-if="filesOf(job).length > 0" class="ag-file-chips">
               <!-- Report artifacts the external agent attached. Surfaced on the card itself, not
                    only inside the detail sheet, so a finished report is one tap away. -->
-              <view v-for="(f, fi) in filesOf(job)" :key="fi" class="ag-file-chip" v-on:click.stop="openResultFile(jobUidOf(job), indexOfFile(f))">
-                <text class="ag-file-ext">{{ f.getString('extLabel') }}</text>
-                <text class="ag-file-name">{{ f.getString('filename') }}</text>
+              <view v-for="(f, fi) in filesOf(job)" :key="fi" :class="nativeClass('ag-file-chip', (null))" v-on:click.stop="openResultFile(jobUidOf(job), indexOfFile(f))">
+                <text :class="nativeClass('ag-file-ext', (null))">{{ f.getString('extLabel') }}</text>
+                <text :class="nativeClass('ag-file-name', (null))">{{ f.getString('filename') }}</text>
               </view>
             </view>
           </view>
@@ -102,51 +102,51 @@
          sheet records a one-shot flag the mask handler consumes — same net behaviour without
          relying on the .stop modifier across the boundary. -->
     <view v-if="detailJob != null" class="ag-sheet-mask" v-on:click="onMaskTap">
-      <view class="ag-sheet" v-on:click="onSheetTap">
+      <view :class="nativeClass('ag-sheet', (null))" v-on:click="onSheetTap">
         <view class="ag-sheet-head">
-          <text :class="'ag-pill ag-pill-' + dj('status')">{{ dj('statusLabel') }}</text>
-          <text class="ag-sheet-close" v-on:click="closeJob">✕</text>
+          <text :class="nativeClass('', ('ag-pill ag-pill-' + dj('status')))">{{ dj('statusLabel') }}</text>
+          <text :class="nativeClass('ag-sheet-close', (null))" v-on:click="closeJob">✕</text>
         </view>
-        <text class="ag-sheet-date">{{ dj('created_at') }}</text>
-        <text class="ag-sheet-cmd">{{ dj('command') }}</text>
+        <text :class="nativeClass('ag-sheet-date', (null))">{{ dj('created_at') }}</text>
+        <text :class="nativeClass('ag-sheet-cmd', (null))">{{ dj('command') }}</text>
 
-        <text v-if="djAttribution().length > 0" class="ag-job-origin">{{ djAttribution() }}</text>
-        <text v-if="dj('result_summary').length > 0" class="ag-sheet-body">{{ dj('result_summary') }}</text>
-        <text v-else-if="dj('error_reason').length > 0" class="ag-sheet-body ag-sheet-err">{{ tr('failed') }}</text>
-        <text v-else-if="dj('progress_note').length > 0" class="ag-sheet-body">{{ dj('progress_note') }}</text>
-        <text v-else class="ag-sheet-body ag-muted">{{ tr('inProgress') }}</text>
+        <text v-if="djAttribution().length > 0" :class="nativeClass('ag-job-origin', (null))">{{ djAttribution() }}</text>
+        <text v-if="dj('result_summary').length > 0" :class="nativeClass('ag-sheet-body', (null))">{{ dj('result_summary') }}</text>
+        <text v-else-if="dj('error_reason').length > 0" :class="nativeClass('ag-sheet-body ag-sheet-err', (null))">{{ tr('failed') }}</text>
+        <text v-else-if="dj('progress_note').length > 0" :class="nativeClass('ag-sheet-body', (null))">{{ dj('progress_note') }}</text>
+        <text v-else :class="nativeClass('ag-sheet-body ag-muted', (null))">{{ tr('inProgress') }}</text>
 
         <view v-if="djFiles().length > 0" class="ag-filelist">
-          <text class="ag-filelist-title">{{ tr('reports') }}</text>
-          <view v-for="(f, fi) in djFiles()" :key="fi" class="ag-file-row" v-on:click="openResultFile(dj('job_uid'), indexOfFile(f))">
-            <text class="ag-file-ext">{{ f.getString('extLabel') }}</text>
+          <text :class="nativeClass('ag-filelist-title', (null))">{{ tr('reports') }}</text>
+          <view v-for="(f, fi) in djFiles()" :key="fi" :class="nativeClass('ag-file-row', (null))" v-on:click="openResultFile(dj('job_uid'), indexOfFile(f))">
+            <text :class="nativeClass('ag-file-ext', (null))">{{ f.getString('extLabel') }}</text>
             <view class="ag-file-row-main">
-              <text class="ag-file-row-name">{{ f.getString('filename') }}</text>
-              <text v-if="(f.getString('sizeLabel') ?? '').length > 0" class="ag-file-row-size">{{ f.getString('sizeLabel') }}</text>
+              <text :class="nativeClass('ag-file-row-name', (null))">{{ f.getString('filename') }}</text>
+              <text v-if="(f.getString('sizeLabel') ?? '').length > 0" :class="nativeClass('ag-file-row-size', (null))">{{ f.getString('sizeLabel') }}</text>
             </view>
-            <text class="ag-file-row-go">{{ downloadingResult ? tr('opening') : tr('openReport') }}</text>
+            <text :class="nativeClass('ag-file-row-go', (null))">{{ downloadingResult ? tr('opening') : tr('openReport') }}</text>
           </view>
         </view>
-        <view v-if="dj('status') == 'queued'" class="ag-sheet-btn ag-sheet-btn-ghost" v-on:click="cancelJob">
-          <text class="ag-sheet-btn-txt ag-sheet-btn-txt-ghost">{{ tr('cancel') }}</text>
+        <view v-if="dj('status') == 'queued'" :class="nativeClass('ag-sheet-btn ag-sheet-btn-ghost', (null))" v-on:click="cancelJob">
+          <text :class="nativeClass('ag-sheet-btn-txt ag-sheet-btn-txt-ghost', (null))">{{ tr('cancel') }}</text>
         </view>
       </view>
     </view>
 
     <!-- In-app viewer for .md/.txt artifacts — wx.openDocument supported neither, and there is no
          system document viewer on uni-app x either, so this stays the only path for a report. -->
-    <view v-if="reportHtml.length > 0" class="ag-viewer">
-      <view class="ag-viewer-head">
-        <text class="ag-viewer-title">{{ reportTitle }}</text>
-        <text class="ag-viewer-close" v-on:click="closeReport">✕</text>
+    <view v-if="reportHtml.length > 0" :class="nativeClass('ag-viewer', (null))">
+      <view :class="nativeClass('ag-viewer-head', (null))">
+        <text :class="nativeClass('ag-viewer-title', (null))">{{ reportTitle }}</text>
+        <text :class="nativeClass('ag-viewer-close', (null))" v-on:click="closeReport">✕</text>
       </view>
-      <scroll-view direction="vertical" class="ag-viewer-body">
+      <scroll-view direction="vertical" :class="nativeClass('ag-viewer-body', (null))">
         <!-- TODO(port): mp-html → <rich-text>. rich-text renders a TAG WHITELIST only and takes no
              tag-style map (the miniapp bound MD_TAG_STYLE to mp-html), so headings/lists/pre/code
              spacing degrade and <a> is inert — which is fine here because _neutralizeLinks already
              strips every href. Revisit with a UTS markdown renderer if the reports look wrong. -->
         <rich-text :nodes="_sh(reportHtml)" class="ag-md"></rich-text>
-        <text v-if="reportTruncated" class="ag-viewer-trunc">{{ tr('reportTruncated') }}</text>
+        <text v-if="reportTruncated" :class="nativeClass('ag-viewer-trunc', (null))">{{ tr('reportTruncated') }}</text>
         <view style="height: 60px;"></view>
       </scroll-view>
     </view>
@@ -154,6 +154,8 @@
 </template>
 
 <script>
+import { nativeClass as nativeVisualClass } from '../../../../utils/native-visual.uts'
+
 // Viva AG panel — the second subtab of the health tab, shown only to a user holding an active
 // Viva AG add-on. Issues long-running analysis jobs to the external agent; results arrive in the
 // chat tab, and are archived here. (Health-record upload moved to components/health-documents/,
@@ -405,6 +407,9 @@ export default {
   beforeUnmount() { this._stopPoll() },
   unmounted() { this._stopPoll() },
   methods: {
+    nativeClass(names : string, dynamic : any | null) : string {
+      return nativeVisualClass(names, dynamic, this.theme, null)
+    },
     tr(path : string) : string { return _tr(this.t, path) },
     _toast(title : string, success : boolean = false) {
       if (success) uni.showToast({ title: title, icon: 'success' })
@@ -1042,5 +1047,11 @@ export default {
 .ag-fm-dots { font-size: var(--fs-22, 22rpx); }
 .ag-fm-hint { font-size: var(--fs-23, 23rpx); line-height: 1.6; }
 .ag-fm-rationale { font-size: var(--fs-23, 23rpx); line-height: 1.6; }
+/* #endif */
+</style>
+
+<style>
+/* #ifdef APP */
+@import "../../../../unpackage/native-styles/packages-viva-ag-components-viva-ag-panel-viva-ag-panel.css";
 /* #endif */
 </style>

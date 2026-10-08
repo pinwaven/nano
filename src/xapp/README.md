@@ -131,8 +131,12 @@ tab by tab. Fixed in this pass:
      `border-width`.
 - **Text-on-view warnings**: `ring-lc-smoothed-note` ×3 are now `<text>`.
 
-Known remaining gaps: light theme (the miniapp's ~690 `.theme-light` rules have no uvue
-equivalent yet — a dynamic-class pass), iOS BLE transport, native binary file I/O, ASR mic (see list above).
+Native theme/text-size styles now derive from the shared mini rules through
+`tools/xapp-android/generate-native-styles.mjs` and target-view modifiers in
+`utils/native-visual.uts`. Use the Android and mini build scripts: the mini script
+restores its original class bindings before compiling. Native gradients use supported
+two-color approximations. Remaining gaps include iOS BLE transport, native binary file I/O
+and ASR mic (see list above).
 
 ## Android Bluetooth — `uni_modules/waven-ble` (2026-10-02, VERSION 1002-5 → 1002-8)
 

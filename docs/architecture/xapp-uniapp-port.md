@@ -175,8 +175,11 @@ does not apply to the mp-weixin build.
 Also built from the same tree: the web build (`xapp-web.md`) and xapp-mini (WeChat login, guest
 mode, Bluetooth over WeChat's API — `tools/xapp-mini/README.md`).
 
-Open gaps, each `TODO(port)`-tagged in code: **light theme** (the miniapp's ~690 `.theme-light`
-WXSS rules have no uvue equivalent — needs a dynamic-class or per-rule port pass; the 浅色模式
-toggle flips state but barely restyles), iOS Bluetooth (no transport), native binary file I/O
+Native visual styles now resolve the mini's theme/size tokens into supported CSS and
+update target-view classes directly; theme/size changes preserve mounted panels. The mini
+build stages its original class bindings to avoid compiling native hooks into DevTools.
+Native gradients use two endpoint colors and supported directions rather than exact WebView stops.
+
+Open gaps, each `TODO(port)`-tagged in code: iOS Bluetooth (no transport), native binary file I/O
 (`utils/file-bytes.uts` returns null on Android/iOS — uploads fail there), WechatSI ASR mic
 (button renders, toasts), NFC Kino emulation, custom avatar §20, background audio.

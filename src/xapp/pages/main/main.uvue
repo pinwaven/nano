@@ -9,126 +9,126 @@
      the ::: card render chain (metric/takeaway/dots/formula/product/grocery/lesson/checkin),
      the async two-channel chat delivery UI (§22), the pinch text-scale, and the 100px
      chat-inner bottom padding that fixes the clipped-last-message bug (AGENTS §23 — 200rpx ≈ 100px). -->
-  <view class="main" :class="[theme == 'light' ? 'theme-light' : '', 'fs-' + textScale]" v-on:touchstart="onTouchStart" v-on:touchend="onTouchEnd">
+  <view :class="nativeClass('main', ([theme == 'light' ? 'theme-light' : '', 'fs-' + textScale]))" v-on:touchstart="onTouchStart" v-on:touchend="onTouchEnd">
 
     <!-- ── Status bar spacer ── -->
-    <view class="status-bar-spacer" :style="'height:' + statusBarHeight + 'px'"></view>
+    <view :class="nativeClass('status-bar-spacer', (null))" :style="'height:' + statusBarHeight + 'px'"></view>
 
     <!-- ── Header ── -->
-    <view class="app-header" :style="capsuleRightPad > 0 ? 'padding-right:' + capsuleRightPad + 'px' : ''" v-on:click="toggleMenu">
+    <view :class="nativeClass('app-header', (null))" :style="capsuleRightPad > 0 ? 'padding-right:' + capsuleRightPad + 'px' : ''" v-on:click="toggleMenu">
       <view class="header-logo-btn">
         <image class="header-logo-img" :src="channelLogo" mode="aspectFit" />
-        <text class="header-title">{{ channelName }}</text>
+        <text :class="nativeClass('header-title', (null))">{{ channelName }}</text>
       </view>
-      <view class="header-divider"></view>
-      <text class="header-user">{{ isGuest ? tr('guestHeaderName') : headerUserName }}</text>
-      <text v-if="version.length > 0" class="header-version">v{{ version }}</text>
+      <view :class="nativeClass('header-divider', (null))"></view>
+      <text :class="nativeClass('header-user', (null))">{{ isGuest ? tr('guestHeaderName') : headerUserName }}</text>
+      <text v-if="version.length > 0" :class="nativeClass('header-version', (null))">v{{ version }}</text>
     </view>
 
     <!-- ── Sandbox banner ── -->
-    <view v-if="sandboxMode" class="sandbox-banner" v-on:click="exitSandbox">
-      <text class="sandbox-banner-text">{{ sandboxBannerText }}</text>
-      <text class="sandbox-banner-exit">{{ tr('exitSandbox') }}</text>
+    <view v-if="sandboxMode" :class="nativeClass('sandbox-banner', (null))" v-on:click="exitSandbox">
+      <text :class="nativeClass('sandbox-banner-text', (null))">{{ sandboxBannerText }}</text>
+      <text :class="nativeClass('sandbox-banner-exit', (null))">{{ tr('exitSandbox') }}</text>
     </view>
 
     <!-- ── Viva subscription expired banner ── -->
-    <view v-if="!sandboxMode && personaType == 'viva' && vivaSubscriptionExpired" class="viva-expired-banner" v-on:click="handleBuyVivaSubscription">
-      <text class="viva-expired-banner-text">{{ tr('vivaSubscriptionExpiredBanner') }}</text>
-      <text class="viva-expired-banner-btn">{{ tr('vivaSubscriptionRenewBtn') }}</text>
+    <view v-if="!sandboxMode && personaType == 'viva' && vivaSubscriptionExpired" :class="nativeClass('viva-expired-banner', (null))" v-on:click="handleBuyVivaSubscription">
+      <text :class="nativeClass('viva-expired-banner-text', (null))">{{ tr('vivaSubscriptionExpiredBanner') }}</text>
+      <text :class="nativeClass('viva-expired-banner-btn', (null))">{{ tr('vivaSubscriptionRenewBtn') }}</text>
     </view>
 
     <!-- ── Logo menu ── -->
     <view v-if="menuOpen" class="menu-mask" v-on:click="closeMenu">
-      <view class="menu-dropdown" :style="menuDropdownStyle" v-on:click.stop="noop">
-        <view v-if="!isGuest && isAeviva && personaType == 'viva' && !vivaSubscriptionExpired && vivaSubscriptionExpiresAtDisplay.length > 0" class="menu-credit-row" v-on:click="openVivaRedeemSheet">
-          <text class="menu-credit-label">{{ lang == 'zh' ? 'Viva 订阅至' : 'Viva subscribed until' }}</text>
-          <text class="menu-credit-value">{{ vivaSubscriptionExpiresAtDisplay }}</text>
+      <view :class="nativeClass('menu-dropdown', (null))" :style="menuDropdownStyle" v-on:click.stop="noop">
+        <view v-if="!isGuest && isAeviva && personaType == 'viva' && !vivaSubscriptionExpired && vivaSubscriptionExpiresAtDisplay.length > 0" :class="nativeClass('menu-credit-row', (null))" v-on:click="openVivaRedeemSheet">
+          <text :class="nativeClass('menu-credit-label', (null))">{{ lang == 'zh' ? 'Viva 订阅至' : 'Viva subscribed until' }}</text>
+          <text :class="nativeClass('menu-credit-value', (null))">{{ vivaSubscriptionExpiresAtDisplay }}</text>
         </view>
         <!-- #ifdef WEB -->
-        <view v-if="!isGuest && isAeviva && personaType == 'viva' && !vivaSubscriptionExpired && vivaSubscriptionExpiresAtDisplay.length > 0 && creditBalance <= 0" class="menu-divider"></view>
+        <view v-if="!isGuest && isAeviva && personaType == 'viva' && !vivaSubscriptionExpired && vivaSubscriptionExpiresAtDisplay.length > 0 && creditBalance <= 0" :class="nativeClass('menu-divider', (null))"></view>
         <!-- #endif -->
-        <view v-if="!isGuest && creditBalance > 0" class="menu-credit-row" v-on:click="openReferral">
-          <text class="menu-credit-label">{{ lang == 'zh' ? '积分余额' : 'Credits' }}</text>
-          <text class="menu-credit-value">{{ creditBalance }} pts</text>
+        <view v-if="!isGuest && creditBalance > 0" :class="nativeClass('menu-credit-row', (null))" v-on:click="openReferral">
+          <text :class="nativeClass('menu-credit-label', (null))">{{ lang == 'zh' ? '积分余额' : 'Credits' }}</text>
+          <text :class="nativeClass('menu-credit-value', (null))">{{ creditBalance }} pts</text>
         </view>
         <!-- #ifdef WEB -->
-        <view v-if="!isGuest && creditBalance > 0" class="menu-divider"></view>
+        <view v-if="!isGuest && creditBalance > 0" :class="nativeClass('menu-divider', (null))"></view>
         <!-- #endif -->
-        <view v-if="isCoach" class="menu-item" v-on:click="openCoach">
-          <text class="menu-item-icon">👨‍⚕️</text>
-          <text class="menu-item-label">{{ tr('coachMenu') }}</text>
+        <view v-if="isCoach" :class="nativeClass('menu-item', (null))" v-on:click="openCoach">
+          <text :class="nativeClass('menu-item-icon', (null))">👨‍⚕️</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ tr('coachMenu') }}</text>
         </view>
         <!-- #ifdef WEB -->
-        <view v-if="isAdmin" class="menu-divider"></view>
-        <view v-if="isAdmin" class="menu-item" v-on:click="openAdminPanel">
-          <text class="menu-item-icon">⚙</text>
-          <text class="menu-item-label">{{ lang == 'zh' ? '渠道管理' : 'Channel Admin' }}</text>
+        <view v-if="isAdmin" :class="nativeClass('menu-divider', (null))"></view>
+        <view v-if="isAdmin" :class="nativeClass('menu-item', (null))" v-on:click="openAdminPanel">
+          <text :class="nativeClass('menu-item-icon', (null))">⚙</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ lang == 'zh' ? '渠道管理' : 'Channel Admin' }}</text>
         </view>
-        <view v-if="isSuperadmin" class="menu-divider"></view>
-        <view v-if="isSuperadmin" class="menu-item" v-on:click="openAdminPanel">
-          <text class="menu-item-icon">🖥</text>
-          <text class="menu-item-label">{{ tr('webAdminMenu') }}</text>
+        <view v-if="isSuperadmin" :class="nativeClass('menu-divider', (null))"></view>
+        <view v-if="isSuperadmin" :class="nativeClass('menu-item', (null))" v-on:click="openAdminPanel">
+          <text :class="nativeClass('menu-item-icon', (null))">🖥</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ tr('webAdminMenu') }}</text>
         </view>
         <!-- #endif -->
         <!-- #ifndef WEB -->
-        <view v-if="isAdmin" class="menu-divider"></view>
-        <view v-if="isAdmin" class="menu-item" v-on:click="openWebAdmin">
-          <text class="menu-item-icon">🖥</text>
-          <text class="menu-item-label">{{ tr('webAdminMenu') }}</text>
+        <view v-if="isAdmin" :class="nativeClass('menu-divider', (null))"></view>
+        <view v-if="isAdmin" :class="nativeClass('menu-item', (null))" v-on:click="openWebAdmin">
+          <text :class="nativeClass('menu-item-icon', (null))">🖥</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ tr('webAdminMenu') }}</text>
         </view>
         <!-- #endif -->
-        <view v-if="!isGuest" class="menu-divider"></view>
-        <view v-if="!isGuest" class="menu-item" v-on:click="openReferral">
-          <text class="menu-item-icon">★</text>
-          <text class="menu-item-label">{{ tr('referralMenu') }}</text>
+        <view v-if="!isGuest" :class="nativeClass('menu-divider', (null))"></view>
+        <view v-if="!isGuest" :class="nativeClass('menu-item', (null))" v-on:click="openReferral">
+          <text :class="nativeClass('menu-item-icon', (null))">★</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ tr('referralMenu') }}</text>
         </view>
-        <view v-if="!isGuest" class="menu-item" v-on:click="openPhones">
-          <text class="menu-item-icon">📱</text>
-          <text class="menu-item-label">{{ tr('phonesMenu') }}</text>
+        <view v-if="!isGuest" :class="nativeClass('menu-item', (null))" v-on:click="openPhones">
+          <text :class="nativeClass('menu-item-icon', (null))">📱</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ tr('phonesMenu') }}</text>
         </view>
-        <view v-if="!isGuest && emailLoginAllowed" class="menu-item" v-on:click="openEmails">
-          <text class="menu-item-icon">✉️</text>
-          <text class="menu-item-label">{{ tr('emailsMenu') }}</text>
+        <view v-if="!isGuest && emailLoginAllowed" :class="nativeClass('menu-item', (null))" v-on:click="openEmails">
+          <text :class="nativeClass('menu-item-icon', (null))">✉️</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ tr('emailsMenu') }}</text>
         </view>
-        <view v-if="!isGuest && isAeviva && personaType == 'viva'" class="menu-item" v-on:click="openVivaRedeemSheet">
-          <text class="menu-item-icon">✧</text>
-          <text class="menu-item-label">{{ tr('vivaRedeemMenu') }}</text>
+        <view v-if="!isGuest && isAeviva && personaType == 'viva'" :class="nativeClass('menu-item', (null))" v-on:click="openVivaRedeemSheet">
+          <text :class="nativeClass('menu-item-icon', (null))">✧</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ tr('vivaRedeemMenu') }}</text>
         </view>
-        <view class="menu-divider"></view>
-        <view class="menu-item" v-on:click="toggleTheme">
-          <text class="menu-item-icon">{{ theme == 'dark' ? '☀' : '🌑' }}</text>
-          <text class="menu-item-label">{{ theme == 'dark' ? tr('lightMode') : tr('darkMode') }}</text>
+        <view :class="nativeClass('menu-divider', (null))"></view>
+        <view :class="nativeClass('menu-item', (null))" v-on:click="toggleTheme">
+          <text :class="nativeClass('menu-item-icon', (null))">{{ theme == 'dark' ? '☀' : '🌑' }}</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ theme == 'dark' ? tr('lightMode') : tr('darkMode') }}</text>
         </view>
-        <view class="menu-divider"></view>
+        <view :class="nativeClass('menu-divider', (null))"></view>
         <!-- Text size stepper: setTextScale deliberately does NOT close the menu (4-way control,
              watch the text resize behind it). The four A glyphs keep hardcoded sizes on purpose. -->
         <view class="menu-fs-row">
-          <text class="menu-item-icon">A</text>
-          <text class="menu-item-label">{{ tr('textSizeMenu') }}</text>
+          <text :class="nativeClass('menu-item-icon', (null))">A</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ tr('textSizeMenu') }}</text>
           <view class="menu-fs-steps">
-            <view class="menu-fs-step" :class="textScale == 0 ? 'menu-fs-step-on' : ''" v-on:click="setTextScale(0)"><text class="menu-fs-a0">A</text></view>
-            <view class="menu-fs-step" :class="textScale == 1 ? 'menu-fs-step-on' : ''" v-on:click="setTextScale(1)"><text class="menu-fs-a1">A</text></view>
-            <view class="menu-fs-step" :class="textScale == 2 ? 'menu-fs-step-on' : ''" v-on:click="setTextScale(2)"><text class="menu-fs-a2">A</text></view>
-            <view class="menu-fs-step" :class="textScale == 3 ? 'menu-fs-step-on' : ''" v-on:click="setTextScale(3)"><text class="menu-fs-a3">A</text></view>
+            <view :class="nativeClass('menu-fs-step', (textScale == 0 ? 'menu-fs-step-on' : ''))" v-on:click="setTextScale(0)"><text :class="nativeClass('menu-fs-a0', (null))">A</text></view>
+            <view :class="nativeClass('menu-fs-step', (textScale == 1 ? 'menu-fs-step-on' : ''))" v-on:click="setTextScale(1)"><text :class="nativeClass('menu-fs-a1', (null))">A</text></view>
+            <view :class="nativeClass('menu-fs-step', (textScale == 2 ? 'menu-fs-step-on' : ''))" v-on:click="setTextScale(2)"><text :class="nativeClass('menu-fs-a2', (null))">A</text></view>
+            <view :class="nativeClass('menu-fs-step', (textScale == 3 ? 'menu-fs-step-on' : ''))" v-on:click="setTextScale(3)"><text :class="nativeClass('menu-fs-a3', (null))">A</text></view>
           </view>
         </view>
-        <view class="menu-divider"></view>
-        <view class="menu-item" v-on:click="toggleLang">
-          <text class="menu-item-icon">{{ lang == 'zh' ? '🇺🇸' : '🇨🇳' }}</text>
-          <text class="menu-item-label">{{ lang == 'zh' ? 'English' : '中文' }}</text>
+        <view :class="nativeClass('menu-divider', (null))"></view>
+        <view :class="nativeClass('menu-item', (null))" v-on:click="toggleLang">
+          <text :class="nativeClass('menu-item-icon', (null))">{{ lang == 'zh' ? '🇺🇸' : '🇨🇳' }}</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ lang == 'zh' ? 'English' : '中文' }}</text>
         </view>
-        <view class="menu-divider"></view>
-        <view v-if="!isGuest" class="menu-item" v-on:click="handleLogout">
-          <text class="menu-item-icon">↪</text>
-          <text class="menu-item-label">{{ sandboxMode ? tr('exitSandbox') : tr('logout') }}</text>
+        <view :class="nativeClass('menu-divider', (null))"></view>
+        <view v-if="!isGuest" :class="nativeClass('menu-item', (null))" v-on:click="handleLogout">
+          <text :class="nativeClass('menu-item-icon', (null))">↪</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ sandboxMode ? tr('exitSandbox') : tr('logout') }}</text>
         </view>
-        <view v-if="isGuest" class="menu-item" v-on:click="openSignIn">
-          <text class="menu-item-icon">↩</text>
-          <text class="menu-item-label">{{ tr('guestMenuSignIn') }}</text>
+        <view v-if="isGuest" :class="nativeClass('menu-item', (null))" v-on:click="openSignIn">
+          <text :class="nativeClass('menu-item-icon', (null))">↩</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ tr('guestMenuSignIn') }}</text>
         </view>
-        <view v-if="isGuest" class="menu-item" v-on:click="openGuestSheet">
-          <text class="menu-item-icon">✦</text>
-          <text class="menu-item-label">{{ tr('guestMenuSignUp') }}</text>
+        <view v-if="isGuest" :class="nativeClass('menu-item', (null))" v-on:click="openGuestSheet">
+          <text :class="nativeClass('menu-item-icon', (null))">✦</text>
+          <text :class="nativeClass('menu-item-label', (null))">{{ tr('guestMenuSignUp') }}</text>
         </view>
       </view>
     </view>
@@ -150,206 +150,206 @@
           <view class="chat-inner">
 
             <!-- history load-more / start indicator -->
-            <view v-if="hasMoreHistory" class="chat-history-load" :class="historyLoading ? 'chat-history-loading' : ''" v-on:click="onLoadMoreHistoryTap">
-              <text class="chat-history-text">{{ historyLoading ? tr('chatHistoryLoading') : tr('chatHistoryLoadMore') }}</text>
+            <view v-if="hasMoreHistory" :class="nativeClass('chat-history-load', (historyLoading ? 'chat-history-loading' : ''))" v-on:click="onLoadMoreHistoryTap">
+              <text :class="nativeClass('chat-history-text', (null))">{{ historyLoading ? tr('chatHistoryLoading') : tr('chatHistoryLoadMore') }}</text>
             </view>
             <view v-else-if="messages.length > 0" class="chat-history-start">
-              <text class="chat-history-start-text">{{ tr('chatHistoryStart') }}</text>
+              <text :class="nativeClass('chat-history-start-text', (null))">{{ tr('chatHistoryStart') }}</text>
             </view>
 
             <view v-for="(m, mi) in messages" :key="m.id">
-              <view v-if="m.sep.length > 0" class="msg-daysep"><text class="msg-daysep-text">{{ m.sep }}</text></view>
-              <view :id="'m' + m.id" class="msg-row" :class="m.role == 'user' ? 'msg-row-user' : 'msg-row-ai'">
-                <view v-if="m.role == 'action'" class="msg-action-card" v-on:click="handleMsgAction(m.action)">
-                  <text class="msg-action-label">{{ m.label }}</text>
-                  <text class="msg-action-arrow">›</text>
+              <view v-if="m.sep.length > 0" :class="nativeClass('msg-daysep', (null))"><text :class="nativeClass('msg-daysep-text', (null))">{{ m.sep }}</text></view>
+              <view :id="'m' + m.id" :class="nativeClass('msg-row', (m.role == 'user' ? 'msg-row-user' : 'msg-row-ai'))">
+                <view v-if="m.role == 'action'" :class="nativeClass('msg-action-card', (null))" v-on:click="handleMsgAction(m.action)">
+                  <text :class="nativeClass('msg-action-label', (null))">{{ m.label }}</text>
+                  <text :class="nativeClass('msg-action-arrow', (null))">›</text>
                 </view>
-                <view v-else-if="m.role == 'coach'" class="message-bubble message-coach">
-                  <text class="msg-coach-label">Coach</text>
-                  <text class="msg-text" :style="fs(14)">{{ m.content }}</text>
+                <view v-else-if="m.role == 'coach'" :class="nativeClass('message-bubble message-coach', (null))">
+                  <text :class="nativeClass('msg-coach-label', (null))">Coach</text>
+                  <text :class="nativeClass('msg-text', (null))" :style="fs(14)">{{ m.content }}</text>
                 </view>
-                <view v-else class="message-bubble" :class="(m.role == 'user' ? 'message-user' : 'message-ai') + (m.imageOnly ? ' msg-bubble-image' : '')">
-                  <image v-if="m.imageUrl != null" class="msg-image" :class="m.imageOnly ? '' : 'msg-image-inset'" :src="m.imageUrl" mode="widthFix" v-on:load="onChatImageLoad(m.id)" />
-                  <text v-if="m.role == 'user' && m.content.length > 0" class="msg-text msg-text-user" :style="fs(14)">{{ m.content }}</text>
-                  <text v-if="m.source == 'viva_ag'" class="msg-ag-label">Viva AG</text>
+                <view v-else :class="nativeClass('message-bubble', ((m.role == 'user' ? 'message-user' : 'message-ai') + (m.imageOnly ? ' msg-bubble-image' : '')))" :style="m.role == 'user' ? '' : aiBubbleStyle">
+                  <image v-if="m.imageUrl != null" :class="nativeClass('msg-image', (m.imageOnly ? '' : 'msg-image-inset'))" :src="m.imageUrl" mode="widthFix" v-on:load="onChatImageLoad(m.id)" />
+                  <text v-if="m.role == 'user' && m.content.length > 0" :class="nativeClass('msg-text msg-text-user', (null))" :style="fs(14)">{{ m.content }}</text>
+                  <text v-if="m.source == 'viva_ag'" :class="nativeClass('msg-ag-label', (null))">Viva AG</text>
                   <view v-if="m.role != 'user'" v-for="(seg, si) in m.segments" :key="si" class="msg-seg" :style="'width: ' + msgTextW + 'px'">
-                    <rich-text v-if="seg.t == 'html'" class="msg-html" :style="'width: ' + msgTextW + 'px'" :nodes="_sh(seg.h)" />
-                    <view v-else-if="seg.t == 'rule'" class="msg-rule"></view>
+                    <rich-text v-if="seg.t == 'html'" :class="nativeClass('msg-html', (null))" :style="'width: ' + msgTextW + 'px'" :nodes="_sh(seg.h)" />
+                    <view v-else-if="seg.t == 'rule'" :class="nativeClass('msg-rule', (null))"></view>
                     <view v-else-if="seg.t == 'metric'" class="mcard">
-                      <view v-for="(item, mj) in seg.metricItems" :key="mj" class="mcard-tile" :class="'mcard-' + item.s">
-                        <text class="mcard-label">{{ item.label }}</text>
+                      <view v-for="(item, mj) in seg.metricItems" :key="mj" :class="nativeClass('mcard-tile', ('mcard-' + item.s))">
+                        <text :class="nativeClass('mcard-label', (null))">{{ item.label }}</text>
                         <view class="mcard-valrow">
-                          <text class="mcard-val">{{ item.value }}</text>
-                          <text v-if="item.unit.length > 0" class="mcard-unit">{{ item.unit }}</text>
-                          <view v-if="tileSpark(item.label) != null" class="spark" :class="'spark-t-' + tileSpark(item.label)!.tone">
-                            <view v-for="(sb, sk) in tileSpark(item.label)!.bars" :key="sk" class="spark-bar" :class="sb.last ? 'spark-bar-last-' + tileSpark(item.label)!.tone : ''" :style="'height:' + sb.h + '%'"></view>
+                          <text :class="nativeClass('mcard-val', (null))">{{ item.value }}</text>
+                          <text v-if="item.unit.length > 0" :class="nativeClass('mcard-unit', (null))">{{ item.unit }}</text>
+                          <view v-if="tileSpark(item.label) != null" :class="nativeClass('spark', ('spark-t-' + tileSpark(item.label)!.tone))">
+                            <view v-for="(sb, sk) in tileSpark(item.label)!.bars" :key="sk" :class="nativeClass('spark-bar', (sb.last ? 'spark-bar-last-' + tileSpark(item.label)!.tone : ''))" :style="'height:' + sb.h + '%'"></view>
                           </view>
                         </view>
                         <view v-if="item.sl.length > 0 || tileSpark(item.label) != null" class="mcard-footrow">
-                          <text v-if="item.sl.length > 0" class="mcard-pill">{{ item.sl }}</text>
-                          <text v-if="tileSpark(item.label) != null && tileSpark(item.label)!.delta.length > 0" class="spark-delta" :class="'spark-d-' + tileSpark(item.label)!.tone">{{ tileSpark(item.label)!.arrow }}{{ tileSpark(item.label)!.delta }}</text>
+                          <text v-if="item.sl.length > 0" :class="nativeClass('mcard-pill', (null))">{{ item.sl }}</text>
+                          <text v-if="tileSpark(item.label) != null && tileSpark(item.label)!.delta.length > 0" :class="nativeClass('spark-delta', ('spark-d-' + tileSpark(item.label)!.tone))">{{ tileSpark(item.label)!.arrow }}{{ tileSpark(item.label)!.delta }}</text>
                         </view>
                       </view>
                     </view>
-                    <view v-else-if="seg.t == 'takeaway'" class="tcard">
-                      <text class="tcard-title">{{ takeawayTitle(seg) }}</text>
-                      <rich-text class="msg-html tcard-body" :style="'width: ' + (msgTextW - 26) + 'px'" :nodes="_sh(seg.takeaway != null ? seg.takeaway!.h : '')" />
+                    <view v-else-if="seg.t == 'takeaway'" :class="nativeClass('tcard', (null))">
+                      <text :class="nativeClass('tcard-title', (null))">{{ takeawayTitle(seg) }}</text>
+                      <rich-text :class="nativeClass('msg-html tcard-body', (null))" :style="'width: ' + (msgTextW - 26) + 'px'" :nodes="_sh(seg.takeaway != null ? seg.takeaway!.h : '')" />
                     </view>
                     <view v-else-if="seg.t == 'dots'" class="dcard">
-                      <view v-for="(di, dj) in seg.dotItems" :key="dj" class="dcard-chip">
-                        <text class="dcard-id">{{ di.id }}</text>
-                        <text v-if="di.name.length > 0" class="dcard-name">{{ di.name }}</text>
-                        <text v-if="di.note.length > 0" class="dcard-note">{{ di.note }}</text>
+                      <view v-for="(di, dj) in seg.dotItems" :key="dj" :class="nativeClass('dcard-chip', (null))">
+                        <text :class="nativeClass('dcard-id', (null))">{{ di.id }}</text>
+                        <text v-if="di.name.length > 0" :class="nativeClass('dcard-name', (null))">{{ di.name }}</text>
+                        <text v-if="di.note.length > 0" :class="nativeClass('dcard-note', (null))">{{ di.note }}</text>
                       </view>
                     </view>
-                    <view v-else-if="seg.t == 'formula'" class="fcard">
+                    <view v-else-if="seg.t == 'formula'" :class="nativeClass('fcard', (null))">
                       <view class="fcard-head">
-                        <text class="fcard-title">{{ tr('formulaCardTitle') }}</text>
-                        <text class="fcard-note">{{ tr('formulaEvalNote') }}</text>
+                        <text :class="nativeClass('fcard-title', (null))">{{ tr('formulaCardTitle') }}</text>
+                        <text :class="nativeClass('fcard-note', (null))">{{ tr('formulaEvalNote') }}</text>
                       </view>
                       <!-- One block per purchasable package, each a COMPLETE formula; recommended
                            one open, others collapse to name+note+roster and expand on tap. -->
-                      <view v-for="(ft, fti) in seg.formulaTiers" :key="fti" class="fcard-tier" :class="ft.open ? 'fcard-tier-open' : ''">
+                      <view v-for="(ft, fti) in seg.formulaTiers" :key="fti" :class="nativeClass('fcard-tier', (ft.open ? 'fcard-tier-open' : ''))">
                         <view v-if="ft.label.length > 0" class="fcard-tier-head" v-on:click="handleFormulaTierToggle(m, si, fti)">
                           <view class="fcard-tier-name">
-                            <text class="fcard-tier-label">{{ ft.label }}</text>
-                            <text v-if="ft.recommended" class="fcard-tier-rec">{{ tr('formulaTierRecommended') }}</text>
+                            <text :class="nativeClass('fcard-tier-label', (null))">{{ ft.label }}</text>
+                            <text v-if="ft.recommended" :class="nativeClass('fcard-tier-rec', (null))">{{ tr('formulaTierRecommended') }}</text>
                           </view>
-                          <text class="fcard-tier-chev">{{ ft.open ? '⌃' : '⌄' }}</text>
+                          <text :class="nativeClass('fcard-tier-chev', (null))">{{ ft.open ? '⌃' : '⌄' }}</text>
                         </view>
-                        <view v-if="ft.note.length > 0" class="fcard-tier-note" v-on:click="handleFormulaTierToggle(m, si, fti)">
-                          <text class="fcard-tier-note-text">{{ ft.note }}</text>
+                        <view v-if="ft.note.length > 0" :class="nativeClass('fcard-tier-note', (null))" v-on:click="handleFormulaTierToggle(m, si, fti)">
+                          <text :class="nativeClass('fcard-tier-note-text', (null))">{{ ft.note }}</text>
                         </view>
                         <view v-if="!ft.open" class="fcard-legend fcard-tier-dots" v-on:click="handleFormulaTierToggle(m, si, fti)">
-                          <view v-for="(fd, fdk) in ft.dots" :key="fdk" class="fcard-leg">
+                          <view v-for="(fd, fdk) in ft.dots" :key="fdk" :class="nativeClass('fcard-leg', (null))">
                             <view class="fcard-swatch" :style="'background:' + fd.color"></view>
-                            <text class="fcard-leg-name">{{ fd.name }}</text>
+                            <text :class="nativeClass('fcard-leg-name', (null))">{{ fd.name }}</text>
                           </view>
                         </view>
                         <view v-if="ft.open">
                           <view v-for="(fg, fgi) in ft.groups" :key="fgi" class="fcard-group">
                             <view v-if="fg.days.length > 0" class="fcard-days">
-                              <text class="fcard-daylabel">{{ tr('formulaDayWord') }} {{ fg.days }}</text>
-                              <text v-if="fg.kind == 'n7'" class="fcard-daytag">{{ tr('formulaResetDay') }}</text>
+                              <text :class="nativeClass('fcard-daylabel', (null))">{{ tr('formulaDayWord') }} {{ fg.days }}</text>
+                              <text v-if="fg.kind == 'n7'" :class="nativeClass('fcard-daytag', (null))">{{ tr('formulaResetDay') }}</text>
                             </view>
                             <view class="fcard-row">
-                              <text class="fcard-slot">{{ tr('formulaAm') }}</text>
-                              <view class="fcard-track">
+                              <text :class="nativeClass('fcard-slot', (null))">{{ tr('formulaAm') }}</text>
+                              <view :class="nativeClass('fcard-track', (null))">
                                 <view v-for="(fi, fk) in fg.items" :key="fk" class="fcard-seg" :style="'width:' + fi.amPct + '%;background:' + fi.color"></view>
                               </view>
-                              <text class="fcard-num">{{ fg.am }}</text>
+                              <text :class="nativeClass('fcard-num', (null))">{{ fg.am }}</text>
                             </view>
                             <view class="fcard-row">
-                              <text class="fcard-slot">{{ tr('formulaPm') }}</text>
-                              <view class="fcard-track">
+                              <text :class="nativeClass('fcard-slot', (null))">{{ tr('formulaPm') }}</text>
+                              <view :class="nativeClass('fcard-track', (null))">
                                 <view v-for="(fi, fk) in fg.items" :key="fk" class="fcard-seg" :style="'width:' + fi.pmPct + '%;background:' + fi.color"></view>
                               </view>
-                              <text class="fcard-num">{{ fg.pm }}</text>
+                              <text :class="nativeClass('fcard-num', (null))">{{ fg.pm }}</text>
                             </view>
                             <view class="fcard-legend">
-                              <view v-for="(fi, fk) in fg.items" :key="fk" class="fcard-leg">
+                              <view v-for="(fi, fk) in fg.items" :key="fk" :class="nativeClass('fcard-leg', (null))">
                                 <view class="fcard-swatch" :style="'background:' + fi.color"></view>
-                                <text class="fcard-leg-name">{{ fi.name }}</text>
-                                <text class="fcard-leg-num">{{ fi.am }}·{{ fi.pm }}</text>
+                                <text :class="nativeClass('fcard-leg-name', (null))">{{ fi.name }}</text>
+                                <text :class="nativeClass('fcard-leg-num', (null))">{{ fi.am }}·{{ fi.pm }}</text>
                               </view>
                             </view>
-                            <text class="fcard-foot">{{ tr('formulaTotalLabel') }} {{ fg.total }}</text>
+                            <text :class="nativeClass('fcard-foot', (null))">{{ tr('formulaTotalLabel') }} {{ fg.total }}</text>
                           </view>
-                          <text v-if="ft.pitch.length > 0" class="fcard-tier-pitch">{{ ft.pitch }}</text>
+                          <text v-if="ft.pitch.length > 0" :class="nativeClass('fcard-tier-pitch', (null))">{{ ft.pitch }}</text>
                         </view>
                       </view>
-                      <text v-if="seg.cycleDays > 0" class="fcard-cycle">{{ seg.cycleDays }}{{ tr('formulaDaysUnit') }} · {{ seg.cycleCapsules }}{{ tr('formulaCapsulesUnit') }}</text>
-                      <text v-if="seg.formulaTiers.length > 1" class="fcard-tier-hint">{{ tr('formulaTierHint') }}</text>
+                      <text v-if="seg.cycleDays > 0" :class="nativeClass('fcard-cycle', (null))">{{ seg.cycleDays }}{{ tr('formulaDaysUnit') }} · {{ seg.cycleCapsules }}{{ tr('formulaCapsulesUnit') }}</text>
+                      <text v-if="seg.formulaTiers.length > 1" :class="nativeClass('fcard-tier-hint', (null))">{{ tr('formulaTierHint') }}</text>
                       <!-- Retired upgrade ladder, kept for cards written before packages replaced it —
                            chat history is permanent. -->
-                      <view v-if="seg.formulaRungs.length > 0" class="fcard-upgrades">
-                        <text class="fcard-uphead">{{ tr('formulaUpgradeTitle') }}</text>
-                        <view v-for="(fr, fri) in seg.formulaRungs" :key="fri" class="fcard-rung">
+                      <view v-if="seg.formulaRungs.length > 0" :class="nativeClass('fcard-upgrades', (null))">
+                        <text :class="nativeClass('fcard-uphead', (null))">{{ tr('formulaUpgradeTitle') }}</text>
+                        <view v-for="(fr, fri) in seg.formulaRungs" :key="fri" :class="nativeClass('fcard-rung', (null))">
                           <view class="fcard-rung-head">
-                            <text class="fcard-rung-label">{{ fr.label }}</text>
-                            <text class="fcard-rung-add">+{{ fr.items.length }}</text>
+                            <text :class="nativeClass('fcard-rung-label', (null))">{{ fr.label }}</text>
+                            <text :class="nativeClass('fcard-rung-add', (null))">+{{ fr.items.length }}</text>
                           </view>
                           <view class="fcard-legend fcard-rung-dots">
-                            <view v-for="(ri, rk) in fr.items" :key="rk" class="fcard-leg">
+                            <view v-for="(ri, rk) in fr.items" :key="rk" :class="nativeClass('fcard-leg', (null))">
                               <view class="fcard-swatch" :style="'background:' + ri.color"></view>
-                              <text class="fcard-leg-name">{{ ri.name }}</text>
-                              <text class="fcard-leg-num">{{ ri.am }}·{{ ri.pm }}</text>
-                              <text v-if="ri.weeks.length > 0" class="fcard-leg-weeks">{{ tr('formulaWeekPrefix') }}{{ ri.weeks }}{{ tr('formulaWeekSuffix') }}</text>
+                              <text :class="nativeClass('fcard-leg-name', (null))">{{ ri.name }}</text>
+                              <text :class="nativeClass('fcard-leg-num', (null))">{{ ri.am }}·{{ ri.pm }}</text>
+                              <text v-if="ri.weeks.length > 0" :class="nativeClass('fcard-leg-weeks', (null))">{{ tr('formulaWeekPrefix') }}{{ ri.weeks }}{{ tr('formulaWeekSuffix') }}</text>
                             </view>
                           </view>
-                          <text v-if="fr.pitch.length > 0" class="fcard-rung-pitch">{{ fr.pitch }}</text>
+                          <text v-if="fr.pitch.length > 0" :class="nativeClass('fcard-rung-pitch', (null))">{{ fr.pitch }}</text>
                         </view>
-                        <text class="fcard-rung-hint">{{ tr('formulaUpgradeHint') }}</text>
+                        <text :class="nativeClass('fcard-rung-hint', (null))">{{ tr('formulaUpgradeHint') }}</text>
                       </view>
-                      <view v-if="seg.planId.length > 0 && isAeviva && seg.orderMode == 'submit'" class="fcard-cta" v-on:click="handleFormulaSubmit(m, si)">
-                        <text class="fcard-cta-label">{{ tr('formulaSubmitCta') }}</text>
+                      <view v-if="seg.planId.length > 0 && isAeviva && seg.orderMode == 'submit'" :class="nativeClass('fcard-cta', (null))" v-on:click="handleFormulaSubmit(m, si)">
+                        <text :class="nativeClass('fcard-cta-label', (null))">{{ tr('formulaSubmitCta') }}</text>
                       </view>
                       <view v-else-if="seg.planId.length > 0 && isAeviva && seg.orderMode == 'buy'">
-                        <text v-if="segCtaOwned(m, si).length > 0" class="fcard-owned">{{ segCtaOwned(m, si) }}</text>
-                        <view class="fcard-cta" v-on:click="handleFormulaOrder(m, si)">
-                          <text class="fcard-cta-label">{{ segCtaBtn(m, si, seg) }}</text>
+                        <text v-if="segCtaOwned(m, si).length > 0" :class="nativeClass('fcard-owned', (null))">{{ segCtaOwned(m, si) }}</text>
+                        <view :class="nativeClass('fcard-cta', (null))" v-on:click="handleFormulaOrder(m, si)">
+                          <text :class="nativeClass('fcard-cta-label', (null))">{{ segCtaBtn(m, si, seg) }}</text>
                         </view>
                       </view>
-                      <text v-else-if="seg.orderMode == 'ag'" class="fcard-agnote">{{ tr('formulaAgPending') }}</text>
+                      <text v-else-if="seg.orderMode == 'ag'" :class="nativeClass('fcard-agnote', (null))">{{ tr('formulaAgPending') }}</text>
                     </view>
-                    <view v-else-if="seg.t == 'product'" class="pcard">
-                      <text class="pcard-title">{{ tr('productCardTitle') }}</text>
-                      <view v-for="(pi, pk) in seg.productItems" :key="pi.sku" class="pcard-row" v-on:click="handleProductCardTap(pi.sku)">
+                    <view v-else-if="seg.t == 'product'" :class="nativeClass('pcard', (null))">
+                      <text :class="nativeClass('pcard-title', (null))">{{ tr('productCardTitle') }}</text>
+                      <view v-for="(pi, pk) in seg.productItems" :key="pi.sku" :class="nativeClass('pcard-row', (null))" v-on:click="handleProductCardTap(pi.sku)">
                         <view class="pcard-main">
-                          <text class="pcard-name">{{ pi.name }}</text>
-                          <text v-if="pi.reason.length > 0" class="pcard-reason">{{ pi.reason }}</text>
+                          <text :class="nativeClass('pcard-name', (null))">{{ pi.name }}</text>
+                          <text v-if="pi.reason.length > 0" :class="nativeClass('pcard-reason', (null))">{{ pi.reason }}</text>
                         </view>
-                        <text class="pcard-price">{{ pi.price }}</text>
-                        <text class="pcard-arrow">›</text>
+                        <text :class="nativeClass('pcard-price', (null))">{{ pi.price }}</text>
+                        <text :class="nativeClass('pcard-arrow', (null))">›</text>
                       </view>
                     </view>
                     <!-- :::grocery (AGENTS §46) — a tap copies the product name; the supermarket's
                          own app has no deep link a native app can verify either. -->
-                    <view v-else-if="seg.t == 'grocery'" class="gcard">
-                      <text class="gcard-title">{{ tr('groceryCardTitle') }}</text>
-                      <view v-for="(gi, gk) in seg.groceryItems" :key="gi.id" class="gcard-row" v-on:click="handleGroceryCardTap(gi.name, gi.supplierName)">
-                        <image v-if="gi.image.length > 0" class="gcard-img" :src="gi.image" mode="aspectFill" />
-                        <view v-else class="gcard-img gcard-img-empty"></view>
+                    <view v-else-if="seg.t == 'grocery'" :class="nativeClass('gcard', (null))">
+                      <text :class="nativeClass('gcard-title', (null))">{{ tr('groceryCardTitle') }}</text>
+                      <view v-for="(gi, gk) in seg.groceryItems" :key="gi.id" :class="nativeClass('gcard-row', (null))" v-on:click="handleGroceryCardTap(gi.name, gi.supplierName)">
+                        <image v-if="gi.image.length > 0" :class="nativeClass('gcard-img', (null))" :src="gi.image" mode="aspectFill" />
+                        <view v-else :class="nativeClass('gcard-img gcard-img-empty', (null))"></view>
                         <view class="gcard-main">
-                          <text class="gcard-name">{{ gi.name }}</text>
-                          <text v-if="gi.reason.length > 0" class="gcard-reason">{{ gi.reason }}</text>
-                          <text class="gcard-supplier">{{ gi.supplierName }}</text>
+                          <text :class="nativeClass('gcard-name', (null))">{{ gi.name }}</text>
+                          <text v-if="gi.reason.length > 0" :class="nativeClass('gcard-reason', (null))">{{ gi.reason }}</text>
+                          <text :class="nativeClass('gcard-supplier', (null))">{{ gi.supplierName }}</text>
                         </view>
-                        <text v-if="gi.price.length > 0" class="gcard-price">{{ gi.price }}</text>
+                        <text v-if="gi.price.length > 0" :class="nativeClass('gcard-price', (null))">{{ gi.price }}</text>
                       </view>
-                      <text v-if="seg.groceryNote.length > 0" class="gcard-note">{{ seg.groceryNote }}</text>
+                      <text v-if="seg.groceryNote.length > 0" :class="nativeClass('gcard-note', (null))">{{ seg.groceryNote }}</text>
                     </view>
                     <!-- :::lesson — 打卡 program day Academy lesson, played inline (AGENTS §42). -->
-                    <view v-else-if="seg.t == 'lesson'" class="lcard">
-                      <video v-if="seg.lessonUrl.length > 0" class="lcard-video" :src="seg.lessonUrl" :poster="seg.lessonPoster" :controls="true"
+                    <view v-else-if="seg.t == 'lesson'" :class="nativeClass('lcard', (null))">
+                      <video v-if="seg.lessonUrl.length > 0" :class="nativeClass('lcard-video', (null))" :src="seg.lessonUrl" :poster="seg.lessonPoster" :controls="true"
                              v-on:ended="handleLessonEnded(m, si)" v-on:timeupdate="onLessonTimeUpdate(m, si, $event)" v-on:pause="onLessonPause(m, si)" />
-                      <view v-else class="lcard-cover" v-on:click="handleLessonCardTap(m, si)">
-                        <text class="lcard-play">{{ seg.lessonLoading ? tr('loading') : '▶  ' + tr('programLessonPlay') }}</text>
+                      <view v-else :class="nativeClass('lcard-cover', (null))" v-on:click="handleLessonCardTap(m, si)">
+                        <text :class="nativeClass('lcard-play', (null))">{{ seg.lessonLoading ? tr('loading') : '▶  ' + tr('programLessonPlay') }}</text>
                       </view>
                       <view class="lcard-meta">
-                        <text class="lcard-title">{{ seg.lessonTitle }}</text>
-                        <text v-if="seg.lessonDone" class="lcard-done">✓ {{ tr('programLessonDone') }}</text>
+                        <text :class="nativeClass('lcard-title', (null))">{{ seg.lessonTitle }}</text>
+                        <text v-if="seg.lessonDone" :class="nativeClass('lcard-done', (null))">✓ {{ tr('programLessonDone') }}</text>
                       </view>
                     </view>
                     <!-- :::checkin — same day's 开始打卡; done-state stamped from GET /api/programs/my. -->
                     <view v-else-if="seg.t == 'checkin'" class="ccard">
-                      <view v-if="seg.checkinDone" class="ccard-done">
-                        <text class="ccard-cta-label">✓ {{ tr('programCheckinDone') }}</text>
+                      <view v-if="seg.checkinDone" :class="nativeClass('ccard-done', (null))">
+                        <text :class="nativeClass('ccard-cta-label', (null))">✓ {{ tr('programCheckinDone') }}</text>
                       </view>
-                      <view v-else class="ccard-cta" :class="seg.checkinActive ? '' : 'ccard-cta-off'" v-on:click="handleCheckinStart(seg.checkinProgramId, seg.checkinDayIndex)">
-                        <text class="ccard-cta-label">{{ seg.checkinLabel.length > 0 ? seg.checkinLabel : tr('programCheckinCta') }}</text>
+                      <view v-else :class="nativeClass('ccard-cta', (seg.checkinActive ? '' : 'ccard-cta-off'))" v-on:click="handleCheckinStart(seg.checkinProgramId, seg.checkinDayIndex)">
+                        <text :class="nativeClass('ccard-cta-label', (null))">{{ seg.checkinLabel.length > 0 ? seg.checkinLabel : tr('programCheckinCta') }}</text>
                       </view>
                     </view>
                   </view>
-                  <rich-text v-if="m.role != 'user' && m.segments.length == 0 && m.content.length > 0" class="msg-html" :style="'width: ' + msgTextW + 'px'" :nodes="_sh(m.content)" />
+                  <rich-text v-if="m.role != 'user' && m.segments.length == 0 && m.content.length > 0" :class="nativeClass('msg-html', (null))" :style="'width: ' + msgTextW + 'px'" :nodes="_sh(m.content)" />
                 </view>
               </view>
             </view>
 
             <view v-if="typing" class="msg-row msg-row-ai">
-              <view class="message-bubble message-ai typing-indicator">
-                <view v-for="i in 3" :key="i" class="typing-dot" :class="typingDotOn(i - 1) ? 'typing-dot-on' : ''"></view>
-                <text v-if="chatStatusText.length > 0" class="typing-status-text">{{ chatStatusText }}</text>
+              <view :class="nativeClass('message-bubble message-ai typing-indicator', (null))">
+                <view v-for="i in 3" :key="i" :class="nativeClass('typing-dot', (typingDotOn(i - 1) ? 'typing-dot-on' : ''))"></view>
+                <text v-if="chatStatusText.length > 0" :class="nativeClass('typing-status-text', (null))">{{ chatStatusText }}</text>
               </view>
             </view>
 
@@ -365,79 +365,79 @@
         </scroll-view>
 
         <!-- Onboarding / questionnaire input bars (one per input_type) -->
-        <view v-if="obQuestion != null && obInputType == 'text'" class="ob-bar name-bar">
-          <input class="ob-input" :placeholder="obPlaceholder" v-model="obName" v-on:confirm="handleSubmitName" />
-          <view class="ob-confirm" v-on:click="handleSubmitName"><text class="ob-confirm-label">{{ tr('confirm') }}</text></view>
+        <view v-if="obQuestion != null && obInputType == 'text'" :class="nativeClass('ob-bar name-bar', (null))">
+          <input :class="nativeClass('ob-input', (null))" :placeholder="obPlaceholder" v-model="obName" v-on:confirm="handleSubmitName" />
+          <view :class="nativeClass('ob-confirm', (null))" v-on:click="handleSubmitName"><text :class="nativeClass('ob-confirm-label', (null))">{{ tr('confirm') }}</text></view>
         </view>
 
-        <view v-if="obQuestion != null && obInputType == 'button_select' && !typing" class="ob-bar gender-bar">
-          <view v-for="(opt, oi) in obOptions()" :key="oi" class="quick-btn" v-on:click="handleSelectButton(`${opt.getString('value')}`)">
-            <text class="quick-btn-label">{{ obOptionLabel(opt) }}</text>
+        <view v-if="obQuestion != null && obInputType == 'button_select' && !typing" :class="nativeClass('ob-bar gender-bar', (null))">
+          <view v-for="(opt, oi) in obOptions()" :key="oi" :class="nativeClass('quick-btn', (null))" v-on:click="handleSelectButton(`${opt.getString('value')}`)">
+            <text :class="nativeClass('quick-btn-label', (null))">{{ obOptionLabel(opt) }}</text>
           </view>
         </view>
 
-        <view v-if="obQuestion != null && obInputType == 'date_picker'" class="ob-bar birthday-bar">
+        <view v-if="obQuestion != null && obInputType == 'date_picker'" :class="nativeClass('ob-bar birthday-bar', (null))">
           <picker mode="date" v-on:change="onObBirthdayChange">
-            <view class="picker-row">
-              <text class="picker-val">{{ obBirthday.length > 0 ? obBirthday : tr('selectBirthday') }}</text>
-              <text class="picker-arrow">›</text>
+            <view :class="nativeClass('picker-row', (null))">
+              <text :class="nativeClass('picker-val', (null))">{{ obBirthday.length > 0 ? obBirthday : tr('selectBirthday') }}</text>
+              <text :class="nativeClass('picker-arrow', (null))">›</text>
             </view>
           </picker>
-          <view class="ob-confirm" :class="obBirthday.length > 0 ? '' : 'ob-confirm-off'" v-on:click="handleSubmitBirthday"><text class="ob-confirm-label">{{ tr('confirm') }}</text></view>
+          <view :class="nativeClass('ob-confirm', (obBirthday.length > 0 ? '' : 'ob-confirm-off'))" v-on:click="handleSubmitBirthday"><text :class="nativeClass('ob-confirm-label', (null))">{{ tr('confirm') }}</text></view>
         </view>
 
         <!-- Questionnaire: time picker (用餐时间 / 步行时间 in a 打卡 program day) -->
-        <view v-if="obQuestion != null && obInputType == 'time_picker'" class="ob-bar birthday-bar">
+        <view v-if="obQuestion != null && obInputType == 'time_picker'" :class="nativeClass('ob-bar birthday-bar', (null))">
           <picker mode="time" v-on:change="onObTimeChange">
-            <view class="picker-row">
-              <text class="picker-val">{{ obTime.length > 0 ? obTime : tr('selectTime') }}</text>
-              <text class="picker-arrow">›</text>
+            <view :class="nativeClass('picker-row', (null))">
+              <text :class="nativeClass('picker-val', (null))">{{ obTime.length > 0 ? obTime : tr('selectTime') }}</text>
+              <text :class="nativeClass('picker-arrow', (null))">›</text>
             </view>
           </picker>
-          <view class="ob-confirm" :class="obTime.length > 0 ? '' : 'ob-confirm-off'" v-on:click="handleSubmitTime"><text class="ob-confirm-label">{{ tr('confirm') }}</text></view>
+          <view :class="nativeClass('ob-confirm', (obTime.length > 0 ? '' : 'ob-confirm-off'))" v-on:click="handleSubmitTime"><text :class="nativeClass('ob-confirm-label', (null))">{{ tr('confirm') }}</text></view>
         </view>
 
-        <view v-if="obQuestion != null && obInputType == 'slider_group'" class="ob-bar body-bar">
+        <view v-if="obQuestion != null && obInputType == 'slider_group'" :class="nativeClass('ob-bar body-bar', (null))">
           <view v-for="(s, si2) in obSlidersCfg()" :key="si2" class="slider-row">
             <view class="slider-labels">
-              <text class="slider-key">{{ obSliderLabel(s) }}</text>
+              <text :class="nativeClass('slider-key', (null))">{{ obSliderLabel(s) }}</text>
               <view class="slider-value-wrap">
-                <input class="slider-val-input" type="digit" :id="'sl-' + s.getString('key')" :value="obSliderValStr(`${s.getString('key')}`)"
+                <input :class="nativeClass('slider-val-input', (null))" type="digit" :id="'sl-' + s.getString('key')" :value="obSliderValStr(`${s.getString('key')}`)"
                        v-on:blur="onSliderValueBlur(`${s.getString('key')}`)" />
-                <text class="slider-unit">{{ s.getString('unit') }}</text>
+                <text :class="nativeClass('slider-unit', (null))">{{ s.getString('unit') }}</text>
               </view>
             </view>
             <view class="slider-control-row">
-              <view class="slider-step-btn" v-on:click="onSliderStep(`${s.getString('key')}`, -1)"><text>−</text></view>
+              <view :class="nativeClass('slider-step-btn', (null))" v-on:click="onSliderStep(`${s.getString('key')}`, -1)"><text>−</text></view>
               <slider class="slider-input" :min="numOr(s.getNumber('min'), 0)" :max="numOr(s.getNumber('max'), 100)" :value="obSliderNum(`${s.getString('key')}`)" :step="numOr(s.getNumber('step'), 1)"
                       active-color="#6375EC" block-color="#6375EC" v-on:change="onSliderChange(`${s.getString('key')}`, $event)" />
-              <view class="slider-step-btn" v-on:click="onSliderStep(`${s.getString('key')}`, 1)"><text>＋</text></view>
+              <view :class="nativeClass('slider-step-btn', (null))" v-on:click="onSliderStep(`${s.getString('key')}`, 1)"><text>＋</text></view>
             </view>
           </view>
-          <view class="ob-confirm" v-on:click="handleSubmitBody"><text class="ob-confirm-label">{{ tr('confirm') }}</text></view>
+          <view :class="nativeClass('ob-confirm', (null))" v-on:click="handleSubmitBody"><text :class="nativeClass('ob-confirm-label', (null))">{{ tr('confirm') }}</text></view>
         </view>
 
-        <view v-if="obQuestion != null && obInputType == 'multi_select'" class="ob-bar conditions-bar">
+        <view v-if="obQuestion != null && obInputType == 'multi_select'" :class="nativeClass('ob-bar conditions-bar', (null))">
           <view class="cond-chips">
-            <view v-for="(c, ci) in obConditionList" :key="ci" class="cond-chip" :class="c.getBoolean('selected') == true ? 'cond-chip-on' : ''" v-on:click="handleToggleCondition(`${c.getString('key')}`)">
-              <text class="cond-chip-label">{{ c.getString('label') }}</text>
+            <view v-for="(c, ci) in obConditionList" :key="ci" :class="nativeClass('cond-chip', (c.getBoolean('selected') == true ? 'cond-chip-on' : ''))" v-on:click="handleToggleCondition(`${c.getString('key')}`)">
+              <text :class="nativeClass('cond-chip-label', (null))">{{ c.getString('label') }}</text>
             </view>
           </view>
-          <input v-if="obOtherSelected" class="ob-input cond-other-input" :placeholder="tr('obConditionsOtherPh')" v-model="obConditionsOther" />
-          <view class="ob-confirm" v-on:click="handleSubmitConditions"><text class="ob-confirm-label">{{ tr('confirm') }}</text></view>
+          <input v-if="obOtherSelected" :class="nativeClass('ob-input cond-other-input', (null))" :placeholder="tr('obConditionsOtherPh')" v-model="obConditionsOther" />
+          <view :class="nativeClass('ob-confirm', (null))" v-on:click="handleSubmitConditions"><text :class="nativeClass('ob-confirm-label', (null))">{{ tr('confirm') }}</text></view>
         </view>
 
         <!-- Kino chip scan button -->
-        <view v-if="kinoScanPending" class="ob-bar kino-scan-bar">
-          <view class="kino-scan-btn" v-on:click="handleKinoScan">
-            <text class="kino-scan-icon">⬡</text>
-            <text class="kino-scan-label">{{ tr('kinoScanBtn') }}</text>
+        <view v-if="kinoScanPending" :class="nativeClass('ob-bar kino-scan-bar', (null))">
+          <view :class="nativeClass('kino-scan-btn', (null))" v-on:click="handleKinoScan">
+            <text :class="nativeClass('kino-scan-icon', (null))">⬡</text>
+            <text :class="nativeClass('kino-scan-label', (null))">{{ tr('kinoScanBtn') }}</text>
           </view>
-          <view class="kino-scan-close" v-on:click="cancelKinoScan"><text class="kino-scan-x">✕</text></view>
+          <view :class="nativeClass('kino-scan-close', (null))" v-on:click="cancelKinoScan"><text :class="nativeClass('kino-scan-x', (null))">✕</text></view>
         </view>
 
-        <view v-if="obStep == 'done' || isGuest" class="ai-disclaimer">
-          <text class="ai-disclaimer-text">{{ tr('aiDisclaimer') }}</text>
+        <view v-if="obStep == 'done' || isGuest" :class="nativeClass('ai-disclaimer', (null))">
+          <text :class="nativeClass('ai-disclaimer-text', (null))">{{ tr('aiDisclaimer') }}</text>
         </view>
 
         <!-- Normal chat input — guests get the mic slot replaced by a Sign-up CTA and send routed
@@ -446,35 +446,35 @@
              TODO(port): native needs an ASR plugin — its mic button only toasts. -->
         <view v-if="obStep == 'done' || isGuest" class="input-container">
           <toolbox v-if="toolboxOpen" :tools="toolList" :disabled="typing" v-on:toolaction="handleToolAction" />
-          <view v-if="micRecording" class="mic-recording-banner">
+          <view v-if="micRecording" :class="nativeClass('mic-recording-banner', (null))">
             <view class="mic-recording-dot"></view>
-            <text class="mic-recording-text">{{ tr('micRecording') }}</text>
+            <text :class="nativeClass('mic-recording-text', (null))">{{ tr('micRecording') }}</text>
           </view>
-          <view class="input-area">
-            <view class="plus-btn" :class="toolboxOpen ? 'plus-btn-open' : ''" v-on:click="toggleToolbox">
-              <text class="plus-icon">+</text>
+          <view :class="nativeClass('input-area', (null))">
+            <view :class="nativeClass('plus-btn', (toolboxOpen ? 'plus-btn-open' : ''))" v-on:click="toggleToolbox">
+              <text :class="nativeClass('plus-icon', (null))">+</text>
             </view>
-            <textarea class="chat-textarea" :style="chatInputH" :placeholder="tr('inputPh')" placeholder-style="color: rgba(166, 196, 229, 0.4)" v-model="chatInput" maxlength="500" />
+            <textarea :class="nativeClass('chat-textarea', (null))" :style="chatInputH" :placeholder="tr('inputPh')" placeholder-style="color: rgba(166, 196, 229, 0.4)" v-model="chatInput" maxlength="500" />
             <!-- #ifdef WEB || MP-WEIXIN -->
-            <view v-if="chatInput.length == 0 && !isGuest && webSpeech" class="mic-btn" :class="micRecording ? 'mic-btn-active' : (typing ? 'mic-btn-disabled' : '')"
+            <view v-if="chatInput.length == 0 && !isGuest && webSpeech" :class="nativeClass('mic-btn', (micRecording ? 'mic-btn-active' : (typing ? 'mic-btn-disabled' : '')))"
               v-on:touchstart="onMicStart" v-on:touchend="onMicEnd" v-on:touchcancel="onMicEnd"
               v-on:mousedown="onMicStart" v-on:mouseup="onMicEnd" v-on:mouseleave="onMicEnd">
               <image class="mic-icon-img" src="/static/icons/mic.svg" mode="aspectFit" />
             </view>
             <!-- #endif -->
             <!-- #ifdef APP -->
-            <view v-if="chatInput.length == 0 && !isGuest" class="mic-btn" v-on:click="onMicTap">
+            <view v-if="chatInput.length == 0 && !isGuest" :class="nativeClass('mic-btn', (null))" v-on:click="onMicTap">
               <image class="mic-icon-img" src="/static/icons/mic.svg" mode="aspectFit" />
             </view>
             <!-- #endif -->
-            <view v-else-if="chatInput.length == 0 && isGuest" class="mic-btn guest-signup-btn" v-on:click="openGuestSheet">
-              <text class="guest-signup-btn-text">{{ tr('guestSignupBtn') }}</text>
+            <view v-else-if="chatInput.length == 0 && isGuest" :class="nativeClass('mic-btn guest-signup-btn', (null))" v-on:click="openGuestSheet">
+              <text :class="nativeClass('guest-signup-btn-text', (null))">{{ tr('guestSignupBtn') }}</text>
             </view>
-            <view v-else-if="isGuest" class="send-btn send-active" v-on:click="openGuestSheet">
-              <text class="send-icon">↑</text>
+            <view v-else-if="isGuest" :class="nativeClass('send-btn send-active', (null))" v-on:click="openGuestSheet">
+              <text :class="nativeClass('send-icon', (null))">↑</text>
             </view>
-            <view v-else class="send-btn" :class="chatInput.length > 0 ? 'send-active' : ''" v-on:click="handleSend">
-              <text class="send-icon">↑</text>
+            <view v-else :class="nativeClass('send-btn', (chatInput.length > 0 ? 'send-active' : ''))" v-on:click="handleSend">
+              <text :class="nativeClass('send-icon', (null))">↑</text>
             </view>
           </view>
         </view>
@@ -511,77 +511,77 @@
             v-on:touchstart="onTabTouchStart" v-on:touchmove="onTabTouchMove"
             v-on:touchend="onTabTouchEnd" v-on:touchcancel="onTabTouchEnd">
 
-        <view class="inner-tab-bar">
-          <view class="inner-tab" :class="plansDotsSubTab == 'dots' ? 'inner-tab-active' : ''" v-on:click="switchPlansDotsSubTab('dots')">
-            <text class="inner-tab-text" :class="plansDotsSubTab == 'dots' ? 'inner-tab-text-on' : ''">{{ tr('plansDotsDotsTab') }}</text>
+        <view :class="nativeClass('inner-tab-bar', (null))">
+          <view :class="nativeClass('inner-tab', (plansDotsSubTab == 'dots' ? 'inner-tab-active' : ''))" v-on:click="switchPlansDotsSubTab('dots')">
+            <text :class="nativeClass('inner-tab-text', (plansDotsSubTab == 'dots' ? 'inner-tab-text-on' : ''))">{{ tr('plansDotsDotsTab') }}</text>
           </view>
-          <view class="inner-tab" :class="plansDotsSubTab == 'plans' ? 'inner-tab-active' : ''" v-on:click="switchPlansDotsSubTab('plans')">
-            <text class="inner-tab-text" :class="plansDotsSubTab == 'plans' ? 'inner-tab-text-on' : ''">{{ tr('plansDotsPlanTab') }}</text>
+          <view :class="nativeClass('inner-tab', (plansDotsSubTab == 'plans' ? 'inner-tab-active' : ''))" v-on:click="switchPlansDotsSubTab('plans')">
+            <text :class="nativeClass('inner-tab-text', (plansDotsSubTab == 'plans' ? 'inner-tab-text-on' : ''))">{{ tr('plansDotsPlanTab') }}</text>
           </view>
         </view>
 
         <view v-if="plansDotsSubTab == 'plans'">
-          <view v-if="isGuest" class="guest-lock-card" v-on:click="openGuestSheet">
-            <text class="guest-lock-icon">🔒</text>
+          <view v-if="isGuest" :class="nativeClass('guest-lock-card', (null))" v-on:click="openGuestSheet">
+            <text :class="nativeClass('guest-lock-icon', (null))">🔒</text>
             <text class="guest-lock-text">{{ tr('guestLockMsg') }}</text>
           </view>
           <view v-else-if="plansLoading" class="plans-loading"><text class="loading-dots">···</text></view>
           <scroll-view v-else direction="vertical" class="plans-scroll">
             <view class="plans-header">
-              <text class="plans-title">{{ tr('plansTitle') }}</text>
-              <view class="plans-browse-btn" v-on:click="openPlanBrowse"><text class="plans-browse-btn-text">+ {{ tr('plansBrowse') }}</text></view>
+              <text :class="nativeClass('plans-title', (null))">{{ tr('plansTitle') }}</text>
+              <view :class="nativeClass('plans-browse-btn', (null))" v-on:click="openPlanBrowse"><text :class="nativeClass('plans-browse-btn-text', (null))">+ {{ tr('plansBrowse') }}</text></view>
             </view>
 
             <view v-if="activePlans.length == 0" class="plans-empty">
-              <text class="plans-empty-text">{{ tr('plansEmpty') }}</text>
-              <view class="plans-browse-cta" v-on:click="openPlanBrowse"><text class="plans-browse-cta-text">{{ tr('plansBrowse') }}</text></view>
+              <text :class="nativeClass('plans-empty-text', (null))">{{ tr('plansEmpty') }}</text>
+              <view class="plans-browse-cta" v-on:click="openPlanBrowse"><text :class="nativeClass('plans-browse-cta-text', (null))">{{ tr('plansBrowse') }}</text></view>
             </view>
 
-            <view v-for="(p, pi) in activePlans" :key="pi" class="plan-card" v-on:click="openPlanDetail(pi)">
+            <view v-for="(p, pi) in activePlans" :key="pi" :class="nativeClass('plan-card', (null))" v-on:click="openPlanDetail(pi)">
               <view class="plan-card-header">
-                <view class="plan-type-badge" :class="'plan-type-' + p.getString('plan_type')">
-                  <text class="plan-type-text">{{ p.getString('plan_type') == 'primary' ? tr('plansPrimary') : tr('plansSecondary') }}</text>
+                <view :class="nativeClass('plan-type-badge', ('plan-type-' + p.getString('plan_type')))">
+                  <text :class="nativeClass('plan-type-text', (null))">{{ p.getString('plan_type') == 'primary' ? tr('plansPrimary') : tr('plansSecondary') }}</text>
                 </view>
-                <text class="plan-card-name">{{ lang == 'zh' ? p.getString('name_zh') : p.getString('name_en') }}</text>
+                <text :class="nativeClass('plan-card-name', (null))">{{ lang == 'zh' ? p.getString('name_zh') : p.getString('name_en') }}</text>
               </view>
-              <view class="plan-progress-bar-track">
+              <view :class="nativeClass('plan-progress-bar-track', (null))">
                 <view class="plan-progress-bar-fill" :style="'width:' + numOr(p.getNumber('progressPct'), 0) + '%'"></view>
               </view>
               <view class="plan-card-meta-row">
-                <text class="plan-meta-item">{{ tr('plansAdherence') }}: {{ numOr(p.getNumber('adherencePct'), 0) }}%</text>
-                <text class="plan-meta-item">{{ numOr(p.getNumber('weeksDone'), 0) }}/{{ numOr(p.getNumber('totalWeeks'), 4) }} {{ tr('plansWeeks') }}</text>
+                <text :class="nativeClass('plan-meta-item', (null))">{{ tr('plansAdherence') }}: {{ numOr(p.getNumber('adherencePct'), 0) }}%</text>
+                <text :class="nativeClass('plan-meta-item', (null))">{{ numOr(p.getNumber('weeksDone'), 0) }}/{{ numOr(p.getNumber('totalWeeks'), 4) }} {{ tr('plansWeeks') }}</text>
               </view>
               <view class="plan-daily-section">
                 <view class="plan-daily-tasks">
-                  <view v-for="(task, ti) in arrOf(p, 'todayTasks')" :key="ti" class="plan-task-chip" :class="task.getBoolean('done') == true ? 'plan-task-done' : ''" v-on:click.stop="handlePlanTask(`${p.getNumber('id')}`, `${task.getString('key')}`)">
-                    <text class="plan-task-label">{{ lang == 'zh' ? task.getString('labelZh') : task.getString('labelEn') }}</text>
-                    <text class="plan-task-check">{{ task.getBoolean('done') == true ? '✓' : '○' }}</text>
+                  <view v-for="(task, ti) in arrOf(p, 'todayTasks')" :key="ti" :class="nativeClass('plan-task-chip', (task.getBoolean('done') == true ? 'plan-task-done' : ''))" v-on:click.stop="handlePlanTask(`${p.getNumber('id')}`, `${task.getString('key')}`)">
+                    <text :class="nativeClass('plan-task-label', (null))">{{ lang == 'zh' ? task.getString('labelZh') : task.getString('labelEn') }}</text>
+                    <text :class="nativeClass('plan-task-check', (null))">{{ task.getBoolean('done') == true ? '✓' : '○' }}</text>
                   </view>
                 </view>
                 <view class="plan-daily-bar-row">
-                  <view class="plan-daily-bar-track">
-                    <view class="plan-daily-bar-fill" :class="numOr(p.getNumber('todayDoneCount'), 0) == arrLen(p, 'todayTasks') ? 'plan-daily-complete' : ''" :style="'width:' + numOr(p.getNumber('todayProgressPct'), 0) + '%'"></view>
+                  <view :class="nativeClass('plan-daily-bar-track', (null))">
+                    <view :class="nativeClass('plan-daily-bar-fill', (numOr(p.getNumber('todayDoneCount'), 0) == arrLen(p, 'todayTasks') ? 'plan-daily-complete' : ''))" :style="'width:' + numOr(p.getNumber('todayProgressPct'), 0) + '%'"></view>
                   </view>
-                  <text class="plan-daily-count">{{ numOr(p.getNumber('todayDoneCount'), 0) }}/{{ arrLen(p, 'todayTasks') }} {{ tr('todayProgress') }}</text>
+                  <text :class="nativeClass('plan-daily-count', (null))">{{ numOr(p.getNumber('todayDoneCount'), 0) }}/{{ arrLen(p, 'todayTasks') }} {{ tr('todayProgress') }}</text>
                 </view>
               </view>
             </view>
 
-            <view v-if="!plansLoading" class="reminders-section">
-              <text class="reminders-section-title">{{ tr('remindersTitle') }}</text>
-              <view v-if="remindersLoading" class="reminders-empty"><text class="reminder-date">···</text></view>
-              <view v-else-if="upcomingReminders.length == 0" class="reminders-empty"><text class="reminder-date">{{ tr('remindersEmpty') }}</text></view>
-              <view v-for="(r, ri) in upcomingReminders" :key="ri" class="reminder-card">
+            <view v-if="!plansLoading" :class="nativeClass('reminders-section', (null))">
+              <text :class="nativeClass('reminders-section-title', (null))">{{ tr('remindersTitle') }}</text>
+              <view v-if="remindersLoading" class="reminders-empty"><text :class="nativeClass('reminder-date', (null))">···</text></view>
+              <view v-else-if="upcomingReminders.length == 0" class="reminders-empty"><text :class="nativeClass('reminder-date', (null))">{{ tr('remindersEmpty') }}</text></view>
+              <view v-for="(r, ri) in upcomingReminders" :key="ri" :class="nativeClass('reminder-card', (null))">
                 <view class="reminder-card-top">
-                  <text class="reminder-content">{{ r.getString('content') }}</text>
-                  <view class="reminder-source-badge" :class="r.getBoolean('isCoach') == true ? 'reminder-source-coach' : 'reminder-source-ai'">
-                    <text class="reminder-source-text">{{ r.getBoolean('isCoach') == true ? tr('reminderSourceCoach') : tr('reminderSourceAi') }}</text>
+                  <text :class="nativeClass('reminder-content', (null))">{{ r.getString('content') }}</text>
+                  <view :class="nativeClass('reminder-source-badge', (r.getBoolean('isCoach') == true ? 'reminder-source-coach' : 'reminder-source-ai'))">
+                    <text :class="nativeClass('reminder-source-text', (null))">{{ r.getBoolean('isCoach') == true ? tr('reminderSourceCoach') : tr('reminderSourceAi') }}</text>
                   </view>
                 </view>
                 <view class="reminder-card-bottom">
-                  <text class="reminder-date">{{ r.getString('dateLabel') }}</text>
+                  <text :class="nativeClass('reminder-date', (null))">{{ r.getString('dateLabel') }}</text>
                   <view v-if="(`${r.getString('recurrenceLabel')}`.length) > 0" class="reminder-recur-badge">
-                    <text class="reminder-recur-text">{{ r.getString('recurrenceLabel') }}</text>
+                    <text :class="nativeClass('reminder-recur-text', (null))">{{ r.getString('recurrenceLabel') }}</text>
                   </view>
                 </view>
               </view>
@@ -593,52 +593,52 @@
         <scroll-view v-else-if="plansDotsSubTab == 'dots'" direction="vertical" class="dots-subtab-scroll">
           <!-- Neo dispenser is not shipping yet; bind prompt stays off behind neoAvailable
                (permanently false in data). Kept rather than deleted — one entry point to it. -->
-          <view v-if="neoAvailable && !neoBound && !isGuest" class="guest-lock-card neo-bind-card" v-on:click="handleBindNeoDevice">
-            <text class="guest-lock-icon">⬢</text>
-            <text class="guest-lock-title">{{ tr('neoBindTitle') }}</text>
-            <view class="guest-lock-btn"><text class="guest-lock-label">{{ tr('neoBindBtn') }}</text></view>
+          <view v-if="neoAvailable && !neoBound && !isGuest" :class="nativeClass('guest-lock-card neo-bind-card', (null))" v-on:click="handleBindNeoDevice">
+            <text :class="nativeClass('guest-lock-icon', (null))">⬢</text>
+            <text :class="nativeClass('guest-lock-title', (null))">{{ tr('neoBindTitle') }}</text>
+            <view :class="nativeClass('guest-lock-btn', (null))"><text class="guest-lock-label">{{ tr('neoBindBtn') }}</text></view>
           </view>
 
           <view v-if="neoBound && !isGuest" class="cart-section">
             <view class="cart-section-hdr">
-              <text class="cart-section-title">{{ tr('cartridgeTitle') }}</text>
-              <view class="cart-sim-btn" v-on:click="openCartSim"><text class="cart-sim-btn-icon">+</text></view>
+              <text :class="nativeClass('cart-section-title', (null))">{{ tr('cartridgeTitle') }}</text>
+              <view :class="nativeClass('cart-sim-btn', (null))" v-on:click="openCartSim"><text :class="nativeClass('cart-sim-btn-icon', (null))">+</text></view>
             </view>
             <view v-if="cartridgesLoading" class="cart-loading"><text class="loading-dots">···</text></view>
             <view v-else-if="cartridges.length > 0" class="cart-grid">
-              <view v-for="(c, ci) in cartridges" :key="ci" class="cart-slot" :class="c.getBoolean('isEmpty') == true ? 'cart-slot-empty' : ''">
-                <view class="ink-bar-wrap">
+              <view v-for="(c, ci) in cartridges" :key="ci" :class="nativeClass('cart-slot', (c.getBoolean('isEmpty') == true ? 'cart-slot-empty' : ''))">
+                <view :class="nativeClass('ink-bar-wrap', (null))">
                   <view class="ink-bar-fill" :style="'height:' + numOr(c.getNumber('percent'), 0) + '%;background:' + c.getString('barColor')"></view>
                 </view>
-                <text class="cart-key">{{ c.getString('dotKey') }}</text>
-                <text class="cart-remaining">{{ c.getNumber('remaining') }}</text>
+                <text :class="nativeClass('cart-key', (null))">{{ c.getString('dotKey') }}</text>
+                <text :class="nativeClass('cart-remaining', (null))">{{ c.getNumber('remaining') }}</text>
               </view>
             </view>
-            <view v-else class="cart-empty"><text class="cart-empty-label">{{ tr('noCartridges') }}</text></view>
+            <view v-else :class="nativeClass('cart-empty', (null))"><text :class="nativeClass('cart-empty-label', (null))">{{ tr('noCartridges') }}</text></view>
           </view>
 
           <!-- ── My dots packages ── merged server-side from the GCN order + nano's formula. -->
-          <view v-if="isAeviva && !isGuest && packages.length > 0" class="pkg-section">
-            <text class="pkg-section-title">{{ tr('pkgSectionTitle') }}</text>
-            <view v-for="(p, pi) in packages" :key="pi" class="pkg-card">
+          <view v-if="isAeviva && !isGuest && packages.length > 0" :class="nativeClass('pkg-section', (null))">
+            <text :class="nativeClass('pkg-section-title', (null))">{{ tr('pkgSectionTitle') }}</text>
+            <view v-for="(p, pi) in packages" :key="pi" :class="nativeClass('pkg-card', (null))">
               <view class="pkg-card-hdr">
-                <text class="pkg-name">{{ p.getString('name') }}</text>
-                <text class="pkg-stage" :class="'pkg-stage-' + p.getString('stage')">{{ p.getString('stageLabel') }}</text>
+                <text :class="nativeClass('pkg-name', (null))">{{ p.getString('name') }}</text>
+                <text :class="nativeClass('pkg-stage', ('pkg-stage-' + p.getString('stage')))">{{ p.getString('stageLabel') }}</text>
               </view>
-              <text v-if="(`${p.getString('meta')}`.length) > 0" class="pkg-meta">{{ p.getString('meta') }}</text>
-              <view v-if="p.getString('tracking_number') != null" class="pkg-track" v-on:click.stop="handleCopyPackageTracking(`${p.getString('tracking_number')}`)">
-                <text class="pkg-track-text">{{ p.getString('trackingLabel') }}</text>
-                <text class="pkg-track-copy">{{ tr('copy') }}</text>
+              <text v-if="(`${p.getString('meta')}`.length) > 0" :class="nativeClass('pkg-meta', (null))">{{ p.getString('meta') }}</text>
+              <view v-if="p.getString('tracking_number') != null" :class="nativeClass('pkg-track', (null))" v-on:click.stop="handleCopyPackageTracking(`${p.getString('tracking_number')}`)">
+                <text :class="nativeClass('pkg-track-text', (null))">{{ p.getString('trackingLabel') }}</text>
+                <text :class="nativeClass('pkg-track-copy', (null))">{{ tr('copy') }}</text>
               </view>
-              <view v-if="p.getBoolean('can_pay') == true" class="pkg-cta" v-on:click.stop="handlePackagePay(`${p.getString('order_id')}`)">
-                <text class="pkg-cta-text">{{ tr('pkgPayBtn') }}</text>
+              <view v-if="p.getBoolean('can_pay') == true" :class="nativeClass('pkg-cta', (null))" v-on:click.stop="handlePackagePay(`${p.getString('order_id')}`)">
+                <text :class="nativeClass('pkg-cta-text', (null))">{{ tr('pkgPayBtn') }}</text>
               </view>
-              <view v-else-if="p.getBoolean('can_submit') == true && p.getString('submit_plan_id') != null" class="pkg-cta" v-on:click.stop="handlePackageSubmit(`${p.getString('order_id')}`, `${p.getString('submit_plan_id')}`)">
-                <text class="pkg-cta-text">{{ tr('pkgUseFormulaBtn') }}</text>
+              <view v-else-if="p.getBoolean('can_submit') == true && p.getString('submit_plan_id') != null" :class="nativeClass('pkg-cta', (null))" v-on:click.stop="handlePackageSubmit(`${p.getString('order_id')}`, `${p.getString('submit_plan_id')}`)">
+                <text :class="nativeClass('pkg-cta-text', (null))">{{ tr('pkgUseFormulaBtn') }}</text>
               </view>
-              <text v-else-if="p.getBoolean('can_submit') == true" class="pkg-hint">{{ tr('pkgNeedsFormulaHint') }}</text>
-              <view v-else-if="p.getBoolean('can_scan') == true" class="pkg-cta pkg-cta-ghost" v-on:click.stop="handleScanBox">
-                <text class="pkg-cta-text-ghost">{{ tr('pkgScanBtn') }}</text>
+              <text v-else-if="p.getBoolean('can_submit') == true" :class="nativeClass('pkg-hint', (null))">{{ tr('pkgNeedsFormulaHint') }}</text>
+              <view v-else-if="p.getBoolean('can_scan') == true" :class="nativeClass('pkg-cta pkg-cta-ghost', (null))" v-on:click.stop="handleScanBox">
+                <text :class="nativeClass('pkg-cta-text-ghost', (null))">{{ tr('pkgScanBtn') }}</text>
               </view>
               <!-- A 'proposed' row deliberately carries NO cta: its only action is "use a code",
                    which the 兑换码 section below owns with the user's actual codes named. -->
@@ -648,76 +648,76 @@
           <!-- ── 兑换码 ── codes bought in-app; 输入兑换码 is the path for codes a store handed
                over in person, so it shows even when the list is empty. -->
           <view v-if="isAeviva && !isGuest" class="code-section">
-            <text class="pkg-section-title">{{ tr('codeSectionTitle') }}</text>
-            <view v-for="(c, ci) in codes" :key="ci" class="pkg-card">
+            <text :class="nativeClass('pkg-section-title', (null))">{{ tr('codeSectionTitle') }}</text>
+            <view v-for="(c, ci) in codes" :key="ci" :class="nativeClass('pkg-card', (null))">
               <view class="pkg-card-hdr">
-                <text class="pkg-name">{{ c.getString('name') }}</text>
-                <text class="code-chip">{{ c.getString('code') }}</text>
+                <text :class="nativeClass('pkg-name', (null))">{{ c.getString('name') }}</text>
+                <text :class="nativeClass('code-chip', (null))">{{ c.getString('code') }}</text>
               </view>
-              <text v-if="(`${c.getString('meta')}`.length) > 0" class="pkg-meta">{{ c.getString('meta') }}</text>
-              <view class="pkg-cta" v-on:click.stop="handleUseCode(`${c.getString('code')}`, c.getNumber('max_distinct_dots'), `${c.getString('name')}`)">
-                <text class="pkg-cta-text">{{ tr('codeUseBtn') }}</text>
+              <text v-if="(`${c.getString('meta')}`.length) > 0" :class="nativeClass('pkg-meta', (null))">{{ c.getString('meta') }}</text>
+              <view :class="nativeClass('pkg-cta', (null))" v-on:click.stop="handleUseCode(`${c.getString('code')}`, c.getNumber('max_distinct_dots'), `${c.getString('name')}`)">
+                <text :class="nativeClass('pkg-cta-text', (null))">{{ tr('codeUseBtn') }}</text>
               </view>
             </view>
-            <view class="pkg-cta pkg-cta-ghost" v-on:click.stop="handleManualCode">
-              <text class="pkg-cta-text-ghost">{{ tr('codeManualBtn') }}</text>
+            <view :class="nativeClass('pkg-cta pkg-cta-ghost', (null))" v-on:click.stop="handleManualCode">
+              <text :class="nativeClass('pkg-cta-text-ghost', (null))">{{ tr('codeManualBtn') }}</text>
             </view>
           </view>
 
           <!-- The one way into ordering dots from this tab, and it only ever offers the tool.
                Hidden while a package is in flight (GCN's formulation_already_in_progress guard). -->
           <view v-if="!neoBound && isAeviva && !isGuest && !hasPackageInFlight && !hasProposedFormula" class="order-dots-card" v-on:click="handleGoFormulate">
-            <text class="order-dots-title">{{ tr('formulateFirstTitle') }}</text>
-            <text class="order-dots-detail">{{ tr('formulateFirstDetail') }}</text>
-            <view class="order-dots-btn"><text class="order-dots-btn-text">{{ tr('formulateFirstBtn') }}</text></view>
+            <text :class="nativeClass('order-dots-title', (null))">{{ tr('formulateFirstTitle') }}</text>
+            <text :class="nativeClass('order-dots-detail', (null))">{{ tr('formulateFirstDetail') }}</text>
+            <view class="order-dots-btn"><text :class="nativeClass('order-dots-btn-text', (null))">{{ tr('formulateFirstBtn') }}</text></view>
           </view>
 
           <!-- Scan the box you received to start its 28-day cycle (real users on a GCN channel). -->
-          <view v-if="isAeviva && !isGuest" class="scan-box-card" v-on:click="handleScanBox">
+          <view v-if="isAeviva && !isGuest" :class="nativeClass('scan-box-card', (null))" v-on:click="handleScanBox">
             <view class="scan-box-main">
-              <text class="scan-box-title">{{ tr('scanBoxTitle') }}</text>
-              <text class="scan-box-detail">{{ tr('scanBoxDetail') }}</text>
+              <text :class="nativeClass('scan-box-title', (null))">{{ tr('scanBoxTitle') }}</text>
+              <text :class="nativeClass('scan-box-detail', (null))">{{ tr('scanBoxDetail') }}</text>
             </view>
-            <image class="scan-box-icon" src="/static/icons/scan.svg" mode="aspectFit" />
+            <image :class="nativeClass('scan-box-icon', (null))" :src="iconSrc('scan')" mode="aspectFit" />
           </view>
 
           <view class="dots-header">
-            <text class="dots-title">{{ tr('dotsTitle') }}</text>
+            <text :class="nativeClass('dots-title', (null))">{{ tr('dotsTitle') }}</text>
             <view class="dots-week-nav">
-              <text class="dots-week-arrow" :class="!hasPrevWeek ? 'dots-week-arrow-disabled' : ''" v-on:click.stop="handleDotsPrevWeek">‹</text>
-              <text v-if="weekLabel.length > 0" class="dots-week-label">{{ weekLabel }}</text>
-              <text class="dots-week-arrow" :class="!hasNextWeek ? 'dots-week-arrow-disabled' : ''" v-on:click.stop="handleDotsNextWeek">›</text>
+              <text :class="nativeClass('dots-week-arrow', (!hasPrevWeek ? 'dots-week-arrow-disabled' : ''))" v-on:click.stop="handleDotsPrevWeek">‹</text>
+              <text v-if="weekLabel.length > 0" :class="nativeClass('dots-week-label', (null))">{{ weekLabel }}</text>
+              <text :class="nativeClass('dots-week-arrow', (!hasNextWeek ? 'dots-week-arrow-disabled' : ''))" v-on:click.stop="handleDotsNextWeek">›</text>
             </view>
           </view>
 
-          <view v-if="isGuest" class="guest-lock-card" v-on:click="openGuestSheet">
-            <text class="guest-lock-icon">◉</text>
-            <text class="guest-lock-title">{{ tr('guestDotsCta') }}</text>
-            <view class="guest-lock-btn"><text class="guest-lock-label">{{ tr('guestJoinBtn') }}</text></view>
+          <view v-if="isGuest" :class="nativeClass('guest-lock-card', (null))" v-on:click="openGuestSheet">
+            <text :class="nativeClass('guest-lock-icon', (null))">◉</text>
+            <text :class="nativeClass('guest-lock-title', (null))">{{ tr('guestDotsCta') }}</text>
+            <view :class="nativeClass('guest-lock-btn', (null))"><text class="guest-lock-label">{{ tr('guestJoinBtn') }}</text></view>
           </view>
           <view v-else-if="dotsLoading" class="center-wrap"><text class="loading-dots">···</text></view>
           <view v-else-if="dotsDays.length > 0">
             <scroll-view direction="horizontal" class="dots-scroll" :scroll-left="todayScrollLeft" :show-scrollbar="false">
               <view class="dots-days">
-                <view v-for="(d, di) in dotsDays" :key="di" class="day-card" :class="d.getBoolean('isToday') == true ? 'day-today' : ''">
-                  <text class="day-label">{{ d.getString('label') }}</text>
-                  <view v-if="arrLen(d, 'morning') > 0" class="meal-slot" :class="d.getBoolean('isToday') == true && dispenseSlot == 'morning_cup' ? 'meal-slot-active' : ''">
-                    <text class="meal-name">{{ tr('morning') }}</text>
+                <view v-for="(d, di) in dotsDays" :key="di" :class="nativeClass('day-card', (d.getBoolean('isToday') == true ? 'day-today' : ''))">
+                  <text :class="nativeClass('day-label', (null))">{{ d.getString('label') }}</text>
+                  <view v-if="arrLen(d, 'morning') > 0" :class="nativeClass('meal-slot', (d.getBoolean('isToday') == true && dispenseSlot == 'morning_cup' ? 'meal-slot-active' : ''))">
+                    <text :class="nativeClass('meal-name', (null))">{{ tr('morning') }}</text>
                     <view class="dot-chips">
-                      <view v-for="(dot, dj) in arrOf(d, 'morning')" :key="dj" class="dot-chip">
+                      <view v-for="(dot, dj) in arrOf(d, 'morning')" :key="dj" :class="nativeClass('dot-chip', (null))">
                         <view class="dot-swatch" :style="'background:' + dot.getString('color')"></view>
-                        <text class="dot-key">{{ dot.getString('displayKey') }}</text>
-                        <text class="dot-count">×{{ dot.getNumber('count') }}</text>
+                        <text :class="nativeClass('dot-key', (null))">{{ dot.getString('displayKey') }}</text>
+                        <text :class="nativeClass('dot-count', (null))">×{{ dot.getNumber('count') }}</text>
                       </view>
                     </view>
                   </view>
-                  <view v-if="arrLen(d, 'evening') > 0" class="meal-slot" :class="d.getBoolean('isToday') == true && dispenseSlot == 'evening_cup' ? 'meal-slot-active' : ''">
-                    <text class="meal-name">{{ tr('evening') }}</text>
+                  <view v-if="arrLen(d, 'evening') > 0" :class="nativeClass('meal-slot', (d.getBoolean('isToday') == true && dispenseSlot == 'evening_cup' ? 'meal-slot-active' : ''))">
+                    <text :class="nativeClass('meal-name', (null))">{{ tr('evening') }}</text>
                     <view class="dot-chips">
-                      <view v-for="(dot, dj) in arrOf(d, 'evening')" :key="dj" class="dot-chip">
+                      <view v-for="(dot, dj) in arrOf(d, 'evening')" :key="dj" :class="nativeClass('dot-chip', (null))">
                         <view class="dot-swatch" :style="'background:' + dot.getString('color')"></view>
-                        <text class="dot-key">{{ dot.getString('displayKey') }}</text>
-                        <text class="dot-count">×{{ dot.getNumber('count') }}</text>
+                        <text :class="nativeClass('dot-key', (null))">{{ dot.getString('displayKey') }}</text>
+                        <text :class="nativeClass('dot-count', (null))">×{{ dot.getNumber('count') }}</text>
                       </view>
                     </view>
                   </view>
@@ -726,12 +726,12 @@
             </scroll-view>
 
             <view v-if="dispenseHasToday && neoBound" class="dispense-section">
-              <view class="dispense-btn" :class="dispenseStatus == 'done' ? ' dispense-btn-done' : (dispenseStatus == 'error' ? ' dispense-btn-error' : (dispenseStatus == 'loading' ? ' dispense-btn-loading' : ''))" v-on:click="dispenseToday">
-                <text class="dispense-btn-text">{{ dispenseStatus == 'loading' ? tr('dispensing') : (dispenseStatus == 'done' ? tr('dispenseOk') : (dispenseStatus == 'error' ? tr('dispenseErr') : tr('dispenseBtn'))) }}</text>
+              <view :class="nativeClass('dispense-btn', (dispenseStatus == 'done' ? ' dispense-btn-done' : (dispenseStatus == 'error' ? ' dispense-btn-error' : (dispenseStatus == 'loading' ? ' dispense-btn-loading' : ''))))" v-on:click="dispenseToday">
+                <text :class="nativeClass('dispense-btn-text', (null))">{{ dispenseStatus == 'loading' ? tr('dispensing') : (dispenseStatus == 'done' ? tr('dispenseOk') : (dispenseStatus == 'error' ? tr('dispenseErr') : tr('dispenseBtn'))) }}</text>
               </view>
             </view>
           </view>
-          <view v-else class="dots-empty"><text class="dots-empty-label">{{ tr('noPlan') }}</text></view>
+          <view v-else :class="nativeClass('dots-empty', (null))"><text :class="nativeClass('dots-empty-label', (null))">{{ tr('noPlan') }}</text></view>
           <view style="height:24px"></view>
         </scroll-view>
       </view>
@@ -739,98 +739,98 @@
 
       <!-- Weight entry modal -->
       <view v-if="planWeightOpen" class="modal-overlay">
-        <view class="modal-sheet" :style="planWeightKeyboard > 0 ? 'margin-bottom: ' + planWeightKeyboard + 'px;' : ''">
-          <text class="modal-title">{{ tr('taskWeightTitle') }}</text>
-          <input class="modal-input" type="digit" :placeholder="tr('taskWeightPlaceholder')" v-model="planWeightInput"
+        <view :class="nativeClass('modal-sheet', (null))" :style="planWeightKeyboard > 0 ? 'margin-bottom: ' + planWeightKeyboard + 'px;' : ''">
+          <text :class="nativeClass('modal-title', (null))">{{ tr('taskWeightTitle') }}</text>
+          <input :class="nativeClass('modal-input', (null))" type="digit" :placeholder="tr('taskWeightPlaceholder')" v-model="planWeightInput"
             :adjust-position="false" v-on:focus="handleWeightFocus" v-on:blur="handleWeightBlur" />
           <view class="modal-actions">
-            <view class="modal-btn modal-btn-cancel" v-on:click="closeWeightTask"><text class="modal-btn-cancel-label">{{ tr('taskWeightCancel') }}</text></view>
-            <view class="modal-btn modal-btn-confirm" v-on:click="handleWeightSubmit"><text class="modal-btn-confirm-label">{{ tr('taskWeightConfirm') }}</text></view>
+            <view :class="nativeClass('modal-btn modal-btn-cancel', (null))" v-on:click="closeWeightTask"><text :class="nativeClass('modal-btn-cancel-label', (null))">{{ tr('taskWeightCancel') }}</text></view>
+            <view :class="nativeClass('modal-btn modal-btn-confirm', (null))" v-on:click="handleWeightSubmit"><text class="modal-btn-confirm-label">{{ tr('taskWeightConfirm') }}</text></view>
           </view>
         </view>
       </view>
 
       <!-- Daily questions modal -->
       <view v-if="planQuestionsOpen" class="modal-overlay">
-        <view class="modal-sheet">
-          <text class="modal-title">{{ tr('taskQuestionsTitle') }}</text>
+        <view :class="nativeClass('modal-sheet', (null))">
+          <text :class="nativeClass('modal-title', (null))">{{ tr('taskQuestionsTitle') }}</text>
           <view class="q-row">
-            <text class="q-label">{{ tr('taskQEnergy') }}</text>
+            <text :class="nativeClass('q-label', (null))">{{ tr('taskQEnergy') }}</text>
             <slider :min="1" :max="5" :step="1" :value="planQEnergy" :show-value="true" :block-size="20" active-color="#6375EC" v-on:change="onPlanQChange('energy', $event)" />
           </view>
           <view class="q-row">
-            <text class="q-label">{{ tr('taskQSleep') }}</text>
+            <text :class="nativeClass('q-label', (null))">{{ tr('taskQSleep') }}</text>
             <slider :min="1" :max="5" :step="1" :value="planQSleep" :show-value="true" :block-size="20" active-color="#6375EC" v-on:change="onPlanQChange('sleep', $event)" />
           </view>
           <view class="q-row">
-            <text class="q-label">{{ tr('taskQMood') }}</text>
+            <text :class="nativeClass('q-label', (null))">{{ tr('taskQMood') }}</text>
             <slider :min="1" :max="5" :step="1" :value="planQMood" :show-value="true" :block-size="20" active-color="#6375EC" v-on:change="onPlanQChange('mood', $event)" />
           </view>
           <view class="modal-actions">
-            <view class="modal-btn modal-btn-cancel" v-on:click="closeQuestionsTask"><text class="modal-btn-cancel-label">{{ tr('taskQCancel') }}</text></view>
-            <view class="modal-btn modal-btn-confirm" v-on:click="handleQuestionsSubmit"><text class="modal-btn-confirm-label">{{ tr('taskQSubmit') }}</text></view>
+            <view :class="nativeClass('modal-btn modal-btn-cancel', (null))" v-on:click="closeQuestionsTask"><text :class="nativeClass('modal-btn-cancel-label', (null))">{{ tr('taskQCancel') }}</text></view>
+            <view :class="nativeClass('modal-btn modal-btn-confirm', (null))" v-on:click="handleQuestionsSubmit"><text class="modal-btn-confirm-label">{{ tr('taskQSubmit') }}</text></view>
           </view>
         </view>
       </view>
 
       <!-- Plan Detail Sheet -->
       <view v-if="planDetailOpen" class="overlay-mask">
-        <view class="overlay-panel">
-          <view class="overlay-header">
-            <text class="overlay-title">{{ planDetailData != null ? (lang == 'zh' ? planDetailData!.getString('name_zh') : planDetailData!.getString('name_en')) : '' }}</text>
-            <view class="overlay-close" v-on:click="closePlanDetail"><text class="close-x">✕</text></view>
+        <view :class="nativeClass('overlay-panel', (null))">
+          <view :class="nativeClass('overlay-header', (null))">
+            <text :class="nativeClass('overlay-title', (null))">{{ planDetailData != null ? (lang == 'zh' ? planDetailData!.getString('name_zh') : planDetailData!.getString('name_en')) : '' }}</text>
+            <view class="overlay-close" v-on:click="closePlanDetail"><text :class="nativeClass('close-x', (null))">✕</text></view>
           </view>
-          <view class="detail-tabs">
-            <view class="detail-tab" :class="planSubTab == 'overview' ? 'detail-tab-active' : ''" v-on:click="switchPlanSubTab('overview')"><text class="detail-tab-text">{{ tr('plansSubTabOverview') }}</text></view>
-            <view class="detail-tab" :class="planSubTab == 'progress' ? 'detail-tab-active' : ''" v-on:click="switchPlanSubTab('progress')"><text class="detail-tab-text">{{ tr('plansSubTabProgress') }}</text></view>
-            <view class="detail-tab" :class="planSubTab == 'activities' ? 'detail-tab-active' : ''" v-on:click="switchPlanSubTab('activities')"><text class="detail-tab-text">{{ tr('plansSubTabActivities') }}</text></view>
-            <view class="detail-tab" :class="planSubTab == 'guidance' ? 'detail-tab-active' : ''" v-on:click="switchPlanSubTab('guidance')"><text class="detail-tab-text">{{ tr('plansSubTabGuidance') }}</text></view>
+          <view :class="nativeClass('detail-tabs', (null))">
+            <view :class="nativeClass('detail-tab', (planSubTab == 'overview' ? 'detail-tab-active' : ''))" v-on:click="switchPlanSubTab('overview')"><text :class="nativeClass('detail-tab-text', (null))">{{ tr('plansSubTabOverview') }}</text></view>
+            <view :class="nativeClass('detail-tab', (planSubTab == 'progress' ? 'detail-tab-active' : ''))" v-on:click="switchPlanSubTab('progress')"><text :class="nativeClass('detail-tab-text', (null))">{{ tr('plansSubTabProgress') }}</text></view>
+            <view :class="nativeClass('detail-tab', (planSubTab == 'activities' ? 'detail-tab-active' : ''))" v-on:click="switchPlanSubTab('activities')"><text :class="nativeClass('detail-tab-text', (null))">{{ tr('plansSubTabActivities') }}</text></view>
+            <view :class="nativeClass('detail-tab', (planSubTab == 'guidance' ? 'detail-tab-active' : ''))" v-on:click="switchPlanSubTab('guidance')"><text :class="nativeClass('detail-tab-text', (null))">{{ tr('plansSubTabGuidance') }}</text></view>
           </view>
 
           <scroll-view v-if="planSubTab == 'overview'" direction="vertical" class="overlay-scroll">
-            <view class="plan-detail-section">
-              <text class="plan-detail-label">{{ tr('plansGoal') }}</text>
-              <text class="plan-detail-value">{{ planDetailData != null ? (lang == 'zh' ? planDetailData!.getString('goal_zh') : planDetailData!.getString('goal_en')) : '' }}</text>
+            <view :class="nativeClass('plan-detail-section', (null))">
+              <text :class="nativeClass('plan-detail-label', (null))">{{ tr('plansGoal') }}</text>
+              <text :class="nativeClass('plan-detail-value', (null))">{{ planDetailData != null ? (lang == 'zh' ? planDetailData!.getString('goal_zh') : planDetailData!.getString('goal_en')) : '' }}</text>
             </view>
-            <view class="plan-detail-section">
-              <text class="plan-detail-label">{{ tr('plansStartDate') }}</text>
-              <text class="plan-detail-value">{{ planDetailData != null ? planDetailData!.getString('start_date') : '' }}</text>
+            <view :class="nativeClass('plan-detail-section', (null))">
+              <text :class="nativeClass('plan-detail-label', (null))">{{ tr('plansStartDate') }}</text>
+              <text :class="nativeClass('plan-detail-value', (null))">{{ planDetailData != null ? planDetailData!.getString('start_date') : '' }}</text>
             </view>
-            <view class="plan-detail-section">
-              <text class="plan-detail-label">{{ tr('plansDuration') }}</text>
-              <text class="plan-detail-value">{{ planDetailData != null ? planDetailData!.getNumber('totalWeeks') : 0 }} {{ tr('plansWeeks') }}</text>
+            <view :class="nativeClass('plan-detail-section', (null))">
+              <text :class="nativeClass('plan-detail-label', (null))">{{ tr('plansDuration') }}</text>
+              <text :class="nativeClass('plan-detail-value', (null))">{{ planDetailData != null ? planDetailData!.getNumber('totalWeeks') : 0 }} {{ tr('plansWeeks') }}</text>
             </view>
-            <view v-if="planTargetSubAges.length > 0" class="plan-detail-section">
-              <text class="plan-detail-label">{{ tr('plansTargetSubAges') }}</text>
+            <view v-if="planTargetSubAges.length > 0" :class="nativeClass('plan-detail-section', (null))">
+              <text :class="nativeClass('plan-detail-label', (null))">{{ tr('plansTargetSubAges') }}</text>
               <view class="plan-chips-row">
-                <view v-for="(sa, sai) in planTargetSubAges" :key="sai" class="plan-chip"><text class="plan-chip-text">{{ sa }}</text></view>
+                <view v-for="(sa, sai) in planTargetSubAges" :key="sai" class="plan-chip"><text :class="nativeClass('plan-chip-text', (null))">{{ sa }}</text></view>
               </view>
             </view>
-            <view class="plan-detail-section">
-              <text class="plan-detail-label plan-section-label">{{ tr('planReminders') }}</text>
+            <view :class="nativeClass('plan-detail-section', (null))">
+              <text :class="nativeClass('plan-detail-label plan-section-label', (null))">{{ tr('planReminders') }}</text>
               <view v-if="planDetailReminders.length == 0" class="plan-empty-hint"><text class="plan-empty-hint-text">{{ tr('planNoReminders') }}</text></view>
-              <view v-for="(r, ri) in planDetailReminders" :key="ri" class="plan-reminder-row">
+              <view v-for="(r, ri) in planDetailReminders" :key="ri" :class="nativeClass('plan-reminder-row', (null))">
                 <view class="plan-reminder-info">
-                  <text class="plan-reminder-time">{{ r.getString('timeDisplay') }}</text>
-                  <text class="plan-reminder-content">{{ r.getString('content') }}</text>
+                  <text :class="nativeClass('plan-reminder-time', (null))">{{ r.getString('timeDisplay') }}</text>
+                  <text :class="nativeClass('plan-reminder-content', (null))">{{ r.getString('content') }}</text>
                 </view>
-                <view class="plan-reminder-toggle" :class="r.getString('status') == 'paused' ? 'reminder-paused' : 'reminder-active'" v-on:click="handleTogglePlanReminder(idStr(r, 'id'), `${r.getString('status')}`)">
-                  <text class="plan-reminder-toggle-label">{{ r.getString('status') == 'paused' ? tr('planReminderResume') : tr('planReminderPause') }}</text>
+                <view :class="nativeClass('plan-reminder-toggle', (r.getString('status') == 'paused' ? 'reminder-paused' : 'reminder-active'))" v-on:click="handleTogglePlanReminder(idStr(r, 'id'), `${r.getString('status')}`)">
+                  <text :class="nativeClass('plan-reminder-toggle-label', (null))">{{ r.getString('status') == 'paused' ? tr('planReminderResume') : tr('planReminderPause') }}</text>
                 </view>
               </view>
             </view>
             <!-- Committed formulation for this focus — Aeviva-only purchase CTA (AGENTS §31). -->
-            <view v-if="planFormulation != null" class="plan-detail-section">
-              <text class="plan-detail-label plan-section-label">{{ tr('formulationReadyTitle') }}</text>
+            <view v-if="planFormulation != null" :class="nativeClass('plan-detail-section', (null))">
+              <text :class="nativeClass('plan-detail-label plan-section-label', (null))">{{ tr('formulationReadyTitle') }}</text>
               <view class="plan-chips-row">
                 <view v-for="(fd, fi) in planFormulationDots" :key="fi" class="plan-chip plan-chip-dot">
-                  <text class="plan-chip-text">{{ lang == 'zh' ? fd.getString('name_zh') : fd.getString('name') }} ×{{ fd.getNumber('total_count') }}</text>
+                  <text :class="nativeClass('plan-chip-text', (null))">{{ lang == 'zh' ? fd.getString('name_zh') : fd.getString('name') }} ×{{ fd.getNumber('total_count') }}</text>
                 </view>
               </view>
               <view v-if="isAeviva" class="plan-action-btn plan-action-buy" v-on:click="handleBuyFormulation"><text class="plan-action-label">{{ tr('buyFormulationBtn') }}</text></view>
             </view>
-            <view v-else-if="isAeviva" class="plan-detail-section">
-              <text class="plan-detail-label plan-section-label">{{ tr('formulationNotReadyTitle') }}</text>
+            <view v-else-if="isAeviva" :class="nativeClass('plan-detail-section', (null))">
+              <text :class="nativeClass('plan-detail-label plan-section-label', (null))">{{ tr('formulationNotReadyTitle') }}</text>
               <text class="plan-empty-hint">{{ tr('formulationNotReadyHint') }}</text>
             </view>
             <view class="plan-actions-row">
@@ -840,35 +840,35 @@
           </scroll-view>
 
           <scroll-view v-else-if="planSubTab == 'progress'" direction="vertical" class="overlay-scroll">
-            <view class="plan-detail-section">
-              <text class="plan-detail-label">{{ tr('plansAdherence') }}</text>
-              <text class="plan-detail-value">{{ planDetailData != null ? planDetailData!.getNumber('adherencePct') : 0 }}% ({{ planDetailData != null ? planDetailData!.getNumber('checkin_count') : 0 }} {{ lang == 'zh' ? '次打卡' : 'check-ins' }})</text>
+            <view :class="nativeClass('plan-detail-section', (null))">
+              <text :class="nativeClass('plan-detail-label', (null))">{{ tr('plansAdherence') }}</text>
+              <text :class="nativeClass('plan-detail-value', (null))">{{ planDetailData != null ? planDetailData!.getNumber('adherencePct') : 0 }}% ({{ planDetailData != null ? planDetailData!.getNumber('checkin_count') : 0 }} {{ lang == 'zh' ? '次打卡' : 'check-ins' }})</text>
             </view>
-            <view class="plan-detail-section">
-              <text class="plan-detail-label">{{ tr('plansWeeks') }}</text>
-              <text class="plan-detail-value">{{ planDetailData != null ? planDetailData!.getNumber('weeksDone') : 0 }}/{{ planDetailData != null ? planDetailData!.getNumber('totalWeeks') : 0 }}</text>
+            <view :class="nativeClass('plan-detail-section', (null))">
+              <text :class="nativeClass('plan-detail-label', (null))">{{ tr('plansWeeks') }}</text>
+              <text :class="nativeClass('plan-detail-value', (null))">{{ planDetailData != null ? planDetailData!.getNumber('weeksDone') : 0 }}/{{ planDetailData != null ? planDetailData!.getNumber('totalWeeks') : 0 }}</text>
             </view>
-            <view class="plan-detail-section">
-              <text class="plan-detail-label">{{ tr('plansNoMilestones') }}</text>
+            <view :class="nativeClass('plan-detail-section', (null))">
+              <text :class="nativeClass('plan-detail-label', (null))">{{ tr('plansNoMilestones') }}</text>
             </view>
           </scroll-view>
 
           <scroll-view v-else-if="planSubTab == 'activities'" direction="vertical" class="overlay-scroll">
-            <view v-if="eventsLoading" class="panel-center"><text class="empty-text">{{ tr('eventsLoading') }}</text></view>
-            <view v-else-if="events.length == 0" class="panel-center"><text class="empty-text">{{ tr('eventsEmpty') }}</text></view>
+            <view v-if="eventsLoading" class="panel-center"><text :class="nativeClass('empty-text', (null))">{{ tr('eventsLoading') }}</text></view>
+            <view v-else-if="events.length == 0" class="panel-center"><text :class="nativeClass('empty-text', (null))">{{ tr('eventsEmpty') }}</text></view>
             <view v-else class="events-list">
-              <view v-for="(ev, ei) in events" :key="ei" class="event-card">
+              <view v-for="(ev, ei) in events" :key="ei" :class="nativeClass('event-card', (null))">
                 <view class="event-card-header">
-                  <text class="event-title">{{ ev.getString('title') }}</text>
+                  <text :class="nativeClass('event-title', (null))">{{ ev.getString('title') }}</text>
                   <view v-if="isSignupEvent(ev.getNumber('id'))" class="event-badge-signed"><text>{{ tr('eventsSignedUp') }}</text></view>
                 </view>
-                <text class="event-meta">📅 {{ ev.getString('scheduled_at_display') }}</text>
-                <text v-if="ev.getString('location') != null" class="event-meta">📍 {{ ev.getString('location') }}</text>
-                <text v-if="ev.getString('description') != null" class="event-desc">{{ ev.getString('description') }}</text>
-                <text v-if="ev.getNumber('capacity') != null" class="event-meta">{{ tr('eventsCapacity') }}: {{ ev.getNumber('remaining') }}/{{ ev.getNumber('capacity') }}</text>
+                <text :class="nativeClass('event-meta', (null))">📅 {{ ev.getString('scheduled_at_display') }}</text>
+                <text v-if="ev.getString('location') != null" :class="nativeClass('event-meta', (null))">📍 {{ ev.getString('location') }}</text>
+                <text v-if="ev.getString('description') != null" :class="nativeClass('event-desc', (null))">{{ ev.getString('description') }}</text>
+                <text v-if="ev.getNumber('capacity') != null" :class="nativeClass('event-meta', (null))">{{ tr('eventsCapacity') }}: {{ ev.getNumber('remaining') }}/{{ ev.getNumber('capacity') }}</text>
                 <view class="event-card-actions">
                   <view v-if="isSignupEvent(ev.getNumber('id'))" class="event-btn event-btn-cancel" v-on:click.stop="handleEventCancelSignup(`${ev.getNumber('id')}`)"><text class="event-btn-label">{{ tr('eventsCancel') }}</text></view>
-                  <view v-else-if="ev.getBoolean('is_full') == true" class="event-btn event-btn-disabled"><text class="event-btn-label">{{ tr('eventsFull') }}</text></view>
+                  <view v-else-if="ev.getBoolean('is_full') == true" :class="nativeClass('event-btn event-btn-disabled', (null))"><text class="event-btn-label">{{ tr('eventsFull') }}</text></view>
                   <view v-else class="event-btn event-btn-signup" v-on:click.stop="handleEventSignUp(`${ev.getNumber('id')}`)"><text class="event-btn-label">{{ tr('eventsSignUp') }}</text></view>
                 </view>
               </view>
@@ -876,14 +876,14 @@
           </scroll-view>
 
           <scroll-view v-else direction="vertical" class="overlay-scroll">
-            <view class="plan-detail-section">
-              <text class="plan-detail-value">{{ guidanceText }}</text>
+            <view :class="nativeClass('plan-detail-section', (null))">
+              <text :class="nativeClass('plan-detail-value', (null))">{{ guidanceText }}</text>
             </view>
-            <view v-if="planRecommendedDots.length > 0" class="plan-detail-section">
-              <text class="plan-detail-label">{{ tr('plansRecommendedDots') }}</text>
+            <view v-if="planRecommendedDots.length > 0" :class="nativeClass('plan-detail-section', (null))">
+              <text :class="nativeClass('plan-detail-label', (null))">{{ tr('plansRecommendedDots') }}</text>
               <view class="plan-chips-row">
                 <view v-for="(rd, ri2) in planRecommendedDots" :key="ri2" class="plan-chip plan-chip-dot">
-                  <text class="plan-chip-text">{{ lang == 'zh' ? recommendedDotZh(rd) : rd.getString('name') }}</text>
+                  <text :class="nativeClass('plan-chip-text', (null))">{{ lang == 'zh' ? recommendedDotZh(rd) : rd.getString('name') }}</text>
                 </view>
               </view>
             </view>
@@ -893,21 +893,21 @@
 
       <!-- Plan Browse Sheet -->
       <view v-if="planBrowseOpen" class="overlay-mask">
-        <view class="overlay-panel">
-          <view class="overlay-header">
-            <text class="overlay-title">{{ tr('plansTemplates') }}</text>
-            <view class="overlay-close" v-on:click="closePlanBrowse"><text class="close-x">✕</text></view>
+        <view :class="nativeClass('overlay-panel', (null))">
+          <view :class="nativeClass('overlay-header', (null))">
+            <text :class="nativeClass('overlay-title', (null))">{{ tr('plansTemplates') }}</text>
+            <view class="overlay-close" v-on:click="closePlanBrowse"><text :class="nativeClass('close-x', (null))">✕</text></view>
           </view>
           <scroll-view direction="vertical" class="overlay-scroll">
-            <view v-for="(tpl, ti) in planTemplates" :key="ti" class="browse-tpl-card">
-              <text class="browse-tpl-name">{{ lang == 'zh' ? tpl.getString('name_zh') : tpl.getString('name_en') }}</text>
-              <text class="browse-tpl-goal">{{ lang == 'zh' ? tpl.getString('goal_zh') : tpl.getString('goal_en') }}</text>
-              <text class="browse-tpl-meta">{{ tpl.getNumber('duration_weeks') }} {{ tr('plansWeeks') }} · {{ tpl.getString('sub_ages_display') }}</text>
+            <view v-for="(tpl, ti) in planTemplates" :key="ti" :class="nativeClass('browse-tpl-card', (null))">
+              <text :class="nativeClass('browse-tpl-name', (null))">{{ lang == 'zh' ? tpl.getString('name_zh') : tpl.getString('name_en') }}</text>
+              <text :class="nativeClass('browse-tpl-goal', (null))">{{ lang == 'zh' ? tpl.getString('goal_zh') : tpl.getString('goal_en') }}</text>
+              <text :class="nativeClass('browse-tpl-meta', (null))">{{ tpl.getNumber('duration_weeks') }} {{ tr('plansWeeks') }} · {{ tpl.getString('sub_ages_display') }}</text>
               <view class="browse-tpl-actions">
-                <view v-if="tpl.getBoolean('alreadyEnrolled') == true" class="browse-enrolled-badge"><text class="browse-enrolled-label">{{ tr('plansAlreadyEnrolled') }}</text></view>
+                <view v-if="tpl.getBoolean('alreadyEnrolled') == true" :class="nativeClass('browse-enrolled-badge', (null))"><text :class="nativeClass('browse-enrolled-label', (null))">{{ tr('plansAlreadyEnrolled') }}</text></view>
                 <view v-else class="browse-join-row">
-                  <view class="browse-join-btn" :class="tpl.getBoolean('canJoinPrimary') == true ? '' : ' browse-join-disabled'" v-on:click="handleJoinPlan(`${tpl.getNumber('id')}`, 'primary')"><text class="browse-join-label">{{ tr('plansJoinPrimary') }}</text></view>
-                  <view class="browse-join-btn browse-join-secondary" :class="tpl.getBoolean('canJoinSecondary') == true ? '' : ' browse-join-disabled'" v-on:click="handleJoinPlan(`${tpl.getNumber('id')}`, 'secondary')"><text class="browse-join-label browse-join-label-secondary">{{ tr('plansJoinSecondary') }}</text></view>
+                  <view :class="nativeClass('browse-join-btn', (tpl.getBoolean('canJoinPrimary') == true ? '' : ' browse-join-disabled'))" v-on:click="handleJoinPlan(`${tpl.getNumber('id')}`, 'primary')"><text class="browse-join-label">{{ tr('plansJoinPrimary') }}</text></view>
+                  <view :class="nativeClass('browse-join-btn browse-join-secondary', (tpl.getBoolean('canJoinSecondary') == true ? '' : ' browse-join-disabled'))" v-on:click="handleJoinPlan(`${tpl.getNumber('id')}`, 'secondary')"><text class="browse-join-label browse-join-label-secondary">{{ tr('plansJoinSecondary') }}</text></view>
                 </view>
               </view>
             </view>
@@ -925,22 +925,22 @@
             v-on:touchend="onTabTouchEnd" v-on:touchcancel="onTabTouchEnd">
 
         <view class="store-header">
-          <text class="store-title">{{ tr('storeTitle') }}</text>
+          <text :class="nativeClass('store-title', (null))">{{ tr('storeTitle') }}</text>
           <view class="store-header-right">
-            <view v-if="!isGuest" class="store-credit-card">
-              <text class="store-credit-card-num">{{ creditBalance }}</text>
-              <text class="store-credit-card-unit">pts</text>
-              <text class="store-credit-card-label">{{ lang == 'zh' ? '我的积分' : 'MY CREDITS' }}</text>
+            <view v-if="!isGuest" :class="nativeClass('store-credit-card', (null))">
+              <text :class="nativeClass('store-credit-card-num', (null))">{{ creditBalance }}</text>
+              <text :class="nativeClass('store-credit-card-unit', (null))">pts</text>
+              <text :class="nativeClass('store-credit-card-label', (null))">{{ lang == 'zh' ? '我的积分' : 'MY CREDITS' }}</text>
             </view>
             <view v-if="cartCount > 0" class="store-cart-icon" v-on:click="handleOpenCart">
-              <text class="store-cart-badge">{{ cartCount }}</text>
+              <text :class="nativeClass('store-cart-badge', (null))">{{ cartCount }}</text>
             </view>
           </view>
         </view>
 
         <view v-if="!storeLoading" class="store-subtab-row">
-          <view class="store-subtab-btn" :class="storeSubTab == 'products' ? ' store-subtab-active' : ''" v-on:click="switchStoreTab('products')"><text>{{ tr('storeSubProducts') }}</text></view>
-          <view class="store-subtab-btn" :class="storeSubTab == 'orders' ? ' store-subtab-active' : ''" v-on:click="switchStoreTab('orders')"><text>{{ tr('storeSubOrders') }}</text></view>
+          <view :class="nativeClass('store-subtab-btn', (storeSubTab == 'products' ? ' store-subtab-active' : ''))" v-on:click="switchStoreTab('products')"><text>{{ tr('storeSubProducts') }}</text></view>
+          <view :class="nativeClass('store-subtab-btn', (storeSubTab == 'orders' ? ' store-subtab-active' : ''))" v-on:click="switchStoreTab('orders')"><text>{{ tr('storeSubOrders') }}</text></view>
         </view>
 
         <view v-if="storeLoading" class="center-wrap"><text class="loading-dots">···</text></view>
@@ -948,36 +948,36 @@
         <scroll-view v-else-if="storeSubTab == 'products' && storeItems.length > 0" direction="vertical" class="store-scroll"
                      :refresher-enabled="true" :refresher-triggered="storeRefreshing" v-on:refresherrefresh="onStoreRefresh">
           <view class="store-list">
-            <view v-for="(item, ii) in storeItems" :key="ii" class="store-card">
-              <view v-if="item.getString('tagLabel') != null" class="store-tag"><text class="store-tag-text">{{ item.getString('tagLabel') }}</text></view>
-              <text class="store-card-name">{{ item.getString('name') }}</text>
-              <rich-text v-if="item.getBoolean('descIsHtml') == true" class="store-card-desc store-card-desc-rich" :nodes="`${item.getString('desc')}`" />
-              <text v-else class="store-card-desc">{{ item.getString('desc') }}</text>
+            <view v-for="(item, ii) in storeItems" :key="ii" :class="nativeClass('store-card', (null))">
+              <view v-if="item.getString('tagLabel') != null" class="store-tag"><text :class="nativeClass('store-tag-text', (null))">{{ item.getString('tagLabel') }}</text></view>
+              <text :class="nativeClass('store-card-name', (null))">{{ item.getString('name') }}</text>
+              <rich-text v-if="item.getBoolean('descIsHtml') == true" :class="nativeClass('store-card-desc store-card-desc-rich', (null))" :nodes="`${item.getString('desc')}`" />
+              <text v-else :class="nativeClass('store-card-desc', (null))">{{ item.getString('desc') }}</text>
               <view v-if="arrLen(item, 'variants') > 0" class="store-variants">
-                <view v-for="(variant, vi) in arrOf(item, 'variants')" :key="vi" class="store-variant-pill" :class="idStr(item, 'selectedVariantId') == idStr(variant, 'id') ? ' store-variant-pill-active' : ''" v-on:click="handleSelectVariant(idStr(item, 'id'), idStr(variant, 'id'))">
-                  <text class="store-variant-label">{{ variant.getString('label') }}</text>
+                <view v-for="(variant, vi) in arrOf(item, 'variants')" :key="vi" :class="nativeClass('store-variant-pill', (idStr(item, 'selectedVariantId') == idStr(variant, 'id') ? ' store-variant-pill-active' : ''))" v-on:click="handleSelectVariant(idStr(item, 'id'), idStr(variant, 'id'))">
+                  <text :class="nativeClass('store-variant-label', (null))">{{ variant.getString('label') }}</text>
                 </view>
               </view>
               <view class="store-card-footer">
                 <view v-if="(`${item.getString('partnerPrice')}`.length) > 0" class="store-price-wrap store-price-wrap-partner">
                   <view class="store-partner-row">
-                    <view class="store-partner-badge"><text class="store-partner-badge-text">{{ tr('storePartnerPrice') }}</text></view>
-                    <text class="store-price store-price-partner">{{ item.getString('partnerPrice') }}</text>
-                    <text class="store-unit">/ {{ item.getString('unit') }}</text>
+                    <view :class="nativeClass('store-partner-badge', (null))"><text :class="nativeClass('store-partner-badge-text', (null))">{{ tr('storePartnerPrice') }}</text></view>
+                    <text :class="nativeClass('store-price store-price-partner', (null))">{{ item.getString('partnerPrice') }}</text>
+                    <text :class="nativeClass('store-unit', (null))">/ {{ item.getString('unit') }}</text>
                   </view>
-                  <text class="store-price-regular">{{ item.getString('price') }}</text>
+                  <text :class="nativeClass('store-price-regular', (null))">{{ item.getString('price') }}</text>
                 </view>
                 <view v-else class="store-price-wrap">
-                  <text class="store-price">{{ item.getString('price') }}</text>
-                  <text class="store-unit">/ {{ item.getString('unit') }}</text>
+                  <text :class="nativeClass('store-price', (null))">{{ item.getString('price') }}</text>
+                  <text :class="nativeClass('store-unit', (null))">/ {{ item.getString('unit') }}</text>
                 </view>
                 <view v-if="cartQty(variantOrItemId(item)) == 0" class="store-buy-btn" v-on:click="handleAddToCart(ii)">
-                  <text class="store-buy-label">{{ tr('storeAddToCart') }}</text>
+                  <text :class="nativeClass('store-buy-label', (null))">{{ tr('storeAddToCart') }}</text>
                 </view>
                 <view v-else class="cart-stepper">
-                  <view class="stepper-btn" v-on:click="handleCartQtyChange(variantOrItemId(item), -1)"><text class="stepper-sym">－</text></view>
-                  <text class="stepper-qty">{{ cartQty(variantOrItemId(item)) }}</text>
-                  <view class="stepper-btn" v-on:click="handleCartQtyChange(variantOrItemId(item), 1)"><text class="stepper-sym">＋</text></view>
+                  <view :class="nativeClass('stepper-btn', (null))" v-on:click="handleCartQtyChange(variantOrItemId(item), -1)"><text :class="nativeClass('stepper-sym', (null))">－</text></view>
+                  <text :class="nativeClass('stepper-qty', (null))">{{ cartQty(variantOrItemId(item)) }}</text>
+                  <view :class="nativeClass('stepper-btn', (null))" v-on:click="handleCartQtyChange(variantOrItemId(item), 1)"><text :class="nativeClass('stepper-sym', (null))">＋</text></view>
                 </view>
               </view>
             </view>
@@ -985,45 +985,45 @@
           </view>
         </scroll-view>
 
-        <view v-else-if="storeSubTab == 'products'" class="dots-empty"><text class="dots-empty-label">{{ tr('storeEmpty') }}</text></view>
+        <view v-else-if="storeSubTab == 'products'" :class="nativeClass('dots-empty', (null))"><text :class="nativeClass('dots-empty-label', (null))">{{ tr('storeEmpty') }}</text></view>
 
-        <view v-if="cartCount > 0 && storeSubTab == 'products' && !storeLoading" class="cart-bar" v-on:click="handleOpenCart">
-          <text class="cart-bar-label">{{ tr('storeCartTotal') }} · {{ cartCount }}{{ tr('storeCartItems') }}</text>
+        <view v-if="cartCount > 0 && storeSubTab == 'products' && !storeLoading" :class="nativeClass('cart-bar', (null))" v-on:click="handleOpenCart">
+          <text :class="nativeClass('cart-bar-label', (null))">{{ tr('storeCartTotal') }} · {{ cartCount }}{{ tr('storeCartItems') }}</text>
           <view class="cart-bar-right">
-            <text class="cart-bar-total">{{ cartTotal }}</text>
-            <view class="cart-bar-btn" v-on:click.stop="handleCheckout"><text class="cart-bar-btn-text">{{ tr('storeCartCheckout') }}</text></view>
+            <text :class="nativeClass('cart-bar-total', (null))">{{ cartTotal }}</text>
+            <view class="cart-bar-btn" v-on:click.stop="handleCheckout"><text :class="nativeClass('cart-bar-btn-text', (null))">{{ tr('storeCartCheckout') }}</text></view>
           </view>
         </view>
 
         <scroll-view v-if="!storeLoading && storeSubTab == 'orders' && storeOrders.length > 0" direction="vertical" class="store-scroll"
                      :refresher-enabled="true" :refresher-triggered="storeRefreshing" v-on:refresherrefresh="onStoreRefresh">
           <view class="store-list">
-            <view v-for="(o, oi) in storeOrders" :key="oi" class="order-card">
+            <view v-for="(o, oi) in storeOrders" :key="oi" :class="nativeClass('order-card', (null))">
               <view class="order-card-top">
-                <text class="order-name">{{ o.getString('name') }}</text>
-                <view class="order-status" :class="'order-status-' + o.getString('status')">
+                <text :class="nativeClass('order-name', (null))">{{ o.getString('name') }}</text>
+                <view :class="nativeClass('order-status', ('order-status-' + o.getString('status')))">
                   <text>{{ orderStatusLabel(o.getString('status')) }}</text>
                 </view>
               </view>
               <view class="order-card-mid">
-                <text class="order-price">{{ o.getString('price') }}</text>
-                <text class="order-meta"> · {{ o.getString('unit') }} · ×{{ o.getNumber('quantity') }}</text>
+                <text :class="nativeClass('order-price', (null))">{{ o.getString('price') }}</text>
+                <text :class="nativeClass('order-meta', (null))"> · {{ o.getString('unit') }} · ×{{ o.getNumber('quantity') }}</text>
               </view>
-              <view class="order-date-row"><text class="order-date">{{ o.getString('createdAt') }}</text></view>
-              <view v-if="(`${o.getString('shippingName')}`.length) > 0" class="order-delivery-info">
-                <view class="delivery-row">
-                  <text class="delivery-label">{{ lang == 'zh' ? '收货人' : 'Recipient' }}</text>
-                  <text class="delivery-val">{{ o.getString('shippingName') }} ({{ o.getString('shippingPhone') }})</text>
+              <view class="order-date-row"><text :class="nativeClass('order-date', (null))">{{ o.getString('createdAt') }}</text></view>
+              <view v-if="(`${o.getString('shippingName')}`.length) > 0" :class="nativeClass('order-delivery-info', (null))">
+                <view :class="nativeClass('delivery-row', (null))">
+                  <text :class="nativeClass('delivery-label', (null))">{{ lang == 'zh' ? '收货人' : 'Recipient' }}</text>
+                  <text :class="nativeClass('delivery-val', (null))">{{ o.getString('shippingName') }} ({{ o.getString('shippingPhone') }})</text>
                 </view>
-                <view class="delivery-row">
-                  <text class="delivery-label">{{ lang == 'zh' ? '收货地址' : 'Address' }}</text>
-                  <text class="delivery-val">{{ o.getString('shippingAddress') }}</text>
+                <view :class="nativeClass('delivery-row', (null))">
+                  <text :class="nativeClass('delivery-label', (null))">{{ lang == 'zh' ? '收货地址' : 'Address' }}</text>
+                  <text :class="nativeClass('delivery-val', (null))">{{ o.getString('shippingAddress') }}</text>
                 </view>
-                <view v-if="(`${o.getString('trackingNumber')}`.length) > 0" class="delivery-row tracking-section">
-                  <text class="delivery-label">{{ lang == 'zh' ? '快递单号' : 'Tracking' }}</text>
+                <view v-if="(`${o.getString('trackingNumber')}`.length) > 0" :class="nativeClass('delivery-row tracking-section', (null))">
+                  <text :class="nativeClass('delivery-label', (null))">{{ lang == 'zh' ? '快递单号' : 'Tracking' }}</text>
                   <view class="tracking-val-wrap">
-                    <text class="delivery-val bold">{{ o.getString('shippingCarrier') }} {{ o.getString('trackingNumber') }}</text>
-                    <view class="copy-badge" v-on:click="handleCopyTracking(`${o.getString('trackingNumber')}`)"><text class="copy-badge-label">{{ lang == 'zh' ? '复制' : 'Copy' }}</text></view>
+                    <text :class="nativeClass('delivery-val bold', (null))">{{ o.getString('shippingCarrier') }} {{ o.getString('trackingNumber') }}</text>
+                    <view :class="nativeClass('copy-badge', (null))" v-on:click="handleCopyTracking(`${o.getString('trackingNumber')}`)"><text :class="nativeClass('copy-badge-label', (null))">{{ lang == 'zh' ? '复制' : 'Copy' }}</text></view>
                   </view>
                 </view>
               </view>
@@ -1035,56 +1035,56 @@
           </view>
         </scroll-view>
 
-        <view v-if="!storeLoading && storeSubTab == 'orders' && storeOrders.length == 0" class="dots-empty"><text class="dots-empty-label">{{ tr('noOrders') }}</text></view>
+        <view v-if="!storeLoading && storeSubTab == 'orders' && storeOrders.length == 0" :class="nativeClass('dots-empty', (null))"><text :class="nativeClass('dots-empty-label', (null))">{{ tr('noOrders') }}</text></view>
 
         <!-- Cart modal -->
         <view v-if="cartOpen" class="cart-overlay" v-on:click="handleCloseCart">
-          <view class="cart-sheet" v-on:click.stop="noop">
-            <view class="cart-sheet-header">
-              <text class="cart-sheet-title">{{ tr('storeCart') }}</text>
-              <view class="cart-close-btn" v-on:click="handleCloseCart"><text class="cart-close-sym">✕</text></view>
+          <view :class="nativeClass('cart-sheet', (null))" v-on:click.stop="noop">
+            <view :class="nativeClass('cart-sheet-header', (null))">
+              <text :class="nativeClass('cart-sheet-title', (null))">{{ tr('storeCart') }}</text>
+              <view class="cart-close-btn" v-on:click="handleCloseCart"><text :class="nativeClass('cart-close-sym', (null))">✕</text></view>
             </view>
             <scroll-view direction="vertical" class="cart-sheet-scroll">
-              <view v-if="cart.length == 0" class="cart-empty-row"><text class="cart-empty-text">{{ tr('storeCartEmpty') }}</text></view>
-              <view v-for="(citem, ci2) in cart" :key="ci2" class="cart-item-row">
+              <view v-if="cart.length == 0" class="cart-empty-row"><text :class="nativeClass('cart-empty-text', (null))">{{ tr('storeCartEmpty') }}</text></view>
+              <view v-for="(citem, ci2) in cart" :key="ci2" :class="nativeClass('cart-item-row', (null))">
                 <view class="cart-item-info">
-                  <text class="cart-item-name">{{ citem.getString('name') }}</text>
-                  <text class="cart-item-price">{{ (`${citem.getString('partnerPrice')}`.length) > 0 ? citem.getString('partnerPrice') : citem.getString('price') }} / {{ citem.getString('unit') }}</text>
+                  <text :class="nativeClass('cart-item-name', (null))">{{ citem.getString('name') }}</text>
+                  <text :class="nativeClass('cart-item-price', (null))">{{ (`${citem.getString('partnerPrice')}`.length) > 0 ? citem.getString('partnerPrice') : citem.getString('price') }} / {{ citem.getString('unit') }}</text>
                 </view>
                 <view class="cart-stepper cart-stepper-sm">
-                  <view class="stepper-btn" v-on:click="handleCartQtyChange(idStr(citem, 'id'), -1)"><text class="stepper-sym">－</text></view>
-                  <text class="stepper-qty">{{ citem.getNumber('quantity') }}</text>
-                  <view class="stepper-btn" v-on:click="handleCartQtyChange(idStr(citem, 'id'), 1)"><text class="stepper-sym">＋</text></view>
+                  <view :class="nativeClass('stepper-btn', (null))" v-on:click="handleCartQtyChange(idStr(citem, 'id'), -1)"><text :class="nativeClass('stepper-sym', (null))">－</text></view>
+                  <text :class="nativeClass('stepper-qty', (null))">{{ citem.getNumber('quantity') }}</text>
+                  <view :class="nativeClass('stepper-btn', (null))" v-on:click="handleCartQtyChange(idStr(citem, 'id'), 1)"><text :class="nativeClass('stepper-sym', (null))">＋</text></view>
                 </view>
               </view>
-              <view v-if="cart.length > 0" class="checkout-addr-form">
+              <view v-if="cart.length > 0" :class="nativeClass('checkout-addr-form', (null))">
                 <view class="checkout-addr-hdr">
-                  <text class="checkout-addr-title">{{ tr('checkoutShippingTitle') }}</text>
+                  <text :class="nativeClass('checkout-addr-title', (null))">{{ tr('checkoutShippingTitle') }}</text>
                   <!-- WeChat address book: xapp-mini only (native has none — manual entry). -->
                   <!-- #ifdef MP-WEIXIN -->
-                  <view v-if="wxAddressEnabled" class="checkout-wx-addr-btn" v-on:click="fetchWechatAddress('checkout')">
-                    <text class="checkout-wx-addr-icon">📍</text>
-                    <text class="checkout-wx-addr-text">{{ tr('checkoutWxAddress') }}</text>
+                  <view v-if="wxAddressEnabled" :class="nativeClass('checkout-wx-addr-btn', (null))" v-on:click="fetchWechatAddress('checkout')">
+                    <text :class="nativeClass('checkout-wx-addr-icon', (null))">📍</text>
+                    <text :class="nativeClass('checkout-wx-addr-text', (null))">{{ tr('checkoutWxAddress') }}</text>
                   </view>
                   <!-- #endif -->
                 </view>
                 <view class="checkout-addr-row">
-                  <text class="checkout-addr-label">{{ tr('checkoutName') }}</text>
-                  <input class="checkout-addr-input" :placeholder="tr('checkoutNamePh')" v-model="checkoutName" />
+                  <text :class="nativeClass('checkout-addr-label', (null))">{{ tr('checkoutName') }}</text>
+                  <input :class="nativeClass('checkout-addr-input', (null))" :placeholder="tr('checkoutNamePh')" v-model="checkoutName" />
                 </view>
                 <view class="checkout-addr-row">
-                  <text class="checkout-addr-label">{{ tr('checkoutPhone') }}</text>
-                  <input class="checkout-addr-input" type="number" :placeholder="tr('checkoutPhonePh')" v-model="checkoutPhone" />
+                  <text :class="nativeClass('checkout-addr-label', (null))">{{ tr('checkoutPhone') }}</text>
+                  <input :class="nativeClass('checkout-addr-input', (null))" type="number" :placeholder="tr('checkoutPhonePh')" v-model="checkoutPhone" />
                 </view>
                 <view class="checkout-addr-row checkout-addr-row-tall">
-                  <text class="checkout-addr-label">{{ tr('checkoutAddress') }}</text>
-                  <textarea class="checkout-addr-textarea" :placeholder="tr('checkoutAddressPh')" v-model="checkoutAddress" />
+                  <text :class="nativeClass('checkout-addr-label', (null))">{{ tr('checkoutAddress') }}</text>
+                  <textarea :class="nativeClass('checkout-addr-textarea', (null))" :placeholder="tr('checkoutAddressPh')" v-model="checkoutAddress" />
                 </view>
               </view>
             </scroll-view>
-            <view class="cart-sheet-footer">
-              <text class="cart-total-text">{{ tr('storeCartTotal') }}  {{ cartTotal }}</text>
-              <view v-if="cart.length > 0" class="cart-checkout-btn" v-on:click="handleCheckout"><text class="cart-checkout-text">{{ tr('storeCartCheckout') }}</text></view>
+            <view :class="nativeClass('cart-sheet-footer', (null))">
+              <text :class="nativeClass('cart-total-text', (null))">{{ tr('storeCartTotal') }}  {{ cartTotal }}</text>
+              <view v-if="cart.length > 0" class="cart-checkout-btn" v-on:click="handleCheckout"><text :class="nativeClass('cart-checkout-text', (null))">{{ tr('storeCartCheckout') }}</text></view>
             </view>
           </view>
         </view>
@@ -1096,7 +1096,7 @@
             v-on:touchstart="onTabTouchStart" v-on:touchmove="onTabTouchMove"
             v-on:touchend="onTabTouchEnd" v-on:touchcancel="onTabTouchEnd">
         <view v-if="learnPackageLoading" class="loading-row"><text class="loading-text">{{ tr('loading') }}</text></view>
-        <learn-panel v-if="learnVisited && !isGuest" :user="user" :lang="lang" :theme="theme" :active="tab == 'learn'" :completed-lesson-id="learnCompletedLessonId" v-on:packageready="onLearnPackageReady" />
+        <learn-panel v-if="learnVisited && !isGuest" :user="user" :lang="lang" :theme="theme" :text-scale="textScale" :active="tab == 'learn'" :completed-lesson-id="learnCompletedLessonId" v-on:packageready="onLearnPackageReady" />
       </view>
     </view>
     <!-- end tab-content -->
@@ -1105,34 +1105,34 @@
          Asked before the tool runs, because a focus is not a hint: it decides which dots survive
          the weekly tier cap (AGENTS §31). Never a gate — 不设方向 / Formulate anyway always present. -->
     <view v-if="formulaFocusOpen" class="overlay-mask focus-mask" v-on:click="closeFormulaFocus">
-      <view class="focus-sheet" v-on:click.stop="noop">
-        <view class="overlay-header">
-          <text class="overlay-title">{{ tr('focusTitle') }}</text>
-          <view class="overlay-close" v-on:click="closeFormulaFocus"><text class="close-x">✕</text></view>
+      <view :class="nativeClass('focus-sheet', (null))" v-on:click.stop="noop">
+        <view :class="nativeClass('overlay-header', (null))">
+          <text :class="nativeClass('overlay-title', (null))">{{ tr('focusTitle') }}</text>
+          <view class="overlay-close" v-on:click="closeFormulaFocus"><text :class="nativeClass('close-x', (null))">✕</text></view>
         </view>
         <view v-if="formulaFocusPlans.length > 0">
-          <text class="focus-intro">{{ tr('focusHasIntro') }}</text>
-          <view v-for="(fp, fi) in formulaFocusPlans" :key="fi" class="focus-plan-row">
-            <view class="plan-type-badge" :class="'plan-type-' + fp.getString('plan_type')">
-              <text class="plan-type-text">{{ fp.getString('plan_type') == 'primary' ? tr('plansPrimary') : tr('plansSecondary') }}</text>
+          <text :class="nativeClass('focus-intro', (null))">{{ tr('focusHasIntro') }}</text>
+          <view v-for="(fp, fi) in formulaFocusPlans" :key="fi" :class="nativeClass('focus-plan-row', (null))">
+            <view :class="nativeClass('plan-type-badge', ('plan-type-' + fp.getString('plan_type')))">
+              <text :class="nativeClass('plan-type-text', (null))">{{ fp.getString('plan_type') == 'primary' ? tr('plansPrimary') : tr('plansSecondary') }}</text>
             </view>
             <view class="focus-plan-body">
-              <text class="focus-plan-name">{{ fp.getString('name') }}</text>
-              <text v-if="(`${fp.getString('goal')}`.length) > 0" class="focus-plan-goal">{{ fp.getString('goal') }}</text>
+              <text :class="nativeClass('focus-plan-name', (null))">{{ fp.getString('name') }}</text>
+              <text v-if="(`${fp.getString('goal')}`.length) > 0" :class="nativeClass('focus-plan-goal', (null))">{{ fp.getString('goal') }}</text>
             </view>
           </view>
-          <text class="focus-hint">{{ tr('focusHasHint') }}</text>
-          <view class="focus-btn focus-btn-primary" v-on:click="handleFormulaFocusGo"><text class="focus-btn-label-primary">{{ tr('focusGo') }}</text></view>
+          <text :class="nativeClass('focus-hint', (null))">{{ tr('focusHasHint') }}</text>
+          <view :class="nativeClass('focus-btn focus-btn-primary', (null))" v-on:click="handleFormulaFocusGo"><text class="focus-btn-label-primary">{{ tr('focusGo') }}</text></view>
           <view class="focus-btn-row">
-            <view class="focus-btn focus-btn-ghost focus-btn-half" v-on:click="handleFormulaFocusChoose"><text class="focus-btn-label-ghost">{{ tr('focusChoose') }}</text></view>
-            <view class="focus-btn focus-btn-ghost focus-btn-half" v-on:click="handleFormulaFocusSkip"><text class="focus-btn-label-ghost">{{ tr('focusSkip') }}</text></view>
+            <view :class="nativeClass('focus-btn focus-btn-ghost focus-btn-half', (null))" v-on:click="handleFormulaFocusChoose"><text :class="nativeClass('focus-btn-label-ghost', (null))">{{ tr('focusChoose') }}</text></view>
+            <view :class="nativeClass('focus-btn focus-btn-ghost focus-btn-half', (null))" v-on:click="handleFormulaFocusSkip"><text :class="nativeClass('focus-btn-label-ghost', (null))">{{ tr('focusSkip') }}</text></view>
           </view>
         </view>
         <view v-else>
-          <text class="focus-intro">{{ tr('focusNoneIntro') }}</text>
-          <text class="focus-hint">{{ tr('focusNoneHint') }}</text>
-          <view class="focus-btn focus-btn-primary" v-on:click="handleFormulaFocusChoose"><text class="focus-btn-label-primary">{{ tr('focusChoose') }}</text></view>
-          <view class="focus-btn focus-btn-ghost" v-on:click="handleFormulaFocusGo"><text class="focus-btn-label-ghost">{{ tr('focusGoNoPlan') }}</text></view>
+          <text :class="nativeClass('focus-intro', (null))">{{ tr('focusNoneIntro') }}</text>
+          <text :class="nativeClass('focus-hint', (null))">{{ tr('focusNoneHint') }}</text>
+          <view :class="nativeClass('focus-btn focus-btn-primary', (null))" v-on:click="handleFormulaFocusChoose"><text class="focus-btn-label-primary">{{ tr('focusChoose') }}</text></view>
+          <view :class="nativeClass('focus-btn focus-btn-ghost', (null))" v-on:click="handleFormulaFocusGo"><text :class="nativeClass('focus-btn-label-ghost', (null))">{{ tr('focusGoNoPlan') }}</text></view>
         </view>
       </view>
     </view>
@@ -1141,76 +1141,76 @@
          TODO(port): NFC tag emulation — the miniapp's set-insert fabricates SIM-<dot>-<ts>-<i>
          NFC tag ids; a native app has no dispenser to receive them. Server calls kept as-is. -->
     <view v-if="simCartOpen" class="csim-overlay" v-on:click="closeCartSim">
-      <view class="csim-sheet" v-on:click.stop="noop">
-        <text class="csim-title">{{ tr('simCartTitle') }}</text>
-        <text class="csim-subtitle">{{ tr('simCartSubtitle') }}</text>
+      <view :class="nativeClass('csim-sheet', (null))" v-on:click.stop="noop">
+        <text :class="nativeClass('csim-title', (null))">{{ tr('simCartTitle') }}</text>
+        <text :class="nativeClass('csim-subtitle', (null))">{{ tr('simCartSubtitle') }}</text>
         <view class="csim-sets">
-          <view v-for="(set, seti) in simCartSets" :key="seti" class="csim-set-card" :style="'border-color:' + set.getString('color')" v-on:click="handleSelectCartSet(seti)">
+          <view v-for="(set, seti) in simCartSets" :key="seti" :class="nativeClass('csim-set-card', (null))" :style="'border-color:' + set.getString('color')" v-on:click="handleSelectCartSet(seti)">
             <view class="csim-set-accent" :style="'background:' + set.getString('color')"></view>
             <view class="csim-set-body">
-              <text class="csim-set-name">{{ set.getString('name') }}</text>
-              <text class="csim-set-desc">{{ set.getString('desc') }}</text>
+              <text :class="nativeClass('csim-set-name', (null))">{{ set.getString('name') }}</text>
+              <text :class="nativeClass('csim-set-desc', (null))">{{ set.getString('desc') }}</text>
               <view class="csim-dot-badges">
-                <view v-for="(di, dj) in arrOf(set, 'dotItems')" :key="dj" class="csim-dot-badge">
-                  <text class="csim-badge-key" :style="'color:' + set.getString('color')">{{ di.getString('displayKey') }}</text>
-                  <text class="csim-badge-name">{{ di.getString('dotName') }}</text>
+                <view v-for="(di, dj) in arrOf(set, 'dotItems')" :key="dj" :class="nativeClass('csim-dot-badge', (null))">
+                  <text :class="nativeClass('csim-badge-key', (null))" :style="'color:' + set.getString('color')">{{ di.getString('displayKey') }}</text>
+                  <text :class="nativeClass('csim-badge-name', (null))">{{ di.getString('dotName') }}</text>
                 </view>
               </view>
             </view>
           </view>
         </view>
         <view v-if="simCartLoading" class="csim-loading"><text class="loading-dots">···</text></view>
-        <view class="csim-cancel" v-on:click="closeCartSim"><text class="csim-cancel-label">{{ tr('simCartCancel') }}</text></view>
+        <view :class="nativeClass('csim-cancel', (null))" v-on:click="closeCartSim"><text :class="nativeClass('csim-cancel-label', (null))">{{ tr('simCartCancel') }}</text></view>
       </view>
     </view>
 
     <!-- ── Bottom Tab Bar ── -->
-    <view class="tab-bar">
-      <view class="tab-btn" :class="tab == 'chat' ? 'tab-active' : ''" v-on:click="switchTab('chat')">
+    <view :class="nativeClass('tab-bar', (null))">
+      <view :class="nativeClass('tab-btn', (tab == 'chat' ? 'tab-active' : ''))" v-on:click="switchTab('chat')">
         <view v-if="tab == 'chat'" class="tab-line"></view>
-        <image class="tab-icon-img" :class="tab == 'chat' ? 'tab-icon-on' : ''" src="/static/icons/chat.svg" mode="aspectFit" />
-        <text class="tab-label" :class="tab == 'chat' ? 'tab-label-on' : ''">{{ tr('tabChat') }}</text>
+        <image :class="nativeClass('tab-icon-img', (tab == 'chat' ? 'tab-icon-on' : ''))" :src="iconSrc('chat')" mode="aspectFit" />
+        <text :class="nativeClass('tab-label', (tab == 'chat' ? 'tab-label-on' : ''))">{{ tr('tabChat') }}</text>
       </view>
-      <view class="tab-btn" :class="tab == 'health' ? 'tab-active' : ''" v-on:click="switchTab('health')">
+      <view :class="nativeClass('tab-btn', (tab == 'health' ? 'tab-active' : ''))" v-on:click="switchTab('health')">
         <view v-if="tab == 'health'" class="tab-line"></view>
-        <image class="tab-icon-img" :class="tab == 'health' ? 'tab-icon-on' : ''" src="/static/icons/health.svg" mode="aspectFit" />
-        <text class="tab-label" :class="tab == 'health' ? 'tab-label-on' : ''">{{ tr('tabHealth') }}</text>
+        <image :class="nativeClass('tab-icon-img', (tab == 'health' ? 'tab-icon-on' : ''))" :src="iconSrc('health')" mode="aspectFit" />
+        <text :class="nativeClass('tab-label', (tab == 'health' ? 'tab-label-on' : ''))">{{ tr('tabHealth') }}</text>
       </view>
-      <view class="tab-btn" :class="tab == 'plans' ? 'tab-active' : ''" v-on:click="switchTab('plans')">
+      <view :class="nativeClass('tab-btn', (tab == 'plans' ? 'tab-active' : ''))" v-on:click="switchTab('plans')">
         <view v-if="tab == 'plans'" class="tab-line"></view>
-        <image class="tab-icon-img" :class="tab == 'plans' ? 'tab-icon-on' : ''" src="/static/icons/plans.svg" mode="aspectFit" />
-        <text class="tab-label" :class="tab == 'plans' ? 'tab-label-on' : ''">{{ tr('tabPlans') }}</text>
+        <image :class="nativeClass('tab-icon-img', (tab == 'plans' ? 'tab-icon-on' : ''))" :src="iconSrc('plans')" mode="aspectFit" />
+        <text :class="nativeClass('tab-label', (tab == 'plans' ? 'tab-label-on' : ''))">{{ tr('tabPlans') }}</text>
       </view>
-      <view v-if="!isGuest" class="tab-btn" :class="tab == 'learn' ? 'tab-active' : ''" v-on:click="switchTab('learn')">
+      <view v-if="!isGuest" :class="nativeClass('tab-btn', (tab == 'learn' ? 'tab-active' : ''))" v-on:click="switchTab('learn')">
         <view v-if="tab == 'learn'" class="tab-line"></view>
-        <image class="tab-icon-img" :class="tab == 'learn' ? 'tab-icon-on' : ''" src="/static/icons/training.svg" mode="aspectFit" />
-        <text class="tab-label" :class="tab == 'learn' ? 'tab-label-on' : ''">{{ tr('tabLearn') }}</text>
+        <image :class="nativeClass('tab-icon-img', (tab == 'learn' ? 'tab-icon-on' : ''))" :src="iconSrc('training')" mode="aspectFit" />
+        <text :class="nativeClass('tab-label', (tab == 'learn' ? 'tab-label-on' : ''))">{{ tr('tabLearn') }}</text>
       </view>
-      <view v-if="!isGuest" class="tab-btn" :class="tab == 'store' ? 'tab-active' : ''" v-on:click="switchTab('store')">
+      <view v-if="!isGuest" :class="nativeClass('tab-btn', (tab == 'store' ? 'tab-active' : ''))" v-on:click="switchTab('store')">
         <view v-if="tab == 'store'" class="tab-line"></view>
-        <image class="tab-icon-img" :class="tab == 'store' ? 'tab-icon-on' : ''" src="/static/icons/store.svg" mode="aspectFit" />
-        <text class="tab-label" :class="tab == 'store' ? 'tab-label-on' : ''">{{ tr('tabStore') }}</text>
+        <image :class="nativeClass('tab-icon-img', (tab == 'store' ? 'tab-icon-on' : ''))" :src="iconSrc('store')" mode="aspectFit" />
+        <text :class="nativeClass('tab-label', (tab == 'store' ? 'tab-label-on' : ''))">{{ tr('tabStore') }}</text>
       </view>
     </view>
 
     <!-- ── Guest Join Sheet ── invite-code entry only; a valid code hands off to login,
          which owns account creation + the phone/email OTP gate. -->
     <view v-if="guestSheetOpen" class="guest-sheet-mask" v-on:click="closeGuestSheet">
-      <view class="guest-sheet" :style="guestKeyboardHeight > 0 ? 'padding-bottom: ' + guestKeyboardHeight + 'px;' : ''" v-on:click.stop="noop">
-        <view class="guest-sheet-handle"></view>
-        <text class="guest-sheet-title">{{ tr('guestJoinTitle') }}</text>
-        <text class="guest-sheet-desc">{{ tr('guestJoinDesc') }}</text>
+      <view :class="nativeClass('guest-sheet', (null))" :style="guestKeyboardHeight > 0 ? 'padding-bottom: ' + guestKeyboardHeight + 'px;' : ''" v-on:click.stop="noop">
+        <view :class="nativeClass('guest-sheet-handle', (null))"></view>
+        <text :class="nativeClass('guest-sheet-title', (null))">{{ tr('guestJoinTitle') }}</text>
+        <text :class="nativeClass('guest-sheet-desc', (null))">{{ tr('guestJoinDesc') }}</text>
         <view class="pin-field">
           <view class="pin-boxes">
-            <view v-for="(dg, di2) in pinDigits" :key="di2" class="pin-box" :class="dg.length > 0 ? 'pin-filled' : (di2 == guestInviteCode.length ? 'pin-active' : '')">
-              <text class="pin-digit">{{ dg }}</text>
+            <view v-for="(dg, di2) in pinDigits" :key="di2" :class="nativeClass('pin-box', (dg.length > 0 ? 'pin-filled' : (di2 == guestInviteCode.length ? 'pin-active' : '')))">
+              <text :class="nativeClass('pin-digit', (null))">{{ dg }}</text>
             </view>
           </view>
           <input class="pin-capture" type="number" v-model="guestInviteCode" maxlength="6" v-on:input="onGuestInviteTyped()"
             :focus="guestSheetOpen" :adjust-position="false" v-on:keyboardheightchange="onGuestKeyboardHeightChange" />
         </view>
-        <view v-if="guestInviteError.length > 0" class="guest-sheet-error"><text class="guest-sheet-error-text">{{ guestInviteError }}</text></view>
-        <view class="guest-sheet-btn" :class="guestInviteBusy ? 'guest-sheet-btn-disabled' : ''" v-on:click="submitGuestInvite">
+        <view v-if="guestInviteError.length > 0" :class="nativeClass('guest-sheet-error', (null))"><text :class="nativeClass('guest-sheet-error-text', (null))">{{ guestInviteError }}</text></view>
+        <view :class="nativeClass('guest-sheet-btn', (guestInviteBusy ? 'guest-sheet-btn-disabled' : ''))" v-on:click="submitGuestInvite">
           <text class="guest-sheet-label">{{ guestInviteBusy ? tr('guestActivating') : tr('guestJoinBtn') }}</text>
         </view>
       </view>
@@ -1219,19 +1219,19 @@
     <!-- ── 兑换码 sheet ── shipping is mandatory: GCN's redemption refuses without it (the box
          physically ships and no later step can collect an address). -->
     <view v-if="codeSheetOpen" class="guest-sheet-mask" v-on:click="closeCodeSheet">
-      <view class="guest-sheet" v-on:click.stop="noop">
-        <view class="guest-sheet-handle"></view>
-        <text class="guest-sheet-title">{{ codeSheetManual ? tr('codeSheetTitle') : codeSheetName }}</text>
-        <text class="guest-sheet-desc">{{ codeSheetManual ? tr('codeSheetDescManual') : tr('codeSheetDesc') }}</text>
-        <input v-if="codeSheetManual" class="viva-redeem-input" type="text" v-model="codeSheetCode" :placeholder="tr('codePlaceholder')" v-on:input="clearCodeError()" />
-        <input class="viva-redeem-input" type="text" v-model="codeShipName" :placeholder="tr('codeNamePlaceholder')" />
-        <input class="viva-redeem-input" type="text" v-model="codeShipPhone" :placeholder="tr('codePhonePlaceholder')" />
-        <input class="viva-redeem-input" type="text" v-model="codeShipAddress" :placeholder="tr('codeAddrPlaceholder')" />
+      <view :class="nativeClass('guest-sheet', (null))" v-on:click.stop="noop">
+        <view :class="nativeClass('guest-sheet-handle', (null))"></view>
+        <text :class="nativeClass('guest-sheet-title', (null))">{{ codeSheetManual ? tr('codeSheetTitle') : codeSheetName }}</text>
+        <text :class="nativeClass('guest-sheet-desc', (null))">{{ codeSheetManual ? tr('codeSheetDescManual') : tr('codeSheetDesc') }}</text>
+        <input v-if="codeSheetManual" :class="nativeClass('viva-redeem-input', (null))" type="text" v-model="codeSheetCode" :placeholder="tr('codePlaceholder')" v-on:input="clearCodeError()" />
+        <input :class="nativeClass('viva-redeem-input', (null))" type="text" v-model="codeShipName" :placeholder="tr('codeNamePlaceholder')" />
+        <input :class="nativeClass('viva-redeem-input', (null))" type="text" v-model="codeShipPhone" :placeholder="tr('codePhonePlaceholder')" />
+        <input :class="nativeClass('viva-redeem-input', (null))" type="text" v-model="codeShipAddress" :placeholder="tr('codeAddrPlaceholder')" />
         <!-- #ifdef MP-WEIXIN -->
-        <text v-if="wxAddressEnabled" class="code-wx-addr" v-on:click.stop="fetchWechatAddress('codeShip')">{{ tr('codeWxAddrBtn') }}</text>
+        <text v-if="wxAddressEnabled" :class="nativeClass('code-wx-addr', (null))" v-on:click.stop="fetchWechatAddress('codeShip')">{{ tr('codeWxAddrBtn') }}</text>
         <!-- #endif -->
-        <view v-if="codeSheetError.length > 0" class="guest-sheet-error"><text class="guest-sheet-error-text">{{ codeSheetError }}</text></view>
-        <view class="guest-sheet-btn" :class="codeSheetBusy ? 'guest-sheet-btn-disabled' : ''" v-on:click="submitFormulationRedeem">
+        <view v-if="codeSheetError.length > 0" :class="nativeClass('guest-sheet-error', (null))"><text :class="nativeClass('guest-sheet-error-text', (null))">{{ codeSheetError }}</text></view>
+        <view :class="nativeClass('guest-sheet-btn', (codeSheetBusy ? 'guest-sheet-btn-disabled' : ''))" v-on:click="submitFormulationRedeem">
           <text class="guest-sheet-label">{{ codeSheetBusy ? '…' : tr('codeSubmitBtn') }}</text>
         </view>
       </view>
@@ -1239,17 +1239,17 @@
 
     <!-- ── Viva Subscription Redeem Sheet ── -->
     <view v-if="vivaRedeemSheetOpen" class="guest-sheet-mask" v-on:click="closeVivaRedeemSheet">
-      <view class="guest-sheet" v-on:click.stop="noop">
-        <view class="guest-sheet-handle"></view>
-        <text class="guest-sheet-title">{{ tr('vivaRedeemTitle') }}</text>
-        <text class="guest-sheet-desc">
+      <view :class="nativeClass('guest-sheet', (null))" v-on:click.stop="noop">
+        <view :class="nativeClass('guest-sheet-handle', (null))"></view>
+        <text :class="nativeClass('guest-sheet-title', (null))">{{ tr('vivaRedeemTitle') }}</text>
+        <text :class="nativeClass('guest-sheet-desc', (null))">
           {{ vivaSubscriptionExpiresAtDisplay.length > 0 && !vivaSubscriptionExpired
             ? (lang == 'zh' ? '当前订阅至 ' + vivaSubscriptionExpiresAtDisplay : 'Currently active until ' + vivaSubscriptionExpiresAtDisplay)
             : (lang == 'zh' ? '当前无有效订阅' : 'No active subscription') }}
         </text>
-        <input class="viva-redeem-input" type="text" v-model="vivaRedeemCode" :placeholder="tr('vivaRedeemPlaceholder')" v-on:input="clearVivaRedeemError()" />
-        <view v-if="vivaRedeemError.length > 0" class="guest-sheet-error"><text class="guest-sheet-error-text">{{ vivaRedeemError }}</text></view>
-        <view class="guest-sheet-btn" :class="vivaRedeemBusy ? 'guest-sheet-btn-disabled' : ''" v-on:click="submitVivaRedeem">
+        <input :class="nativeClass('viva-redeem-input', (null))" type="text" v-model="vivaRedeemCode" :placeholder="tr('vivaRedeemPlaceholder')" v-on:input="clearVivaRedeemError()" />
+        <view v-if="vivaRedeemError.length > 0" :class="nativeClass('guest-sheet-error', (null))"><text :class="nativeClass('guest-sheet-error-text', (null))">{{ vivaRedeemError }}</text></view>
+        <view :class="nativeClass('guest-sheet-btn', (vivaRedeemBusy ? 'guest-sheet-btn-disabled' : ''))" v-on:click="submitVivaRedeem">
           <text class="guest-sheet-label">{{ vivaRedeemBusy ? '…' : tr('vivaRedeemBtn') }}</text>
         </view>
       </view>
@@ -1261,10 +1261,10 @@
          web use OS permission prompts. -->
     <!-- #ifdef MP-WEIXIN -->
     <view v-if="showPrivacyModal" class="page-privacy-mask" v-on:click.stop="noop">
-      <view class="page-privacy-box">
-        <text class="page-privacy-title">{{ lang == 'en' ? 'Privacy Notice' : '隐私保护提示' }}</text>
-        <text class="page-privacy-body">{{ lang == 'en' ? 'To upload images and use health features, this app needs access to your photo album and camera. Please agree to our privacy policy to continue.' : '为上传图片及使用健康功能，本应用需要访问您的相册和摄像头。请阅读并同意我们的隐私保护指引后继续。' }}</text>
-        <button class="page-privacy-agree-btn" id="privacy-agree-btn" open-type="agreePrivacyAuthorization" v-on:agreeprivacyauthorization="onPrivacyAgree">{{ lang == 'en' ? 'Agree & Continue' : '同意并继续' }}</button>
+      <view :class="nativeClass('page-privacy-box', (null))">
+        <text :class="nativeClass('page-privacy-title', (null))">{{ lang == 'en' ? 'Privacy Notice' : '隐私保护提示' }}</text>
+        <text :class="nativeClass('page-privacy-body', (null))">{{ lang == 'en' ? 'To upload images and use health features, this app needs access to your photo album and camera. Please agree to our privacy policy to continue.' : '为上传图片及使用健康功能，本应用需要访问您的相册和摄像头。请阅读并同意我们的隐私保护指引后继续。' }}</text>
+        <button :class="nativeClass('page-privacy-agree-btn', (null))" id="privacy-agree-btn" open-type="agreePrivacyAuthorization" v-on:agreeprivacyauthorization="onPrivacyAgree">{{ lang == 'en' ? 'Agree & Continue' : '同意并继续' }}</button>
         <view class="page-privacy-cancel-btn" v-on:click="onPrivacyCancel"><text class="page-privacy-cancel-text">{{ lang == 'en' ? 'Decline' : '拒绝' }}</text></view>
       </view>
     </view>
@@ -1273,6 +1273,8 @@
 </template>
 
 <script>
+import { nativeClass as nativeVisualClass } from '../../utils/native-visual.uts'
+
 // Ported from miniapp pages/main/main.js (5682 lines). Orchestrator rules kept line-for-line where
 // they carry production history:
 //  - async two-channel delivery (§22): /api/chat {processing} + user_message_id, the 3s
@@ -2147,6 +2149,16 @@ export default {
     }
   },
   computed: {
+    aiBubbleStyle() : string {
+      // Native max-width cannot use percentages. Match the rich-text width plus
+      // the AI bubble's padding and border instead of the generic 320px cap.
+      // #ifdef APP
+      return 'max-width: ' + (this.msgTextW + 28) + 'px'
+      // #endif
+      // #ifndef APP
+      return ''
+      // #endif
+    },
     // Native: below the status bar + header. Web: the user-app's .menu-dropdown { top: 54px }.
     menuDropdownStyle() : string {
       // #ifdef WEB
@@ -2331,9 +2343,7 @@ export default {
     const nick = user!.getString('nickname') ?? '—'
     this.sandboxBannerText = this.sandboxMode ? tMainTr(mergedT, 'sandboxBanner').split('{name}').join(nick.length > 0 ? nick : '—') : ''
 
-    // _applyNavBarColor dropped: navigationStyle custom + native status bar (manifest).
-    // TODO(port): light/dark status-bar icon colour is set per-build in pages.json/manifest,
-    // not at runtime like wx.setNavigationBarColor.
+    this._applyNativeBarColor()
 
     if (isGuest) {
       const init = this._makeMsg('init', 'ai', tMainTr(baseT, 'initMsg'), null, '', '', null, null)
@@ -2442,11 +2452,32 @@ export default {
 
   // Web: theme / text scale tokens live on <html> (utils/web-ui.uts syncRootClasses).
   watch: {
-    theme(v : string) { syncRootClasses(v, this.textScale) },
+    theme(v : string) { syncRootClasses(v, this.textScale); this._applyNativeBarColor() },
     textScale(v : number) { syncRootClasses(this.theme, v) },
     typing(v : boolean) { if (v) this._startTypingDots(); else this._stopTypingDots() },
   },
   methods: {
+    nativeClass(names : string, dynamic : any | null) : string {
+      return nativeVisualClass(names, dynamic, this.theme, this.textScale)
+    },
+    iconSrc(name : string) : string {
+      // Native does not support the mini's brightness(0) filter.
+      // #ifdef APP
+      if (this.theme == 'light') return '/static/icons/native-light/' + name + '.svg'
+      // #endif
+      return '/static/icons/' + name + '.svg'
+    },
+    _applyNativeBarColor() {
+      // #ifdef APP
+      try {
+        uni.setNavigationBarColor({
+          frontColor: this.theme == 'light' ? '#000000' : '#ffffff',
+          backgroundColor: this.theme == 'light' ? '#FAF7F2' : '#0B1C2E',
+          fail: (_error) => {},
+        })
+      } catch (_error) {}
+      // #endif
+    },
     // Store-scroll refresher (a Page method in the source, not a lifecycle hook).
     async onStoreRefresh() {
       const user = this.user
@@ -2509,6 +2540,13 @@ export default {
       // #ifdef MP-WEIXIN
       if (size > 0) return ''
       // #endif
+      // #ifdef APP
+      if (size == 14) {
+        const sizes : number[] = [28, 32, 35, 38]
+        const px = sizes[this.textScale] * this._screenW / 750
+        return 'font-size:' + px + 'px;line-height:' + (px * 1.55) + 'px'
+      }
+      // #endif
       const mul = 1 + (this.textScale * 0.08)
       return 'font-size:' + Math.round(size * mul) + 'px'
     },
@@ -2522,7 +2560,19 @@ export default {
     // uni-app x: $refs on a component is its public instance — the documented typing is
     // InstanceType<typeof Comp['$component']> (a custom interface cast throws ClassCastException).
     // mp-html's tag-style has no uni-app x equivalent — merge MD_TAG_STYLE into the node html.
-    _sh(h : string) : string { return inlineTagStyles(h) },
+    _sh(h : string) : string {
+      let html = inlineTagStyles(h)
+      // Rich-text node colors and font sizes cannot inherit native CSS.
+      // Resolve them from the same palette and 28rpx accessibility ladder.
+      // #ifdef APP
+      const color = this.theme == 'light' ? '#2C2C2C' : '#EEF2FF'
+      const sizes : number[] = [28, 32, 35, 38]
+      const size = sizes[this.textScale] * this._screenW / 750
+      html = html.replace(/color:#EEF2FF/g, 'color:' + color)
+      html = html.replace(/<p style="/g, '<p style="font-size:' + size + 'px;line-height:' + (size * 1.62) + 'px;')
+      // #endif
+      return html
+    },
     _healthApi() : UserHealthComponentPublicInstance | null {
       const r = this.$refs['healthComp']
       if (r == null) return null
@@ -7879,5 +7929,11 @@ export default {
 .menu-fs-a2 { font-size: 32rpx; }
 .menu-fs-a3 { font-size: 38rpx; }
 .menu-credit-row { padding: 24rpx 32rpx; }
+/* #endif */
+</style>
+
+<style>
+/* #ifdef APP */
+@import "../../unpackage/native-styles/pages-main-main.css";
 /* #endif */
 </style>

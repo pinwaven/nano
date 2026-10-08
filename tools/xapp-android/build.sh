@@ -45,6 +45,7 @@ if [ -z "${JAVA_HOME:-}" ] && [ -x /usr/libexec/java_home ]; then
   export JAVA_HOME
 fi
 SDK=$("$ROOT/tools/xapp-android/setup-sdk.sh")
+node "$ROOT/tools/xapp-android/generate-native-styles.mjs"
 # HBuilderX can return success without exporting; remove only its generated export first.
 rm -rf "$X/unpackage/resources/app-android"
 "$CLI" publish app-android --type appResource --project "$X"

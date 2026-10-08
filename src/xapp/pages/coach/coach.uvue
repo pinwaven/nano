@@ -5,19 +5,19 @@
   <!-- Web: the miniapp's pages/coach markup (the web user-app's generated coach View), styled by
        the shared stylesheet in static/web/ (.web-coach scope). Native keeps its layout below. -->
   <view class="web-coach">
-  <view class="coach-page" :class="['fs-' + textScale, theme == 'light' ? 'theme-light' : '']" v-on:touchstart="onTouchStart" v-on:touchend="onTouchEnd">
+  <view :class="nativeClass('coach-page', (['fs-' + textScale, theme == 'light' ? 'theme-light' : '']))" v-on:touchstart="onTouchStart" v-on:touchend="onTouchEnd">
     <!-- #ifdef MP-WEIXIN -->
-    <view class="swipe-back-hint">›</view>
+    <view :class="nativeClass('swipe-back-hint', (null))">›</view>
     <!-- #endif -->
-    <view class="status-bar-spacer" :style="statusBarStyle"></view>
+    <view :class="nativeClass('status-bar-spacer', (null))" :style="statusBarStyle"></view>
 
-    <view class="app-header" :style="capsuleRightPad > 0 ? 'padding-right: ' + capsuleRightPad + 'px;' : ''" v-on:click="openUserPanel">
+    <view :class="nativeClass('app-header', (null))" :style="capsuleRightPad > 0 ? 'padding-right: ' + capsuleRightPad + 'px;' : ''" v-on:click="openUserPanel">
       <view class="header-logo-btn">
         <image class="header-logo-img" :src="channelLogo" mode="aspectFit" />
-        <text class="header-title">{{ channelName }}</text>
+        <text :class="nativeClass('header-title', (null))">{{ channelName }}</text>
       </view>
-      <view class="header-divider"></view>
-      <text class="header-user">{{ nickname }} ({{ tr('coachLabel') }})</text>
+      <view :class="nativeClass('header-divider', (null))"></view>
+      <text :class="nativeClass('header-user', (null))">{{ nickname }} ({{ tr('coachLabel') }})</text>
     </view>
 
     <view v-if="sandboxMode" class="sandbox-banner" v-on:click.stop="exitSandbox">
@@ -27,70 +27,70 @@
 
     <scroll-view direction="vertical" class="coach-content" :refresher-enabled="tab == 'clients'" v-on:refresherrefresh="onClientsRefresh">
 
-      <view v-if="loading" class="loading-row"><text class="loading-text">{{ tr('loading') }}</text></view>
+      <view v-if="loading" class="loading-row"><text :class="nativeClass('loading-text', (null))">{{ tr('loading') }}</text></view>
 
       <view v-else-if="tab == 'clients'" class="client-list">
-        <view v-if="mcEnabled" class="invite-generate-btn" v-on:click="openManagedForm('')">
-          <text class="invite-generate-text">{{ tr('mc.add') }}</text>
+        <view v-if="mcEnabled" :class="nativeClass('invite-generate-btn', (null))" v-on:click="openManagedForm('')">
+          <text :class="nativeClass('invite-generate-text', (null))">{{ tr('mc.add') }}</text>
         </view>
         <view class="clients-search-wrap">
-          <view class="clients-search-bar">
+          <view :class="nativeClass('clients-search-bar', (null))">
             <text class="search-icon-txt">🔍</text>
-            <input class="clients-search-input" :placeholder="tr('searchPlaceholder')" v-model="clientSearch" confirm-type="search" />
+            <input :class="nativeClass('clients-search-input', (null))" :placeholder="tr('searchPlaceholder')" v-model="clientSearch" confirm-type="search" />
             <view v-if="clientSearch.length > 0" class="search-clear-btn" v-on:click.stop="clientSearch = ''">
-              <text class="search-clear-icon">✕</text>
+              <text :class="nativeClass('search-clear-icon', (null))">✕</text>
             </view>
           </view>
         </view>
         <scroll-view v-if="clientFilterStages.length > 0" direction="horizontal" class="stage-filter-scroll">
           <view class="stage-filter-inner">
-            <view class="stage-chip" :class="clientStageFilter == '' ? 'stage-chip-active' : ''" v-on:click.stop="setStageFilter('')">
-              <text class="stage-chip-text">{{ tr('filterAll') }}</text>
+            <view :class="nativeClass('stage-chip', (clientStageFilter == '' ? 'stage-chip-active' : ''))" v-on:click.stop="setStageFilter('')">
+              <text :class="nativeClass('stage-chip-text', (null))">{{ tr('filterAll') }}</text>
             </view>
-            <view v-for="(st, si) in clientFilterStages" :key="si" class="stage-chip"
-                  :class="clientStageFilter == st.getString('stage') ? 'stage-chip-colored' : ''"
+            <view v-for="(st, si) in clientFilterStages" :key="si"
+                  :class="nativeClass('stage-chip', (clientStageFilter == st.getString('stage') ? 'stage-chip-colored' : ''))"
                   :style="clientStageFilter == st.getString('stage') ? ('border-color:' + st.getString('color') + '; background:' + st.getString('color') + '22;') : ''"
                   v-on:click.stop="setStageFilter(`${st.getString('stage')}`)">
-              <text class="stage-chip-text" :style="clientStageFilter == st.getString('stage') ? ('color:' + st.getString('color') + ';') : ''">{{ st.getString('label') }}</text>
-              <text class="stage-chip-count">{{ st['count'] }}</text>
+              <text :class="nativeClass('stage-chip-text', (null))" :style="clientStageFilter == st.getString('stage') ? ('color:' + st.getString('color') + ';') : ''">{{ st.getString('label') }}</text>
+              <text :class="nativeClass('stage-chip-count', (null))">{{ st['count'] }}</text>
             </view>
           </view>
         </scroll-view>
         <view v-if="clientSearch.length > 0 || clientStageFilter.length > 0" class="search-result-row">
-          <text class="search-result-txt">{{ filteredClients.length }} / {{ clients.length }}</text>
+          <text :class="nativeClass('search-result-txt', (null))">{{ filteredClients.length }} / {{ clients.length }}</text>
         </view>
 
         <view v-if="filteredClients.length == 0" class="empty-state">
-          <text v-if="clientsLoadState == 'no_coach'" class="empty-text">{{ tr('noCoachSession') }}</text>
-          <text v-else-if="clientsLoadState == 'failed'" class="empty-text">{{ tr('clientsLoadFailed') }}</text>
-          <text v-else-if="clients.length == 0" class="empty-text">{{ tr('noClients') }}</text>
-          <text v-else class="empty-text">{{ tr('noMatchClients') }}</text>
+          <text v-if="clientsLoadState == 'no_coach'" :class="nativeClass('empty-text', (null))">{{ tr('noCoachSession') }}</text>
+          <text v-else-if="clientsLoadState == 'failed'" :class="nativeClass('empty-text', (null))">{{ tr('clientsLoadFailed') }}</text>
+          <text v-else-if="clients.length == 0" :class="nativeClass('empty-text', (null))">{{ tr('noClients') }}</text>
+          <text v-else :class="nativeClass('empty-text', (null))">{{ tr('noMatchClients') }}</text>
           <view v-if="clientsLoadState.length > 0" class="empty-retry" v-on:click.stop="handleRefresh">
             <text class="empty-retry-txt">{{ tr('retryLoad') }}</text>
           </view>
           <text v-if="diagText.length > 0" class="empty-diag">{{ diagText }}</text>
         </view>
-        <view v-for="(item, ci) in filteredClients" :key="ci" class="client-card">
+        <view v-for="(item, ci) in filteredClients" :key="ci" :class="nativeClass('client-card', (null))">
           <view class="client-row" v-on:click="openClientDetailFor(item, 'health')">
             <view class="client-avatar" :style="(item.getString('avatar_url') ?? '').length > 0 ? '' : 'background: #1E3A5F;'">
               <image v-if="(item.getString('avatar_url') ?? '').length > 0" class="client-avatar-img" :src="item.getString('avatar_url')" mode="aspectFill" />
-              <text v-else class="avatar-letter">{{ item.getString('_avatar') }}</text>
+              <text v-else :class="nativeClass('avatar-letter', (null))">{{ item.getString('_avatar') }}</text>
             </view>
             <view class="client-info">
               <view class="client-name-row">
-                <text class="client-name">{{ item.getString('nickname') ?? '—' }}</text>
+                <text :class="nativeClass('client-name', (null))">{{ item.getString('nickname') ?? '—' }}</text>
                 <view v-if="item.getString('account_type') == 'managed'" class="mc-badge"><text class="mc-badge-text">{{ tr('mc.badge') }}</text></view>
               </view>
               <view class="client-ages">
-                <view v-if="item.getNumber('_cAge') != null" class="age-chip">
+                <view v-if="item.getNumber('_cAge') != null" :class="nativeClass('age-chip', (null))">
                   <text class="age-chip-text">{{ tr('chronoAge') }} {{ item.getNumber('_cAge') }}</text>
                 </view>
-                <view v-if="item['bio_age'] != null" class="age-chip" :style="'background: ' + item.getString('_bioAgeColor') + '20; border-color: ' + item.getString('_bioAgeColor') + ';'">
+                <view v-if="item['bio_age'] != null" :class="nativeClass('age-chip', (null))" :style="'background: ' + item.getString('_bioAgeColor') + '20; border-color: ' + item.getString('_bioAgeColor') + ';'">
                   <text class="age-chip-text" :style="'color: ' + item.getString('_bioAgeColor') + ';'">{{ tr('bioAge') }} {{ item['bio_age'] }}</text>
                 </view>
               </view>
-              <text v-if="item.getBoolean('_hasScan') == true" class="client-meta client-meta-dim">{{ tr('lastScan') }}: {{ item.getString('_lastScanFmt') }}</text>
-              <text v-else class="client-meta client-meta-dim">{{ tr('joined') }}: {{ item.getString('_joinedFmt') }}</text>
+              <text v-if="item.getBoolean('_hasScan') == true" :class="nativeClass('client-meta client-meta-dim', (null))">{{ tr('lastScan') }}: {{ item.getString('_lastScanFmt') }}</text>
+              <text v-else :class="nativeClass('client-meta client-meta-dim', (null))">{{ tr('joined') }}: {{ item.getString('_joinedFmt') }}</text>
             </view>
           </view>
 
@@ -103,89 +103,89 @@
             </view>
           </view>
 
-          <view v-if="item.getString('_lastUserMsg') != null" class="last-msg-strip">
-            <text v-if="item.getString('_lastMsgTimeFmt') != null" class="last-msg-time">{{ item.getString('_lastMsgTimeFmt') }}</text>
-            <text class="last-msg-text">{{ item.getString('_lastUserMsg') }}</text>
+          <view v-if="item.getString('_lastUserMsg') != null" :class="nativeClass('last-msg-strip', (null))">
+            <text v-if="item.getString('_lastMsgTimeFmt') != null" :class="nativeClass('last-msg-time', (null))">{{ item.getString('_lastMsgTimeFmt') }}</text>
+            <text :class="nativeClass('last-msg-text', (null))">{{ item.getString('_lastUserMsg') }}</text>
           </view>
 
           <view class="client-actions">
-            <view class="action-btn msg-btn" v-on:click.stop="openClientDetailFor(item, 'chat')"><text class="action-btn-text">{{ tr('openMessages') }}</text></view>
-            <view class="action-btn remind-icon-btn" v-on:click.stop="openQResponsesFor(item)"><text class="action-btn-text">📋</text></view>
-            <view class="action-btn remind-icon-btn" v-on:click.stop="openReminderFor(item)"><text class="action-btn-text">⏰</text></view>
+            <view :class="nativeClass('action-btn msg-btn', (null))" v-on:click.stop="openClientDetailFor(item, 'chat')"><text :class="nativeClass('action-btn-text', (null))">{{ tr('openMessages') }}</text></view>
+            <view :class="nativeClass('action-btn remind-icon-btn', (null))" v-on:click.stop="openQResponsesFor(item)"><text :class="nativeClass('action-btn-text', (null))">📋</text></view>
+            <view :class="nativeClass('action-btn remind-icon-btn', (null))" v-on:click.stop="openReminderFor(item)"><text :class="nativeClass('action-btn-text', (null))">⏰</text></view>
           </view>
         </view>
       </view>
 
       <view v-else-if="tab == 'invites'" class="client-list">
-        <view class="invite-generate-btn" v-on:click="generateInvite"><text class="invite-generate-text">+ {{ tr('invite.generate') }}</text></view>
-        <view v-if="invites.length == 0" class="empty-state"><text class="empty-text">{{ tr('invite.noInvites') }}</text></view>
-        <view v-for="(iv, ii) in invites" :key="ii" class="client-card">
+        <view :class="nativeClass('invite-generate-btn', (null))" v-on:click="generateInvite"><text :class="nativeClass('invite-generate-text', (null))">+ {{ tr('invite.generate') }}</text></view>
+        <view v-if="invites.length == 0" class="empty-state"><text :class="nativeClass('empty-text', (null))">{{ tr('invite.noInvites') }}</text></view>
+        <view v-for="(iv, ii) in invites" :key="ii" :class="nativeClass('client-card', (null))">
           <view class="invite-code-row">
-            <text class="invite-code">{{ iv.getString('code') }}</text>
-            <view class="invite-status" :class="iv.getBoolean('is_active') == true ? 'invite-active' : 'invite-inactive'">
-              <text class="invite-status-text">{{ iv.getBoolean('is_active') == true ? tr('invite.active') : tr('invite.inactive') }}</text>
+            <text :class="nativeClass('invite-code', (null))">{{ iv.getString('code') }}</text>
+            <view :class="nativeClass('invite-status', (iv.getBoolean('is_active') == true ? 'invite-active' : 'invite-inactive'))">
+              <text :class="nativeClass('invite-status-text', (null))">{{ iv.getBoolean('is_active') == true ? tr('invite.active') : tr('invite.inactive') }}</text>
             </view>
           </view>
           <view class="invite-note-row" v-on:click.stop="editInviteNote(ii)">
-            <text class="invite-note" :class="(iv.getString('note') ?? '').length > 0 ? '' : 'invite-note-empty'">{{ (iv.getString('note') ?? '').length > 0 ? iv.getString('note') : tr('invite.noNote') }}</text>
-            <text class="invite-note-edit">✎</text>
+            <text :class="nativeClass('invite-note', ((iv.getString('note') ?? '').length > 0 ? '' : 'invite-note-empty'))">{{ (iv.getString('note') ?? '').length > 0 ? iv.getString('note') : tr('invite.noNote') }}</text>
+            <text :class="nativeClass('invite-note-edit', (null))">✎</text>
           </view>
-          <text class="invite-uses">{{ tr('invite.uses') }}: {{ iv['use_count'] ?? 0 }}</text>
+          <text :class="nativeClass('invite-uses', (null))">{{ tr('invite.uses') }}: {{ iv['use_count'] ?? 0 }}</text>
           <view class="client-actions" style="margin-top: 12px;">
-            <view class="action-btn msg-btn" v-on:click.stop="copyInvite(ii)"><text class="action-btn-text">{{ tr('invite.copy') }}</text></view>
-            <view v-if="iv.getBoolean('is_active') == true" class="action-btn deact-btn" v-on:click.stop="deactivateInvite(ii)"><text class="action-btn-text deact-text">{{ tr('invite.deactivate') }}</text></view>
+            <view :class="nativeClass('action-btn msg-btn', (null))" v-on:click.stop="copyInvite(ii)"><text :class="nativeClass('action-btn-text', (null))">{{ tr('invite.copy') }}</text></view>
+            <view v-if="iv.getBoolean('is_active') == true" class="action-btn deact-btn" v-on:click.stop="deactivateInvite(ii)"><text :class="nativeClass('action-btn-text deact-text', (null))">{{ tr('invite.deactivate') }}</text></view>
           </view>
         </view>
       </view>
 
       <view v-else-if="tab == 'earnings'" class="client-list">
-        <view v-if="earningsLoading" class="loading-row"><text class="loading-text">{{ tr('loading') }}</text></view>
+        <view v-if="earningsLoading" class="loading-row"><text :class="nativeClass('loading-text', (null))">{{ tr('loading') }}</text></view>
         <view v-else>
           <view class="earnings-cards">
-            <view class="earnings-card">
-              <text class="earnings-card-label">{{ tr('earnings.thisMonth') }}</text>
-              <text class="earnings-card-value">{{ earningsThisMonth == '—' ? '¥0.00' : earningsThisMonth }}</text>
+            <view :class="nativeClass('earnings-card', (null))">
+              <text :class="nativeClass('earnings-card-label', (null))">{{ tr('earnings.thisMonth') }}</text>
+              <text :class="nativeClass('earnings-card-value', (null))">{{ earningsThisMonth == '—' ? '¥0.00' : earningsThisMonth }}</text>
             </view>
-            <view class="earnings-card earnings-card-green">
-              <text class="earnings-card-label">{{ tr('earnings.available') }}</text>
-              <text class="earnings-card-value">{{ earningsAvailable == '—' ? '¥0.00' : earningsAvailable }}</text>
+            <view :class="nativeClass('earnings-card earnings-card-green', (null))">
+              <text :class="nativeClass('earnings-card-label', (null))">{{ tr('earnings.available') }}</text>
+              <text :class="nativeClass('earnings-card-value', (null))">{{ earningsAvailable == '—' ? '¥0.00' : earningsAvailable }}</text>
             </view>
           </view>
-          <text class="section-label" style="margin: 16px 16px 8px;">{{ tr('earnings.payoutHistory') }}</text>
-          <view v-if="earningsPayouts.length == 0" class="empty-state"><text class="empty-text">{{ tr('earnings.noPayouts') }}</text></view>
-          <view v-for="(po, pi) in earningsPayouts" :key="pi" class="client-card">
+          <text :class="nativeClass('section-label', (null))" style="margin: 16px 16px 8px;">{{ tr('earnings.payoutHistory') }}</text>
+          <view v-if="earningsPayouts.length == 0" class="empty-state"><text :class="nativeClass('empty-text', (null))">{{ tr('earnings.noPayouts') }}</text></view>
+          <view v-for="(po, pi) in earningsPayouts" :key="pi" :class="nativeClass('client-card', (null))">
             <view class="invite-code-row">
-              <text class="invite-code">{{ po.getString('period') ?? po.getString('period_start') }}</text>
-              <view class="invite-status" :class="po.getString('status') == 'transferred' ? 'invite-active' : 'invite-inactive'">
-                <text class="invite-status-text">{{ po.getString('_statusFmt') }}</text>
+              <text :class="nativeClass('invite-code', (null))">{{ po.getString('period') ?? po.getString('period_start') }}</text>
+              <view :class="nativeClass('invite-status', (po.getString('status') == 'transferred' ? 'invite-active' : 'invite-inactive'))">
+                <text :class="nativeClass('invite-status-text', (null))">{{ po.getString('_statusFmt') }}</text>
               </view>
             </view>
-            <text class="invite-uses">{{ tr('earnings.amount') }}: {{ po.getString('_amountFmt') }}</text>
+            <text :class="nativeClass('invite-uses', (null))">{{ tr('earnings.amount') }}: {{ po.getString('_amountFmt') }}</text>
           </view>
         </view>
       </view>
 
       <view v-else-if="tab == 'questionnaires'" class="client-list">
-        <view v-if="questionnairesLoading" class="loading-row"><text class="loading-text">{{ tr('loading') }}</text></view>
-        <view v-else-if="questionnaires.length == 0" class="empty-state"><text class="empty-text">{{ tr('questionnaires.noQuestionnaires') }}</text></view>
+        <view v-if="questionnairesLoading" class="loading-row"><text :class="nativeClass('loading-text', (null))">{{ tr('loading') }}</text></view>
+        <view v-else-if="questionnaires.length == 0" class="empty-state"><text :class="nativeClass('empty-text', (null))">{{ tr('questionnaires.noQuestionnaires') }}</text></view>
         <view v-else>
-          <view v-for="(qn, qi) in questionnaires" :key="qi" class="client-card">
+          <view v-for="(qn, qi) in questionnaires" :key="qi" :class="nativeClass('client-card', (null))">
             <view class="q-card-header">
               <view class="q-card-info">
-                <text class="q-card-name">{{ lang == 'zh' ? (qn.getString('name_zh') ?? qn.getString('name')) : qn.getString('name') }}</text>
-                <text v-if="(qn.getString('description_zh') ?? qn.getString('description') ?? '').length > 0" class="q-card-desc">{{ lang == 'zh' ? (qn.getString('description_zh') ?? qn.getString('description')) : (qn.getString('description') ?? qn.getString('description_zh')) }}</text>
-                <view class="invite-status invite-active q-type-badge">
-                  <text class="invite-status-text">{{ qn.getString('type') == 'onboarding' ? (lang == 'zh' ? '入门' : 'Onboarding') : (lang == 'zh' ? '自定义' : 'Custom') }}</text>
+                <text :class="nativeClass('q-card-name', (null))">{{ lang == 'zh' ? (qn.getString('name_zh') ?? qn.getString('name')) : qn.getString('name') }}</text>
+                <text v-if="(qn.getString('description_zh') ?? qn.getString('description') ?? '').length > 0" :class="nativeClass('q-card-desc', (null))">{{ lang == 'zh' ? (qn.getString('description_zh') ?? qn.getString('description')) : (qn.getString('description') ?? qn.getString('description_zh')) }}</text>
+                <view :class="nativeClass('invite-status invite-active q-type-badge', (null))">
+                  <text :class="nativeClass('invite-status-text', (null))">{{ qn.getString('type') == 'onboarding' ? (lang == 'zh' ? '入门' : 'Onboarding') : (lang == 'zh' ? '自定义' : 'Custom') }}</text>
                 </view>
               </view>
-              <view class="action-btn msg-btn q-assign-btn" v-on:click="openQAssign(qi)"><text class="action-btn-text">{{ tr('questionnaires.assign') }}</text></view>
+              <view :class="nativeClass('action-btn msg-btn q-assign-btn', (null))" v-on:click="openQAssign(qi)"><text :class="nativeClass('action-btn-text', (null))">{{ tr('questionnaires.assign') }}</text></view>
             </view>
           </view>
         </view>
       </view>
 
       <view v-else-if="tab == 'crm'" class="crm-tab">
-        <view v-if="crmLoading" class="panel-center"><text class="loading-text">{{ tr('loading') }}</text></view>
+        <view v-if="crmLoading" class="panel-center"><text :class="nativeClass('loading-text', (null))">{{ tr('loading') }}</text></view>
         <view v-else>
           <view class="crm-section-header"><text class="crm-section-title">{{ tr('crmPipeline') }}</text></view>
           <scroll-view direction="horizontal" class="pipeline-kanban">
@@ -196,21 +196,21 @@
                   <text class="pipeline-col-count" :style="'color: ' + col.getString('color') + ';'">{{ (col.getArray<UTSJSONObject>('clients') ?? []).length }}</text>
                 </view>
               </view>
-              <view v-for="(cl, cli) in (col.getArray<UTSJSONObject>('clients') ?? [])" :key="cli" class="pipeline-card"
+              <view v-for="(cl, cli) in (col.getArray<UTSJSONObject>('clients') ?? [])" :key="cli" :class="nativeClass('pipeline-card', (null))"
                     v-on:click.stop="openClientDetailFor(cl, 'health')" v-on:longpress="openStagePicker(cl)">
                 <text class="pipeline-card-name">{{ cl.getString('nickname') ?? '—' }}</text>
-                <text v-if="cl.getNumber('bio_age') != null && cl.getNumber('_cAge') != null" class="pipeline-card-delta" :class="cl.getNumber('bio_age')! <= cl.getNumber('_cAge')! ? 'delta-good' : 'delta-bad'">{{ cl.getNumber('bio_age')! <= cl.getNumber('_cAge')! ? '-' : '+' }}{{ Math.abs(cl.getNumber('bio_age')! - cl.getNumber('_cAge')!).toFixed(1) }}yr</text>
+                <text v-if="cl.getNumber('bio_age') != null && cl.getNumber('_cAge') != null" :class="nativeClass('pipeline-card-delta', (cl.getNumber('bio_age')! <= cl.getNumber('_cAge')! ? 'delta-good' : 'delta-bad'))">{{ cl.getNumber('bio_age')! <= cl.getNumber('_cAge')! ? '-' : '+' }}{{ Math.abs(cl.getNumber('bio_age')! - cl.getNumber('_cAge')!).toFixed(1) }}yr</text>
               </view>
             </view>
           </scroll-view>
 
           <view class="crm-section-header">
             <text class="crm-section-title">{{ tr('crmAppointments') }}</text>
-            <view class="crm-section-btn" v-on:click.stop="openApptForm(null)"><text class="crm-section-btn-text">{{ tr('newAppt') }}</text></view>
+            <view :class="nativeClass('crm-section-btn', (null))" v-on:click.stop="openApptForm(null)"><text :class="nativeClass('crm-section-btn-text', (null))">{{ tr('newAppt') }}</text></view>
           </view>
           <view v-if="crmUpcomingAppts.length == 0" class="panel-center-sm"><text class="empty-text-sm">{{ tr('noAppointments') }}</text></view>
           <view v-for="(ap, api) in crmUpcomingAppts" :key="api" class="appt-card">
-            <view class="appt-format-badge"><text class="appt-format-text">{{ tr('apptFormats.' + (ap.getString('format') ?? '')) }}</text></view>
+            <view :class="nativeClass('appt-format-badge', (null))"><text :class="nativeClass('appt-format-text', (null))">{{ tr('apptFormats.' + (ap.getString('format') ?? '')) }}</text></view>
             <view class="appt-info">
               <text class="appt-title">{{ ap.getString('title') }}</text>
               <text class="appt-client">{{ ap.getString('nickname') }}</text>
@@ -220,7 +220,7 @@
 
           <view class="crm-section-header"><text class="crm-section-title">{{ tr('crmActivity') }}</text></view>
           <view v-if="crmActivityFeed.length == 0" class="panel-center-sm"><text class="empty-text-sm">{{ tr('noActivity') }}</text></view>
-          <view v-for="(af, afi) in crmActivityFeed" :key="afi" class="activity-item">
+          <view v-for="(af, afi) in crmActivityFeed" :key="afi" :class="nativeClass('activity-item', (null))">
             <view class="activity-dot"></view>
             <view class="activity-content">
               <text class="activity-label">{{ af.getString('nickname') ?? af.getString('client_name') }} · {{ af.getString('_label') }}</text>
@@ -229,7 +229,7 @@
           </view>
 
           <view class="crm-section-header" style="margin-top: 12px;"><text class="crm-section-title">{{ tr('kpiTitle') }}</text></view>
-          <view v-if="kpiLoading" class="panel-center-sm"><text class="loading-text">{{ tr('loading') }}</text></view>
+          <view v-if="kpiLoading" class="panel-center-sm"><text :class="nativeClass('loading-text', (null))">{{ tr('loading') }}</text></view>
           <view v-else-if="kpiData != null">
             <view class="kpi-grid">
               <view class="kpi-card"><text class="kpi-value">{{ kpiField('total_clients') }}</text><text class="kpi-label">{{ tr('kpiClients') }}</text></view>
@@ -242,9 +242,9 @@
             <view class="crm-section-header"><text class="crm-section-title">{{ tr('topImprovers') }}</text></view>
             <view v-if="topImprovers.length == 0" class="panel-center-sm"><text class="empty-text-sm">—</text></view>
             <view v-for="(im, imi) in topImprovers" :key="imi" class="improver-row">
-              <view class="improver-avatar"><text class="avatar-letter">{{ im.getString('_avatar') }}</text></view>
+              <view :class="nativeClass('improver-avatar', (null))"><text :class="nativeClass('avatar-letter', (null))">{{ im.getString('_avatar') }}</text></view>
               <text class="improver-name">{{ im.getString('nickname') }}</text>
-              <text class="improver-delta" :class="(im.getNumber('delta') ?? 0) <= 0 ? 'delta-good' : 'delta-bad'">{{ (im.getNumber('delta') ?? 0) > 0 ? '+' : '' }}{{ im.getNumber('delta') }}yr</text>
+              <text :class="nativeClass('improver-delta', ((im.getNumber('delta') ?? 0) <= 0 ? 'delta-good' : 'delta-bad'))">{{ (im.getNumber('delta') ?? 0) > 0 ? '+' : '' }}{{ im.getNumber('delta') }}yr</text>
             </view>
           </view>
         </view>
@@ -253,29 +253,29 @@
     </scroll-view>
 
     <!-- Bottom tab bar -->
-    <view class="tab-bar">
-      <view v-for="(tk, tki) in tabKeys" :key="tki" class="tab-btn" :class="tab == tk ? 'tab-active' : ''" v-on:click="switchTab(tk)">
+    <view :class="nativeClass('tab-bar', (null))">
+      <view v-for="(tk, tki) in tabKeys" :key="tki" :class="nativeClass('tab-btn', (tab == tk ? 'tab-active' : ''))" v-on:click="switchTab(tk)">
         <view v-if="tab == tk" class="tab-line"></view>
-        <image class="tab-icon-img" :src="'/static/icons/' + tk + '.svg'" mode="aspectFit" />
-        <text class="tab-label">{{ tr('tabs.' + tk) }}</text>
+        <image :class="nativeClass('tab-icon-img', (null))" :src="'/static/icons/' + tk + '.svg'" mode="aspectFit" />
+        <text :class="nativeClass('tab-label', (null))">{{ tr('tabs.' + tk) }}</text>
       </view>
     </view>
 
     <!-- Managed customer form (create / edit) -->
     <view v-if="mcFormOpen" class="overlay-mask mc-mask">
-      <view class="overlay-panel mc-form-panel" v-on:click.stop="noop">
-        <view class="overlay-header">
-          <text class="overlay-title">{{ mcEditId.length > 0 ? tr('mc.titleEdit') : tr('mc.titleNew') }}</text>
-          <view class="overlay-close" v-on:click="closeManagedForm"><text class="close-x">✕</text></view>
+      <view :class="nativeClass('overlay-panel mc-form-panel', (null))" v-on:click.stop="noop">
+        <view :class="nativeClass('overlay-header', (null))">
+          <text :class="nativeClass('overlay-title', (null))">{{ mcEditId.length > 0 ? tr('mc.titleEdit') : tr('mc.titleNew') }}</text>
+          <view class="overlay-close" v-on:click="closeManagedForm"><text :class="nativeClass('close-x', (null))">✕</text></view>
         </view>
         <scroll-view direction="vertical" class="overlay-scroll mc-form-scroll">
           <view class="mc-form-body">
             <view class="mc-note"><text class="mc-note-text">{{ tr('mc.note') }}</text></view>
             <view class="mc-name-row">
-              <view class="form-row"><text class="form-label">{{ tr('mc.lastName') }}</text><input class="form-input" v-model="mcLast" /></view>
-              <view class="form-row"><text class="form-label">{{ tr('mc.firstName') }}</text><input class="form-input" v-model="mcFirst" /></view>
+              <view class="form-row"><text class="form-label">{{ tr('mc.lastName') }}</text><input :class="nativeClass('form-input', (null))" v-model="mcLast" /></view>
+              <view class="form-row"><text class="form-label">{{ tr('mc.firstName') }}</text><input :class="nativeClass('form-input', (null))" v-model="mcFirst" /></view>
             </view>
-            <view class="form-row"><text class="form-label">{{ tr('mc.nickname') }}</text><input class="form-input" :placeholder="tr('mc.nicknameHint')" v-model="mcNickname" /></view>
+            <view class="form-row"><text class="form-label">{{ tr('mc.nickname') }}</text><input :class="nativeClass('form-input', (null))" :placeholder="tr('mc.nicknameHint')" v-model="mcNickname" /></view>
             <picker mode="date" :value="mcBirthDate.length > 0 ? mcBirthDate : '1970-01-01'" v-on:change="onMcBirthDateChange">
               <view class="form-row">
                 <text class="form-label">{{ tr('mc.birthDate') }} *</text>
@@ -286,50 +286,50 @@
               <text class="form-label">{{ tr('mc.gender') }} *</text>
               <view class="mc-picker-control"><text class="form-value">{{ mcGender == 'male' ? tr('mc.genders0') : (mcGender == 'female' ? tr('mc.genders1') : tr('mc.selectGender')) }}</text><text class="mc-picker-arrow">⌄</text></view>
             </view>
-            <view class="form-row"><text class="form-label">{{ tr('mc.phone') }}</text><input class="form-input" type="number" :maxlength="11" v-model="mcPhone" /></view>
-            <view class="form-row"><text class="form-label">{{ tr('mc.ref') }}</text><input class="form-input" :placeholder="tr('mc.refHint')" v-model="mcRef" /></view>
+            <view class="form-row"><text class="form-label">{{ tr('mc.phone') }}</text><input :class="nativeClass('form-input', (null))" type="number" :maxlength="11" v-model="mcPhone" /></view>
+            <view class="form-row"><text class="form-label">{{ tr('mc.ref') }}</text><input :class="nativeClass('form-input', (null))" :placeholder="tr('mc.refHint')" v-model="mcRef" /></view>
           </view>
         </scroll-view>
         <view class="overlay-footer">
-          <view class="overlay-cancel-btn" v-on:click="closeManagedForm"><text>{{ tr('mc.cancel') }}</text></view>
-          <view class="overlay-confirm-btn" :class="mcBusy ? 'btn-busy' : ''" v-on:click="submitManagedForm"><text>{{ mcBusy ? '…' : tr('mc.save') }}</text></view>
+          <view :class="nativeClass('overlay-cancel-btn', (null))" v-on:click="closeManagedForm"><text>{{ tr('mc.cancel') }}</text></view>
+          <view :class="nativeClass('overlay-confirm-btn', (mcBusy ? 'btn-busy' : ''))" v-on:click="submitManagedForm"><text>{{ mcBusy ? '…' : tr('mc.save') }}</text></view>
         </view>
       </view>
     </view>
 
     <!-- Managed customer: order with a redeem code -->
     <view v-if="redeemOpen" class="overlay-mask mc-mask">
-      <view class="overlay-panel" v-on:click.stop="noop">
-        <view class="overlay-header">
-          <text class="overlay-title">{{ tr('mc.redeemTitle') }}</text>
-          <view class="overlay-close" v-on:click="closeRedeemForm"><text class="close-x">✕</text></view>
+      <view :class="nativeClass('overlay-panel', (null))" v-on:click.stop="noop">
+        <view :class="nativeClass('overlay-header', (null))">
+          <text :class="nativeClass('overlay-title', (null))">{{ tr('mc.redeemTitle') }}</text>
+          <view class="overlay-close" v-on:click="closeRedeemForm"><text :class="nativeClass('close-x', (null))">✕</text></view>
         </view>
         <scroll-view direction="vertical" class="overlay-scroll">
           <view class="mc-note"><text class="mc-note-text">{{ tr('mc.redeemHint') }}</text></view>
-          <view class="form-row"><text class="form-label">{{ tr('mc.redeemCode') }}</text><input class="form-input" v-model="redeemCode" /></view>
-          <view class="form-row"><text class="form-label">{{ tr('mc.redeemName') }}</text><input class="form-input" v-model="redeemName" /></view>
-          <view class="form-row"><text class="form-label">{{ tr('mc.redeemPhone') }}</text><input class="form-input" type="number" :maxlength="11" v-model="redeemPhone" /></view>
-          <view class="form-row"><text class="form-label">{{ tr('mc.redeemAddress') }}</text><input class="form-input" v-model="redeemAddress" /></view>
+          <view class="form-row"><text class="form-label">{{ tr('mc.redeemCode') }}</text><input :class="nativeClass('form-input', (null))" v-model="redeemCode" /></view>
+          <view class="form-row"><text class="form-label">{{ tr('mc.redeemName') }}</text><input :class="nativeClass('form-input', (null))" v-model="redeemName" /></view>
+          <view class="form-row"><text class="form-label">{{ tr('mc.redeemPhone') }}</text><input :class="nativeClass('form-input', (null))" type="number" :maxlength="11" v-model="redeemPhone" /></view>
+          <view class="form-row"><text class="form-label">{{ tr('mc.redeemAddress') }}</text><input :class="nativeClass('form-input', (null))" v-model="redeemAddress" /></view>
         </scroll-view>
         <view class="overlay-footer">
-          <view class="overlay-cancel-btn" v-on:click="closeRedeemForm"><text>{{ tr('mc.cancel') }}</text></view>
-          <view class="overlay-confirm-btn" :class="redeemBusy ? 'btn-busy' : ''" v-on:click="submitRedeem"><text>{{ redeemBusy ? '…' : tr('mc.redeemSubmit') }}</text></view>
+          <view :class="nativeClass('overlay-cancel-btn', (null))" v-on:click="closeRedeemForm"><text>{{ tr('mc.cancel') }}</text></view>
+          <view :class="nativeClass('overlay-confirm-btn', (redeemBusy ? 'btn-busy' : ''))" v-on:click="submitRedeem"><text>{{ redeemBusy ? '…' : tr('mc.redeemSubmit') }}</text></view>
         </view>
       </view>
     </view>
 
     <!-- Client detail sheet -->
     <view v-if="detailOpen && detailClient != null" class="overlay-mask">
-      <view class="overlay-panel" v-on:click.stop="noop">
-        <view class="overlay-header">
-          <text class="overlay-title">{{ detailClient!.getString('nickname') ?? tr('detailTitle') }}</text>
+      <view :class="nativeClass('overlay-panel', (null))" v-on:click.stop="noop">
+        <view :class="nativeClass('overlay-header', (null))">
+          <text :class="nativeClass('overlay-title', (null))">{{ detailClient!.getString('nickname') ?? tr('detailTitle') }}</text>
           <view v-if="detailIsManaged" class="mc-edit-btn" v-on:click="openManagedFormEdit"><text class="mc-edit-text">{{ tr('mc.edit') }}</text></view>
-          <view class="overlay-close" v-on:click="closeClientDetail"><text class="close-x">✕</text></view>
+          <view class="overlay-close" v-on:click="closeClientDetail"><text :class="nativeClass('close-x', (null))">✕</text></view>
         </view>
 
-        <view class="detail-tabs">
-          <view v-for="(dt, dti) in detailTabOrder" :key="dti" class="detail-tab" :class="detailTab == dt ? 'detail-tab-active' : ''" v-on:click="switchDetailTab(dt)">
-            <text class="detail-tab-text">{{ detailTabLabel(dt) }}</text>
+        <view :class="nativeClass('detail-tabs', (null))">
+          <view v-for="(dt, dti) in detailTabOrder" :key="dti" :class="nativeClass('detail-tab', (detailTab == dt ? 'detail-tab-active' : ''))" v-on:click="switchDetailTab(dt)">
+            <text :class="nativeClass('detail-tab-text', (null))">{{ detailTabLabel(dt) }}</text>
           </view>
         </view>
 
@@ -339,12 +339,12 @@
         </view>
 
         <scroll-view v-if="detailTab == 'plans'" direction="vertical" class="overlay-scroll">
-          <view v-if="detailPlansLoading" class="panel-center"><text class="loading-text">{{ tr('loading') }}</text></view>
+          <view v-if="detailPlansLoading" class="panel-center"><text :class="nativeClass('loading-text', (null))">{{ tr('loading') }}</text></view>
           <view v-else>
             <view class="plans-coach-header"><text class="plans-coach-title">{{ tr('clientPlans') }}</text></view>
-            <view v-if="detailPlans.length == 0" class="panel-center"><text class="empty-text">{{ tr('noClientPlans') }}</text></view>
+            <view v-if="detailPlans.length == 0" class="panel-center"><text :class="nativeClass('empty-text', (null))">{{ tr('noClientPlans') }}</text></view>
             <view v-for="(pl, pli) in detailPlans" :key="pli" class="coach-plan-card">
-              <view class="coach-plan-badge" :class="'coach-plan-' + (pl.getString('plan_type') ?? '')">
+              <view :class="nativeClass('coach-plan-badge', ('coach-plan-' + (pl.getString('plan_type') ?? '')))">
                 <text>{{ pl.getString('plan_type') == 'primary' ? tr('planPrimary') : tr('planSecondary') }}</text>
               </view>
               <text class="coach-plan-name">{{ lang == 'zh' ? (pl.getString('name_zh') ?? pl.getString('custom_name_zh')) : (pl.getString('name_en') ?? pl.getString('custom_name_en')) }}</text>
@@ -352,14 +352,14 @@
             </view>
 
             <view class="plans-coach-header"><text class="plans-coach-title">{{ tr('clientPrograms') }}</text></view>
-            <view v-if="detailPrograms.length == 0" class="panel-center"><text class="empty-text">{{ tr('noClientPrograms') }}</text></view>
+            <view v-if="detailPrograms.length == 0" class="panel-center"><text :class="nativeClass('empty-text', (null))">{{ tr('noClientPrograms') }}</text></view>
             <view v-for="(pg, pgi) in detailPrograms" :key="pgi" class="coach-plan-card coach-program-card">
               <view class="coach-program-main">
-                <view class="coach-plan-badge" :class="'coach-program-' + (pg.getString('status') ?? '')"><text>{{ pg.getString('statusLabel') }}</text></view>
+                <view :class="nativeClass('coach-plan-badge', ('coach-program-' + (pg.getString('status') ?? '')))"><text>{{ pg.getString('statusLabel') }}</text></view>
                 <text class="coach-plan-name">{{ lang == 'zh' ? pg.getString('title_zh') : (pg.getString('title_en') ?? pg.getString('title_zh')) }}</text>
-                <text class="coach-plan-meta" :class="pg.getBoolean('stalled') == true ? 'coach-program-stalled' : ''">{{ pg['duration_days'] }} {{ tr('programDays') }}{{ (pg.getString('progressLabel') ?? '').length > 0 ? ' · ' + pg.getString('progressLabel') : '' }}</text>
+                <text :class="nativeClass('coach-plan-meta', (pg.getBoolean('stalled') == true ? 'coach-program-stalled' : ''))">{{ pg['duration_days'] }} {{ tr('programDays') }}{{ (pg.getString('progressLabel') ?? '').length > 0 ? ' · ' + pg.getString('progressLabel') : '' }}</text>
               </view>
-              <view v-if="(pg.getString('action') ?? '').length > 0" class="coach-program-btn" :class="pg.getString('action') == 'pause' ? 'secondary' : ''" v-on:click="handleProgramAction(pg.getNumber('id'), `${pg.getString('action')}`)">
+              <view v-if="(pg.getString('action') ?? '').length > 0" :class="nativeClass('coach-program-btn', (pg.getString('action') == 'pause' ? 'secondary' : ''))" v-on:click="handleProgramAction(pg.getNumber('id'), `${pg.getString('action')}`)">
                 <text>{{ programActionBusy ? tr('loading') : pg.getString('actionLabel') }}</text>
               </view>
             </view>
@@ -385,8 +385,8 @@
                 <text class="plans-recommend-title">{{ tr('createCustomPlan') }}</text>
                 <view v-on:click="closePlanCustom" class="close-x-btn"><text>✕</text></view>
               </view>
-              <view class="form-field"><text class="form-label">{{ tr('customPlanName') }}</text><input class="form-input" v-model="planCustomName" :placeholder="tr('customPlanName')" /></view>
-              <view class="form-field"><text class="form-label">{{ tr('customPlanGoal') }}</text><input class="form-input" v-model="planCustomGoal" :placeholder="tr('customPlanGoal')" /></view>
+              <view class="form-field"><text class="form-label">{{ tr('customPlanName') }}</text><input :class="nativeClass('form-input', (null))" v-model="planCustomName" :placeholder="tr('customPlanName')" /></view>
+              <view class="form-field"><text class="form-label">{{ tr('customPlanGoal') }}</text><input :class="nativeClass('form-input', (null))" v-model="planCustomGoal" :placeholder="tr('customPlanGoal')" /></view>
               <view class="coach-action-btn" v-on:click="handleCreateCustomPlan"><text>{{ planActionBusy ? tr('loading') : tr('createCustomPlan') }}</text></view>
             </view>
           </view>
@@ -405,12 +405,12 @@
                   <view v-else-if="chatMessages.length > 0" class="chat-history-start"><text class="chat-history-start-text">{{ mt('chatHistoryStart') }}</text></view>
                   <view v-else class="chat-history-start"><text class="chat-history-start-text">{{ tr('noChatData') }}</text></view>
                   <view v-for="(cm, cmi) in chatMessages" :key="cmi">
-                    <view class="msg-row" :class="cm.getString('role') == 'user' ? 'msg-row-user' : 'msg-row-ai'">
+                    <view :class="nativeClass('msg-row', (cm.getString('role') == 'user' ? 'msg-row-user' : 'msg-row-ai'))">
                       <view v-if="cm.getString('role') == 'coach'" class="message-bubble message-coach">
                         <text class="msg-coach-label">Coach</text>
                         <text class="msg-text">{{ cm.getString('content') }}</text>
                       </view>
-                      <view v-else class="message-bubble" :class="cm.getString('role') == 'user' ? 'message-user' : 'message-ai'">
+                      <view v-else :class="nativeClass('message-bubble', (cm.getString('role') == 'user' ? 'message-user' : 'message-ai'))">
                         <image v-if="(cm.getString('imageUrl') ?? cm.getString('image_url') ?? '').length > 0" class="msg-image msg-image-inset" :src="cm.getString('imageUrl') ?? cm.getString('image_url')" mode="widthFix" />
                         <text v-if="cm.getString('role') == 'user' && (cm.getString('content') ?? '').length > 0" class="msg-text">{{ cm.getString('content') }}</text>
                         <text v-if="cm.getString('source') == 'viva_ag'" class="msg-ag-label">Viva AG</text>
@@ -418,7 +418,7 @@
                           <rich-text v-if="seg.t == 'html'" class="msg-html" :nodes="sh(seg.h)" />
                           <view v-else-if="seg.t == 'rule'" class="msg-rule"></view>
                           <view v-else-if="seg.t == 'metric'" class="mcard">
-                            <view v-for="(item, mj) in seg.metricItems" :key="mj" class="mcard-tile" :class="'mcard-' + item.s">
+                            <view v-for="(item, mj) in seg.metricItems" :key="mj" :class="nativeClass('mcard-tile', ('mcard-' + item.s))">
                               <text class="mcard-label">{{ item.label }}</text>
                               <view class="mcard-valrow">
                                 <text class="mcard-val">{{ item.value }}</text>
@@ -443,7 +443,7 @@
                               <text class="fcard-title">{{ mt('formulaCardTitle') }}</text>
                               <text class="fcard-note">{{ mt('formulaEvalNote') }}</text>
                             </view>
-                            <view v-for="(ft, fti) in seg.formulaTiers" :key="fti" class="fcard-tier" :class="ft.open ? 'fcard-tier-open' : ''">
+                            <view v-for="(ft, fti) in seg.formulaTiers" :key="fti" :class="nativeClass('fcard-tier', (ft.open ? 'fcard-tier-open' : ''))">
                               <view v-if="ft.label.length > 0" class="fcard-tier-head" v-on:click="toggleFormulaTier(ft)">
                                 <view class="fcard-tier-name">
                                   <text class="fcard-tier-label">{{ ft.label }}</text>
@@ -541,9 +541,9 @@
               <view class="input-container">
                 <toolbox v-if="chatToolboxOpen" :tools="chatToolList" :disabled="chatToolBusy" v-on:toolaction="handleChatToolAction" />
                 <view class="input-area">
-                  <view class="plus-btn" :class="chatToolboxOpen ? 'plus-btn-open' : ''" v-on:click="toggleChatToolbox"><text class="plus-icon">+</text></view>
+                  <view :class="nativeClass('plus-btn', (chatToolboxOpen ? 'plus-btn-open' : ''))" v-on:click="toggleChatToolbox"><text class="plus-icon">+</text></view>
                   <textarea class="chat-textarea" :placeholder="detailIsManaged ? tr('mc.askPh') : tr('msgPh')" v-model="msgText" :maxlength="500" />
-                  <view class="send-btn" :class="msgText.length > 0 ? 'send-active' : ''" v-on:click="sendMessage"><text class="send-icon">↑</text></view>
+                  <view :class="nativeClass('send-btn', (msgText.length > 0 ? 'send-active' : ''))" v-on:click="sendMessage"><text class="send-icon">↑</text></view>
                 </view>
               </view>
             </view>
@@ -554,91 +554,91 @@
                bubbles with a role/time label, the trigger row and a pinned compose area. -->
           <scroll-view direction="vertical" class="chat-history" :scroll-top="chatScrollTop" :scroll-with-animation="true">
             <view class="chat-section">
-              <view v-if="chatLoading" class="panel-center"><text class="loading-text">{{ tr('loading') }}</text></view>
-              <view v-else-if="chatMessages.length == 0" class="panel-center"><text class="empty-text">{{ tr('noChatData') }}</text></view>
+              <view v-if="chatLoading" class="panel-center"><text :class="nativeClass('loading-text', (null))">{{ tr('loading') }}</text></view>
+              <view v-else-if="chatMessages.length == 0" class="panel-center"><text :class="nativeClass('empty-text', (null))">{{ tr('noChatData') }}</text></view>
               <view v-else class="chat-list">
-                <view v-for="(cm, cmi) in chatMessages" :key="cmi" class="chat-row" :class="cm.getBoolean('_isUser') == true ? 'chat-row-user' : (cm.getBoolean('_isCoach') == true ? 'chat-row-coach' : 'chat-row-ai')">
+                <view v-for="(cm, cmi) in chatMessages" :key="cmi" :class="nativeClass('chat-row', (cm.getBoolean('_isUser') == true ? 'chat-row-user' : (cm.getBoolean('_isCoach') == true ? 'chat-row-coach' : 'chat-row-ai')))">
                   <view class="chat-role-label">
-                    <text class="chat-role-text">{{ cm.getBoolean('_isUser') == true ? tr('you') : (cm.getBoolean('_isCoach') == true ? tr('coachLabel') : tr('ai')) }}</text>
-                    <text class="chat-time">{{ cm.getString('_time') }}</text>
+                    <text :class="nativeClass('chat-role-text', (null))">{{ cm.getBoolean('_isUser') == true ? tr('you') : (cm.getBoolean('_isCoach') == true ? tr('coachLabel') : tr('ai')) }}</text>
+                    <text :class="nativeClass('chat-time', (null))">{{ cm.getString('_time') }}</text>
                   </view>
-                  <view class="chat-bubble" :class="cm.getBoolean('_isUser') == true ? 'bubble-user' : (cm.getBoolean('_isCoach') == true ? 'bubble-coach' : 'bubble-ai')">
-                    <text class="chat-content">{{ cm.getString('content') }}</text>
+                  <view :class="nativeClass('chat-bubble', (cm.getBoolean('_isUser') == true ? 'bubble-user' : (cm.getBoolean('_isCoach') == true ? 'bubble-coach' : 'bubble-ai')))">
+                    <text :class="nativeClass('chat-content', (null))">{{ cm.getString('content') }}</text>
                   </view>
                 </view>
               </view>
             </view>
           </scroll-view>
-          <view class="msg-compose">
+          <view :class="nativeClass('msg-compose', (null))">
             <view v-if="vivaThinking" class="mc-thinking"><text class="mc-thinking-text">{{ tr('mc.thinking') }}</text></view>
             <toolbox v-if="chatToolboxOpen" :tools="chatToolList" :disabled="chatToolBusy" v-on:toolaction="handleChatToolAction" />
             <view class="mc-trigger-row">
-              <view class="reminder-trigger" v-on:click="openReminderComposer"><text class="reminder-trigger-text">{{ tr('setReminder') }}</text></view>
-              <view v-if="detailIsManaged" class="reminder-trigger" v-on:click="openRedeemForm"><text class="reminder-trigger-text">{{ tr('mc.redeem') }}</text></view>
-              <view v-if="detailIsManaged" class="reminder-trigger" v-on:click="scanBoxForCustomer"><text class="reminder-trigger-text">{{ tr('mc.boxScan') }}</text></view>
+              <view class="reminder-trigger" v-on:click="openReminderComposer"><text :class="nativeClass('reminder-trigger-text', (null))">{{ tr('setReminder') }}</text></view>
+              <view v-if="detailIsManaged" class="reminder-trigger" v-on:click="openRedeemForm"><text :class="nativeClass('reminder-trigger-text', (null))">{{ tr('mc.redeem') }}</text></view>
+              <view v-if="detailIsManaged" class="reminder-trigger" v-on:click="scanBoxForCustomer"><text :class="nativeClass('reminder-trigger-text', (null))">{{ tr('mc.boxScan') }}</text></view>
             </view>
             <view class="compose-row">
-              <view class="chat-plus-btn" :class="chatToolboxOpen ? 'chat-plus-open' : ''" v-on:click="toggleChatToolbox"><text class="chat-plus-icon">+</text></view>
-              <textarea class="compose-input" :placeholder="detailIsManaged ? tr('mc.askPh') : tr('msgPh')" v-model="msgText" :maxlength="500" :auto-height="true" />
-              <view class="compose-send-btn" :class="msgBusy ? 'btn-busy' : ''" v-on:click="sendMessage"><text class="compose-send-text">{{ msgBusy ? '…' : tr('send') }}</text></view>
+              <view :class="nativeClass('chat-plus-btn', (chatToolboxOpen ? 'chat-plus-open' : ''))" v-on:click="toggleChatToolbox"><text :class="nativeClass('chat-plus-icon', (null))">+</text></view>
+              <textarea :class="nativeClass('compose-input', (null))" :placeholder="detailIsManaged ? tr('mc.askPh') : tr('msgPh')" v-model="msgText" :maxlength="500" :auto-height="true" />
+              <view :class="nativeClass('compose-send-btn', (msgBusy ? 'btn-busy' : ''))" v-on:click="sendMessage"><text class="compose-send-text">{{ msgBusy ? '…' : tr('send') }}</text></view>
             </view>
           </view>
           <!-- #endif -->
         </view>
 
         <view v-if="detailTab == 'notes'" class="overlay-scroll-full">
-          <view v-if="clientNotesLoading" class="panel-center"><text class="loading-text">{{ tr('loading') }}</text></view>
+          <view v-if="clientNotesLoading" class="panel-center"><text :class="nativeClass('loading-text', (null))">{{ tr('loading') }}</text></view>
           <view v-else>
-            <view v-if="clientNotes.length == 0" class="panel-center"><text class="empty-text">{{ tr('noNotes') }}</text></view>
-            <view v-for="(nt, nti) in clientNotes" :key="nti" class="note-item" :class="nt.getBoolean('is_pinned') == true ? 'note-pinned' : ''">
+            <view v-if="clientNotes.length == 0" class="panel-center"><text :class="nativeClass('empty-text', (null))">{{ tr('noNotes') }}</text></view>
+            <view v-for="(nt, nti) in clientNotes" :key="nti" :class="nativeClass('note-item', (nt.getBoolean('is_pinned') == true ? 'note-pinned' : ''))">
               <text class="note-content">{{ nt.getString('content') }}</text>
               <view class="note-footer">
                 <text class="note-date">{{ nt.getString('created_at') }}</text>
                 <view class="note-actions">
-                  <text class="note-action-btn" v-on:click.stop="toggleNotePin(nti)">{{ nt.getBoolean('is_pinned') == true ? tr('noteUnpin') : tr('notePin') }}</text>
-                  <text class="note-action-btn note-delete-btn" v-on:click.stop="deleteNote(nti)">{{ tr('noteDelete') }}</text>
+                  <text :class="nativeClass('note-action-btn', (null))" v-on:click.stop="toggleNotePin(nti)">{{ nt.getBoolean('is_pinned') == true ? tr('noteUnpin') : tr('notePin') }}</text>
+                  <text :class="nativeClass('note-action-btn note-delete-btn', (null))" v-on:click.stop="deleteNote(nti)">{{ tr('noteDelete') }}</text>
                 </view>
               </view>
             </view>
           </view>
           <view class="note-compose">
-            <textarea class="note-input" :placeholder="tr('addNotePh')" v-model="noteText" :maxlength="1000" :auto-height="true" />
-            <view class="note-save-btn" :class="notesBusy ? 'btn-busy' : ''" v-on:click="saveNote"><text class="note-save-text">{{ notesBusy ? '…' : tr('saveNote') }}</text></view>
+            <textarea :class="nativeClass('note-input', (null))" :placeholder="tr('addNotePh')" v-model="noteText" :maxlength="1000" :auto-height="true" />
+            <view :class="nativeClass('note-save-btn', (notesBusy ? 'btn-busy' : ''))" v-on:click="saveNote"><text class="note-save-text">{{ notesBusy ? '…' : tr('saveNote') }}</text></view>
           </view>
         </view>
 
         <view v-if="detailTab == 'facts'" class="overlay-scroll-full">
-          <view v-if="clientFactsLoading" class="panel-center"><text class="loading-text">{{ tr('loading') }}</text></view>
+          <view v-if="clientFactsLoading" class="panel-center"><text :class="nativeClass('loading-text', (null))">{{ tr('loading') }}</text></view>
           <view v-else>
-            <view v-if="clientFacts.length == 0" class="panel-center"><text class="empty-text">{{ tr('noFacts') }}</text></view>
+            <view v-if="clientFacts.length == 0" class="panel-center"><text :class="nativeClass('empty-text', (null))">{{ tr('noFacts') }}</text></view>
             <view v-for="(fc, fci) in clientFacts" :key="fci" class="note-item">
               <text class="note-content">[{{ factCatLabel(fc.getString('category')) }}] {{ fc.getString('fact_zh') }}</text>
               <view class="note-footer">
                 <text class="note-date">{{ fc.getString('last_mentioned_at') }}</text>
-                <view class="note-actions"><text class="note-action-btn note-delete-btn" v-on:click.stop="deleteFact(fci)">{{ tr('factDelete') }}</text></view>
+                <view class="note-actions"><text :class="nativeClass('note-action-btn note-delete-btn', (null))" v-on:click.stop="deleteFact(fci)">{{ tr('factDelete') }}</text></view>
               </view>
             </view>
           </view>
           <view class="note-compose">
-            <view class="note-action-btn" style="display:inline-block;margin-bottom:8px;" v-on:click="pickFactCategory">{{ factCategoryLabel(factCategoryIndex) }} ▾</view>
-            <textarea class="note-input" :placeholder="tr('addFactPh')" v-model="factText" :maxlength="500" :auto-height="true" />
-            <view class="note-save-btn" :class="factsBusy ? 'btn-busy' : ''" v-on:click="saveFact"><text class="note-save-text">{{ factsBusy ? '…' : tr('saveFact') }}</text></view>
+            <view :class="nativeClass('note-action-btn', (null))" style="display:inline-block;margin-bottom:8px;" v-on:click="pickFactCategory">{{ factCategoryLabel(factCategoryIndex) }} ▾</view>
+            <textarea :class="nativeClass('note-input', (null))" :placeholder="tr('addFactPh')" v-model="factText" :maxlength="500" :auto-height="true" />
+            <view :class="nativeClass('note-save-btn', (factsBusy ? 'btn-busy' : ''))" v-on:click="saveFact"><text class="note-save-text">{{ factsBusy ? '…' : tr('saveFact') }}</text></view>
           </view>
         </view>
 
         <view v-if="detailTab == 'goals'" class="overlay-scroll-full">
-          <view v-if="clientGoalsLoading" class="panel-center"><text class="loading-text">{{ tr('loading') }}</text></view>
+          <view v-if="clientGoalsLoading" class="panel-center"><text :class="nativeClass('loading-text', (null))">{{ tr('loading') }}</text></view>
           <view v-else>
             <view class="goals-header"><view class="set-goal-btn" v-on:click="openGoalSheet"><text class="set-goal-text">{{ tr('setGoal') }}</text></view></view>
-            <view v-if="clientGoals.length == 0" class="panel-center"><text class="empty-text">{{ tr('noGoals') }}</text></view>
-            <view v-for="(gl, gli) in clientGoals" :key="gli" class="goal-item" :class="'goal-' + (gl.getString('status') ?? '')">
+            <view v-if="clientGoals.length == 0" class="panel-center"><text :class="nativeClass('empty-text', (null))">{{ tr('noGoals') }}</text></view>
+            <view v-for="(gl, gli) in clientGoals" :key="gli" :class="nativeClass('goal-item', ('goal-' + (gl.getString('status') ?? '')))">
               <view class="goal-header-row">
                 <text class="goal-title">{{ gl.getString('title_zh') }}</text>
-                <text class="goal-status-badge" :class="'goal-status-' + (gl.getString('status') ?? '')">{{ gl.getString('status') == 'achieved' ? tr('goalAchieved') : (gl.getString('status') == 'missed' ? tr('goalMissed') : tr('goalActive')) }}</text>
+                <text :class="nativeClass('goal-status-badge', ('goal-status-' + (gl.getString('status') ?? '')))">{{ gl.getString('status') == 'achieved' ? tr('goalAchieved') : (gl.getString('status') == 'missed' ? tr('goalMissed') : tr('goalActive')) }}</text>
               </view>
               <view v-if="gl['baseline_value'] != null && gl['target_value'] != null" class="goal-progress-row">
                 <text class="goal-baseline">{{ gl['baseline_value'] }}</text>
-                <view class="goal-bar-bg"><view class="goal-bar-fill" :style="'width: ' + (gl['_pct'] ?? 0) + '%;'"></view></view>
+                <view :class="nativeClass('goal-bar-bg', (null))"><view class="goal-bar-fill" :style="'width: ' + (gl['_pct'] ?? 0) + '%;'"></view></view>
                 <text class="goal-target">{{ gl['target_value'] }}</text>
               </view>
               <view class="goal-meta-row">
@@ -648,7 +648,7 @@
             </view>
           </view>
           <view v-if="goalFormOpen" class="goal-form-overlay">
-            <view class="goal-form-card">
+            <view :class="nativeClass('goal-form-card', (null))">
               <view class="goal-form-row" v-on:click="pickGoalType">
                 <text class="goal-form-label">{{ tr('goalTypeLabel') }}</text>
                 <text class="goal-form-value">{{ tr('goalTypes.' + goalType) }}</text>
@@ -664,8 +664,8 @@
                 </view>
               </picker>
               <view class="goal-form-btns">
-                <view class="goal-cancel-btn" v-on:click="closeGoalForm"><text>{{ lang == 'zh' ? '取消' : 'Cancel' }}</text></view>
-                <view class="goal-submit-btn" :class="goalBusy ? 'btn-busy' : ''" v-on:click="submitGoal"><text>{{ goalBusy ? '…' : (lang == 'zh' ? '保存' : 'Save') }}</text></view>
+                <view :class="nativeClass('goal-cancel-btn', (null))" v-on:click="closeGoalForm"><text>{{ lang == 'zh' ? '取消' : 'Cancel' }}</text></view>
+                <view :class="nativeClass('goal-submit-btn', (goalBusy ? 'btn-busy' : ''))" v-on:click="submitGoal"><text>{{ goalBusy ? '…' : (lang == 'zh' ? '保存' : 'Save') }}</text></view>
               </view>
             </view>
           </view>
@@ -675,48 +675,48 @@
 
     <!-- Assign questionnaire -->
     <view v-if="qAssignOpen" class="overlay-mask">
-      <view class="overlay-panel" v-on:click.stop="noop">
-        <view class="overlay-header">
-          <text class="overlay-title">{{ tr('questionnaires.assignTitle') }}</text>
-          <view class="overlay-close" v-on:click="closeQAssign"><text class="close-x">✕</text></view>
+      <view :class="nativeClass('overlay-panel', (null))" v-on:click.stop="noop">
+        <view :class="nativeClass('overlay-header', (null))">
+          <text :class="nativeClass('overlay-title', (null))">{{ tr('questionnaires.assignTitle') }}</text>
+          <view class="overlay-close" v-on:click="closeQAssign"><text :class="nativeClass('close-x', (null))">✕</text></view>
         </view>
-        <view v-if="qAssignQuestionnaire != null" class="q-assign-quest-banner">
-          <text class="q-assign-quest-text">{{ lang == 'zh' ? (qAssignQuestionnaire!.getString('name_zh') ?? qAssignQuestionnaire!.getString('name')) : qAssignQuestionnaire!.getString('name') }}</text>
+        <view v-if="qAssignQuestionnaire != null" :class="nativeClass('q-assign-quest-banner', (null))">
+          <text :class="nativeClass('q-assign-quest-text', (null))">{{ lang == 'zh' ? (qAssignQuestionnaire!.getString('name_zh') ?? qAssignQuestionnaire!.getString('name')) : qAssignQuestionnaire!.getString('name') }}</text>
         </view>
         <scroll-view direction="vertical" class="overlay-scroll">
-          <view v-if="clients.length == 0" class="panel-center"><text class="empty-text">{{ tr('questionnaires.noClients') }}</text></view>
+          <view v-if="clients.length == 0" class="panel-center"><text :class="nativeClass('empty-text', (null))">{{ tr('questionnaires.noClients') }}</text></view>
           <view v-else class="q-assign-list">
-            <view v-for="(qc, qci) in clients" :key="qci" class="q-assign-row" v-on:click="toggleQUser(qc.getString('user_id'))">
-              <view class="q-check" :class="qAssignSelectedIds.indexOf(qc.getString('user_id') ?? '') >= 0 ? 'q-check-on' : ''">
+            <view v-for="(qc, qci) in clients" :key="qci" :class="nativeClass('q-assign-row', (null))" v-on:click="toggleQUser(qc.getString('user_id'))">
+              <view :class="nativeClass('q-check', (qAssignSelectedIds.indexOf(qc.getString('user_id') ?? '') >= 0 ? 'q-check-on' : ''))">
                 <text v-if="qAssignSelectedIds.indexOf(qc.getString('user_id') ?? '') >= 0" class="q-check-mark">✓</text>
               </view>
-              <text class="q-assign-name">{{ qc.getString('nickname') ?? qc.getString('user_id') }}</text>
+              <text :class="nativeClass('q-assign-name', (null))">{{ qc.getString('nickname') ?? qc.getString('user_id') }}</text>
             </view>
           </view>
         </scroll-view>
-        <view class="q-assign-footer">
-          <view class="instr-send-btn" :class="qAssignBusy ? 'btn-busy' : ''" v-on:click="submitQAssign"><text class="instr-send-text">{{ qAssignBusy ? tr('loading') : tr('questionnaires.assign') }}</text></view>
+        <view :class="nativeClass('q-assign-footer', (null))">
+          <view :class="nativeClass('instr-send-btn', (qAssignBusy ? 'btn-busy' : ''))" v-on:click="submitQAssign"><text class="instr-send-text">{{ qAssignBusy ? tr('loading') : tr('questionnaires.assign') }}</text></view>
         </view>
       </view>
     </view>
 
     <!-- Questionnaire responses (per client) -->
     <view v-if="qResponsesOpen" class="overlay-mask">
-      <view class="overlay-panel" v-on:click.stop="noop">
-        <view class="overlay-header">
-          <text class="overlay-title">{{ qResponsesUser != null ? (qResponsesUser!.getString('nickname') ?? '') + ' · ' : '' }}{{ tr('questionnaires.responsesTitle') }}</text>
-          <view class="overlay-close" v-on:click="closeQResponses"><text class="close-x">✕</text></view>
+      <view :class="nativeClass('overlay-panel', (null))" v-on:click.stop="noop">
+        <view :class="nativeClass('overlay-header', (null))">
+          <text :class="nativeClass('overlay-title', (null))">{{ qResponsesUser != null ? (qResponsesUser!.getString('nickname') ?? '') + ' · ' : '' }}{{ tr('questionnaires.responsesTitle') }}</text>
+          <view class="overlay-close" v-on:click="closeQResponses"><text :class="nativeClass('close-x', (null))">✕</text></view>
         </view>
         <scroll-view direction="vertical" class="overlay-scroll">
-          <view v-if="qResponsesLoading" class="panel-center"><text class="loading-text">{{ tr('loading') }}</text></view>
-          <view v-else-if="qResponsesList.length == 0" class="panel-center"><text class="empty-text">{{ tr('questionnaires.noResponses') }}</text></view>
+          <view v-if="qResponsesLoading" class="panel-center"><text :class="nativeClass('loading-text', (null))">{{ tr('loading') }}</text></view>
+          <view v-else-if="qResponsesList.length == 0" class="panel-center"><text :class="nativeClass('empty-text', (null))">{{ tr('questionnaires.noResponses') }}</text></view>
           <view v-else class="q-resp-list">
             <view v-for="(grp, gri) in qResponsesList" :key="gri" class="q-resp-group">
-              <text class="section-label">{{ grp.getString('name') }}</text>
-              <view v-for="(rsp, rsi) in (grp.getArray<UTSJSONObject>('items') ?? [])" :key="rsi" class="q-resp-item">
-                <text class="q-resp-prompt">{{ rsp.getString('prompt') }}</text>
-                <text class="q-resp-answer">{{ rsp.getString('answer_fmt') }}</text>
-                <text class="q-resp-time">{{ rsp.getString('answered_at') }}</text>
+              <text :class="nativeClass('section-label', (null))">{{ grp.getString('name') }}</text>
+              <view v-for="(rsp, rsi) in (grp.getArray<UTSJSONObject>('items') ?? [])" :key="rsi" :class="nativeClass('q-resp-item', (null))">
+                <text :class="nativeClass('q-resp-prompt', (null))">{{ rsp.getString('prompt') }}</text>
+                <text :class="nativeClass('q-resp-answer', (null))">{{ rsp.getString('answer_fmt') }}</text>
+                <text :class="nativeClass('q-resp-time', (null))">{{ rsp.getString('answered_at') }}</text>
               </view>
             </view>
           </view>
@@ -726,35 +726,35 @@
 
     <!-- Reminder composer -->
     <view v-if="reminderOpen" class="overlay-mask">
-      <view class="overlay-panel" v-on:click.stop="noop">
-        <view class="overlay-header">
-          <text class="overlay-title">{{ tr('reminderTitle') }}</text>
-          <view class="overlay-close" v-on:click="closeReminderComposer"><text class="close-x">✕</text></view>
+      <view :class="nativeClass('overlay-panel', (null))" v-on:click.stop="noop">
+        <view :class="nativeClass('overlay-header', (null))">
+          <text :class="nativeClass('overlay-title', (null))">{{ tr('reminderTitle') }}</text>
+          <view class="overlay-close" v-on:click="closeReminderComposer"><text :class="nativeClass('close-x', (null))">✕</text></view>
         </view>
         <scroll-view direction="vertical" class="overlay-scroll">
           <view class="reminder-body">
-            <textarea class="instr-textarea" :placeholder="tr('reminderContentPh')" v-model="reminderText" :maxlength="300" :auto-height="true" />
-            <view class="picker-row">
-              <text class="picker-label">{{ tr('reminderDate') }}</text>
+            <textarea :class="nativeClass('instr-textarea', (null))" :placeholder="tr('reminderContentPh')" v-model="reminderText" :maxlength="300" :auto-height="true" />
+            <view :class="nativeClass('picker-row', (null))">
+              <text :class="nativeClass('picker-label', (null))">{{ tr('reminderDate') }}</text>
               <picker mode="date" :value="reminderDate" v-on:change="onReminderDateChange">
-                <view class="picker-value"><text class="picker-value-text">{{ reminderDate.length > 0 ? reminderDate : tr('selectDate') }}</text></view>
+                <view :class="nativeClass('picker-value', (null))"><text :class="nativeClass('picker-value-text', (null))">{{ reminderDate.length > 0 ? reminderDate : tr('selectDate') }}</text></view>
               </picker>
             </view>
-            <view class="picker-row">
-              <text class="picker-label">{{ tr('reminderTime') }}</text>
+            <view :class="nativeClass('picker-row', (null))">
+              <text :class="nativeClass('picker-label', (null))">{{ tr('reminderTime') }}</text>
               <picker mode="time" :value="reminderTime" v-on:change="onReminderTimeChange">
-                <view class="picker-value"><text class="picker-value-text">{{ reminderTime.length > 0 ? reminderTime : tr('selectTime') }}</text></view>
+                <view :class="nativeClass('picker-value', (null))"><text :class="nativeClass('picker-value-text', (null))">{{ reminderTime.length > 0 ? reminderTime : tr('selectTime') }}</text></view>
               </picker>
             </view>
-            <view class="picker-row">
-              <text class="picker-label">{{ tr('recurrence') }}</text>
+            <view :class="nativeClass('picker-row', (null))">
+              <text :class="nativeClass('picker-label', (null))">{{ tr('recurrence') }}</text>
               <view class="recurrence-opts">
-                <view class="recurrence-opt" :class="reminderRecurrence == 'none' ? 'recurrence-active' : ''" v-on:click="setRecurrence('none')"><text class="recurrence-opt-text">{{ tr('recurrenceNone') }}</text></view>
-                <view class="recurrence-opt" :class="reminderRecurrence == 'daily' ? 'recurrence-active' : ''" v-on:click="setRecurrence('daily')"><text class="recurrence-opt-text">{{ tr('recurrenceDaily') }}</text></view>
-                <view class="recurrence-opt" :class="reminderRecurrence == 'weekly' ? 'recurrence-active' : ''" v-on:click="setRecurrence('weekly')"><text class="recurrence-opt-text">{{ tr('recurrenceWeekly') }}</text></view>
+                <view :class="nativeClass('recurrence-opt', (reminderRecurrence == 'none' ? 'recurrence-active' : ''))" v-on:click="setRecurrence('none')"><text :class="nativeClass('recurrence-opt-text', (null))">{{ tr('recurrenceNone') }}</text></view>
+                <view :class="nativeClass('recurrence-opt', (reminderRecurrence == 'daily' ? 'recurrence-active' : ''))" v-on:click="setRecurrence('daily')"><text :class="nativeClass('recurrence-opt-text', (null))">{{ tr('recurrenceDaily') }}</text></view>
+                <view :class="nativeClass('recurrence-opt', (reminderRecurrence == 'weekly' ? 'recurrence-active' : ''))" v-on:click="setRecurrence('weekly')"><text :class="nativeClass('recurrence-opt-text', (null))">{{ tr('recurrenceWeekly') }}</text></view>
               </view>
             </view>
-            <view class="instr-send-btn" :class="reminderBusy ? 'btn-busy' : ''" v-on:click="submitReminder"><text class="instr-send-text">{{ reminderBusy ? tr('sending') : tr('send') }}</text></view>
+            <view :class="nativeClass('instr-send-btn', (reminderBusy ? 'btn-busy' : ''))" v-on:click="submitReminder"><text class="instr-send-text">{{ reminderBusy ? tr('sending') : tr('send') }}</text></view>
           </view>
         </scroll-view>
       </view>
@@ -764,31 +764,31 @@
   <view class="coach-refresh" v-on:click="handleRefresh"><text>↻</text></view>
 
   <!-- Appointment form — the web user-app's CoachPanel AppointmentForm -->
-  <view v-if="apptFormOpen" class="coach-appointment overlay-mask" :class="theme == 'light' ? 'theme-light' : ''">
-    <view class="overlay-panel" v-on:click.stop="noop">
-      <view class="overlay-header">
-        <text class="overlay-title">{{ tr('newAppt') }}</text>
-        <view class="overlay-close" v-on:click="closeApptForm"><text class="close-x">✕</text></view>
+  <view v-if="apptFormOpen" :class="nativeClass('coach-appointment overlay-mask', (theme == 'light' ? 'theme-light' : ''))">
+    <view :class="nativeClass('overlay-panel', (null))" v-on:click.stop="noop">
+      <view :class="nativeClass('overlay-header', (null))">
+        <text :class="nativeClass('overlay-title', (null))">{{ tr('newAppt') }}</text>
+        <view class="overlay-close" v-on:click="closeApptForm"><text :class="nativeClass('close-x', (null))">✕</text></view>
       </view>
       <view class="overlay-scroll coach-appointment-body">
-        <view class="form-row" v-on:click="pickApptClient"><text>{{ tr('tabs.clients') }}</text><view class="form-input"><text>{{ apptClientName.length > 0 ? apptClientName : '—' }}</text></view></view>
-        <view class="form-row"><text>{{ tr('apptTitle') }}</text><input class="form-input" v-model="apptTitleText" /></view>
-        <picker mode="date" :value="apptDate" v-on:change="onApptDateChange"><view class="form-row"><text>{{ tr('apptDate') }}</text><view class="form-input"><text>{{ apptDate }}</text></view></view></picker>
-        <picker mode="time" :value="apptTime" v-on:change="onApptTimeChange"><view class="form-row"><text>{{ tr('apptTime') }}</text><view class="form-input"><text>{{ apptTime }}</text></view></view></picker>
-        <view class="form-row"><text>{{ lang == 'zh' ? '链接' : 'Link' }}</text><input class="form-input" v-model="apptLink" /></view>
-        <view class="form-input" v-on:click="pickApptFormat"><text>{{ tr('apptFormats.' + apptFormat) }}</text></view>
+        <view class="form-row" v-on:click="pickApptClient"><text>{{ tr('tabs.clients') }}</text><view :class="nativeClass('form-input', (null))"><text>{{ apptClientName.length > 0 ? apptClientName : '—' }}</text></view></view>
+        <view class="form-row"><text>{{ tr('apptTitle') }}</text><input :class="nativeClass('form-input', (null))" v-model="apptTitleText" /></view>
+        <picker mode="date" :value="apptDate" v-on:change="onApptDateChange"><view class="form-row"><text>{{ tr('apptDate') }}</text><view :class="nativeClass('form-input', (null))"><text>{{ apptDate }}</text></view></view></picker>
+        <picker mode="time" :value="apptTime" v-on:change="onApptTimeChange"><view class="form-row"><text>{{ tr('apptTime') }}</text><view :class="nativeClass('form-input', (null))"><text>{{ apptTime }}</text></view></view></picker>
+        <view class="form-row"><text>{{ lang == 'zh' ? '链接' : 'Link' }}</text><input :class="nativeClass('form-input', (null))" v-model="apptLink" /></view>
+        <view :class="nativeClass('form-input', (null))" v-on:click="pickApptFormat"><text>{{ tr('apptFormats.' + apptFormat) }}</text></view>
       </view>
       <view class="overlay-footer">
-        <view class="overlay-cancel-btn" v-on:click="closeApptForm"><text>{{ tr('apptCancel') }}</text></view>
-        <view class="overlay-confirm-btn" :class="apptBusy || apptClientId.length == 0 || apptTitleText.trim().length == 0 ? 'btn-busy' : ''" v-on:click="submitAppt"><text>{{ apptBusy ? tr('loading') : tr('apptCreate') }}</text></view>
+        <view :class="nativeClass('overlay-cancel-btn', (null))" v-on:click="closeApptForm"><text>{{ tr('apptCancel') }}</text></view>
+        <view :class="nativeClass('overlay-confirm-btn', (apptBusy || apptClientId.length == 0 || apptTitleText.trim().length == 0 ? 'btn-busy' : ''))" v-on:click="submitAppt"><text>{{ apptBusy ? tr('loading') : tr('apptCreate') }}</text></view>
       </view>
     </view>
     <!-- #ifdef MP-WEIXIN -->
     <!-- Page-level WeChat privacy modal — the miniapp's coach.wxml one (see main.uvue). -->
     <view v-if="showPrivacyModal" class="page-privacy-mask" v-on:click.stop="noop">
-      <view class="page-privacy-box">
-        <text class="page-privacy-title">{{ lang == 'en' ? 'Privacy Notice' : '隐私保护提示' }}</text>
-        <text class="page-privacy-body">{{ lang == 'en' ? 'To upload images and use health features, this app needs access to your photo album and camera. Please agree to our privacy policy to continue.' : '为上传图片及使用健康功能，本应用需要访问您的相册和摄像头。请阅读并同意我们的隐私保护指引后继续。' }}</text>
+      <view :class="nativeClass('page-privacy-box', (null))">
+        <text :class="nativeClass('page-privacy-title', (null))">{{ lang == 'en' ? 'Privacy Notice' : '隐私保护提示' }}</text>
+        <text :class="nativeClass('page-privacy-body', (null))">{{ lang == 'en' ? 'To upload images and use health features, this app needs access to your photo album and camera. Please agree to our privacy policy to continue.' : '为上传图片及使用健康功能，本应用需要访问您的相册和摄像头。请阅读并同意我们的隐私保护指引后继续。' }}</text>
         <button class="page-privacy-agree-btn" id="privacy-agree-btn" open-type="agreePrivacyAuthorization" v-on:agreeprivacyauthorization="onPrivacyAgree">{{ lang == 'en' ? 'Agree & Continue' : '同意并继续' }}</button>
         <view class="page-privacy-cancel-btn" v-on:click="onPrivacyCancel"><text>{{ lang == 'en' ? 'Decline' : '拒绝' }}</text></view>
       </view>
@@ -818,7 +818,7 @@
     </view>
 
     <view class="co-tabs">
-      <text v-for="(tk, i) in tabKeys" :key="i" class="co-tab" :class="tab == tk ? 'co-tab-on' : ''" v-on:click="switchTab(tk)">{{ tr('tabs.' + tk) }}</text>
+      <text v-for="(tk, i) in tabKeys" :key="i" :class="nativeClass('co-tab', (tab == tk ? 'co-tab-on' : ''))" v-on:click="switchTab(tk)">{{ tr('tabs.' + tk) }}</text>
     </view>
 
     <scroll-view direction="vertical" class="co-body" :refresher-enabled="tab == 'clients'" v-on:refresherrefresh="onClientsRefresh">
@@ -827,8 +827,8 @@
           <input class="co-search" v-model="clientSearch" :placeholder="tr('searchPlaceholder')" />
         </view>
         <view class="co-chips">
-          <text class="co-chip" :class="clientStageFilter.length == 0 ? 'co-chip-on' : ''" v-on:click="setStageFilter('')">{{ tr('filterAll') }}</text>
-          <text v-for="(s, i) in clientFilterStages" :key="i" class="co-chip" :class="clientStageFilter == s.getString('stage') ? 'co-chip-on' : ''" v-on:click="setStageFilter(`${s.getString('stage')}`)">{{ s.getString('label') }} ({{ s.getNumber('count') }})</text>
+          <text :class="nativeClass('co-chip', (clientStageFilter.length == 0 ? 'co-chip-on' : ''))" v-on:click="setStageFilter('')">{{ tr('filterAll') }}</text>
+          <text v-for="(s, i) in clientFilterStages" :key="i" :class="nativeClass('co-chip', (clientStageFilter == s.getString('stage') ? 'co-chip-on' : ''))" v-on:click="setStageFilter(`${s.getString('stage')}`)">{{ s.getString('label') }} ({{ s.getNumber('count') }})</text>
         </view>
         <text v-if="mcEnabled" class="co-mc-add" v-on:click="openManagedForm('')">{{ tr('mc.add') }}</text>
 
@@ -939,7 +939,7 @@
           <text class="co-close" v-on:click="closeClientDetail">✕</text>
         </view>
         <view class="co-subtabs">
-          <text v-for="(dt, i) in detailTabs" :key="i" class="co-chip" :class="detailTab == dt ? 'co-chip-on' : ''" v-on:click="switchDetailTab(dt)">{{ detailTabLabel(dt) }}</text>
+          <text v-for="(dt, i) in detailTabs" :key="i" :class="nativeClass('co-chip', (detailTab == dt ? 'co-chip-on' : ''))" v-on:click="switchDetailTab(dt)">{{ detailTabLabel(dt) }}</text>
         </view>
 
         <scroll-view direction="vertical" class="co-detail-body">
@@ -951,7 +951,7 @@
 
           <view v-else-if="detailTab == 'chat'">
             <scroll-view direction="vertical" class="co-chatlist" :scroll-top="chatScrollTop" :scroll-with-animation="true">
-              <view v-for="(m, i) in chatMessages" :key="i" class="co-cmsg" :class="m.getBoolean('_isCoach') == true ? 'co-cmsg-coach' : (m.getBoolean('_isAi') == true ? 'co-cmsg-ai' : 'co-cmsg-user')">
+              <view v-for="(m, i) in chatMessages" :key="i" :class="nativeClass('co-cmsg', (m.getBoolean('_isCoach') == true ? 'co-cmsg-coach' : (m.getBoolean('_isAi') == true ? 'co-cmsg-ai' : 'co-cmsg-user')))">
                 <text class="co-cmsg-who">{{ m.getString('role') }} {{ m.getString('_time') }}</text>
                 <text v-if="m.getString('content') != null && m.getString('content')!.length > 0" class="co-cmsg-text">{{ m.getString('content') }}</text>
                 <image v-if="m.getString('imageUrl') != null && m.getString('imageUrl')!.length > 0" class="co-cmsg-img" :src="m.getString('imageUrl')" mode="widthFix" />
@@ -1061,9 +1061,9 @@
           <view class="co-send co-send-ghost"><picker mode="time" v-on:change="onReminderTimeChange"><text class="btn-text-sm">{{ reminderTime }}</text></picker></view>
         </view>
         <view class="co-row-actions">
-          <text class="co-act" :class="reminderRecurrence == 'none' ? 'co-act-on' : ''" v-on:click="setRecurrence('none')">{{ tr('recurrenceNone') }}</text>
-          <text class="co-act" :class="reminderRecurrence == 'daily' ? 'co-act-on' : ''" v-on:click="setRecurrence('daily')">{{ tr('recurrenceDaily') }}</text>
-          <text class="co-act" :class="reminderRecurrence == 'weekly' ? 'co-act-on' : ''" v-on:click="setRecurrence('weekly')">{{ tr('recurrenceWeekly') }}</text>
+          <text :class="nativeClass('co-act', (reminderRecurrence == 'none' ? 'co-act-on' : ''))" v-on:click="setRecurrence('none')">{{ tr('recurrenceNone') }}</text>
+          <text :class="nativeClass('co-act', (reminderRecurrence == 'daily' ? 'co-act-on' : ''))" v-on:click="setRecurrence('daily')">{{ tr('recurrenceDaily') }}</text>
+          <text :class="nativeClass('co-act', (reminderRecurrence == 'weekly' ? 'co-act-on' : ''))" v-on:click="setRecurrence('weekly')">{{ tr('recurrenceWeekly') }}</text>
         </view>
         <view class="co-btn" v-on:click="submitReminder"><text class="btn-text">{{ tr('send') }}</text></view>
         <text class="co-act" v-on:click="closeReminderComposer">{{ tr('mc.cancel') }}</text>
@@ -1110,8 +1110,8 @@
         <input class="co-msg-input co-field" v-model="mcNickname" :placeholder="tr('mc.nickname')" />
         <view class="co-send co-send-ghost co-field"><picker mode="date" v-on:change="onMcBirthDateChange"><text class="btn-text-sm">{{ mcBirthDate.length > 0 ? mcBirthDate : tr('mc.selectDate') }}</text></picker></view>
         <view class="co-row-actions">
-          <text class="co-act" :class="mcGender == 'male' ? 'co-act-on' : ''" v-on:click="mcGender = 'male'">{{ tr('mc.genders0') }}</text>
-          <text class="co-act" :class="mcGender == 'female' ? 'co-act-on' : ''" v-on:click="mcGender = 'female'">{{ tr('mc.genders1') }}</text>
+          <text :class="nativeClass('co-act', (mcGender == 'male' ? 'co-act-on' : ''))" v-on:click="mcGender = 'male'">{{ tr('mc.genders0') }}</text>
+          <text :class="nativeClass('co-act', (mcGender == 'female' ? 'co-act-on' : ''))" v-on:click="mcGender = 'female'">{{ tr('mc.genders1') }}</text>
         </view>
         <input class="co-msg-input co-field" v-model="mcPhone" :placeholder="tr('mc.phone')" />
         <input class="co-msg-input co-field" v-model="mcRef" :placeholder="tr('mc.ref')" />
@@ -1142,7 +1142,7 @@
           <view class="co-send co-send-ghost"><picker mode="time" v-on:change="onApptTimeChange"><text class="btn-text-sm">{{ apptTime }}</text></picker></view>
         </view>
         <view class="co-row-actions">
-          <text v-for="(fm, i) in apptFormats" :key="i" class="co-act" :class="apptFormat == fm ? 'co-act-on' : ''" v-on:click="apptFormat = fm">{{ tr('apptFormats.' + fm) }}</text>
+          <text v-for="(fm, i) in apptFormats" :key="i" :class="nativeClass('co-act', (apptFormat == fm ? 'co-act-on' : ''))" v-on:click="apptFormat = fm">{{ tr('apptFormats.' + fm) }}</text>
         </view>
         <input class="co-msg-input co-field" v-model="apptLink" placeholder="https://…" />
         <view class="co-btn" v-on:click="submitAppt"><text class="btn-text">{{ tr('apptCreate') }}</text></view>
@@ -1154,6 +1154,8 @@
 </template>
 
 <script>
+import { nativeClass as nativeVisualClass } from '../../utils/native-visual.uts'
+
 // Ported from miniapp pages/coach/coach.js (full logic). Deviations, deliberate:
 //  - privacy-modal hooks / capsule geometry / edge-swipe handlers dropped (WeChat-only or
 //    covered by Android system back).
@@ -1663,6 +1665,9 @@ export default {
     textScale(v : number) { syncRootClasses(this.theme, v) },
   },
   methods: {
+    nativeClass(names : string, dynamic : any | null) : string {
+      return nativeVisualClass(names, dynamic, this.theme, this.textScale)
+    },
     tr(path : string) : string { return _tr(this.t, path) },
     // The miniapp's left-edge swipe back. A two-finger pinch must not also read as one, and only a
     // swipe that starts at the edge counts, which leaves interior gestures (the CRM kanban) alone.
@@ -4824,5 +4829,11 @@ export default {
 .btn-text { color: #FFFFFF; font-size: 14px; }
 .btn-text-sm { color: #EAF2FB; font-size: 12px; }
 .co-btn { height: 44px; background-color: #2E7CF6; border-radius: 12px; align-items: center; justify-content: center; margin-top: 8px; }
+/* #endif */
+</style>
+
+<style>
+/* #ifdef APP */
+@import "../../unpackage/native-styles/pages-coach-coach.css";
 /* #endif */
 </style>

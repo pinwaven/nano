@@ -1,0 +1,36 @@
+import { state } from './state.uts'
+
+function flattenClasses(value : any | null) : string {
+  if (value == null) return ''
+  if (typeof value == 'string') return value as string
+  if (Array.isArray(value)) {
+    let result = ''
+    const values = value as any[]
+    for (const item of values) result += ' ' + flattenClasses(item)
+    return result.trim()
+  }
+  return ''
+}
+
+// Native CSS does not refresh descendants when an ancestor theme/size class
+// changes. Put the generated modifiers on the actual target view instead.
+// Mini/web keep their original class binding and native panels keep their state.
+export function nativeClass(names : string, dynamic : any | null, theme : string | null, scale : number | null) : string {
+  // #ifdef APP
+  const original = flattenClasses(dynamic)
+  const palette = theme != null ? theme! : state.theme
+  const level = scale != null ? scale! : state.textScale
+  const classes = (names + ' ' + original).trim().split(/\s+/)
+  let colors = ''
+  let sizes = ''
+  for (const name of classes) {
+    if (name.length == 0) continue
+    colors += ' ' + name + '-native-' + palette
+    sizes += ' ' + name + '-native-fs-' + level
+  }
+  return (names + ' ' + original + colors + sizes).trim()
+  // #endif
+  // #ifndef APP
+  return (names + ' ' + flattenClasses(dynamic)).trim()
+  // #endif
+}

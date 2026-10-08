@@ -3,7 +3,7 @@
        The miniapp's catchtouchmove="noop" (scroll-through guard) has no uvue equivalent; the
        fixed full-screen overlay swallows touches itself. -->
   <view v-if="open" class="strip-overlay">
-    <scroll-view direction="vertical" :class="theme == 'light' ? 'strip-sheet strip-sheet-light' : 'strip-sheet'">
+    <scroll-view direction="vertical" :class="nativeClass('', (theme == 'light' ? 'strip-sheet strip-sheet-light' : 'strip-sheet'))">
       <view class="strip-head">
         <text class="strip-title">{{ tt('title') }}</text>
         <view class="strip-close" v-on:click="handleClose()"><text class="strip-close-text">✕</text></view>
@@ -89,6 +89,8 @@
 </template>
 
 <script>
+import { nativeClass as nativeVisualClass } from '../../utils/native-visual.uts'
+
 // 心电节律 / 脉搏波 记录 — one overlay that records a raw strip from a bound wearable, uploads it
 // for analysis and shows the result, and that reads a stored strip back. `kind` picks which:
 //   kind="ecg"  single-lead ECG from the V8 band (§18/§45 心电节律; V8 only), 35 s capture with
@@ -487,6 +489,9 @@ export default {
     this._teardown()
   },
   methods: {
+    nativeClass(names : string, dynamic : any | null) : string {
+      return nativeVisualClass(names, dynamic, this.theme, null)
+    },
     tt(key : string) : string { return tr(this.t, key) },
 
     statusText() : string {
@@ -1183,5 +1188,11 @@ export default {
 .strip-btn-danger .strip-btn-text { color: #e0565b; }
 .strip-bpm { color: #1fb7a6; }
 .strip-countdown { color: #1fb7a6; }
+/* #endif */
+</style>
+
+<style>
+/* #ifdef APP */
+@import "../../unpackage/native-styles/components-strip-record-strip-record.css";
 /* #endif */
 </style>

@@ -1,126 +1,126 @@
 <template>
   <!-- 健康文档 — twin layer 3, Medical Records (AGENTS §34). Hosted by BOTH the 数字孪生
        subtab and the Viva AG subtab, which is why it lives here rather than inside either one. -->
-  <view class="hd-root" :class="theme == 'light' ? 'theme-light' : ''">
-    <view class="hd-section">
-      <view class="hd-section-head" :class="collapsible ? 'hd-section-head-toggle' : ''" v-on:click="toggleExpanded">
+  <view :class="nativeClass('hd-root', (theme == 'light' ? 'theme-light' : ''))">
+    <view :class="nativeClass('hd-section', (null))">
+      <view :class="nativeClass('hd-section-head', (collapsible ? 'hd-section-head-toggle' : ''))" v-on:click="toggleExpanded">
         <view class="hd-section-head-main">
           <view class="hd-section-title-row">
-            <text class="hd-section-title">{{ tr('documents') }}</text>
-            <text v-if="collapsible" class="hd-section-count">{{ documents.length }}</text>
+            <text :class="nativeClass('hd-section-title', (null))">{{ tr('documents') }}</text>
+            <text v-if="collapsible" :class="nativeClass('hd-section-count', (null))">{{ documents.length }}</text>
           </view>
           <view v-if="collapsible && !expanded">
-            <text v-if="docsLoading" class="hd-compact-summary">{{ tr('loading') }}</text>
+            <text v-if="docsLoading" :class="nativeClass('hd-compact-summary', (null))">{{ tr('loading') }}</text>
             <view v-else-if="documents.length > 0" class="hd-compact-doc">
-              <text class="hd-compact-name">{{ firstDocName }}</text>
-              <text class="hd-compact-meta">{{ firstDocMeta }}</text>
+              <text :class="nativeClass('hd-compact-name', (null))">{{ firstDocName }}</text>
+              <text :class="nativeClass('hd-compact-meta', (null))">{{ firstDocMeta }}</text>
             </view>
-            <text v-else class="hd-compact-summary">{{ canUpload ? tr('noDocsTitle') : tr('noDocsOther') }}</text>
+            <text v-else :class="nativeClass('hd-compact-summary', (null))">{{ canUpload ? tr('noDocsTitle') : tr('noDocsOther') }}</text>
           </view>
         </view>
         <view class="hd-section-head-actions">
-          <text v-if="!collapsible" class="hd-section-count">{{ documents.length }}</text>
-          <view v-if="collapsible && !expanded && canUpload" class="hd-upload-compact" :class="uploading ? 'hd-btn-busy' : ''" v-on:click.stop="chooseDocument">
-            <text class="hd-upload-compact-txt">{{ uploading ? uploadStatus : tr('uploadBtn') }}</text>
+          <text v-if="!collapsible" :class="nativeClass('hd-section-count', (null))">{{ documents.length }}</text>
+          <view v-if="collapsible && !expanded && canUpload" :class="nativeClass('hd-upload-compact', (uploading ? 'hd-btn-busy' : ''))" v-on:click.stop="chooseDocument">
+            <text :class="nativeClass('hd-upload-compact-txt', (null))">{{ uploading ? uploadStatus : tr('uploadBtn') }}</text>
           </view>
-          <view v-if="collapsible" class="hd-expand-control">
-            <text class="hd-expand-label">{{ expanded ? tr('collapse') : tr('expand') }}</text>
-            <text class="hd-expand-chevron">{{ expanded ? '⌃' : '⌄' }}</text>
+          <view v-if="collapsible" :class="nativeClass('hd-expand-control', (null))">
+            <text :class="nativeClass('hd-expand-label', (null))">{{ expanded ? tr('collapse') : tr('expand') }}</text>
+            <text :class="nativeClass('hd-expand-chevron', (null))">{{ expanded ? '⌃' : '⌄' }}</text>
           </view>
         </view>
       </view>
 
-      <view v-if="!collapsible || expanded" :class="collapsible ? 'hd-expanded-body' : ''">
-        <view v-if="canUpload" class="hd-upload-btn" :class="uploading ? 'hd-btn-busy' : ''" v-on:click="chooseDocument">
-          <text v-if="!uploading" class="hd-upload-btn-txt">{{ tr('uploadBtn') }}</text>
-          <text v-else class="hd-upload-btn-txt">{{ uploadStatus }}</text>
+      <view v-if="!collapsible || expanded" :class="nativeClass('', (collapsible ? 'hd-expanded-body' : ''))">
+        <view v-if="canUpload" :class="nativeClass('hd-upload-btn', (uploading ? 'hd-btn-busy' : ''))" v-on:click="chooseDocument">
+          <text v-if="!uploading" :class="nativeClass('hd-upload-btn-txt', (null))">{{ tr('uploadBtn') }}</text>
+          <text v-else :class="nativeClass('hd-upload-btn-txt', (null))">{{ uploadStatus }}</text>
         </view>
-        <view v-if="canUpload && uploading" class="hd-progress">
-          <view class="hd-progress-bar"></view>
+        <view v-if="canUpload && uploading" :class="nativeClass('hd-progress', (null))">
+          <view :class="nativeClass('hd-progress-bar', (null))"></view>
         </view>
 
-        <text v-if="docsLoading" class="hd-muted">{{ tr('loading') }}</text>
+        <text v-if="docsLoading" :class="nativeClass('hd-muted', (null))">{{ tr('loading') }}</text>
         <view v-else-if="documents.length == 0" class="hd-empty">
-          <text class="hd-empty-title">{{ canUpload ? tr('noDocsTitle') : tr('noDocsOther') }}</text>
-          <text v-if="canUpload" class="hd-empty-hint">{{ tr('noDocsHint') }}</text>
+          <text :class="nativeClass('hd-empty-title', (null))">{{ canUpload ? tr('noDocsTitle') : tr('noDocsOther') }}</text>
+          <text v-if="canUpload" :class="nativeClass('hd-empty-hint', (null))">{{ tr('noDocsHint') }}</text>
         </view>
         <view v-else>
-          <view v-for="(doc, di) in documents" :key="di" class="hd-doc-wrap">
+          <view v-for="(doc, di) in documents" :key="di" :class="nativeClass('hd-doc-wrap', (null))">
             <view class="hd-doc">
               <view class="hd-doc-main" v-on:click="openDocument(docIdOf(doc))">
-                <text class="hd-doc-name">{{ doc.getString('filename') }}</text>
+                <text :class="nativeClass('hd-doc-name', (null))">{{ doc.getString('filename') }}</text>
                 <view class="hd-doc-meta">
                   <!-- The badge is the type control for the owner: tap → action sheet (PATCH doc_type). -->
-                  <text v-if="canUpload" class="hd-doc-badge hd-doc-badge-tap" v-on:click.stop="changeType(docIdOf(doc))">{{ doc.getString('typeLabel') }} ⌄</text>
-                  <text v-else class="hd-doc-badge">{{ doc.getString('typeLabel') }}</text>
-                  <text v-if="hasText(doc, 'doc_date')" class="hd-doc-sub">{{ doc.getString('doc_date') }}</text>
-                  <text class="hd-doc-sub">{{ doc.getString('sizeLabel') }}</text>
+                  <text v-if="canUpload" :class="nativeClass('hd-doc-badge hd-doc-badge-tap', (null))" v-on:click.stop="changeType(docIdOf(doc))">{{ doc.getString('typeLabel') }} ⌄</text>
+                  <text v-else :class="nativeClass('hd-doc-badge', (null))">{{ doc.getString('typeLabel') }}</text>
+                  <text v-if="hasText(doc, 'doc_date')" :class="nativeClass('hd-doc-sub', (null))">{{ doc.getString('doc_date') }}</text>
+                  <text :class="nativeClass('hd-doc-sub', (null))">{{ doc.getString('sizeLabel') }}</text>
                 </view>
-                <text v-if="hasText(doc, 'extLabel')" class="hd-doc-ext" :class="(doc.getBoolean('extBusy') == true || doc.getBoolean('extNone') == true) ? 'hd-doc-ext-busy' : ''">{{ doc.getString('extLabel') }}</text>
-                <text v-if="hasText(doc, 'summary')" class="hd-doc-summary">{{ doc.getString('summary') }}</text>
+                <text v-if="hasText(doc, 'extLabel')" :class="nativeClass('hd-doc-ext', ((doc.getBoolean('extBusy') == true || doc.getBoolean('extNone') == true) ? 'hd-doc-ext-busy' : ''))">{{ doc.getString('extLabel') }}</text>
+                <text v-if="hasText(doc, 'summary')" :class="nativeClass('hd-doc-summary', (null))">{{ doc.getString('summary') }}</text>
               </view>
-              <text v-if="canUpload" class="hd-doc-del" v-on:click.stop="deleteDocument(docIdOf(doc), fileNameOf(doc))">{{ tr('delete') }}</text>
+              <text v-if="canUpload" :class="nativeClass('hd-doc-del', (null))" v-on:click.stop="deleteDocument(docIdOf(doc), fileNameOf(doc))">{{ tr('delete') }}</text>
             </view>
 
             <!-- A read refused for want of a date is the one failure the owner can fix alone. -->
             <view v-if="canUpload && doc.getBoolean('extMissingDate') == true" class="hd-doc-fix">
-              <text class="hd-doc-fix-hint">{{ tr('extMissingDateHint') }}</text>
+              <text :class="nativeClass('hd-doc-fix-hint', (null))">{{ tr('extMissingDateHint') }}</text>
               <picker mode="date" :end="today" v-on:change="onDocDateChange($event, docIdOf(doc))">
-                <text class="hd-doc-action">{{ tr('setDate') }}</text>
+                <text :class="nativeClass('hd-doc-action', (null))">{{ tr('setDate') }}</text>
               </picker>
             </view>
 
             <view v-if="canUpload && (doc.getBoolean('extDone') == true || doc.getBoolean('extNone') == true || doc.getBoolean('extFailed') == true)" class="hd-doc-actions">
-              <text v-if="doc.getBoolean('extNone') == true" class="hd-doc-action" v-on:click.stop="rerunExtraction(docIdOf(doc))">{{ tr('extRun') }}</text>
-              <text v-else-if="doc.getBoolean('extFailed') == true" class="hd-doc-action" v-on:click.stop="rerunExtraction(docIdOf(doc))">{{ tr('extRetry') }}</text>
-              <text v-else class="hd-doc-action" v-on:click.stop="rerunExtraction(docIdOf(doc))">{{ tr('extRerun') }}</text>
-              <text v-if="doc.getBoolean('extDone') == true" class="hd-doc-action hd-doc-action-warn" v-on:click.stop="rejectExtraction(docIdOf(doc))">{{ tr('extWrong') }}</text>
-              <text v-if="doc.getBoolean('hasStructured') == true" class="hd-doc-action" v-on:click.stop="toggleStructured(docIdOf(doc))">{{ doc.getBoolean('structuredOpen') == true ? tr('structuredHide') : tr('structuredShow') }}</text>
+              <text v-if="doc.getBoolean('extNone') == true" :class="nativeClass('hd-doc-action', (null))" v-on:click.stop="rerunExtraction(docIdOf(doc))">{{ tr('extRun') }}</text>
+              <text v-else-if="doc.getBoolean('extFailed') == true" :class="nativeClass('hd-doc-action', (null))" v-on:click.stop="rerunExtraction(docIdOf(doc))">{{ tr('extRetry') }}</text>
+              <text v-else :class="nativeClass('hd-doc-action', (null))" v-on:click.stop="rerunExtraction(docIdOf(doc))">{{ tr('extRerun') }}</text>
+              <text v-if="doc.getBoolean('extDone') == true" :class="nativeClass('hd-doc-action hd-doc-action-warn', (null))" v-on:click.stop="rejectExtraction(docIdOf(doc))">{{ tr('extWrong') }}</text>
+              <text v-if="doc.getBoolean('hasStructured') == true" :class="nativeClass('hd-doc-action', (null))" v-on:click.stop="toggleStructured(docIdOf(doc))">{{ doc.getBoolean('structuredOpen') == true ? tr('structuredHide') : tr('structuredShow') }}</text>
             </view>
             <view v-else-if="doc.getBoolean('hasStructured') == true" class="hd-doc-actions">
-              <text class="hd-doc-action" v-on:click.stop="toggleStructured(docIdOf(doc))">{{ doc.getBoolean('structuredOpen') == true ? tr('structuredHide') : tr('structuredShow') }}</text>
+              <text :class="nativeClass('hd-doc-action', (null))" v-on:click.stop="toggleStructured(docIdOf(doc))">{{ doc.getBoolean('structuredOpen') == true ? tr('structuredHide') : tr('structuredShow') }}</text>
             </view>
 
             <!-- What the document states about the person (contract 3 tags, AGENTS §39/§40).
                  A fact chip is something nano acts on; a descriptor chip is only recorded, and says so. -->
             <view v-if="tagsOf(doc).length > 0" class="hd-tags">
-              <view v-for="(tag, ti) in tagsOf(doc)" :key="ti" class="hd-tag" :class="(tag.getBoolean('isFact') == true ? 'hd-tag-fact' : 'hd-tag-desc') + (tag.getBoolean('inactive') == true ? ' hd-tag-inactive' : '')">
-                <text class="hd-tag-cat">{{ tag.getString('category') }}</text>
-                <text class="hd-tag-label">{{ tag.getString('label') }}</text>
-                <text v-if="hasText(tag, 'status')" class="hd-tag-status">{{ tag.getString('status') }}</text>
-                <text v-if="tag.getBoolean('isFact') != true" class="hd-tag-status">{{ tr('tagDescriptor') }}</text>
+              <view v-for="(tag, ti) in tagsOf(doc)" :key="ti" :class="nativeClass('hd-tag', ((tag.getBoolean('isFact') == true ? 'hd-tag-fact' : 'hd-tag-desc') + (tag.getBoolean('inactive') == true ? ' hd-tag-inactive' : '')))">
+                <text :class="nativeClass('hd-tag-cat', (null))">{{ tag.getString('category') }}</text>
+                <text :class="nativeClass('hd-tag-label', (null))">{{ tag.getString('label') }}</text>
+                <text v-if="hasText(tag, 'status')" :class="nativeClass('hd-tag-status', (null))">{{ tag.getString('status') }}</text>
+                <text v-if="tag.getBoolean('isFact') != true" :class="nativeClass('hd-tag-status', (null))">{{ tr('tagDescriptor') }}</text>
               </view>
             </view>
 
             <!-- The agent's structured block (AGENTS §39): version 2 as the tables it holds,
                  version 1 as the generic key/value tree it arrived as. -->
-            <view v-if="doc.getBoolean('structuredOpen') == true" class="hd-struct">
+            <view v-if="doc.getBoolean('structuredOpen') == true" :class="nativeClass('hd-struct', (null))">
               <view v-for="(sec, si) in blocksOf(doc)" :key="si" class="hd-struct-sec">
-                <view v-if="hasText(sec, 'title')" class="hd-struct-row hd-struct-head">
-                  <text class="hd-struct-key">{{ sec.getString('title') }}</text>
+                <view v-if="hasText(sec, 'title')" :class="nativeClass('hd-struct-row hd-struct-head', (null))">
+                  <text :class="nativeClass('hd-struct-key', (null))">{{ sec.getString('title') }}</text>
                 </view>
                 <scroll-view v-for="(tbl, tj) in tablesOf(sec)" :key="tj" direction="horizontal" class="hd-table-wrap">
                   <view class="hd-table">
                     <view class="hd-table-row hd-table-header">
-                      <text v-for="(col, ci) in columnsOf(tbl)" :key="ci" class="hd-table-cell hd-table-cell-head">{{ col }}</text>
+                      <text v-for="(col, ci) in columnsOf(tbl)" :key="ci" :class="nativeClass('hd-table-cell hd-table-cell-head', (null))">{{ col }}</text>
                     </view>
                     <view v-for="(row, ri) in tableRowsOf(tbl)" :key="ri" class="hd-table-row">
-                      <text v-for="(cell, vi) in cellsOf(row)" :key="vi" class="hd-table-cell">{{ cell }}</text>
+                      <text v-for="(cell, vi) in cellsOf(row)" :key="vi" :class="nativeClass('hd-table-cell', (null))">{{ cell }}</text>
                     </view>
                   </view>
                 </scroll-view>
-                <view v-for="(pair, pi) in pairsOf(sec)" :key="pi" class="hd-struct-row" style="padding-left: 12px">
-                  <text class="hd-struct-key">{{ pair.getString('label') }}</text>
-                  <text class="hd-struct-val">{{ pair.getString('value') }}</text>
+                <view v-for="(pair, pi) in pairsOf(sec)" :key="pi" :class="nativeClass('hd-struct-row', (null))" style="padding-left: 12px">
+                  <text :class="nativeClass('hd-struct-key', (null))">{{ pair.getString('label') }}</text>
+                  <text :class="nativeClass('hd-struct-val', (null))">{{ pair.getString('value') }}</text>
                 </view>
               </view>
-              <view v-for="(row, rj) in flatRowsOf(doc)" :key="rj" class="hd-struct-row" :class="row.getBoolean('isHead') == true ? 'hd-struct-head' : ''" :style="'padding-left:' + (depthOf(row) * 12) + 'px'">
-                <text :class="row.getBoolean('isHead') == true ? 'hd-struct-key hd-struct-key-head' : 'hd-struct-key'">{{ row.getString('key') }}</text>
-                <text v-if="row.getBoolean('isHead') != true" class="hd-struct-val">{{ row.getString('value') }}</text>
+              <view v-for="(row, rj) in flatRowsOf(doc)" :key="rj" :class="nativeClass('hd-struct-row', (row.getBoolean('isHead') == true ? 'hd-struct-head' : ''))" :style="'padding-left:' + (depthOf(row) * 12) + 'px'">
+                <text :class="nativeClass('', (row.getBoolean('isHead') == true ? 'hd-struct-key hd-struct-key-head' : 'hd-struct-key'))">{{ row.getString('key') }}</text>
+                <text v-if="row.getBoolean('isHead') != true" :class="nativeClass('hd-struct-val', (null))">{{ row.getString('value') }}</text>
               </view>
             </view>
           </view>
-          <text v-if="canUpload" class="hd-footnote">{{ tr('footnote') }}</text>
+          <text v-if="canUpload" :class="nativeClass('hd-footnote', (null))">{{ tr('footnote') }}</text>
         </view>
       </view>
     </view>
@@ -128,6 +128,8 @@
 </template>
 
 <script>
+import { nativeClass as nativeVisualClass } from '../../utils/native-visual.uts'
+
 // 健康文档 — the user's uploaded health records: clinic notes, 体检报告 PDFs, photographs of
 // paper printouts. This is twin layer 3, Medical Records (AGENTS §34), not a Viva AG feature,
 // which is why it is a shared component: the 数字孪生 subtab hosts it for everyone, and the
@@ -599,6 +601,9 @@ export default {
     this._loadDocuments()
   },
   methods: {
+    nativeClass(names : string, dynamic : any | null) : string {
+      return nativeVisualClass(names, dynamic, this.theme, null)
+    },
     tr(path : string) : string { return _tr(this.t, path) },
     _toast(title : string, success : boolean = false) {
       // The miniapp passed icon:'none'|'success'; uni-app x's icon is a literal union, so the
@@ -1299,5 +1304,11 @@ function todayStr() : string {
 .hd-tag-status { font-size: var(--fs-20, 20rpx); }
 .hd-struct-key { font-size: var(--fs-22, 22rpx); }
 .hd-struct-val { font-size: var(--fs-22, 22rpx); }
+/* #endif */
+</style>
+
+<style>
+/* #ifdef APP */
+@import "../../unpackage/native-styles/components-health-documents-health-documents.css";
 /* #endif */
 </style>

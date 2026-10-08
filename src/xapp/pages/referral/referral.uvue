@@ -2,25 +2,25 @@
   <!-- #ifdef WEB -->
   <!-- Web: the miniapp's pages/referral markup (the web user-app's ReferralPage), styled by the
        shared stylesheet in static/web/. 分享给好友 shares/copies an ?invite= link to this app. -->
-  <view class="referral-page route-page" :class="theme == 'light' ? 'theme-light' : ''">
-    <view class="app-header">
-      <view class="back-btn" v-on:click="goBack"><text class="back-icon">‹</text><text class="back-label">{{ t('back') }}</text></view>
-      <text class="header-title">{{ t('title') }}</text>
+  <view :class="nativeClass('referral-page route-page', (theme == 'light' ? 'theme-light' : ''))">
+    <view :class="nativeClass('app-header', (null))">
+      <view class="back-btn" v-on:click="goBack"><text :class="nativeClass('back-icon', (null))">‹</text><text :class="nativeClass('back-label', (null))">{{ t('back') }}</text></view>
+      <text :class="nativeClass('header-title', (null))">{{ t('title') }}</text>
     </view>
     <view class="tab-scroll" style="flex: 1">
-      <view class="card">
-        <text class="card-label">{{ t('yourCode') }}</text>
-        <view class="code-row"><text class="code-value">{{ referralCode }}</text></view>
+      <view :class="nativeClass('card', (null))">
+        <text :class="nativeClass('card-label', (null))">{{ t('yourCode') }}</text>
+        <view class="code-row"><text :class="nativeClass('code-value', (null))">{{ referralCode }}</text></view>
         <view class="btn-row">
-          <view class="btn btn-outline" v-on:click="copyCode"><text>{{ t('copyCode') }}</text></view>
+          <view :class="nativeClass('btn btn-outline', (null))" v-on:click="copyCode"><text>{{ t('copyCode') }}</text></view>
           <view class="btn btn-primary" v-on:click="shareInvite"><text>{{ t('shareCard') }}</text></view>
         </view>
       </view>
-      <view class="card how-card">
-        <text class="card-label">{{ t('howTitle') }}</text>
-        <view class="how-row"><text class="how-num">1</text><text class="how-text">{{ t('how1') }}</text></view>
-        <view class="how-row"><text class="how-num">2</text><text class="how-text">{{ t('how2') }}</text></view>
-        <view class="how-row"><text class="how-num">3</text><text class="how-text">{{ t('how3') }}</text></view>
+      <view :class="nativeClass('card how-card', (null))">
+        <text :class="nativeClass('card-label', (null))">{{ t('howTitle') }}</text>
+        <view class="how-row"><text :class="nativeClass('how-num', (null))">1</text><text :class="nativeClass('how-text', (null))">{{ t('how1') }}</text></view>
+        <view class="how-row"><text :class="nativeClass('how-num', (null))">2</text><text :class="nativeClass('how-text', (null))">{{ t('how2') }}</text></view>
+        <view class="how-row"><text :class="nativeClass('how-num', (null))">3</text><text :class="nativeClass('how-text', (null))">{{ t('how3') }}</text></view>
       </view>
       <view class="bottom-safe"></view>
     </view>
@@ -29,22 +29,22 @@
   <!-- #ifdef MP-WEIXIN -->
   <!-- xapp-mini: the miniapp's pages/referral markup and stylesheet, so the two entries look the
        same; 分享给好友 is WeChat's own share button (onShareAppMessage below). -->
-  <view class="referral-page" :class="theme == 'light' ? 'theme-light' : ''">
+  <view :class="nativeClass('referral-page', (theme == 'light' ? 'theme-light' : ''))">
     <view class="status-bar-spacer" :style="'height: ' + statusBarHeight + 'px;'"></view>
-    <view class="app-header">
+    <view :class="nativeClass('app-header', (null))">
       <view class="back-btn" v-on:click="goBack">
-        <text class="back-icon">‹</text>
-        <text class="back-label">{{ t('back') }}</text>
+        <text :class="nativeClass('back-icon', (null))">‹</text>
+        <text :class="nativeClass('back-label', (null))">{{ t('back') }}</text>
       </view>
-      <text class="header-title">{{ t('title') }}</text>
+      <text :class="nativeClass('header-title', (null))">{{ t('title') }}</text>
     </view>
-    <view class="card">
-      <text class="card-label">{{ t('yourCode') }}</text>
+    <view :class="nativeClass('card', (null))">
+      <text :class="nativeClass('card-label', (null))">{{ t('yourCode') }}</text>
       <view class="code-row">
-        <text class="code-value">{{ referralCode }}</text>
+        <text :class="nativeClass('code-value', (null))">{{ referralCode }}</text>
       </view>
       <view class="btn-row">
-        <view class="btn btn-outline" v-on:click="copyCode">
+        <view :class="nativeClass('btn btn-outline', (null))" v-on:click="copyCode">
           <text>{{ t('copyCode') }}</text>
         </view>
         <button class="btn btn-primary" open-type="share">
@@ -52,11 +52,11 @@
         </button>
       </view>
     </view>
-    <view class="card how-card">
-      <text class="card-label">{{ t('howTitle') }}</text>
-      <view class="how-row"><text class="how-num">1</text><text class="how-text">{{ t('how1') }}</text></view>
-      <view class="how-row"><text class="how-num">2</text><text class="how-text">{{ t('how2') }}</text></view>
-      <view class="how-row"><text class="how-num">3</text><text class="how-text">{{ t('how3') }}</text></view>
+    <view :class="nativeClass('card how-card', (null))">
+      <text :class="nativeClass('card-label', (null))">{{ t('howTitle') }}</text>
+      <view class="how-row"><text :class="nativeClass('how-num', (null))">1</text><text :class="nativeClass('how-text', (null))">{{ t('how1') }}</text></view>
+      <view class="how-row"><text :class="nativeClass('how-num', (null))">2</text><text :class="nativeClass('how-text', (null))">{{ t('how2') }}</text></view>
+      <view class="how-row"><text :class="nativeClass('how-num', (null))">3</text><text :class="nativeClass('how-text', (null))">{{ t('how3') }}</text></view>
     </view>
     <view class="bottom-safe"></view>
   </view>
@@ -87,6 +87,8 @@
 </template>
 
 <script>
+import { nativeClass as nativeVisualClass } from '../../utils/native-visual.uts'
+
 // Ported from miniapp pages/referral/referral.js. Deviation: a native app has no
 // onShareAppMessage card — 分享给好友 becomes copy-invite-text (link + title), the app's
 // own share sheet can come with a share plugin later.
@@ -148,6 +150,9 @@ export default {
   },
   // #endif
   methods: {
+    nativeClass(names : string, dynamic : any | null) : string {
+      return nativeVisualClass(names, dynamic, this.theme, null)
+    },
     t(key : string) : string {
       // #ifdef WEB || MP-WEIXIN
       const w = (this.lang == 'en' ? T_WEB_EN : T_WEB_ZH).getString(key)
@@ -738,5 +743,11 @@ export default {
 .rf-hint { color: rgba(166, 196, 229, 0.7); font-size: 11px; margin-top: 8px; }
 .rf-section { color: #EAF2FB; font-size: 15px; font-weight: bold; margin-bottom: 8px; }
 .rf-how { color: #A6C4E5; font-size: 13px; margin-bottom: 6px; }
+/* #endif */
+</style>
+
+<style>
+/* #ifdef APP */
+@import "../../unpackage/native-styles/pages-referral-referral.css";
 /* #endif */
 </style>

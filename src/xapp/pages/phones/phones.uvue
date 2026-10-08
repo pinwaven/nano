@@ -3,59 +3,59 @@
   <!-- xapp-mini renders this miniapp markup too, with the miniapp's own stylesheet (style block). -->
   <!-- Web: the miniapp's pages/phones markup (the web user-app's IdentityPage), styled by the
        shared stylesheet in static/web/. Native keeps its own layout below. -->
-  <view class="phones-page route-page" :class="theme == 'light' ? 'theme-light' : ''">
+  <view :class="nativeClass('phones-page route-page', (theme == 'light' ? 'theme-light' : ''))">
     <!-- #ifdef MP-WEIXIN -->
     <view class="status-bar-spacer" :style="'height: ' + statusBarHeight + 'px;'"></view>
     <!-- #endif -->
-    <view class="app-header">
-      <view class="back-btn" v-on:click="goBack"><text class="back-icon">‹</text><text class="back-label">{{ t('back') }}</text></view>
-      <text class="header-title">{{ t('title') }}</text>
+    <view :class="nativeClass('app-header', (null))">
+      <view class="back-btn" v-on:click="goBack"><text :class="nativeClass('back-icon', (null))">‹</text><text :class="nativeClass('back-label', (null))">{{ t('back') }}</text></view>
+      <text :class="nativeClass('header-title', (null))">{{ t('title') }}</text>
     </view>
     <view class="phones-content tab-scroll">
-      <view v-if="loading" class="center-msg"><text class="dim-text">{{ t('loading') }}</text></view>
-      <view v-else class="card">
+      <view v-if="loading" class="center-msg"><text :class="nativeClass('dim-text', (null))">{{ t('loading') }}</text></view>
+      <view v-else :class="nativeClass('card', (null))">
         <view v-for="(p, i) in phones" :key="i" class="phone-row">
           <view class="phone-row-main">
-            <text class="phone-value">{{ p.getString('masked') }}</text>
-            <text v-if="p.getBoolean('is_primary') == true" class="phone-badge">{{ t('primaryBadge') }}</text>
+            <text :class="nativeClass('phone-value', (null))">{{ p.getString('masked') }}</text>
+            <text v-if="p.getBoolean('is_primary') == true" :class="nativeClass('phone-badge', (null))">{{ t('primaryBadge') }}</text>
           </view>
           <view class="phone-row-actions">
-            <text v-if="p.getBoolean('is_primary') != true" class="phone-action" v-on:click="setPrimary(`${p.getString('phone')}`)">{{ t('setPrimaryAction') }}</text>
-            <text class="phone-action phone-action-danger" v-on:click="removePhone(`${p.getString('phone')}`)">{{ t('removeAction') }}</text>
+            <text v-if="p.getBoolean('is_primary') != true" :class="nativeClass('phone-action', (null))" v-on:click="setPrimary(`${p.getString('phone')}`)">{{ t('setPrimaryAction') }}</text>
+            <text :class="nativeClass('phone-action phone-action-danger', (null))" v-on:click="removePhone(`${p.getString('phone')}`)">{{ t('removeAction') }}</text>
           </view>
         </view>
-        <view class="btn btn-outline add-phone-btn" v-on:click="openAddPhone"><text>{{ t('addPhoneBtn') }}</text></view>
+        <view :class="nativeClass('btn btn-outline add-phone-btn', (null))" v-on:click="openAddPhone"><text>{{ t('addPhoneBtn') }}</text></view>
       </view>
     </view>
     <view v-if="addMode" class="withdraw-overlay" v-on:click="closeAddPhone">
-      <view class="withdraw-modal" v-on:click.stop="noop">
-        <text class="withdraw-modal-title">{{ t('addPhoneBtn') }}</text>
+      <view :class="nativeClass('withdraw-modal', (null))" v-on:click.stop="noop">
+        <text :class="nativeClass('withdraw-modal-title', (null))">{{ t('addPhoneBtn') }}</text>
         <view v-if="addStep == 'phone'">
           <view class="form-field">
-            <text class="form-label">{{ t('phoneLabel') }}</text>
-            <input class="form-input" v-model="newPhone" :placeholder="t('phonePlaceholder')" :maxlength="11" type="number" :focus="true" v-on:confirm="sendCode" />
+            <text :class="nativeClass('form-label', (null))">{{ t('phoneLabel') }}</text>
+            <input :class="nativeClass('form-input', (null))" v-model="newPhone" :placeholder="t('phonePlaceholder')" :maxlength="11" type="number" :focus="true" v-on:confirm="sendCode" />
           </view>
-          <text v-if="addError.length > 0" class="error-text">{{ addError }}</text>
+          <text v-if="addError.length > 0" :class="nativeClass('error-text', (null))">{{ addError }}</text>
           <view class="withdraw-btns">
-            <view class="btn btn-outline" v-on:click="closeAddPhone"><text>{{ t('cancelBtn') }}</text></view>
-            <view class="btn btn-primary" :class="addLoading ? 'disabled' : ''" v-on:click="sendCode"><text>{{ addLoading ? t('sending') : t('sendCodeBtn') }}</text></view>
+            <view :class="nativeClass('btn btn-outline', (null))" v-on:click="closeAddPhone"><text>{{ t('cancelBtn') }}</text></view>
+            <view :class="nativeClass('btn btn-primary', (addLoading ? 'disabled' : ''))" v-on:click="sendCode"><text>{{ addLoading ? t('sending') : t('sendCodeBtn') }}</text></view>
           </view>
         </view>
         <view v-else>
           <view class="form-field">
-            <text class="form-label">{{ t('codeLabel') }}</text>
-            <text class="phone-step-desc">{{ codeSentToText }}</text>
-            <input class="form-input" v-model="code" placeholder="——————" :maxlength="6" type="number" :focus="true" />
+            <text :class="nativeClass('form-label', (null))">{{ t('codeLabel') }}</text>
+            <text :class="nativeClass('phone-step-desc', (null))">{{ codeSentToText }}</text>
+            <input :class="nativeClass('form-input', (null))" v-model="code" placeholder="——————" :maxlength="6" type="number" :focus="true" />
           </view>
-          <text v-if="addError.length > 0" class="error-text">{{ addError }}</text>
+          <text v-if="addError.length > 0" :class="nativeClass('error-text', (null))">{{ addError }}</text>
           <view class="phones-links">
-            <text v-if="resendCooldown > 0" class="dim-text">{{ t('resendCooldown').split('{n}').join(`${resendCooldown}`) }}</text>
-            <text v-else class="phones-link" v-on:click="sendCode">{{ t('resendCode') }}</text>
-            <text class="phones-link" v-on:click="changeNumber">{{ t('changeNumber') }}</text>
+            <text v-if="resendCooldown > 0" :class="nativeClass('dim-text', (null))">{{ t('resendCooldown').split('{n}').join(`${resendCooldown}`) }}</text>
+            <text v-else :class="nativeClass('phones-link', (null))" v-on:click="sendCode">{{ t('resendCode') }}</text>
+            <text :class="nativeClass('phones-link', (null))" v-on:click="changeNumber">{{ t('changeNumber') }}</text>
           </view>
           <view class="withdraw-btns">
-            <view class="btn btn-outline" v-on:click="closeAddPhone"><text>{{ t('cancelBtn') }}</text></view>
-            <view class="btn btn-primary" :class="addLoading ? 'disabled' : ''" v-on:click="manualVerify"><text>{{ addLoading ? t('verifying') : t('verifyBtn') }}</text></view>
+            <view :class="nativeClass('btn btn-outline', (null))" v-on:click="closeAddPhone"><text>{{ t('cancelBtn') }}</text></view>
+            <view :class="nativeClass('btn btn-primary', (addLoading ? 'disabled' : ''))" v-on:click="manualVerify"><text>{{ addLoading ? t('verifying') : t('verifyBtn') }}</text></view>
           </view>
         </view>
       </view>
@@ -111,6 +111,8 @@
 </template>
 
 <script>
+import { nativeClass as nativeVisualClass } from '../../utils/native-visual.uts'
+
 // Ported from miniapp pages/phones/phones.js (zh/en inline dictionary kept). Live-filtered
 // inputs → v-model + validate-on-send; data-* handlers → direct args; wx.showModal →
 // uni.showModal.
@@ -178,6 +180,9 @@ export default {
     this.fetchPhones()
   },
   methods: {
+    nativeClass(names : string, dynamic : any | null) : string {
+      return nativeVisualClass(names, dynamic, this.theme, null)
+    },
     t(key : string) : string {
       const dict = this.lang == 'en' ? T_EN : T_ZH
       const v = dict.getString(key)
@@ -1076,5 +1081,11 @@ export default {
 .ph-link { margin-top: 12px; align-items: center; }
 .ph-link-text { color: #A6C4E5; font-size: 14px; }
 .ph-error { color: #FF6B6B; font-size: 12px; margin-bottom: 6px; }
+/* #endif */
+</style>
+
+<style>
+/* #ifdef APP */
+@import "../../unpackage/native-styles/pages-phones-phones.css";
 /* #endif */
 </style>

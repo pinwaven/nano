@@ -1,55 +1,55 @@
 <template>
-  <view class="uh-root" :class="theme == 'light' ? 'uh-root-light theme-light' : ''"
+  <view :class="nativeClass('uh-root', ([theme == 'light' ? 'uh-root-light theme-light' : '', 'fs-' + textScale]))"
         v-on:touchstart="onUhTouchStart" v-on:touchmove="onUhTouchMove"
         v-on:touchend="onUhTouchEnd" v-on:touchcancel="onUhTouchEnd">
 
     <!-- Health-tab subtab strip. Only rendered for a self view holding an active Viva AG
          add-on (kept verbatim from the miniapp; see _recomputeShowAgTab). -->
-    <view v-if="showAgTab" class="uh-tab-bar">
-      <view class="uh-tab" :class="healthSubTab == 'twin' ? 'uh-tab-active' : ''" v-on:click="switchHealthSubTab('twin')">
-        <text class="uh-tab-text" :class="healthSubTab == 'twin' ? 'uh-tab-text-active' : ''">{{ tt('agTabTwin') }}</text>
+    <view v-if="showAgTab" :class="nativeClass('uh-tab-bar', (null))">
+      <view :class="nativeClass('uh-tab', (healthSubTab == 'twin' ? 'uh-tab-active' : ''))" v-on:click="switchHealthSubTab('twin')">
+        <text :class="nativeClass('uh-tab-text', (healthSubTab == 'twin' ? 'uh-tab-text-active' : ''))">{{ tt('agTabTwin') }}</text>
       </view>
-      <view class="uh-tab" :class="healthSubTab == 'ag' ? 'uh-tab-active' : ''" v-on:click="switchHealthSubTab('ag')">
-        <text class="uh-tab-text" :class="healthSubTab == 'ag' ? 'uh-tab-text-active' : ''">{{ agPackageLoading ? tt('agTabLoading') : tt('agTabAg') }}</text>
+      <view :class="nativeClass('uh-tab', (healthSubTab == 'ag' ? 'uh-tab-active' : ''))" v-on:click="switchHealthSubTab('ag')">
+        <text :class="nativeClass('uh-tab-text', (healthSubTab == 'ag' ? 'uh-tab-text-active' : ''))">{{ agPackageLoading ? tt('agTabLoading') : tt('agTabAg') }}</text>
       </view>
     </view>
 
     <scroll-view direction="vertical" class="health-scroll" v-if="!showAgTab || healthSubTab == 'twin'">
 
       <!-- Guest lock -->
-      <view v-if="isGuest" class="guest-lock-card" v-on:click="onGuestTap">
+      <view v-if="isGuest" :class="nativeClass('guest-lock-card', (null))" v-on:click="onGuestTap">
         <text class="guest-lock-icon">🔬</text>
-        <text class="guest-lock-title">{{ tt('guestHealthCta') }}</text>
-        <view class="guest-lock-btn"><text class="guest-lock-btn-text">{{ tt('guestJoinBtn') }}</text></view>
+        <text :class="nativeClass('guest-lock-title', (null))">{{ tt('guestHealthCta') }}</text>
+        <view :class="nativeClass('guest-lock-btn', (null))"><text :class="nativeClass('guest-lock-btn-text', (null))">{{ tt('guestJoinBtn') }}</text></view>
       </view>
 
       <view v-else-if="bioLoading" class="center-wrap">
-        <view class="pulse-dot"></view><view class="pulse-dot"></view><view class="pulse-dot"></view>
+        <view :class="nativeClass('pulse-dot', (null))"></view><view :class="nativeClass('pulse-dot', (null))"></view><view :class="nativeClass('pulse-dot', (null))"></view>
       </view>
 
       <view v-else class="uh-body">
 
         <!-- Hero -->
-        <view class="health-hero">
+        <view :class="nativeClass('health-hero', (null))">
           <view class="avatar-area">
-            <view v-if="mode == 'self' && !editing" class="avatar-side-pill" :class="avatarPillsVisible ? 'avatar-pill-show' : ''"
+            <view v-if="mode == 'self' && !editing" :class="nativeClass('avatar-side-pill', (avatarPillsVisible ? 'avatar-pill-show' : ''))"
                   v-on:click.stop="onOpenAvatarPicker">
-              <text class="avatar-pill-text">{{ tt('changeAvatar') }}</text>
+              <text :class="nativeClass('avatar-pill-text', (null))">{{ tt('changeAvatar') }}</text>
             </view>
             <view class="health-avatar-container" v-on:click="onAvatarTap">
-              <view class="health-avatar-wrap">
+              <view :class="nativeClass('health-avatar-wrap', (null))">
                 <image v-if="avatarDisplayUrl.length > 0 || sget(userObj(), 'avatar_url').length > 0"
                        class="health-avatar-img"
                        :src="avatarDisplayUrl.length > 0 ? avatarDisplayUrl : sget(userObj(), 'avatar_url')" mode="aspectFill" />
-                <view v-else class="health-avatar-placeholder">
-                  <text class="health-avatar-letter">{{ avatarLetter }}</text>
+                <view v-else :class="nativeClass('health-avatar-placeholder', (null))">
+                  <text :class="nativeClass('health-avatar-letter', (null))">{{ avatarLetter }}</text>
                 </view>
               </view>
-              <view v-if="avatarUpdating" class="health-avatar-ring"></view>
+              <view v-if="avatarUpdating" :class="nativeClass('health-avatar-ring', (null))"></view>
             </view>
-            <view v-if="mode == 'self' && !editing" class="avatar-side-pill" :class="avatarPillsVisible ? 'avatar-pill-show' : ''"
+            <view v-if="mode == 'self' && !editing" :class="nativeClass('avatar-side-pill', (avatarPillsVisible ? 'avatar-pill-show' : ''))"
                   v-on:click.stop="onEditProfilePill">
-              <text class="avatar-pill-text">✎ {{ tt('editProfile') }}</text>
+              <text :class="nativeClass('avatar-pill-text', (null))">✎ {{ tt('editProfile') }}</text>
             </view>
           </view>
         </view>
@@ -61,62 +61,62 @@
           v-on:select="onAvatarSelect" v-on:close="onAvatarPickerClose" v-on:customapplied="onCustomAvatarApplied" />
 
         <!-- Edit form -->
-        <view v-if="(mode == 'self' || mode == 'coach') && editing" class="health-section">
+        <view v-if="(mode == 'self' || mode == 'coach') && editing" :class="nativeClass('health-section', (null))">
           <view class="edit-form">
-            <view class="edit-row">
-              <text class="edit-label">{{ tt('name') }}</text>
-              <input class="edit-input" v-model="editNickname" placeholder="—" />
+            <view :class="nativeClass('edit-row', (null))">
+              <text :class="nativeClass('edit-label', (null))">{{ tt('name') }}</text>
+              <input :class="nativeClass('edit-input', (null))" v-model="editNickname" placeholder="—" />
             </view>
-            <view class="edit-row">
-              <text class="edit-label">{{ tt('gender') }}</text>
+            <view :class="nativeClass('edit-row', (null))">
+              <text :class="nativeClass('edit-label', (null))">{{ tt('gender') }}</text>
               <view class="gender-btns">
-                <view class="gender-btn" :class="editGenderSel == 'male' ? 'gender-btn-active' : ''" v-on:click="onGenderSelect('male')">
-                  <text class="edit-input-text">{{ ttk('genderMap', 'male') }}</text>
+                <view :class="nativeClass('gender-btn', (editGenderSel == 'male' ? 'gender-btn-active' : ''))" v-on:click="onGenderSelect('male')">
+                  <text :class="nativeClass('edit-input-text', (null))">{{ ttk('genderMap', 'male') }}</text>
                 </view>
-                <view class="gender-btn" :class="editGenderSel == 'female' ? 'gender-btn-active' : ''" v-on:click="onGenderSelect('female')">
-                  <text class="edit-input-text">{{ ttk('genderMap', 'female') }}</text>
+                <view :class="nativeClass('gender-btn', (editGenderSel == 'female' ? 'gender-btn-active' : ''))" v-on:click="onGenderSelect('female')">
+                  <text :class="nativeClass('edit-input-text', (null))">{{ ttk('genderMap', 'female') }}</text>
                 </view>
               </view>
             </view>
-            <view class="edit-row">
-              <text class="edit-label">{{ tt('born') }}</text>
+            <view :class="nativeClass('edit-row', (null))">
+              <text :class="nativeClass('edit-label', (null))">{{ tt('born') }}</text>
               <picker mode="date" v-on:change="onBirthDateChange">
                 <view class="edit-picker">
-                  <text class="edit-picker-val">{{ editBirthDate.length > 0 ? editBirthDate : '—' }}</text>
-                  <text class="edit-picker-arrow">›</text>
+                  <text :class="nativeClass('edit-picker-val', (null))">{{ editBirthDate.length > 0 ? editBirthDate : '—' }}</text>
+                  <text :class="nativeClass('edit-picker-arrow', (null))">›</text>
                 </view>
               </picker>
             </view>
-            <view class="edit-row">
-              <text class="edit-label">{{ tt('height') }}</text>
+            <view :class="nativeClass('edit-row', (null))">
+              <text :class="nativeClass('edit-label', (null))">{{ tt('height') }}</text>
               <view class="edit-input-unit">
-                <input class="edit-input" type="digit" v-model="editHeightStr" placeholder="—" />
-                <text class="edit-unit-text">cm</text>
+                <input :class="nativeClass('edit-input', (null))" type="digit" v-model="editHeightStr" placeholder="—" />
+                <text :class="nativeClass('edit-unit-text', (null))">cm</text>
               </view>
             </view>
-            <view class="edit-row">
-              <text class="edit-label">{{ tt('weight') }}</text>
+            <view :class="nativeClass('edit-row', (null))">
+              <text :class="nativeClass('edit-label', (null))">{{ tt('weight') }}</text>
               <view class="edit-input-unit">
-                <input class="edit-input" type="digit" v-model="editWeightStr" placeholder="—" />
-                <text class="edit-unit-text">kg</text>
+                <input :class="nativeClass('edit-input', (null))" type="digit" v-model="editWeightStr" placeholder="—" />
+                <text :class="nativeClass('edit-unit-text', (null))">kg</text>
               </view>
             </view>
-            <text class="edit-section-label">{{ tt('healthConditions') }}</text>
+            <text :class="nativeClass('edit-section-label', (null))">{{ tt('healthConditions') }}</text>
             <view class="edit-cond-list">
-              <view v-for="(item, i) in editConditionOptions" :key="i" class="edit-cond-item"
+              <view v-for="(item, i) in editConditionOptions" :key="i" :class="nativeClass('edit-cond-item', (null))"
                     v-on:click="onConditionToggle(sget(item, 'key'))">
-                <view class="edit-cond-box" :class="bget(item, 'checked') ? 'edit-cond-box-checked' : ''">
+                <view :class="nativeClass('edit-cond-box', (bget(item, 'checked') ? 'edit-cond-box-checked' : ''))">
                   <text v-if="bget(item, 'checked')" class="edit-cond-tick">✓</text>
                 </view>
-                <text class="edit-cond-text">{{ sget(item, 'label') }}</text>
+                <text :class="nativeClass('edit-cond-text', (null))">{{ sget(item, 'label') }}</text>
               </view>
             </view>
             <view v-if="editOtherSelected" class="edit-other-row">
-              <input class="edit-input" v-model="editCondOtherStr" :placeholder="tt('otherPlaceholder')" />
+              <input :class="nativeClass('edit-input', (null))" v-model="editCondOtherStr" :placeholder="tt('otherPlaceholder')" />
             </view>
             <view class="edit-actions">
-              <view class="edit-cancel-btn" v-on:click="cancelEdit"><text class="edit-cancel-text">{{ tt('cancel') }}</text></view>
-              <view class="edit-save-btn" v-on:click="saveEdit">
+              <view :class="nativeClass('edit-cancel-btn', (null))" v-on:click="cancelEdit"><text :class="nativeClass('edit-cancel-text', (null))">{{ tt('cancel') }}</text></view>
+              <view :class="nativeClass('edit-save-btn', (null))" v-on:click="saveEdit">
                 <text class="edit-save-text">{{ editSaving ? '…' : tt('save') }}</text>
               </view>
             </view>
@@ -124,52 +124,52 @@
         </view>
 
         <!-- Digital Twin umbrella — one chip per layer (§34) -->
-        <view class="twin-umbrella">
+        <view :class="nativeClass('twin-umbrella', (null))">
           <view class="twin-umbrella-row">
-            <text class="twin-umbrella-title">{{ tt('digitalTwin') }}</text>
-            <text class="twin-umbrella-count">{{ tt('twinComplete') }} {{ twinLayersDone }}/4</text>
+            <text :class="nativeClass('twin-umbrella-title', (null))">{{ tt('digitalTwin') }}</text>
+            <text :class="nativeClass('twin-umbrella-count', (null))">{{ tt('twinComplete') }} {{ twinLayersDone }}/4</text>
           </view>
           <view class="twin-layer-strip">
-            <view v-for="(item, i) in twinLayers" :key="i" class="twin-layer" :class="bget(item, 'hasData') ? 'twin-layer-active' : ''">
-              <view class="twin-layer-dot"></view>
-              <text class="twin-layer-label">{{ sget(item, 'label') }}</text>
-              <text class="twin-layer-date">{{ bget(item, 'hasData') ? (sget(item, 'lastDate').length > 0 ? sget(item, 'lastDate') : '✓') : sget(item, 'emptyLabel') }}</text>
+            <view v-for="(item, i) in twinLayers" :key="i" :class="nativeClass('twin-layer', (bget(item, 'hasData') ? 'twin-layer-active' : ''))">
+              <view :class="nativeClass('twin-layer-dot', (null))"></view>
+              <text :class="nativeClass('twin-layer-label', (null))">{{ sget(item, 'label') }}</text>
+              <text :class="nativeClass('twin-layer-date', (null))">{{ bget(item, 'hasData') ? (sget(item, 'lastDate').length > 0 ? sget(item, 'lastDate') : '✓') : sget(item, 'emptyLabel') }}</text>
             </view>
           </view>
         </view>
 
         <!-- Twin summary card — Precision Testing figure (Kino-gated) -->
-        <view v-if="subAgeList.length > 0" class="dt-hero-card" v-on:click="closeBioAgeTrend">
+        <view v-if="subAgeList.length > 0" :class="nativeClass('dt-hero-card', (null))" v-on:click="closeBioAgeTrend">
           <view class="dt-body-row">
             <!-- Left: enlarged body figure; zones colored per sub-age (subAgeZ) -->
             <view class="dt-fig-col">
               <view class="dt-body-fig">
-                <view class="dt-fig-head" :class="szB('ResilienceAge', 'pulse') ? 'dt-fig-pulse' : ''"
+                <view :class="nativeClass('dt-fig-head', (szB('ResilienceAge', 'pulse') ? 'dt-fig-pulse' : ''))"
                       :style="'background:' + szS('ResilienceAge', 'fill') + ';border:1px solid ' + tcA(szS('ResilienceAge', 'color'), 0.53) + ';'"
                       v-on:click.stop="onZoneTap('ResilienceAge')"></view>
                 <view class="dt-fig-neck" :style="'background:' + szS('ResilienceAge', 'fill') + ';'"></view>
                 <view class="dt-fig-mid-row">
-                  <view class="dt-fig-arm" :class="szB('MicroVascularAge', 'pulse') ? 'dt-fig-pulse' : ''"
+                  <view :class="nativeClass('dt-fig-arm', (szB('MicroVascularAge', 'pulse') ? 'dt-fig-pulse' : ''))"
                         :style="'background:' + szS('MicroVascularAge', 'fill') + ';'"
                         v-on:click.stop="onZoneTap('MicroVascularAge')"></view>
-                  <view class="dt-fig-chest" :class="szB('CellularAge', 'pulse') ? 'dt-fig-pulse' : ''"
+                  <view :class="nativeClass('dt-fig-chest', (szB('CellularAge', 'pulse') ? 'dt-fig-pulse' : ''))"
                         :style="'background:' + szS('CellularAge', 'fill') + ';border:1px solid ' + tcA(szS('CellularAge', 'color'), 0.53) + ';'"
                         v-on:click.stop="onZoneTap('CellularAge')">
                     <view class="dt-fig-heart" :style="'background:' + szS('CellularAge', 'color') + ';'"></view>
                   </view>
-                  <view class="dt-fig-arm" :class="szB('MicroVascularAge', 'pulse') ? 'dt-fig-pulse' : ''"
+                  <view :class="nativeClass('dt-fig-arm', (szB('MicroVascularAge', 'pulse') ? 'dt-fig-pulse' : ''))"
                         :style="'background:' + szS('MicroVascularAge', 'fill') + ';'"
                         v-on:click.stop="onZoneTap('MicroVascularAge')"></view>
                 </view>
-                <view class="dt-fig-abdomen" :class="szB('MetabolicAge', 'pulse') ? 'dt-fig-pulse' : ''"
+                <view :class="nativeClass('dt-fig-abdomen', (szB('MetabolicAge', 'pulse') ? 'dt-fig-pulse' : ''))"
                       :style="'background:' + szS('MetabolicAge', 'fill') + ';border:1px solid ' + tcA(szS('MetabolicAge', 'color'), 0.53) + ';'"
                       v-on:click.stop="onZoneTap('MetabolicAge')"></view>
                 <view class="dt-fig-hips" :style="'background:' + szS('MetabolicAge', 'fill') + ';'"></view>
                 <view class="dt-fig-leg-row">
-                  <view class="dt-fig-leg" :class="szB('MicroVascularAge', 'pulse') ? 'dt-fig-pulse' : ''"
+                  <view :class="nativeClass('dt-fig-leg', (szB('MicroVascularAge', 'pulse') ? 'dt-fig-pulse' : ''))"
                         :style="'background:' + szS('MicroVascularAge', 'fill') + ';'"
                         v-on:click.stop="onZoneTap('MicroVascularAge')"></view>
-                  <view class="dt-fig-leg" :class="szB('MicroVascularAge', 'pulse') ? 'dt-fig-pulse' : ''"
+                  <view :class="nativeClass('dt-fig-leg', (szB('MicroVascularAge', 'pulse') ? 'dt-fig-pulse' : ''))"
                         :style="'background:' + szS('MicroVascularAge', 'fill') + ';'"
                         v-on:click.stop="onZoneTap('MicroVascularAge')"></view>
                 </view>
@@ -180,18 +180,18 @@
               <view v-if="bAge.length > 0 || cAge != null">
                 <!-- Collapsed: side-by-side chips, tap BioAge to expand -->
                 <view v-if="!bioAgeTrendOpen" class="dt-age-chips">
-                  <view class="bio-chip bio-chip-dim">
-                    <text class="bio-num bio-num-chrono dt-age-number">{{ cAge != null ? cAge : '—' }}</text>
-                    <text class="bio-unit">{{ tt('chronoAge') }}</text>
+                  <view :class="nativeClass('bio-chip bio-chip-dim', (null))">
+                    <text :class="nativeClass('bio-num bio-num-chrono dt-age-number', (null))">{{ cAge != null ? cAge : '—' }}</text>
+                    <text :class="nativeClass('bio-unit', (null))">{{ tt('chronoAge') }}</text>
                   </view>
-                  <view class="bio-chip bio-chip-primary" v-on:click.stop="toggleBioAgeTrend">
-                    <text class="bio-num bio-num-primary dt-age-number" :style="'color:' + tc(bAgeColor)">{{ bAge.length > 0 ? bAge : '—' }}</text>
-                    <text class="bio-unit">{{ tt('bioAge') }}</text>
+                  <view :class="nativeClass('bio-chip bio-chip-primary', (null))" v-on:click.stop="toggleBioAgeTrend">
+                    <text :class="nativeClass('bio-num bio-num-primary dt-age-number', (null))" :style="'color:' + tc(bAgeColor)">{{ bAge.length > 0 ? bAge : '—' }}</text>
+                    <text :class="nativeClass('bio-unit', (null))">{{ tt('bioAge') }}</text>
                   </view>
                 </view>
                 <!-- Expanded: view-rendered BioAge chart (canvas math preserved in _buildBioAgeLayout;
                      see TODO(port) in the script header). -->
-                <view v-if="bioAgeTrendOpen" class="dt-bioage-open" v-on:click.stop="toggleBioAgeTrend"
+                <view v-if="bioAgeTrendOpen" :class="nativeClass('dt-bioage-open', (null))" v-on:click.stop="toggleBioAgeTrend"
                       v-on:touchstart="onChartTouch('dt-bioage-chart', $event)"
                       v-on:touchmove="onChartTouch('dt-bioage-chart', $event)"
                       v-on:touchend="onChartTouchEnd('dt-bioage-chart')">
@@ -223,21 +223,21 @@
                 </view>
               </view>
               <view v-if="!bioAgeTrendOpen">
-                <view v-for="(item, i) in subAgeList" :key="i" class="dt-sa-row"
-                      :class="flashSubAge == sget(item, 'key') ? 'dt-sa-row-flash' : ''"
+                <view v-for="(item, i) in subAgeList" :key="i"
+                      :class="nativeClass('dt-sa-row', (flashSubAge == sget(item, 'key') ? 'dt-sa-row-flash' : ''))"
                       v-on:click.stop="onSubAgeRowTap(sget(item, 'key'))">
-                  <view class="dt-sa-accent" :class="szB(sget(item, 'key'), 'pulse') ? 'dt-fig-pulse' : ''"
+                  <view :class="nativeClass('dt-sa-accent', (szB(sget(item, 'key'), 'pulse') ? 'dt-fig-pulse' : ''))"
                         :style="'background:' + sget(item, 'color') + ';'"></view>
                   <view class="dt-sa-info">
                     <view class="dt-sa-top">
-                      <text class="dt-sa-label">{{ sget(item, 'label') }}</text>
-                      <text class="dt-sa-val" :style="'color:' + tc(sget(item, 'color'))">{{ sget(item, 'value') }}</text>
+                      <text :class="nativeClass('dt-sa-label', (null))">{{ sget(item, 'label') }}</text>
+                      <text :class="nativeClass('dt-sa-val', (null))" :style="'color:' + tc(sget(item, 'color'))">{{ sget(item, 'value') }}</text>
                     </view>
-                    <view class="dt-sa-bar">
+                    <view :class="nativeClass('dt-sa-bar', (null))">
                       <view class="dt-sa-bar-fill" :style="'width:' + an(item, 'score') + '%;background:' + sget(item, 'color') + ';'"></view>
                     </view>
                   </view>
-                  <text v-if="subAgeHasTrend(sget(item, 'key'))" class="dt-sa-trend-hint">›</text>
+                  <text v-if="subAgeHasTrend(sget(item, 'key'))" :class="nativeClass('dt-sa-trend-hint', (null))">›</text>
                 </view>
               </view>
             </view>
@@ -246,182 +246,182 @@
 
         <!-- Cross-layer strips — deliberately ungated (§34: a ring-only user still has tags,
              weight/BMI/steps/HRV and photo-captured BP/glucose worth showing) -->
-        <view class="dt-hero-card dt-hero-card-strips">
-          <view class="dt-tags-strip">
-            <view v-for="(item, i) in healthTags" :key="i" class="dt-htag"
+        <view :class="nativeClass('dt-hero-card dt-hero-card-strips', (null))">
+          <view :class="nativeClass('dt-tags-strip', (null))">
+            <view v-for="(item, i) in healthTags" :key="i" :class="nativeClass('dt-htag', (null))"
                   :style="'border: 1px solid ' + tcA(sget(item, 'color'), 0.33) + ';'">
               <view class="dt-htag-dot" :style="'background:' + sget(item, 'color') + ';'"></view>
-              <text class="dt-htag-label" :style="'color:' + tc(sget(item, 'color'))">{{ sget(item, 'label') }}</text>
+              <text :class="nativeClass('dt-htag-label', (null))" :style="'color:' + tc(sget(item, 'color'))">{{ sget(item, 'label') }}</text>
             </view>
-            <view v-if="healthTags.length == 0" class="dt-htag dt-htag-empty">
-              <text class="dt-htag-label">{{ tt('noHealthSignals') }}</text>
+            <view v-if="healthTags.length == 0" :class="nativeClass('dt-htag dt-htag-empty', (null))">
+              <text :class="nativeClass('dt-htag-label', (null))">{{ tt('noHealthSignals') }}</text>
             </view>
           </view>
 
           <!-- Metric strip: weight / BMI / steps / HRV / stress -->
-          <view class="dt-metrics-strip">
-            <view class="dt-metric" :class="weightHistory.length > 1 ? 'dt-metric-tappable' : ''" v-on:click="onWeightTileTap()">
+          <view :class="nativeClass('dt-metrics-strip', (null))">
+            <view :class="nativeClass('dt-metric', (weightHistory.length > 1 ? 'dt-metric-tappable' : ''))" v-on:click="onWeightTileTap()">
               <view class="dt-metric-val-row">
-                <text class="dt-metric-val">{{ rawWeight != null ? rawWeight : '—' }}</text>
-                <text v-if="rawWeight != null" class="dt-metric-unit">kg</text>
+                <text :class="nativeClass('dt-metric-val', (null))">{{ rawWeight != null ? rawWeight : '—' }}</text>
+                <text v-if="rawWeight != null" :class="nativeClass('dt-metric-unit', (null))">kg</text>
               </view>
-              <text class="dt-metric-label">{{ tt('weight') }}</text>
-              <text v-if="weightHistory.length > 1" class="dt-metric-trend-hint">›</text>
+              <text :class="nativeClass('dt-metric-label', (null))">{{ tt('weight') }}</text>
+              <text v-if="weightHistory.length > 1" :class="nativeClass('dt-metric-trend-hint', (null))">›</text>
             </view>
-            <view class="dt-metric-divider"></view>
-            <view class="dt-metric" :class="bmiHistory.length > 1 ? 'dt-metric-tappable' : ''" v-on:click="onBmiTileTap()">
-              <text class="dt-metric-val">{{ rawBmi.length > 0 ? rawBmi : '—' }}</text>
-              <text class="dt-metric-label">BMI</text>
-              <text v-if="bmiHistory.length > 1" class="dt-metric-trend-hint">›</text>
+            <view :class="nativeClass('dt-metric-divider', (null))"></view>
+            <view :class="nativeClass('dt-metric', (bmiHistory.length > 1 ? 'dt-metric-tappable' : ''))" v-on:click="onBmiTileTap()">
+              <text :class="nativeClass('dt-metric-val', (null))">{{ rawBmi.length > 0 ? rawBmi : '—' }}</text>
+              <text :class="nativeClass('dt-metric-label', (null))">BMI</text>
+              <text v-if="bmiHistory.length > 1" :class="nativeClass('dt-metric-trend-hint', (null))">›</text>
             </view>
-            <view class="dt-metric-divider"></view>
-            <view class="dt-metric" :class="stepsHistory.length > 1 ? 'dt-metric-tappable' : ''" v-on:click="onStepsTileTap()">
-              <text class="dt-metric-val">{{ ringData != null && bget(ringData, 'hasSteps') ? sget(ringData, 'stepsStr') : '—' }}</text>
-              <text class="dt-metric-label">{{ tt('ringSteps') }}</text>
-              <text v-if="stepsHistory.length > 1" class="dt-metric-trend-hint">›</text>
+            <view :class="nativeClass('dt-metric-divider', (null))"></view>
+            <view :class="nativeClass('dt-metric', (stepsHistory.length > 1 ? 'dt-metric-tappable' : ''))" v-on:click="onStepsTileTap()">
+              <text :class="nativeClass('dt-metric-val', (null))">{{ ringData != null && bget(ringData, 'hasSteps') ? sget(ringData, 'stepsStr') : '—' }}</text>
+              <text :class="nativeClass('dt-metric-label', (null))">{{ tt('ringSteps') }}</text>
+              <text v-if="stepsHistory.length > 1" :class="nativeClass('dt-metric-trend-hint', (null))">›</text>
             </view>
-            <view class="dt-metric-divider"></view>
-            <view class="dt-metric" :class="hrvHistory.length > 1 ? 'dt-metric-tappable' : ''" v-on:click="onHrvTileTap()">
+            <view :class="nativeClass('dt-metric-divider', (null))"></view>
+            <view :class="nativeClass('dt-metric', (hrvHistory.length > 1 ? 'dt-metric-tappable' : ''))" v-on:click="onHrvTileTap()">
               <view class="dt-metric-val-row">
-                <text class="dt-metric-val" :style="ringData != null && bget(ringData, 'hasHrv') ? 'color:' + sget(ringData, 'hrvColor') : ''">{{ ringData != null && bget(ringData, 'hasHrv') ? snum(ringData, 'hrv') : '—' }}</text>
-                <text v-if="ringData != null && bget(ringData, 'hasHrv')" class="dt-metric-unit">ms</text>
+                <text :class="nativeClass('dt-metric-val', (null))" :style="ringData != null && bget(ringData, 'hasHrv') ? 'color:' + sget(ringData, 'hrvColor') : ''">{{ ringData != null && bget(ringData, 'hasHrv') ? snum(ringData, 'hrv') : '—' }}</text>
+                <text v-if="ringData != null && bget(ringData, 'hasHrv')" :class="nativeClass('dt-metric-unit', (null))">ms</text>
               </view>
-              <text class="dt-metric-label">{{ tt('ringHrv') }}</text>
-              <text v-if="hrvHistory.length > 1" class="dt-metric-trend-hint">›</text>
+              <text :class="nativeClass('dt-metric-label', (null))">{{ tt('ringHrv') }}</text>
+              <text v-if="hrvHistory.length > 1" :class="nativeClass('dt-metric-trend-hint', (null))">›</text>
             </view>
-            <view class="dt-metric-divider"></view>
-            <view class="dt-metric" :class="stressHistory.length > 1 ? 'dt-metric-tappable' : ''" v-on:click="onStressTileTap()">
-              <text class="dt-metric-val" :style="ringData != null && bget(ringData, 'hasStress') ? 'color:' + sget(ringData, 'stressColor') : ''">{{ ringData != null && bget(ringData, 'hasStress') ? snum(ringData, 'stress') : '—' }}</text>
-              <text class="dt-metric-label">{{ tt('ringStress') }}</text>
-              <text v-if="stressHistory.length > 1" class="dt-metric-trend-hint">›</text>
+            <view :class="nativeClass('dt-metric-divider', (null))"></view>
+            <view :class="nativeClass('dt-metric', (stressHistory.length > 1 ? 'dt-metric-tappable' : ''))" v-on:click="onStressTileTap()">
+              <text :class="nativeClass('dt-metric-val', (null))" :style="ringData != null && bget(ringData, 'hasStress') ? 'color:' + sget(ringData, 'stressColor') : ''">{{ ringData != null && bget(ringData, 'hasStress') ? snum(ringData, 'stress') : '—' }}</text>
+              <text :class="nativeClass('dt-metric-label', (null))">{{ tt('ringStress') }}</text>
+              <text v-if="stressHistory.length > 1" :class="nativeClass('dt-metric-trend-hint', (null))">›</text>
             </view>
           </view>
 
           <!-- BP / Glucose row — only shown when photo data is available -->
-          <view v-if="latestBp != null || latestGlucose != null" class="dt-metrics-strip dt-metrics-strip-secondary">
-            <view v-if="latestBp != null" class="dt-metric" :class="bpHistory.length > 1 ? 'dt-metric-tappable' : ''" v-on:click="onBpTileTap()">
+          <view v-if="latestBp != null || latestGlucose != null" :class="nativeClass('dt-metrics-strip dt-metrics-strip-secondary', (null))">
+            <view v-if="latestBp != null" :class="nativeClass('dt-metric', (bpHistory.length > 1 ? 'dt-metric-tappable' : ''))" v-on:click="onBpTileTap()">
               <view class="dt-metric-val-row">
-                <text class="dt-metric-val">{{ an(latestBp, 'systolic') }}/{{ an(latestBp, 'diastolic') }}</text>
-                <text class="dt-metric-unit">mmHg</text>
+                <text :class="nativeClass('dt-metric-val', (null))">{{ an(latestBp, 'systolic') }}/{{ an(latestBp, 'diastolic') }}</text>
+                <text :class="nativeClass('dt-metric-unit', (null))">mmHg</text>
               </view>
-              <text class="dt-metric-label">{{ tt('metricBp') }}</text>
-              <text v-if="bpHistory.length > 1" class="dt-metric-trend-hint">›</text>
+              <text :class="nativeClass('dt-metric-label', (null))">{{ tt('metricBp') }}</text>
+              <text v-if="bpHistory.length > 1" :class="nativeClass('dt-metric-trend-hint', (null))">›</text>
             </view>
-            <view v-if="latestBp != null && latestGlucose != null" class="dt-metric-divider"></view>
-            <view v-if="latestGlucose != null" class="dt-metric" :class="glucoseHistory.length > 1 ? 'dt-metric-tappable' : ''" v-on:click="onGlucoseTileTap()">
+            <view v-if="latestBp != null && latestGlucose != null" :class="nativeClass('dt-metric-divider', (null))"></view>
+            <view v-if="latestGlucose != null" :class="nativeClass('dt-metric', (glucoseHistory.length > 1 ? 'dt-metric-tappable' : ''))" v-on:click="onGlucoseTileTap()">
               <view class="dt-metric-val-row">
-                <text class="dt-metric-val">{{ snum(latestGlucose, 'glucose') }}</text>
-                <text class="dt-metric-unit">mmol/L</text>
+                <text :class="nativeClass('dt-metric-val', (null))">{{ snum(latestGlucose, 'glucose') }}</text>
+                <text :class="nativeClass('dt-metric-unit', (null))">mmol/L</text>
               </view>
-              <text class="dt-metric-label">{{ tt('metricGlucose') }}</text>
-              <text v-if="glucoseHistory.length > 1" class="dt-metric-trend-hint">›</text>
+              <text :class="nativeClass('dt-metric-label', (null))">{{ tt('metricGlucose') }}</text>
+              <text v-if="glucoseHistory.length > 1" :class="nativeClass('dt-metric-trend-hint', (null))">›</text>
             </view>
           </view>
         </view>
 
         <!-- Twin layer: Daily Monitoring -->
-        <view class="health-section">
-          <text class="section-title">{{ tt('layerDaily') }}</text>
+        <view :class="nativeClass('health-section', (null))">
+          <text :class="nativeClass('section-title', (null))">{{ tt('layerDaily') }}</text>
 
           <!-- Wearable Device (always visible — ring is the data source) -->
           <view class="wd-inner">
-            <view v-if="wearableId.length == 0" class="wd-empty-card" v-on:click="handleBindWearable">
-              <text class="wd-ring-icon">◉</text>
+            <view v-if="wearableId.length == 0" :class="nativeClass('wd-empty-card', (null))" v-on:click="handleBindWearable">
+              <text :class="nativeClass('wd-ring-icon', (null))">◉</text>
               <view class="wd-empty-text-wrap">
-                <text class="wd-bind-label">{{ tt('bindSmartRing') }}</text>
-                <text v-if="wearableServerHint != null" class="wd-server-hint">{{ tt('wearableAlreadyBound') }} {{ sget(wearableServerHint, 'name').length > 0 ? sget(wearableServerHint, 'name') : sget(wearableServerHint, 'brand') }}</text>
+                <text :class="nativeClass('wd-bind-label', (null))">{{ tt('bindSmartRing') }}</text>
+                <text v-if="wearableServerHint != null" :class="nativeClass('wd-server-hint', (null))">{{ tt('wearableAlreadyBound') }} {{ sget(wearableServerHint, 'name').length > 0 ? sget(wearableServerHint, 'name') : sget(wearableServerHint, 'brand') }}</text>
               </view>
-              <text class="wd-chevron">›</text>
+              <text :class="nativeClass('wd-chevron', (null))">›</text>
             </view>
-            <view v-else class="wd-card">
+            <view v-else :class="nativeClass('wd-card', (null))">
               <view class="wd-card-row">
                 <view class="wd-info">
                   <view class="wd-name-row">
-                    <view class="wd-dot" :class="wearableConnected ? 'wd-dot-on' : ''"></view>
-                    <text class="wd-device-name">{{ wearableName }}</text>
-                    <text v-if="wearableBattery > 0" class="wd-battery-inline">{{ wearableBattery }}%</text>
+                    <view :class="nativeClass('wd-dot', (wearableConnected ? 'wd-dot-on' : ''))"></view>
+                    <text :class="nativeClass('wd-device-name', (null))">{{ wearableName }}</text>
+                    <text v-if="wearableBattery > 0" :class="nativeClass('wd-battery-inline', (null))">{{ wearableBattery }}%</text>
                   </view>
-                  <text class="wd-status-text">{{ wearableConnected ? tt('wearableConnected') : tt('wearableDisconnected') }}</text>
+                  <text :class="nativeClass('wd-status-text', (null))">{{ wearableConnected ? tt('wearableConnected') : tt('wearableDisconnected') }}</text>
                 </view>
                 <view class="wd-card-actions">
-                  <view v-if="wearableBusy" class="wd-sync-spinner"></view>
-                  <view v-else class="wd-sync-btn" v-on:click="handleSyncWearable">
-                    <text class="wd-sync-btn-text">{{ tt('wearableSyncNow') }}</text>
+                  <view v-if="wearableBusy" :class="nativeClass('wd-sync-spinner', (null))"></view>
+                  <view v-else :class="nativeClass('wd-sync-btn', (null))" v-on:click="handleSyncWearable">
+                    <text :class="nativeClass('wd-sync-btn-text', (null))">{{ tt('wearableSyncNow') }}</text>
                   </view>
-                  <view class="wd-gear-btn" :class="ringSettingsOpen ? 'wd-gear-btn-active' : ''" v-on:click.stop="toggleRingSettings">
-                    <text class="wd-gear-glyph">⚙</text>
+                  <view :class="nativeClass('wd-gear-btn', (ringSettingsOpen ? 'wd-gear-btn-active' : ''))" v-on:click.stop="toggleRingSettings">
+                    <text :class="nativeClass('wd-gear-glyph', (null))">⚙</text>
                   </view>
                 </view>
               </view>
-              <view v-if="ringSettingsOpen" class="wd-settings-panel">
+              <view v-if="ringSettingsOpen" :class="nativeClass('wd-settings-panel', (null))">
                 <view v-if="wearableBrand == 'halo' || wearableBrand == 'v8'" class="wd-interval-section">
                   <view v-if="ringSettingsBusy" class="wd-settings-loading-row">
-                    <text class="wd-settings-loading-txt">{{ tt('haloIntervalLoading') }}</text>
+                    <text :class="nativeClass('wd-settings-loading-txt', (null))">{{ tt('haloIntervalLoading') }}</text>
                   </view>
                   <view v-else>
-                    <view class="wd-ring-time-row">
-                      <text class="wd-ring-time-label">{{ tt('haloRingTimeLabel') }}</text>
-                      <text class="wd-ring-time-val">{{ haloRingTime.length > 0 ? haloRingTime : '—' }}</text>
+                    <view :class="nativeClass('wd-ring-time-row', (null))">
+                      <text :class="nativeClass('wd-ring-time-label', (null))">{{ tt('haloRingTimeLabel') }}</text>
+                      <text :class="nativeClass('wd-ring-time-val', (null))">{{ haloRingTime.length > 0 ? haloRingTime : '—' }}</text>
                     </view>
-                    <text class="wd-interval-title">{{ tt('haloIntervalTitle') }}</text>
+                    <text :class="nativeClass('wd-interval-title', (null))">{{ tt('haloIntervalTitle') }}</text>
                     <view class="wd-interval-row">
                       <view class="wd-interval-label-col">
-                        <text class="wd-interval-label">{{ tt('metricHr') }}</text>
-                        <text class="wd-wm-badge" :class="nget(haloWorkModes, 'hr') == 0 ? 'wd-wm-off' : 'wd-wm-on'" v-on:click="handleWorkModeChange('hr')">{{ wmLabel('hr') }}</text>
+                        <text :class="nativeClass('wd-interval-label', (null))">{{ tt('metricHr') }}</text>
+                        <text :class="nativeClass('wd-wm-badge', (nget(haloWorkModes, 'hr') == 0 ? 'wd-wm-off' : 'wd-wm-on'))" v-on:click="handleWorkModeChange('hr')">{{ wmLabel('hr') }}</text>
                       </view>
                       <view class="wd-interval-opts">
-                        <text v-for="(m, i) in hopt('hr')" :key="i" class="wd-int-btn"
-                              :class="nget(haloIntervals, 'hr') == m ? 'wd-int-btn-on' : ''"
+                        <text v-for="(m, i) in hopt('hr')" :key="i"
+                              :class="nativeClass('wd-int-btn', (nget(haloIntervals, 'hr') == m ? 'wd-int-btn-on' : ''))"
                               v-on:click="handleIntervalChange('hr', m)">{{ m }}{{ tt('haloIntervalUnit') }}</text>
                       </view>
                     </view>
                     <view class="wd-interval-row">
                       <view class="wd-interval-label-col">
-                        <text class="wd-interval-label">{{ tt('metricSpo2') }}</text>
-                        <text class="wd-wm-badge" :class="nget(haloWorkModes, 'spo2') == 0 ? 'wd-wm-off' : 'wd-wm-on'" v-on:click="handleWorkModeChange('spo2')">{{ wmLabel('spo2') }}</text>
+                        <text :class="nativeClass('wd-interval-label', (null))">{{ tt('metricSpo2') }}</text>
+                        <text :class="nativeClass('wd-wm-badge', (nget(haloWorkModes, 'spo2') == 0 ? 'wd-wm-off' : 'wd-wm-on'))" v-on:click="handleWorkModeChange('spo2')">{{ wmLabel('spo2') }}</text>
                       </view>
                       <view class="wd-interval-opts">
-                        <text v-for="(m, i) in hopt('spo2')" :key="i" class="wd-int-btn"
-                              :class="nget(haloIntervals, 'spo2') == m ? 'wd-int-btn-on' : ''"
+                        <text v-for="(m, i) in hopt('spo2')" :key="i"
+                              :class="nativeClass('wd-int-btn', (nget(haloIntervals, 'spo2') == m ? 'wd-int-btn-on' : ''))"
                               v-on:click="handleIntervalChange('spo2', m)">{{ m }}{{ tt('haloIntervalUnit') }}</text>
                       </view>
                     </view>
                     <view class="wd-interval-row">
                       <view class="wd-interval-label-col">
-                        <text class="wd-interval-label">{{ tt('metricTemp') }}</text>
-                        <text class="wd-wm-badge" :class="nget(haloWorkModes, 'temp') == 0 ? 'wd-wm-off' : 'wd-wm-on'" v-on:click="handleWorkModeChange('temp')">{{ wmLabel('temp') }}</text>
+                        <text :class="nativeClass('wd-interval-label', (null))">{{ tt('metricTemp') }}</text>
+                        <text :class="nativeClass('wd-wm-badge', (nget(haloWorkModes, 'temp') == 0 ? 'wd-wm-off' : 'wd-wm-on'))" v-on:click="handleWorkModeChange('temp')">{{ wmLabel('temp') }}</text>
                       </view>
                       <view class="wd-interval-opts">
-                        <text v-for="(m, i) in hopt('temp')" :key="i" class="wd-int-btn"
-                              :class="nget(haloIntervals, 'temp') == m ? 'wd-int-btn-on' : ''"
+                        <text v-for="(m, i) in hopt('temp')" :key="i"
+                              :class="nativeClass('wd-int-btn', (nget(haloIntervals, 'temp') == m ? 'wd-int-btn-on' : ''))"
                               v-on:click="handleIntervalChange('temp', m)">{{ m }}{{ tt('haloIntervalUnit') }}</text>
                       </view>
                     </view>
                     <view class="wd-interval-row">
                       <view class="wd-interval-label-col">
-                        <text class="wd-interval-label">{{ tt('metricHrv') }}</text>
-                        <text class="wd-wm-badge" :class="nget(haloWorkModes, 'hrv') == 0 ? 'wd-wm-off' : 'wd-wm-on'" v-on:click="handleWorkModeChange('hrv')">{{ wmLabel('hrv') }}</text>
+                        <text :class="nativeClass('wd-interval-label', (null))">{{ tt('metricHrv') }}</text>
+                        <text :class="nativeClass('wd-wm-badge', (nget(haloWorkModes, 'hrv') == 0 ? 'wd-wm-off' : 'wd-wm-on'))" v-on:click="handleWorkModeChange('hrv')">{{ wmLabel('hrv') }}</text>
                       </view>
                       <view class="wd-interval-opts">
-                        <text v-for="(m, i) in hopt('hrv')" :key="i" class="wd-int-btn"
-                              :class="nget(haloIntervals, 'hrv') == m ? 'wd-int-btn-on' : ''"
+                        <text v-for="(m, i) in hopt('hrv')" :key="i"
+                              :class="nativeClass('wd-int-btn', (nget(haloIntervals, 'hrv') == m ? 'wd-int-btn-on' : ''))"
                               v-on:click="handleIntervalChange('hrv', m)">{{ m }}{{ tt('haloIntervalUnit') }}</text>
                       </view>
                     </view>
                   </view>
                 </view>
                 <view class="wd-settings-footer">
-                  <view v-if="haloIntervalsChanged" class="wd-save-btn" :class="ringSettingsBusy ? 'wd-btn-disabled' : ''" v-on:click="saveRingIntervals">
-                    <text class="wd-save-txt">{{ tt('haloSaveIntervals') }}</text>
+                  <view v-if="haloIntervalsChanged" :class="nativeClass('wd-save-btn', (ringSettingsBusy ? 'wd-btn-disabled' : ''))" v-on:click="saveRingIntervals">
+                    <text :class="nativeClass('wd-save-txt', (null))">{{ tt('haloSaveIntervals') }}</text>
                   </view>
                   <view class="wd-unbind-btn" v-on:click="handleUnbindWearable">
-                    <text class="wd-unbind-txt">{{ tt('wearableUnbind') }}</text>
+                    <text :class="nativeClass('wd-unbind-txt', (null))">{{ tt('wearableUnbind') }}</text>
                   </view>
                 </view>
               </view>
               <view v-if="ringMeasuring" class="wd-measuring-row">
-                <view class="wd-measuring-dot"></view>
-                <text class="wd-measuring-txt">{{ tt('wearableMeasuringBg') }}</text>
+                <view :class="nativeClass('wd-measuring-dot', (null))"></view>
+                <text :class="nativeClass('wd-measuring-txt', (null))">{{ tt('wearableMeasuringBg') }}</text>
               </view>
             </view>
           </view>
@@ -430,213 +430,213 @@
                recorder overlay is <strip-record> in the miniapp — TODO(port): component not
                yet ported; the open/close/save/delete wiring below is kept ready. -->
           <view v-if="mode == 'self' && (ecgSupported || ppgSupported)" class="wd-measure-actions">
-            <view v-if="ecgSupported" class="wd-measure-btn" v-on:click.stop="openEcgRecord('ecg')">
-              <text class="wd-measure-btn-text">{{ tt('ecgRecord') }}</text>
+            <view v-if="ecgSupported" :class="nativeClass('wd-measure-btn', (null))" v-on:click.stop="openEcgRecord('ecg')">
+              <text :class="nativeClass('wd-measure-btn-text', (null))">{{ tt('ecgRecord') }}</text>
             </view>
-            <view v-if="ppgSupported" class="wd-measure-btn" v-on:click.stop="openEcgRecord('ppg')">
-              <text class="wd-measure-btn-text">{{ tt('ppgRecord') }}</text>
+            <view v-if="ppgSupported" :class="nativeClass('wd-measure-btn', (null))" v-on:click.stop="openEcgRecord('ppg')">
+              <text :class="nativeClass('wd-measure-btn-text', (null))">{{ tt('ppgRecord') }}</text>
             </view>
           </view>
 
           <!-- Wearable insights (GET /api/wearable-insights → _buildInsightsView) -->
-          <view v-if="insightsView != null" class="ins-card">
+          <view v-if="insightsView != null" :class="nativeClass('ins-card', (null))">
             <view class="ins-head">
-              <text class="ins-title">{{ tt('insightTitle') }}</text>
-              <text class="ins-sub">{{ tt('insightNotDiagnosis') }}</text>
+              <text :class="nativeClass('ins-title', (null))">{{ tt('insightTitle') }}</text>
+              <text :class="nativeClass('ins-sub', (null))">{{ tt('insightNotDiagnosis') }}</text>
             </view>
 
-            <view v-if="iv('score') >= 0" class="ins-readiness">
+            <view v-if="iv('score') >= 0" :class="nativeClass('ins-readiness', (null))">
               <view class="ins-score-wrap" :style="'border-color:' + sget(insightsView, 'levelColor') + ';'">
-                <text class="ins-score" :style="'color:' + tc(sget(insightsView, 'levelColor'))">{{ iv('score') }}</text>
+                <text :class="nativeClass('ins-score', (null))" :style="'color:' + tc(sget(insightsView, 'levelColor'))">{{ iv('score') }}</text>
                 <!-- #ifndef MP-WEIXIN -->
-                <text class="ins-score-of">/100</text>
+                <text :class="nativeClass('ins-score-of', (null))">/100</text>
                 <!-- #endif -->
               </view>
               <view class="ins-readiness-body">
                 <view class="ins-readiness-row">
-                  <text class="ins-readiness-label">{{ tt('insightReadiness') }}</text>
-                  <text class="ins-level" :style="'color:' + tc(sget(insightsView, 'levelColor'))">{{ sget(insightsView, 'levelLabel') }}</text>
-                  <text class="ins-date">{{ bget(insightsView, 'isToday') ? tt('insightToday') : tt('insightLatest') }} {{ sget(insightsView, 'refDate') }}</text>
+                  <text :class="nativeClass('ins-readiness-label', (null))">{{ tt('insightReadiness') }}</text>
+                  <text :class="nativeClass('ins-level', (null))" :style="'color:' + tc(sget(insightsView, 'levelColor'))">{{ sget(insightsView, 'levelLabel') }}</text>
+                  <text :class="nativeClass('ins-date', (null))">{{ bget(insightsView, 'isToday') ? tt('insightToday') : tt('insightLatest') }} {{ sget(insightsView, 'refDate') }}</text>
                 </view>
                 <view class="ins-chips">
-                  <text v-for="(d, i) in aget(insightsView, 'drivers')" :key="i" class="ins-chip">{{ sget(d, 'label') }}</text>
+                  <text v-for="(d, i) in aget(insightsView, 'drivers')" :key="i" :class="nativeClass('ins-chip', (null))">{{ sget(d, 'label') }}</text>
                 </view>
               </view>
             </view>
 
-            <view v-if="jget(insightsView, 'band') != null" class="ins-block">
+            <view v-if="jget(insightsView, 'band') != null" :class="nativeClass('ins-block', (null))">
               <view class="ins-row">
-                <text class="ins-row-label">{{ tt('insightBand') }}</text>
-                <text class="ins-row-val">{{ an(bandObj(), 'low') }}–{{ an(bandObj(), 'high') }} ms</text>
+                <text :class="nativeClass('ins-row-label', (null))">{{ tt('insightBand') }}</text>
+                <text :class="nativeClass('ins-row-val', (null))">{{ an(bandObj(), 'low') }}–{{ an(bandObj(), 'high') }} ms</text>
               </view>
-              <view class="ins-band-track">
+              <view :class="nativeClass('ins-band-track', (null))">
                 <view class="ins-band-range" :style="'left:' + an(bandObj(), 'rangeLeftPct') + '%;width:' + an(bandObj(), 'rangeWidthPct') + '%;'"></view>
-                <view class="ins-band-marker" :style="'left:' + an(bandObj(), 'markerPct') + '%;background:' + sget(bandObj(), 'color') + ';'"></view>
+                <view :class="nativeClass('ins-band-marker', (null))" :style="'left:' + an(bandObj(), 'markerPct') + '%;background:' + sget(bandObj(), 'color') + ';'"></view>
               </view>
               <view class="ins-row ins-row-dim">
-                <text class="ins-row-label">{{ (bget(insightsView, 'isToday') ? tt('insightToday') : tt('insightLatest')) + ' ' + an(bandObj(), 'hrv') + ' ms' }}</text>
-                <text class="ins-row-val" :style="'color:' + tc(sget(bandObj(), 'color'))">{{ sget(bandObj(), 'vsBaseline') + ' ' + tt('insightVsBaseline') }}</text>
+                <text :class="nativeClass('ins-row-label', (null))">{{ (bget(insightsView, 'isToday') ? tt('insightToday') : tt('insightLatest')) + ' ' + an(bandObj(), 'hrv') + ' ms' }}</text>
+                <text :class="nativeClass('ins-row-val', (null))" :style="'color:' + tc(sget(bandObj(), 'color'))">{{ sget(bandObj(), 'vsBaseline') + ' ' + tt('insightVsBaseline') }}</text>
               </view>
             </view>
 
-            <view v-if="jget(insightsView, 'sleep') != null" class="ins-block">
+            <view v-if="jget(insightsView, 'sleep') != null" :class="nativeClass('ins-block', (null))">
               <view class="ins-row">
-                <text class="ins-row-label">{{ tt('insightSleep') }} · {{ tt('insightLastNight') }} {{ al(slObj(), 'date') }}</text>
-                <text class="ins-row-val">{{ an(slObj(), 'hours') }}h <text class="ins-row-delta">{{ sget(slObj(), 'vsWeek') + ' ' + tt('insightVsWeek') }}</text></text>
+                <text :class="nativeClass('ins-row-label', (null))">{{ tt('insightSleep') }} · {{ tt('insightLastNight') }} {{ al(slObj(), 'date') }}</text>
+                <text :class="nativeClass('ins-row-val', (null))">{{ an(slObj(), 'hours') }}h <text :class="nativeClass('ins-row-delta', (null))">{{ sget(slObj(), 'vsWeek') + ' ' + tt('insightVsWeek') }}</text></text>
               </view>
               <view class="ins-chips ins-chips-tight">
-                <text v-if="hasKey(slObj(), 'restorative')" class="ins-chip ins-chip-dim">{{ tt('insightRestorative') }} {{ an(slObj(), 'restorative') }}%</text>
-                <text v-if="hasKey(slObj(), 'avg7')" class="ins-chip ins-chip-dim">{{ tt('insightAvg7') }} {{ an(slObj(), 'avg7') }}h</text>
-                <text v-if="hasKey(slObj(), 'debt')" class="ins-chip" :class="an(slObj(), 'debt') >= 3 ? 'ins-chip-warn' : 'ins-chip-dim'">{{ tt('insightDebt') }} {{ an(slObj(), 'debt') }}h</text>
-                <text v-if="sget(slObj(), 'regularLabel').length > 0" class="ins-chip" :class="bget(slObj(), 'regular') ? 'ins-chip-dim' : 'ins-chip-warn'">{{ sget(slObj(), 'regularLabel') }}</text>
+                <text v-if="hasKey(slObj(), 'restorative')" :class="nativeClass('ins-chip ins-chip-dim', (null))">{{ tt('insightRestorative') }} {{ an(slObj(), 'restorative') }}%</text>
+                <text v-if="hasKey(slObj(), 'avg7')" :class="nativeClass('ins-chip ins-chip-dim', (null))">{{ tt('insightAvg7') }} {{ an(slObj(), 'avg7') }}h</text>
+                <text v-if="hasKey(slObj(), 'debt')" :class="nativeClass('ins-chip', (an(slObj(), 'debt') >= 3 ? 'ins-chip-warn' : 'ins-chip-dim'))">{{ tt('insightDebt') }} {{ an(slObj(), 'debt') }}h</text>
+                <text v-if="sget(slObj(), 'regularLabel').length > 0" :class="nativeClass('ins-chip', (bget(slObj(), 'regular') ? 'ins-chip-dim' : 'ins-chip-warn'))">{{ sget(slObj(), 'regularLabel') }}</text>
               </view>
             </view>
 
-            <view v-if="jget(insightsView, 'stress') != null" class="ins-block">
+            <view v-if="jget(insightsView, 'stress') != null" :class="nativeClass('ins-block', (null))">
               <view class="ins-row">
-                <text class="ins-row-label">{{ tt('insightStress') }}</text>
-                <text class="ins-row-val" :style="'color:' + tc(sget(stObj(), 'balanceColor'))">{{ sget(stObj(), 'balanceLabel') }}</text>
+                <text :class="nativeClass('ins-row-label', (null))">{{ tt('insightStress') }}</text>
+                <text :class="nativeClass('ins-row-val', (null))" :style="'color:' + tc(sget(stObj(), 'balanceColor'))">{{ sget(stObj(), 'balanceLabel') }}</text>
               </view>
               <view class="ins-chips ins-chips-tight">
-                <text v-if="hasKey(stObj(), 'loadToday')" class="ins-chip ins-chip-dim">{{ (bget(insightsView, 'isToday') ? tt('insightLoadToday') : tt('insightLoadLatest')) + ' ' + an(stObj(), 'loadToday') + '%' }}</text>
-                <text v-if="hasKey(stObj(), 'load7d')" class="ins-chip ins-chip-dim">{{ tt('insightLoad7d') }} {{ an(stObj(), 'load7d') }}%</text>
-                <text v-if="hasKey(stObj(), 'nightDay')" class="ins-chip ins-chip-dim">{{ tt('insightNightDay') }} {{ an(stObj(), 'nightDay') }}</text>
+                <text v-if="hasKey(stObj(), 'loadToday')" :class="nativeClass('ins-chip ins-chip-dim', (null))">{{ (bget(insightsView, 'isToday') ? tt('insightLoadToday') : tt('insightLoadLatest')) + ' ' + an(stObj(), 'loadToday') + '%' }}</text>
+                <text v-if="hasKey(stObj(), 'load7d')" :class="nativeClass('ins-chip ins-chip-dim', (null))">{{ tt('insightLoad7d') }} {{ an(stObj(), 'load7d') }}%</text>
+                <text v-if="hasKey(stObj(), 'nightDay')" :class="nativeClass('ins-chip ins-chip-dim', (null))">{{ tt('insightNightDay') }} {{ an(stObj(), 'nightDay') }}</text>
               </view>
             </view>
 
             <view v-for="(f, i) in aget(insightsView, 'flags')" :key="i" class="ins-flag">
-              <text class="ins-flag-txt">{{ sget(f, 'label') }}</text>
-              <text class="ins-flag-since">{{ tt('insightSince') }} {{ sget(f, 'since') }}</text>
+              <text :class="nativeClass('ins-flag-txt', (null))">{{ sget(f, 'label') }}</text>
+              <text :class="nativeClass('ins-flag-since', (null))">{{ tt('insightSince') }} {{ sget(f, 'since') }}</text>
             </view>
-            <text v-if="sget(insightsView, 'provisional').length > 0" class="ins-provisional">{{ sget(insightsView, 'provisional') }}</text>
+            <text v-if="sget(insightsView, 'provisional').length > 0" :class="nativeClass('ins-provisional', (null))">{{ sget(insightsView, 'provisional') }}</text>
           </view>
 
           <!-- Ring sync summary (shown after first sync) -->
-          <view v-if="wearableId.length > 0 && ringData != null" class="ring-summary-card">
+          <view v-if="wearableId.length > 0 && ringData != null" :class="nativeClass('ring-summary-card', (null))">
             <view class="ring-sum-metrics">
               <view class="ring-sum-item">
                 <view v-if="bget(ringData, 'hasSteps')" class="ring-sum-val-row">
-                  <text class="ring-sum-val">{{ sget(ringData, 'stepsStr') }}</text>
+                  <text :class="nativeClass('ring-sum-val', (null))">{{ sget(ringData, 'stepsStr') }}</text>
                 </view>
-                <text v-else class="ring-sum-na">—</text>
-                <text class="ring-sum-sub">{{ tt('ringSteps') }}</text>
-                <view v-if="bget(ringData, 'hasSteps')" class="ring-sum-bar">
+                <text v-else :class="nativeClass('ring-sum-na', (null))">—</text>
+                <text :class="nativeClass('ring-sum-sub', (null))">{{ tt('ringSteps') }}</text>
+                <view v-if="bget(ringData, 'hasSteps')" :class="nativeClass('ring-sum-bar', (null))">
                   <view class="ring-sum-bar-fill ring-steps-fill" :style="'width:' + an(ringData, 'stepsPct') + '%;'"></view>
                 </view>
               </view>
               <view class="ring-sum-item">
                 <view v-if="bget(ringData, 'hasSleep')" class="ring-sum-val-row">
-                  <text class="ring-sum-val">{{ sget(ringData, 'sleepStr') }}</text>
+                  <text :class="nativeClass('ring-sum-val', (null))">{{ sget(ringData, 'sleepStr') }}</text>
                 </view>
-                <text v-else class="ring-sum-na">—</text>
-                <text class="ring-sum-sub">{{ tt('ringSleep') }}</text>
-                <view v-if="bget(ringData, 'hasSleep')" class="ring-sum-bar ring-sleep-segs">
-                  <view class="ring-sum-bar-seg ring-deep-seg" :style="'width:' + an(ringData, 'sleepDeepPct') + '%;'"></view>
-                  <view class="ring-sum-bar-seg ring-rem-seg" :style="'width:' + an(ringData, 'sleepRemPct') + '%;'"></view>
-                  <view class="ring-sum-bar-seg ring-light-seg" :style="'width:' + an(ringData, 'sleepLightPct') + '%;'"></view>
-                  <view class="ring-sum-bar-seg ring-awake-seg" :style="'width:' + an(ringData, 'sleepAwakePct') + '%;'"></view>
+                <text v-else :class="nativeClass('ring-sum-na', (null))">—</text>
+                <text :class="nativeClass('ring-sum-sub', (null))">{{ tt('ringSleep') }}</text>
+                <view v-if="bget(ringData, 'hasSleep')" :class="nativeClass('ring-sum-bar ring-sleep-segs', (null))">
+                  <view :class="nativeClass('ring-sum-bar-seg ring-deep-seg', (null))" :style="'width:' + an(ringData, 'sleepDeepPct') + '%;'"></view>
+                  <view :class="nativeClass('ring-sum-bar-seg ring-rem-seg', (null))" :style="'width:' + an(ringData, 'sleepRemPct') + '%;'"></view>
+                  <view :class="nativeClass('ring-sum-bar-seg ring-light-seg', (null))" :style="'width:' + an(ringData, 'sleepLightPct') + '%;'"></view>
+                  <view :class="nativeClass('ring-sum-bar-seg ring-awake-seg', (null))" :style="'width:' + an(ringData, 'sleepAwakePct') + '%;'"></view>
                 </view>
               </view>
               <view class="ring-sum-item">
                 <view v-if="bget(ringData, 'hasHr')" class="ring-sum-val-row">
-                  <text class="ring-sum-val">{{ an(ringData, 'restingHr') }}</text>
-                  <text class="ring-sum-unit">bpm</text>
+                  <text :class="nativeClass('ring-sum-val', (null))">{{ an(ringData, 'restingHr') }}</text>
+                  <text :class="nativeClass('ring-sum-unit', (null))">bpm</text>
                 </view>
-                <text v-else class="ring-sum-na">—</text>
-                <text class="ring-sum-sub">{{ tt('ringHr') }}</text>
-                <view v-if="bget(ringData, 'hasHr')" class="ring-sum-bar">
+                <text v-else :class="nativeClass('ring-sum-na', (null))">—</text>
+                <text :class="nativeClass('ring-sum-sub', (null))">{{ tt('ringHr') }}</text>
+                <view v-if="bget(ringData, 'hasHr')" :class="nativeClass('ring-sum-bar', (null))">
                   <view class="ring-sum-bar-fill ring-hr-fill" :style="'width:' + hrBarPct() + '%;'"></view>
                 </view>
               </view>
               <view class="ring-sum-item">
                 <view v-if="bget(ringData, 'hasHrv')" class="ring-sum-val-row">
-                  <text class="ring-sum-val" :style="'color:' + tc(sget(ringData, 'hrvColor'))">{{ an(ringData, 'hrv') }}</text>
-                  <text class="ring-sum-unit">ms</text>
+                  <text :class="nativeClass('ring-sum-val', (null))" :style="'color:' + tc(sget(ringData, 'hrvColor'))">{{ an(ringData, 'hrv') }}</text>
+                  <text :class="nativeClass('ring-sum-unit', (null))">ms</text>
                 </view>
-                <text v-else class="ring-sum-na">—</text>
-                <text class="ring-sum-sub">{{ tt('ringHrv') }}</text>
-                <view v-if="bget(ringData, 'hasHrv')" class="ring-sum-bar">
+                <text v-else :class="nativeClass('ring-sum-na', (null))">—</text>
+                <text :class="nativeClass('ring-sum-sub', (null))">{{ tt('ringHrv') }}</text>
+                <view v-if="bget(ringData, 'hasHrv')" :class="nativeClass('ring-sum-bar', (null))">
                   <view class="ring-sum-bar-fill" :style="'width:' + an(ringData, 'hrvPct') + '%;background:' + sget(ringData, 'hrvColor') + ';'"></view>
                 </view>
               </view>
               <view class="ring-sum-item">
                 <view v-if="bget(ringData, 'hasStress')" class="ring-sum-val-row">
-                  <text class="ring-sum-val" :style="'color:' + tc(sget(ringData, 'stressColor'))">{{ an(ringData, 'stress') }}</text>
+                  <text :class="nativeClass('ring-sum-val', (null))" :style="'color:' + tc(sget(ringData, 'stressColor'))">{{ an(ringData, 'stress') }}</text>
                 </view>
-                <text v-else class="ring-sum-na">—</text>
-                <text class="ring-sum-sub">{{ tt('ringStress') }}</text>
-                <view v-if="bget(ringData, 'hasStress')" class="ring-sum-bar">
+                <text v-else :class="nativeClass('ring-sum-na', (null))">—</text>
+                <text :class="nativeClass('ring-sum-sub', (null))">{{ tt('ringStress') }}</text>
+                <view v-if="bget(ringData, 'hasStress')" :class="nativeClass('ring-sum-bar', (null))">
                   <view class="ring-sum-bar-fill" :style="'width:' + an(ringData, 'stress') + '%;background:' + sget(ringData, 'stressColor') + ';'"></view>
                 </view>
-                <text v-if="bget(ringData, 'hasStress')" class="ring-sum-stress-label" :style="'color:' + tc(sget(ringData, 'stressColor'))">{{ sget(ringData, 'stressLabel') }}</text>
+                <text v-if="bget(ringData, 'hasStress')" :class="nativeClass('ring-sum-stress-label', (null))" :style="'color:' + tc(sget(ringData, 'stressColor'))">{{ sget(ringData, 'stressLabel') }}</text>
               </view>
               <view class="ring-sum-item">
                 <view v-if="bget(ringData, 'hasSpo2')" class="ring-sum-val-row">
-                  <text class="ring-sum-val" :style="'color:' + tc(sget(ringData, 'spo2Color'))">{{ an(ringData, 'spo2') }}</text>
-                  <text class="ring-sum-unit">%</text>
+                  <text :class="nativeClass('ring-sum-val', (null))" :style="'color:' + tc(sget(ringData, 'spo2Color'))">{{ an(ringData, 'spo2') }}</text>
+                  <text :class="nativeClass('ring-sum-unit', (null))">%</text>
                 </view>
-                <text v-else class="ring-sum-na">—</text>
-                <text class="ring-sum-sub">SpO₂</text>
-                <view v-if="bget(ringData, 'hasSpo2')" class="ring-sum-bar">
+                <text v-else :class="nativeClass('ring-sum-na', (null))">—</text>
+                <text :class="nativeClass('ring-sum-sub', (null))">SpO₂</text>
+                <view v-if="bget(ringData, 'hasSpo2')" :class="nativeClass('ring-sum-bar', (null))">
                   <view class="ring-sum-bar-fill" :style="'width:' + an(ringData, 'spo2Pct') + '%;background:' + sget(ringData, 'spo2Color') + ';'"></view>
                 </view>
               </view>
               <view v-if="bget(ringData, 'hasBodyTemp')" class="ring-sum-item">
                 <view class="ring-sum-val-row">
-                  <text class="ring-sum-val" :style="'color:' + tc(sget(ringData, 'tempColor'))">{{ sget(ringData, 'bodyTempC') }}</text>
-                  <text class="ring-sum-unit">°C</text>
+                  <text :class="nativeClass('ring-sum-val', (null))" :style="'color:' + tc(sget(ringData, 'tempColor'))">{{ sget(ringData, 'bodyTempC') }}</text>
+                  <text :class="nativeClass('ring-sum-unit', (null))">°C</text>
                 </view>
-                <text class="ring-sum-sub">{{ tt('ringBodyTemp') }}</text>
-                <view class="ring-sum-bar">
+                <text :class="nativeClass('ring-sum-sub', (null))">{{ tt('ringBodyTemp') }}</text>
+                <view :class="nativeClass('ring-sum-bar', (null))">
                   <view class="ring-sum-bar-fill" :style="'width:' + an(ringData, 'tempPct') + '%;background:' + sget(ringData, 'tempColor') + ';'"></view>
                 </view>
               </view>
             </view>
-            <text class="ring-sum-footer">{{ sget(ringData, 'syncLabel') }}</text>
+            <text :class="nativeClass('ring-sum-footer', (null))">{{ sget(ringData, 'syncLabel') }}</text>
           </view>
 
           <!-- Slot detail charts (steps / HR / sleep / trends) -->
-          <view v-if="wearableId.length > 0 && ringData != null && bget(ringData, 'hasSlotCharts')" class="ring-detail-card">
+          <view v-if="wearableId.length > 0 && ringData != null && bget(ringData, 'hasSlotCharts')" :class="nativeClass('ring-detail-card', (null))">
 
             <view v-if="aget(ringData, 'stepsBars').length > 0" class="ring-chart-block">
-              <text class="ring-chart-label">{{ tt('ringStepsChart') }}</text>
+              <text :class="nativeClass('ring-chart-label', (null))">{{ tt('ringStepsChart') }}</text>
               <view class="ring-chart-bars">
                 <view v-for="(item, i) in aget(ringData, 'stepsBars')" :key="i" class="ring-chart-col">
-                  <view class="ring-chart-bar" :class="bget(item, 'active') ? '' : 'ring-chart-bar-empty'"
+                  <view :class="nativeClass('ring-chart-bar', (bget(item, 'active') ? '' : 'ring-chart-bar-empty'))"
                         :style="'height:' + rp(barH(item)) + 'px;background:' + (bget(item, 'active') ? '#0ea5e9' : 'rgba(99,117,236,0.1)') + ';'"></view>
-                  <text class="ring-chart-hlabel">{{ sget(item, 'h') }}</text>
+                  <text :class="nativeClass('ring-chart-hlabel', (null))">{{ sget(item, 'h') }}</text>
                 </view>
               </view>
             </view>
 
             <view v-if="aget(ringData, 'hrBars').length > 0" class="ring-chart-block">
-              <text class="ring-chart-label">{{ tt('ringHrChart') }}</text>
+              <text :class="nativeClass('ring-chart-label', (null))">{{ tt('ringHrChart') }}</text>
               <view class="ring-chart-bars">
                 <view v-for="(item, i) in aget(ringData, 'hrBars')" :key="i" class="ring-chart-col">
                   <view class="ring-chart-bar" :style="'height:' + rp(an(item, 'heightRpx')) + 'px;background:' + sget(item, 'color') + ';'"></view>
-                  <text class="ring-chart-hlabel">{{ sget(item, 'h') }}</text>
+                  <text :class="nativeClass('ring-chart-hlabel', (null))">{{ sget(item, 'h') }}</text>
                 </view>
               </view>
             </view>
 
             <view v-if="aget(ringData, 'hrvDayBars').length > 0" class="ring-chart-block">
-              <text class="ring-chart-label">{{ tt('ringHrvTrend') }}</text>
+              <text :class="nativeClass('ring-chart-label', (null))">{{ tt('ringHrvTrend') }}</text>
               <view class="ring-chart-bars">
                 <view v-for="(item, i) in aget(ringData, 'hrvDayBars')" :key="i" class="ring-chart-day-col">
-                  <text class="ring-chart-day-avg">{{ an(item, 'avg') }}</text>
+                  <text :class="nativeClass('ring-chart-day-avg', (null))">{{ an(item, 'avg') }}</text>
                   <view class="ring-chart-bar" :style="'height:' + rp(an(item, 'heightRpx')) + 'px;background:' + sget(item, 'color') + ';width:100%;'"></view>
-                  <text class="ring-chart-day-label">{{ sget(item, 'label') }}</text>
+                  <text :class="nativeClass('ring-chart-day-label', (null))">{{ sget(item, 'label') }}</text>
                 </view>
               </view>
             </view>
 
             <view v-if="aget(ringData, 'spo2DayBars').length > 0" class="ring-chart-block">
-              <text class="ring-chart-label">{{ tt('ringSpo2Trend') }}</text>
+              <text :class="nativeClass('ring-chart-label', (null))">{{ tt('ringSpo2Trend') }}</text>
               <view class="ring-chart-bars">
                 <view v-for="(item, i) in aget(ringData, 'spo2DayBars')" :key="i" class="ring-chart-day-col">
-                  <text class="ring-chart-day-avg">{{ an(item, 'avg') }}%</text>
+                  <text :class="nativeClass('ring-chart-day-avg', (null))">{{ an(item, 'avg') }}%</text>
                   <view class="ring-chart-bar" :style="'height:' + rp(an(item, 'heightRpx')) + 'px;background:' + sget(item, 'color') + ';width:100%;'"></view>
-                  <text class="ring-chart-day-label">{{ sget(item, 'label') }}</text>
+                  <text :class="nativeClass('ring-chart-day-label', (null))">{{ sget(item, 'label') }}</text>
                 </view>
               </view>
             </view>
@@ -644,39 +644,39 @@
             <!-- Weekly sleep timeline: every night + nap as a distinct block on a
                  noon-to-noon 24h axis (merge §9 invariants preserved in _buildRingDisplayData) -->
             <view v-if="aget(ringData, 'sleepWeek').length > 0" class="ring-chart-block">
-              <text class="ring-chart-label">{{ tt('ringSleepWeek') }}</text>
+              <text :class="nativeClass('ring-chart-label', (null))">{{ tt('ringSleepWeek') }}</text>
               <view class="ring-sleepweek-wrap">
                 <view class="ring-sleepweek-axis" :style="'height:' + rp(nget(ringData, 'sleepAxisHeightRpx')) + 'px;'">
-                  <text class="ring-sleepweek-axis-lbl">12</text>
-                  <text class="ring-sleepweek-axis-lbl">18</text>
-                  <text class="ring-sleepweek-axis-lbl">24</text>
-                  <text class="ring-sleepweek-axis-lbl">06</text>
-                  <text class="ring-sleepweek-axis-lbl">12</text>
+                  <text :class="nativeClass('ring-sleepweek-axis-lbl', (null))">12</text>
+                  <text :class="nativeClass('ring-sleepweek-axis-lbl', (null))">18</text>
+                  <text :class="nativeClass('ring-sleepweek-axis-lbl', (null))">24</text>
+                  <text :class="nativeClass('ring-sleepweek-axis-lbl', (null))">06</text>
+                  <text :class="nativeClass('ring-sleepweek-axis-lbl', (null))">12</text>
                 </view>
                 <view class="ring-sleepweek-days">
                   <view v-for="(day, i) in aget(ringData, 'sleepWeek')" :key="i" class="ring-sleepweek-daycol">
-                    <view class="ring-sleepweek-track" :style="'height:' + rp(nget(ringData, 'sleepAxisHeightRpx')) + 'px;'">
-                      <view class="ring-sleepweek-gridline" style="top:0%;"></view>
-                      <view class="ring-sleepweek-gridline" style="top:25%;"></view>
-                      <view class="ring-sleepweek-gridline" style="top:50%;"></view>
-                      <view class="ring-sleepweek-gridline" style="top:75%;"></view>
-                      <view v-for="(blk, j) in aget(day, 'blocks')" :key="j" class="ring-sleepweek-block"
-                            :class="bget(blk, 'isNap') ? 'ring-sleepweek-block-nap' : ''"
+                    <view :class="nativeClass('ring-sleepweek-track', (null))" :style="'height:' + rp(nget(ringData, 'sleepAxisHeightRpx')) + 'px;'">
+                      <view :class="nativeClass('ring-sleepweek-gridline', (null))" style="top:0%;"></view>
+                      <view :class="nativeClass('ring-sleepweek-gridline', (null))" style="top:25%;"></view>
+                      <view :class="nativeClass('ring-sleepweek-gridline', (null))" style="top:50%;"></view>
+                      <view :class="nativeClass('ring-sleepweek-gridline', (null))" style="top:75%;"></view>
+                      <view v-for="(blk, j) in aget(day, 'blocks')" :key="j"
+                            :class="nativeClass('ring-sleepweek-block', (bget(blk, 'isNap') ? 'ring-sleepweek-block-nap' : ''))"
                             :style="'top:' + rp(an(blk, 'topRpx')) + 'px;height:' + rp(an(blk, 'heightRpx')) + 'px;background:' + sget(blk, 'color') + ';'"></view>
                     </view>
-                    <text class="ring-sleepweek-total">{{ sget(day, 'totalLabel') }}</text>
-                    <text class="ring-sleepweek-daylabel">{{ sget(day, 'label') }}</text>
+                    <text :class="nativeClass('ring-sleepweek-total', (null))">{{ sget(day, 'totalLabel') }}</text>
+                    <text :class="nativeClass('ring-sleepweek-daylabel', (null))">{{ sget(day, 'label') }}</text>
                   </view>
                 </view>
               </view>
               <view class="ring-sleep-legend">
                 <view class="ring-sleep-leg-item">
                   <view class="ring-sleep-leg-dot" style="background:#10b981;"></view>
-                  <text class="ring-sleep-leg-txt">{{ tt('ringNightSleep') }}</text>
+                  <text :class="nativeClass('ring-sleep-leg-txt', (null))">{{ tt('ringNightSleep') }}</text>
                 </view>
                 <view class="ring-sleep-leg-item">
                   <view class="ring-sleep-leg-dot" style="background:#f59e0b;"></view>
-                  <text class="ring-sleep-leg-txt">{{ tt('ringNap') }}</text>
+                  <text :class="nativeClass('ring-sleep-leg-txt', (null))">{{ tt('ringNap') }}</text>
                 </view>
               </view>
             </view>
@@ -684,101 +684,101 @@
             <!-- HRV / SpO₂ / stress smoothed line charts (§44 display-only smoothing) -->
             <view v-if="chartBool('hrvChart', 'hasData')" class="ring-chart-block">
               <view class="ring-linechart-header">
-                <text class="ring-chart-label">{{ tt('ringHrv') }}</text>
+                <text :class="nativeClass('ring-chart-label', (null))">{{ tt('ringHrv') }}</text>
                 <view class="ring-linechart-latest-row">
-                  <text class="ring-linechart-latest" :style="'color:' + tc(chartStr('hrvChart', 'latestColor'))">{{ chartNumStr('hrvChart', 'latestVal') }}</text>
-                  <text class="ring-linechart-unit">ms</text>
-                  <text v-if="chartBool('hrvChart', 'latestEstimated')" class="ring-lc-estimated-marker">~</text>
+                  <text :class="nativeClass('ring-linechart-latest', (null))" :style="'color:' + tc(chartStr('hrvChart', 'latestColor'))">{{ chartNumStr('hrvChart', 'latestVal') }}</text>
+                  <text :class="nativeClass('ring-linechart-unit', (null))">ms</text>
+                  <text v-if="chartBool('hrvChart', 'latestEstimated')" :class="nativeClass('ring-lc-estimated-marker', (null))">~</text>
                 </view>
               </view>
               <view class="ring-lc-bars">
                 <view v-for="(item, i) in chartBars('hrvChart')" :key="i" class="ring-lc-col">
-                  <view class="ring-lc-bar" :class="bget(item, 'estimated') ? 'ring-lc-bar-estimated' : ''"
+                  <view :class="nativeClass('ring-lc-bar', (bget(item, 'estimated') ? 'ring-lc-bar-estimated' : ''))"
                         :style="'height:' + rp(an(item, 'heightRpx')) + 'px;background:' + sget(item, 'color') + ';width:100%;'"></view>
                 </view>
               </view>
               <view class="ring-linechart-range">
-                <text class="ring-linechart-bound">{{ chartNumStr('hrvChart', 'minVal') }} ms</text>
-                <text class="ring-linechart-count">{{ chartNumStr('hrvChart', 'count') }} 次</text>
-                <text class="ring-linechart-bound">{{ chartNumStr('hrvChart', 'maxVal') }} ms</text>
+                <text :class="nativeClass('ring-linechart-bound', (null))">{{ chartNumStr('hrvChart', 'minVal') }} ms</text>
+                <text :class="nativeClass('ring-linechart-count', (null))">{{ chartNumStr('hrvChart', 'count') }} 次</text>
+                <text :class="nativeClass('ring-linechart-bound', (null))">{{ chartNumStr('hrvChart', 'maxVal') }} ms</text>
               </view>
-              <text v-if="chartNum('hrvChart', 'estimatedCount') > 0" class="ring-lc-smoothed-note">{{ chartNum('hrvChart', 'estimatedCount') }}{{ tt('ringSmoothedNote') }}</text>
+              <text v-if="chartNum('hrvChart', 'estimatedCount') > 0" :class="nativeClass('ring-lc-smoothed-note', (null))">{{ chartNum('hrvChart', 'estimatedCount') }}{{ tt('ringSmoothedNote') }}</text>
             </view>
 
             <view v-if="chartBool('spo2Chart', 'hasData')" class="ring-chart-block">
               <view class="ring-linechart-header">
-                <text class="ring-chart-label">SpO₂</text>
+                <text :class="nativeClass('ring-chart-label', (null))">SpO₂</text>
                 <view class="ring-linechart-latest-row">
-                  <text class="ring-linechart-latest" :style="'color:' + tc(chartStr('spo2Chart', 'latestColor'))">{{ chartNumStr('spo2Chart', 'latestVal') }}</text>
-                  <text class="ring-linechart-unit">%</text>
-                  <text v-if="chartBool('spo2Chart', 'latestEstimated')" class="ring-lc-estimated-marker">~</text>
+                  <text :class="nativeClass('ring-linechart-latest', (null))" :style="'color:' + tc(chartStr('spo2Chart', 'latestColor'))">{{ chartNumStr('spo2Chart', 'latestVal') }}</text>
+                  <text :class="nativeClass('ring-linechart-unit', (null))">%</text>
+                  <text v-if="chartBool('spo2Chart', 'latestEstimated')" :class="nativeClass('ring-lc-estimated-marker', (null))">~</text>
                 </view>
               </view>
               <view class="ring-lc-bars">
                 <view v-for="(item, i) in chartBars('spo2Chart')" :key="i" class="ring-lc-col">
-                  <view class="ring-lc-bar" :class="bget(item, 'estimated') ? 'ring-lc-bar-estimated' : ''"
+                  <view :class="nativeClass('ring-lc-bar', (bget(item, 'estimated') ? 'ring-lc-bar-estimated' : ''))"
                         :style="'height:' + rp(an(item, 'heightRpx')) + 'px;background:' + sget(item, 'color') + ';width:100%;'"></view>
                 </view>
               </view>
               <view class="ring-linechart-range">
-                <text class="ring-linechart-bound">{{ chartNumStr('spo2Chart', 'minVal') }}%</text>
-                <text class="ring-linechart-count">{{ chartNumStr('spo2Chart', 'count') }} 次</text>
-                <text class="ring-linechart-bound">{{ chartNumStr('spo2Chart', 'maxVal') }}%</text>
+                <text :class="nativeClass('ring-linechart-bound', (null))">{{ chartNumStr('spo2Chart', 'minVal') }}%</text>
+                <text :class="nativeClass('ring-linechart-count', (null))">{{ chartNumStr('spo2Chart', 'count') }} 次</text>
+                <text :class="nativeClass('ring-linechart-bound', (null))">{{ chartNumStr('spo2Chart', 'maxVal') }}%</text>
               </view>
-              <text v-if="chartNum('spo2Chart', 'estimatedCount') > 0" class="ring-lc-smoothed-note">{{ chartNum('spo2Chart', 'estimatedCount') }}{{ tt('ringSmoothedNote') }}</text>
+              <text v-if="chartNum('spo2Chart', 'estimatedCount') > 0" :class="nativeClass('ring-lc-smoothed-note', (null))">{{ chartNum('spo2Chart', 'estimatedCount') }}{{ tt('ringSmoothedNote') }}</text>
             </view>
 
             <view v-if="chartBool('stressChart', 'hasData')" class="ring-chart-block">
               <view class="ring-linechart-header">
-                <text class="ring-chart-label">{{ tt('ringStress') }}</text>
+                <text :class="nativeClass('ring-chart-label', (null))">{{ tt('ringStress') }}</text>
                 <view class="ring-linechart-latest-row">
-                  <text class="ring-linechart-latest" :style="'color:' + tc(chartStr('stressChart', 'latestColor'))">{{ chartNumStr('stressChart', 'latestVal') }}</text>
-                  <text v-if="chartBool('stressChart', 'latestEstimated')" class="ring-lc-estimated-marker">~</text>
+                  <text :class="nativeClass('ring-linechart-latest', (null))" :style="'color:' + tc(chartStr('stressChart', 'latestColor'))">{{ chartNumStr('stressChart', 'latestVal') }}</text>
+                  <text v-if="chartBool('stressChart', 'latestEstimated')" :class="nativeClass('ring-lc-estimated-marker', (null))">~</text>
                 </view>
               </view>
               <view class="ring-lc-bars">
                 <view v-for="(item, i) in chartBars('stressChart')" :key="i" class="ring-lc-col">
-                  <view class="ring-lc-bar" :class="bget(item, 'estimated') ? 'ring-lc-bar-estimated' : ''"
+                  <view :class="nativeClass('ring-lc-bar', (bget(item, 'estimated') ? 'ring-lc-bar-estimated' : ''))"
                         :style="'height:' + rp(an(item, 'heightRpx')) + 'px;background:' + sget(item, 'color') + ';width:100%;'"></view>
                 </view>
               </view>
               <view class="ring-linechart-range">
-                <text class="ring-linechart-bound">{{ chartNumStr('stressChart', 'minVal') }}</text>
-                <text class="ring-linechart-count">{{ chartNumStr('stressChart', 'count') }} 次</text>
-                <text class="ring-linechart-bound">{{ chartNumStr('stressChart', 'maxVal') }}</text>
+                <text :class="nativeClass('ring-linechart-bound', (null))">{{ chartNumStr('stressChart', 'minVal') }}</text>
+                <text :class="nativeClass('ring-linechart-count', (null))">{{ chartNumStr('stressChart', 'count') }} 次</text>
+                <text :class="nativeClass('ring-linechart-bound', (null))">{{ chartNumStr('stressChart', 'maxVal') }}</text>
               </view>
-              <text v-if="chartNum('stressChart', 'estimatedCount') > 0" class="ring-lc-smoothed-note">{{ chartNum('stressChart', 'estimatedCount') }}{{ tt('ringSmoothedNote') }}</text>
+              <text v-if="chartNum('stressChart', 'estimatedCount') > 0" :class="nativeClass('ring-lc-smoothed-note', (null))">{{ chartNum('stressChart', 'estimatedCount') }}{{ tt('ringSmoothedNote') }}</text>
             </view>
 
             <!-- Sleep stage timeline (most recent night, detailed) -->
             <view v-if="aget(ringData, 'sleepSegs').length > 0" class="ring-chart-block">
               <view class="ring-chart-header">
-                <text class="ring-chart-label">{{ tt('ringSleepChart') }}</text>
+                <text :class="nativeClass('ring-chart-label', (null))">{{ tt('ringSleepChart') }}</text>
                 <view class="ring-chart-header-right">
-                  <text v-if="sget(ringData, 'sleepDateLabel').length > 0" class="ring-chart-date">{{ sget(ringData, 'sleepDateLabel') }}</text>
-                  <text v-if="sget(ringData, 'sleepTimeRange').length > 0" class="ring-chart-time">{{ sget(ringData, 'sleepTimeRange') }}</text>
+                  <text v-if="sget(ringData, 'sleepDateLabel').length > 0" :class="nativeClass('ring-chart-date', (null))">{{ sget(ringData, 'sleepDateLabel') }}</text>
+                  <text v-if="sget(ringData, 'sleepTimeRange').length > 0" :class="nativeClass('ring-chart-time', (null))">{{ sget(ringData, 'sleepTimeRange') }}</text>
                 </view>
               </view>
-              <view class="ring-sleep-timeline">
+              <view :class="nativeClass('ring-sleep-timeline', (null))">
                 <view v-for="(item, i) in aget(ringData, 'sleepSegs')" :key="i" class="ring-sleep-tl-seg"
                       :style="'width:' + an(item, 'widthPct') + '%;background:' + sget(item, 'color') + ';'"></view>
               </view>
               <view class="ring-sleep-legend">
                 <view class="ring-sleep-leg-item">
                   <view class="ring-sleep-leg-dot" style="background:#6375EC;"></view>
-                  <text class="ring-sleep-leg-txt">{{ tt('ringDeep') }} {{ an(ringData, 'sleepDeep') }}m</text>
+                  <text :class="nativeClass('ring-sleep-leg-txt', (null))">{{ tt('ringDeep') }} {{ an(ringData, 'sleepDeep') }}m</text>
                 </view>
                 <view class="ring-sleep-leg-item">
                   <view class="ring-sleep-leg-dot" style="background:#a855f7;"></view>
-                  <text class="ring-sleep-leg-txt">{{ tt('ringRem') }} {{ an(ringData, 'sleepRem') }}m</text>
+                  <text :class="nativeClass('ring-sleep-leg-txt', (null))">{{ tt('ringRem') }} {{ an(ringData, 'sleepRem') }}m</text>
                 </view>
                 <view class="ring-sleep-leg-item">
                   <view class="ring-sleep-leg-dot" style="background:#0ea5e9;"></view>
-                  <text class="ring-sleep-leg-txt">{{ tt('ringLight') }} {{ an(ringData, 'sleepLight') }}m</text>
+                  <text :class="nativeClass('ring-sleep-leg-txt', (null))">{{ tt('ringLight') }} {{ an(ringData, 'sleepLight') }}m</text>
                 </view>
                 <view class="ring-sleep-leg-item">
                   <view class="ring-sleep-leg-dot" style="background:rgba(166,196,229,0.4);"></view>
-                  <text class="ring-sleep-leg-txt">{{ tt('ringAwake') }} {{ an(ringData, 'sleepAwake') }}m</text>
+                  <text :class="nativeClass('ring-sleep-leg-txt', (null))">{{ tt('ringAwake') }} {{ an(ringData, 'sleepAwake') }}m</text>
                 </view>
               </view>
             </view>
@@ -786,180 +786,180 @@
 
           <view v-if="hasTwinData">
             <!-- Body Composition -->
-            <view v-if="twinBodyBar != null" class="ht-body-card">
+            <view v-if="twinBodyBar != null" :class="nativeClass('ht-body-card', (null))">
               <view class="ht-body-header">
-                <text class="ht-body-title">{{ tt('dtBody') }}</text>
-                <text v-if="twinBody.length > 0" class="ht-body-vals">{{ twinBody }}</text>
+                <text :class="nativeClass('ht-body-title', (null))">{{ tt('dtBody') }}</text>
+                <text v-if="twinBody.length > 0" :class="nativeClass('ht-body-vals', (null))">{{ twinBody }}</text>
               </view>
-              <view class="ht-body-bar">
+              <view :class="nativeClass('ht-body-bar', (null))">
                 <view class="ht-body-lean" :style="'width:' + an(twinBodyBar, 'leanPct') + '%;'"></view>
                 <view class="ht-body-fat-fill" :style="'width:' + an(twinBodyBar, 'fatPct') + '%;'"></view>
               </view>
               <view class="ht-body-legend">
                 <view class="ht-body-legend-item">
                   <view class="ht-body-dot ht-lean-dot"></view>
-                  <text class="ht-body-lbl">{{ tt('dtLean') }} {{ an(twinBodyBar, 'leanPct') }}%</text>
+                  <text :class="nativeClass('ht-body-lbl', (null))">{{ tt('dtLean') }} {{ an(twinBodyBar, 'leanPct') }}%</text>
                 </view>
                 <view class="ht-body-legend-item">
                   <view class="ht-body-dot ht-fat-dot"></view>
-                  <text class="ht-body-lbl">{{ tt('dtFat') }} {{ an(twinBodyBar, 'fatPct') }}%</text>
+                  <text :class="nativeClass('ht-body-lbl', (null))">{{ tt('dtFat') }} {{ an(twinBodyBar, 'fatPct') }}%</text>
                 </view>
               </view>
             </view>
           </view>
-          <text v-else-if="!twinLoading" class="health-empty">{{ tt('noTwinData') }}</text>
+          <text v-else-if="!twinLoading" :class="nativeClass('health-empty', (null))">{{ tt('noTwinData') }}</text>
 
           <!-- 心电节律 (ECG, V8 only) and 脉搏波 (PPG, V8 + Halo) strip cards (§45). Copy says
                "rhythm strip"/"pulse wave", never "diagnosis". -->
-          <view v-if="ecgSupported || ecgLatest != null" class="ecg-card">
+          <view v-if="ecgSupported || ecgLatest != null" :class="nativeClass('ecg-card', (null))">
             <view class="ecg-card-row">
               <view class="ecg-card-main">
-                <text class="ecg-card-title">{{ tt('ecgTitle') }}</text>
+                <text :class="nativeClass('ecg-card-title', (null))">{{ tt('ecgTitle') }}</text>
                 <view v-if="ecgLatest != null" class="ecg-card-hero" v-on:click.stop="openEcgView('ecg', an(ecgLatest, 'id'))">
-                  <text class="ecg-card-bpm">{{ an(ecgLatest, 'bpm') }}</text>
-                  <text class="ecg-card-unit">bpm</text>
-                  <text class="ecg-card-meta">{{ sget(ecgLatest, 'whenLabel') }} · {{ an(ecgLatest, 'accepted_beats') }} {{ tt('ecgBeats') }} · RR±{{ an(ecgLatest, 'rr_sd_ms') }}ms</text>
+                  <text :class="nativeClass('ecg-card-bpm', (null))">{{ an(ecgLatest, 'bpm') }}</text>
+                  <text :class="nativeClass('ecg-card-unit', (null))">bpm</text>
+                  <text :class="nativeClass('ecg-card-meta', (null))">{{ sget(ecgLatest, 'whenLabel') }} · {{ an(ecgLatest, 'accepted_beats') }} {{ tt('ecgBeats') }} · RR±{{ an(ecgLatest, 'rr_sd_ms') }}ms</text>
                 </view>
-                <text v-else class="ecg-card-empty">{{ mode == 'self' ? tt('ecgEmptySelf') : tt('ecgEmptyOther') }}</text>
+                <text v-else :class="nativeClass('ecg-card-empty', (null))">{{ mode == 'self' ? tt('ecgEmptySelf') : tt('ecgEmptyOther') }}</text>
               </view>
             </view>
-            <view v-if="ecgList.length > 1" class="ecg-card-list">
-              <view v-for="(item, i) in ecgListTail" :key="i" class="ecg-card-list-row" v-on:click.stop="openEcgView('ecg', an(item, 'id'))">
-                <text class="ecg-card-list-when">{{ sget(item, 'whenLabel') }}</text>
-                <text class="ecg-card-list-val">{{ an(item, 'bpm') }} bpm · RR±{{ an(item, 'rr_sd_ms') }}ms</text>
+            <view v-if="ecgList.length > 1" :class="nativeClass('ecg-card-list', (null))">
+              <view v-for="(item, i) in ecgListTail" :key="i" :class="nativeClass('ecg-card-list-row', (null))" v-on:click.stop="openEcgView('ecg', an(item, 'id'))">
+                <text :class="nativeClass('ecg-card-list-when', (null))">{{ sget(item, 'whenLabel') }}</text>
+                <text :class="nativeClass('ecg-card-list-val', (null))">{{ an(item, 'bpm') }} bpm · RR±{{ an(item, 'rr_sd_ms') }}ms</text>
               </view>
             </view>
-            <text class="ecg-card-foot">{{ tt('ecgNotDiagnosis') }}</text>
+            <text :class="nativeClass('ecg-card-foot', (null))">{{ tt('ecgNotDiagnosis') }}</text>
           </view>
-          <view v-if="ppgSupported || ppgLatest != null" class="ecg-card">
+          <view v-if="ppgSupported || ppgLatest != null" :class="nativeClass('ecg-card', (null))">
             <view class="ecg-card-row">
               <view class="ecg-card-main">
-                <text class="ecg-card-title">{{ tt('ppgTitle') }}</text>
+                <text :class="nativeClass('ecg-card-title', (null))">{{ tt('ppgTitle') }}</text>
                 <view v-if="ppgLatest != null" class="ecg-card-hero" v-on:click.stop="openEcgView('ppg', an(ppgLatest, 'id'))">
-                  <text class="ecg-card-bpm">{{ an(ppgLatest, 'bpm') }}</text>
-                  <text class="ecg-card-unit">bpm</text>
-                  <text class="ecg-card-meta">{{ sget(ppgLatest, 'whenLabel') }} · {{ an(ppgLatest, 'accepted_beats') }} {{ tt('ecgBeats') }} · PP±{{ an(ppgLatest, 'rr_sd_ms') }}ms</text>
+                  <text :class="nativeClass('ecg-card-bpm', (null))">{{ an(ppgLatest, 'bpm') }}</text>
+                  <text :class="nativeClass('ecg-card-unit', (null))">bpm</text>
+                  <text :class="nativeClass('ecg-card-meta', (null))">{{ sget(ppgLatest, 'whenLabel') }} · {{ an(ppgLatest, 'accepted_beats') }} {{ tt('ecgBeats') }} · PP±{{ an(ppgLatest, 'rr_sd_ms') }}ms</text>
                 </view>
-                <text v-else class="ecg-card-empty">{{ mode == 'self' ? tt('ppgEmptySelf') : tt('ppgEmptyOther') }}</text>
+                <text v-else :class="nativeClass('ecg-card-empty', (null))">{{ mode == 'self' ? tt('ppgEmptySelf') : tt('ppgEmptyOther') }}</text>
               </view>
             </view>
-            <view v-if="ppgList.length > 1" class="ecg-card-list">
-              <view v-for="(item, i) in ppgListTail" :key="i" class="ecg-card-list-row" v-on:click.stop="openEcgView('ppg', an(item, 'id'))">
-                <text class="ecg-card-list-when">{{ sget(item, 'whenLabel') }}</text>
-                <text class="ecg-card-list-val">{{ an(item, 'bpm') }} bpm · PP±{{ an(item, 'rr_sd_ms') }}ms</text>
+            <view v-if="ppgList.length > 1" :class="nativeClass('ecg-card-list', (null))">
+              <view v-for="(item, i) in ppgListTail" :key="i" :class="nativeClass('ecg-card-list-row', (null))" v-on:click.stop="openEcgView('ppg', an(item, 'id'))">
+                <text :class="nativeClass('ecg-card-list-when', (null))">{{ sget(item, 'whenLabel') }}</text>
+                <text :class="nativeClass('ecg-card-list-val', (null))">{{ an(item, 'bpm') }} bpm · PP±{{ an(item, 'rr_sd_ms') }}ms</text>
               </view>
             </view>
-            <text class="ecg-card-foot">{{ tt('ppgNotDiagnosis') }}</text>
+            <text :class="nativeClass('ecg-card-foot', (null))">{{ tt('ppgNotDiagnosis') }}</text>
           </view>
         </view>
 
         <!-- Twin layer: Precision Testing -->
-        <view class="health-section">
+        <view :class="nativeClass('health-section', (null))">
           <view class="section-title-row">
-            <text class="section-title">{{ tt('layerPrecision') }}</text>
-            <view v-if="recordCount > 0" class="section-badge">
-              <text class="section-badge-text">{{ recordCount }} {{ tt('tests') }}</text>
+            <text :class="nativeClass('section-title', (null))">{{ tt('layerPrecision') }}</text>
+            <view v-if="recordCount > 0" :class="nativeClass('section-badge', (null))">
+              <text :class="nativeClass('section-badge-text', (null))">{{ recordCount }} {{ tt('tests') }}</text>
             </view>
           </view>
           <view v-if="recordCount > 0" class="trend-grid">
-            <view v-for="(item, i) in trendList" :key="i" class="trend-card">
-              <text class="trend-label">{{ sget(item, 'label') }}</text>
+            <view v-for="(item, i) in trendList" :key="i" :class="nativeClass('trend-card', (null))">
+              <text :class="nativeClass('trend-label', (null))">{{ sget(item, 'label') }}</text>
               <view class="trend-val-row">
-                <text class="trend-val" :style="'color:' + tc(sget(item, 'color'))">{{ sget(item, 'lastValStr').length > 0 ? sget(item, 'lastValStr') : '—' }}</text>
-                <text class="trend-unit">{{ sget(item, 'unit') }}</text>
+                <text :class="nativeClass('trend-val', (null))" :style="'color:' + tc(sget(item, 'color'))">{{ sget(item, 'lastValStr').length > 0 ? sget(item, 'lastValStr') : '—' }}</text>
+                <text :class="nativeClass('trend-unit', (null))">{{ sget(item, 'unit') }}</text>
               </view>
               <view v-if="aget(item, 'sparkBars').length > 1" class="spark-row">
-                <view v-for="(bar, j) in aget(item, 'sparkBars')" :key="j" class="spark-bar"
-                      :class="bget(bar, 'empty') ? 'spark-bar-empty' : ''"
+                <view v-for="(bar, j) in aget(item, 'sparkBars')" :key="j"
+                      :class="nativeClass('spark-bar', (bget(bar, 'empty') ? 'spark-bar-empty' : ''))"
                       :style="'height:' + rp(an(bar, 'h')) + 'px;background:' + sget(bar, 'color') + ';'"></view>
               </view>
             </view>
           </view>
-          <text v-else class="health-empty">{{ tt('noHistory') }}</text>
+          <text v-else :class="nativeClass('health-empty', (null))">{{ tt('noHistory') }}</text>
         </view>
 
         <!-- Twin layer: Medical Records (snapshot + reports + food sensitivity) -->
-        <view class="health-section">
+        <view :class="nativeClass('health-section', (null))">
           <view class="section-title-row">
-            <text class="section-title">{{ tt('layerMedical') }}</text>
+            <text :class="nativeClass('section-title', (null))">{{ tt('layerMedical') }}</text>
             <view v-if="labPanelAbnormal > 0" class="ht-lab-alert">
-              <text class="ht-lab-alert-text">{{ labPanelAbnormal }} {{ tt('labAbnormal') }}</text>
+              <text :class="nativeClass('ht-lab-alert-text', (null))">{{ labPanelAbnormal }} {{ tt('labAbnormal') }}</text>
             </view>
-            <view v-else-if="labPanelAbnormal == 0 && labPanel.length > 0" class="ht-lab-ok">
-              <text class="ht-lab-ok-text">{{ tt('labAllNormal') }}</text>
+            <view v-else-if="labPanelAbnormal == 0 && labPanel.length > 0" :class="nativeClass('ht-lab-ok', (null))">
+              <text :class="nativeClass('ht-lab-ok-text', (null))">{{ tt('labAllNormal') }}</text>
             </view>
           </view>
-          <view v-if="labPanel.length > 0" class="ht-lab-snapshot-wrap">
+          <view v-if="labPanel.length > 0" :class="nativeClass('ht-lab-snapshot-wrap', (null))">
             <view class="ht-lab-snapshot-header">
-              <text class="ht-lab-snapshot-title">{{ tt('labPanel') }}</text>
-              <text class="ht-lab-date">{{ labPanelMeta.length > 0 ? labPanelMeta : labPanelDate }}</text>
+              <text :class="nativeClass('ht-lab-snapshot-title', (null))">{{ tt('labPanel') }}</text>
+              <text :class="nativeClass('ht-lab-date', (null))">{{ labPanelMeta.length > 0 ? labPanelMeta : labPanelDate }}</text>
             </view>
             <view class="ht-lab-grid">
-              <view v-for="(item, i) in labPanel" :key="i" class="ht-lab-item"
-                    :class="(sget(item, 'status') != 'normal' ? 'ht-lab-item-abn' : '') + ' ' + (bget(item, 'hasTrend') ? 'ht-lab-item-trend' : '')"
+              <view v-for="(item, i) in labPanel" :key="i"
+                    :class="nativeClass('ht-lab-item', ((sget(item, 'status') != 'normal' ? 'ht-lab-item-abn' : '') + ' ' + (bget(item, 'hasTrend') ? 'ht-lab-item-trend' : '')))"
                     :style="'border-color:' + tcA(sget(item, 'statusColor'), 0.13) + ';'"
                     v-on:click="onLabTileTap(sget(item, 'key'))">
-                <text class="ht-lab-name" :style="'color:' + tc(sget(item, 'status') != 'normal' ? sget(item, 'statusColor') : 'rgba(166,196,229,0.55)')">{{ sget(item, 'displayName') }}</text>
-                <text class="ht-lab-val" :style="'color:' + tc(sget(item, 'statusColor'))">{{ sget(item, 'value') }}</text>
-                <text class="ht-lab-unit">{{ sget(item, 'unit') }}</text>
-                <text v-if="sget(item, 'dateShort').length > 0 || bget(item, 'hasTrend')" class="ht-lab-sub">{{ sget(item, 'dateShort') }}{{ sget(item, 'dateShort').length > 0 && bget(item, 'hasTrend') ? ' · ' : '' }}{{ bget(item, 'hasTrend') ? '↗' : '' }}</text>
+                <text :class="nativeClass('ht-lab-name', (null))" :style="'color:' + tc(sget(item, 'status') != 'normal' ? sget(item, 'statusColor') : 'rgba(166,196,229,0.55)')">{{ sget(item, 'displayName') }}</text>
+                <text :class="nativeClass('ht-lab-val', (null))" :style="'color:' + tc(sget(item, 'statusColor'))">{{ sget(item, 'value') }}</text>
+                <text :class="nativeClass('ht-lab-unit', (null))">{{ sget(item, 'unit') }}</text>
+                <text v-if="sget(item, 'dateShort').length > 0 || bget(item, 'hasTrend')" :class="nativeClass('ht-lab-sub', (null))">{{ sget(item, 'dateShort') }}{{ sget(item, 'dateShort').length > 0 && bget(item, 'hasTrend') ? ' · ' : '' }}{{ bget(item, 'hasTrend') ? '↗' : '' }}</text>
               </view>
             </view>
-            <text class="ht-lab-hint">{{ tt('labPanelHint') }}</text>
+            <text :class="nativeClass('ht-lab-hint', (null))">{{ tt('labPanelHint') }}</text>
           </view>
           <view v-if="reportsLoading" class="center-wrap">
-            <view class="pulse-dot"></view><view class="pulse-dot"></view><view class="pulse-dot"></view>
+            <view :class="nativeClass('pulse-dot', (null))"></view><view :class="nativeClass('pulse-dot', (null))"></view><view :class="nativeClass('pulse-dot', (null))"></view>
           </view>
           <view v-else-if="healthReports.length > 0" class="rpt-list">
-            <view v-for="(item, i) in healthReports" :key="i" class="rpt-card" v-on:click="onReportTap(sget(item, 'id'))">
-              <image v-if="sget(item, 'image_url').length > 0" class="rpt-thumb" :src="sget(item, 'image_url')" mode="aspectFill"
+            <view v-for="(item, i) in healthReports" :key="i" :class="nativeClass('rpt-card', (null))" v-on:click="onReportTap(sget(item, 'id'))">
+              <image v-if="sget(item, 'image_url').length > 0" :class="nativeClass('rpt-thumb', (null))" :src="sget(item, 'image_url')" mode="aspectFill"
                      v-on:click.stop="previewReportImage(sget(item, 'image_url'))" />
-              <view class="rpt-card-left" :style="'border-left-color:' + tc(sget(item, 'type_color')) + ';'">
-                <text class="rpt-institution">{{ sget(item, 'institution') }}</text>
-                <text class="rpt-date">{{ sget(item, 'report_date') }}{{ sget(item, 'items_label').length > 0 ? ' · ' + sget(item, 'items_label') : '' }}</text>
+              <view :class="nativeClass('rpt-card-left', (null))" :style="'border-left-color:' + tc(sget(item, 'type_color')) + ';'">
+                <text :class="nativeClass('rpt-institution', (null))">{{ sget(item, 'institution') }}</text>
+                <text :class="nativeClass('rpt-date', (null))">{{ sget(item, 'report_date') }}{{ sget(item, 'items_label').length > 0 ? ' · ' + sget(item, 'items_label') : '' }}</text>
               </view>
               <view class="rpt-type-badge" :style="'border-color:' + tcA(sget(item, 'type_color'), 0.27) + ';'">
-                <text class="rpt-type-text" :style="'color:' + tc(sget(item, 'type_color'))">{{ sget(item, 'report_type') }}</text>
+                <text :class="nativeClass('rpt-type-text', (null))" :style="'color:' + tc(sget(item, 'type_color'))">{{ sget(item, 'report_type') }}</text>
               </view>
-              <text class="rpt-arrow">›</text>
+              <text :class="nativeClass('rpt-arrow', (null))">›</text>
             </view>
           </view>
-          <text v-else-if="!reportsLoading && labPanel.length == 0 && foodPanel == null" class="health-empty">{{ tt('noReports') }}</text>
+          <text v-else-if="!reportsLoading && labPanel.length == 0 && foodPanel == null" :class="nativeClass('health-empty', (null))">{{ tt('noReports') }}</text>
 
           <!-- Chronic food sensitivity (食物特异性 IgG, §40) — its own block inside Medical
                Records; a food is not a biomarker_catalog marker. -->
-          <view v-if="foodPanel != null" class="fs-block">
+          <view v-if="foodPanel != null" :class="nativeClass('fs-block', (null))">
             <view class="ht-lab-snapshot-header">
-              <text class="ht-lab-snapshot-title">{{ tt('foodPanelTitle') }}</text>
-              <text class="ht-lab-date">{{ sget(foodPanel, 'report_date') }}</text>
+              <text :class="nativeClass('ht-lab-snapshot-title', (null))">{{ tt('foodPanelTitle') }}</text>
+              <text :class="nativeClass('ht-lab-date', (null))">{{ sget(foodPanel, 'report_date') }}</text>
             </view>
-            <text class="fs-summary">{{ foodSummary }}</text>
+            <text :class="nativeClass('fs-summary', (null))">{{ foodSummary }}</text>
             <view v-if="foodPositives.length > 0" class="fs-list">
-              <view v-for="(item, i) in foodPositives" :key="i" class="fs-row" :style="'border-color:' + tcA(sget(item, 'color'), 0.27) + ';'">
+              <view v-for="(item, i) in foodPositives" :key="i" :class="nativeClass('fs-row', (null))" :style="'border-color:' + tcA(sget(item, 'color'), 0.27) + ';'">
                 <view class="fs-row-head">
-                  <text class="fs-food">{{ sget(item, 'name') }}</text>
-                  <text class="fs-class" :style="'color:' + tc(sget(item, 'color'))">{{ sget(item, 'classLabel') }}</text>
-                  <text class="fs-val">{{ sget(item, 'valueText') }}</text>
+                  <text :class="nativeClass('fs-food', (null))">{{ sget(item, 'name') }}</text>
+                  <text :class="nativeClass('fs-class', (null))" :style="'color:' + tc(sget(item, 'color'))">{{ sget(item, 'classLabel') }}</text>
+                  <text :class="nativeClass('fs-val', (null))">{{ sget(item, 'valueText') }}</text>
                 </view>
-                <text v-if="sget(item, 'windowText').length > 0" class="fs-window">{{ sget(item, 'windowText') }}</text>
-                <text v-if="sget(item, 'substitutes').length > 0" class="fs-subs">{{ tt('foodSubstitutes') }}{{ sget(item, 'substitutes') }}</text>
+                <text v-if="sget(item, 'windowText').length > 0" :class="nativeClass('fs-window', (null))">{{ sget(item, 'windowText') }}</text>
+                <text v-if="sget(item, 'substitutes').length > 0" :class="nativeClass('fs-subs', (null))">{{ tt('foodSubstitutes') }}{{ sget(item, 'substitutes') }}</text>
               </view>
             </view>
-            <text class="fs-footnote">{{ tt('foodPanelNote') }}</text>
+            <text :class="nativeClass('fs-footnote', (null))">{{ tt('foodPanelNote') }}</text>
           </view>
         </view>
 
         <!-- Twin layer: Personal Profile — read-only AI-recorded facts (self view only) -->
-        <view v-if="mode == 'self' && userFactsLoaded" class="health-section">
-          <text class="section-title">{{ tt('layerProfile') }}</text>
+        <view v-if="mode == 'self' && userFactsLoaded" :class="nativeClass('health-section', (null))">
+          <text :class="nativeClass('section-title', (null))">{{ tt('layerProfile') }}</text>
           <view v-if="userFacts.length > 0" class="fact-list">
-            <view v-for="(item, i) in userFacts" :key="i" class="fact-chip" :style="'border-color:' + tcA(sget(item, 'color'), 0.27) + ';'">
-              <text class="fact-cat" :style="'color:' + tc(sget(item, 'color'))">{{ sget(item, 'categoryLabel') }}</text>
-              <text class="fact-text">{{ sget(item, 'fact') }}</text>
+            <view v-for="(item, i) in userFacts" :key="i" :class="nativeClass('fact-chip', (null))" :style="'border-color:' + tcA(sget(item, 'color'), 0.27) + ';'">
+              <text :class="nativeClass('fact-cat', (null))" :style="'color:' + tc(sget(item, 'color'))">{{ sget(item, 'categoryLabel') }}</text>
+              <text :class="nativeClass('fact-text', (null))">{{ sget(item, 'fact') }}</text>
             </view>
-            <text class="fact-footnote">{{ tt('factsFootnote') }}</text>
+            <text :class="nativeClass('fact-footnote', (null))">{{ tt('factsFootnote') }}</text>
           </view>
-          <text v-else class="health-empty">{{ tt('noFactsSelf') }}</text>
+          <text v-else :class="nativeClass('health-empty', (null))">{{ tt('noFactsSelf') }}</text>
         </view>
 
         <!-- <health-documents> (§38): upload + extraction list; reports docCount/latestDate
@@ -968,20 +968,20 @@
           :collapsible="true" :canUpload="mode == 'self'" :coachId="coachId" v-on:loaded="_onDocsLoaded" />
 
         <!-- 综合报告 card — completed AG artifacts (GET /api/twin-reports) -->
-        <view v-if="twinReportLatest != null" class="health-section">
+        <view v-if="twinReportLatest != null" :class="nativeClass('health-section', (null))">
           <view class="section-title-row">
-            <text class="section-title">{{ tt('reportsTitle') }}</text>
-            <text v-if="twinReports.length > 1" class="tr-count" v-on:click="onTwinReportListTap">{{ tt('reportsCount') }} {{ twinReports.length }} ›</text>
+            <text :class="nativeClass('section-title', (null))">{{ tt('reportsTitle') }}</text>
+            <text v-if="twinReports.length > 1" :class="nativeClass('tr-count', (null))" v-on:click="onTwinReportListTap">{{ tt('reportsCount') }} {{ twinReports.length }} ›</text>
           </view>
-          <view class="tr-card" v-on:click="onTwinReportTap(sget(twinReportLatest, 'job_uid'), nget(twinReportLatest, 'primary_index'))">
-            <view class="tr-icon"><text class="tr-icon-txt">📄</text></view>
+          <view :class="nativeClass('tr-card', (null))" v-on:click="onTwinReportTap(sget(twinReportLatest, 'job_uid'), nget(twinReportLatest, 'primary_index'))">
+            <view :class="nativeClass('tr-icon', (null))"><text class="tr-icon-txt">📄</text></view>
             <view class="tr-body">
-              <text class="tr-title">{{ sget(twinReportLatest, 'title') }}</text>
-              <text v-if="sget(twinReportLatest, 'attributionText').length > 0" class="tr-origin">{{ sget(twinReportLatest, 'attributionText') }}</text>
-              <text class="tr-meta">{{ sget(twinReportLatest, 'metaLine') }}</text>
-              <text v-if="sget(twinReportLatest, 'summary').length > 0" class="tr-summary">{{ sget(twinReportLatest, 'summary') }}</text>
+              <text :class="nativeClass('tr-title', (null))">{{ sget(twinReportLatest, 'title') }}</text>
+              <text v-if="sget(twinReportLatest, 'attributionText').length > 0" :class="nativeClass('tr-origin', (null))">{{ sget(twinReportLatest, 'attributionText') }}</text>
+              <text :class="nativeClass('tr-meta', (null))">{{ sget(twinReportLatest, 'metaLine') }}</text>
+              <text v-if="sget(twinReportLatest, 'summary').length > 0" :class="nativeClass('tr-summary', (null))">{{ sget(twinReportLatest, 'summary') }}</text>
             </view>
-            <view class="tr-open"><text class="tr-open-txt">{{ twinReportOpening ? tt('reportsOpening') : tt('reportsOpen') }}</text></view>
+            <view :class="nativeClass('tr-open', (null))"><text :class="nativeClass('tr-open-txt', (null))">{{ twinReportOpening ? tt('reportsOpening') : tt('reportsOpen') }}</text></view>
           </view>
         </view>
 
@@ -998,116 +998,116 @@
       :viewId="stripViewId" :coachId="coachId" :readOnly="mode != 'self'"
       v-on:close="closeEcgRecord" v-on:saved="onEcgSaved" v-on:deleted="onEcgDeleted" />
     <view v-if="agPackageLoading" class="center-wrap">
-      <view class="pulse-dot"></view><view class="pulse-dot"></view><view class="pulse-dot"></view>
+      <view :class="nativeClass('pulse-dot', (null))"></view><view :class="nativeClass('pulse-dot', (null))"></view><view :class="nativeClass('pulse-dot', (null))"></view>
     </view>
     <viva-ag-panel v-if="showAgTab && healthSubTab == 'ag'" :userId="userId" :lang="lang" :theme="theme"
       v-on:packageready="onAgPackageReady" v-on:gotochat="onAgGoToChat" />
 
     <!-- Health Report Detail Sheet -->
     <view v-if="activeReport != null" class="rpt-overlay" v-on:click="onCloseReport">
-      <view class="rpt-sheet" v-on:click.stop="noop()">
-        <view class="rpt-sheet-handle"></view>
-        <view class="rpt-sheet-header">
+      <view :class="nativeClass('rpt-sheet', (null))" v-on:click.stop="noop()">
+        <view :class="nativeClass('rpt-sheet-handle', (null))"></view>
+        <view :class="nativeClass('rpt-sheet-header', (null))">
           <view class="rpt-sheet-title-group">
-            <text class="rpt-sheet-institution">{{ sget(activeReport, 'institution') }}</text>
-            <text class="rpt-sheet-date">{{ sget(activeReport, 'report_date') }}</text>
+            <text :class="nativeClass('rpt-sheet-institution', (null))">{{ sget(activeReport, 'institution') }}</text>
+            <text :class="nativeClass('rpt-sheet-date', (null))">{{ sget(activeReport, 'report_date') }}</text>
           </view>
-          <view class="rpt-sheet-type-badge" :style="'border-color:' + tcA(sget(activeReport, 'type_color'), 0.27) + ';'">
+          <view :class="nativeClass('rpt-sheet-type-badge', (null))" :style="'border-color:' + tcA(sget(activeReport, 'type_color'), 0.27) + ';'">
             <text class="rpt-sheet-type-text" :style="'color:' + tc(sget(activeReport, 'type_color'))">{{ sget(activeReport, 'report_type') }}</text>
           </view>
-          <view class="rpt-close-btn" v-on:click="onCloseReport"><text class="rpt-close-x">✕</text></view>
+          <view :class="nativeClass('rpt-close-btn', (null))" v-on:click="onCloseReport"><text :class="nativeClass('rpt-close-x', (null))">✕</text></view>
         </view>
 
         <scroll-view direction="vertical" class="rpt-events-scroll">
           <view v-if="reportDetailLoading" class="center-wrap">
-            <view class="pulse-dot"></view><view class="pulse-dot"></view><view class="pulse-dot"></view>
+            <view :class="nativeClass('pulse-dot', (null))"></view><view :class="nativeClass('pulse-dot', (null))"></view><view :class="nativeClass('pulse-dot', (null))"></view>
           </view>
           <view v-else>
             <view v-if="sget(activeReport, 'image_url').length > 0" class="rpt-section">
-              <image class="rpt-photo" :src="sget(activeReport, 'image_url')" mode="widthFix"
+              <image :class="nativeClass('rpt-photo', (null))" :src="sget(activeReport, 'image_url')" mode="widthFix"
                      v-on:click="previewReportImage(sget(activeReport, 'image_url'))" />
             </view>
 
             <view v-if="bget(activeReport, 'hasDoctorNotes')" class="rpt-section">
-              <view class="rpt-section-header">
+              <view :class="nativeClass('rpt-section-header', (null))">
                 <text class="rpt-section-icon">🩺</text>
-                <text class="rpt-section-title">{{ tt('rptDoctorTitle') }}</text>
+                <text :class="nativeClass('rpt-section-title', (null))">{{ tt('rptDoctorTitle') }}</text>
               </view>
-              <view v-if="sget(activeReportDoctorNotes, 'physician').length > 0" class="rpt-dn-meta">
-                <text class="rpt-dn-key">{{ tt('rptPhysician') }}</text>
-                <text class="rpt-dn-val">{{ sget(activeReportDoctorNotes, 'physician') }}{{ sget(activeReportDoctorNotes, 'department').length > 0 ? ' · ' + sget(activeReportDoctorNotes, 'department') : '' }}</text>
+              <view v-if="sget(activeReportDoctorNotes, 'physician').length > 0" :class="nativeClass('rpt-dn-meta', (null))">
+                <text :class="nativeClass('rpt-dn-key', (null))">{{ tt('rptPhysician') }}</text>
+                <text :class="nativeClass('rpt-dn-val', (null))">{{ sget(activeReportDoctorNotes, 'physician') }}{{ sget(activeReportDoctorNotes, 'department').length > 0 ? ' · ' + sget(activeReportDoctorNotes, 'department') : '' }}</text>
               </view>
               <view v-if="aget(activeReportDoctorNotes, 'vitals').length > 0" class="rpt-vitals-grid">
-                <view v-for="(item, i) in aget(activeReportDoctorNotes, 'vitals')" :key="i" class="rpt-vital-item">
-                  <text class="rpt-vital-key">{{ sget(item, 'key') }}</text>
-                  <text class="rpt-vital-val">{{ sget(item, 'value') }}</text>
+                <view v-for="(item, i) in aget(activeReportDoctorNotes, 'vitals')" :key="i" :class="nativeClass('rpt-vital-item', (null))">
+                  <text :class="nativeClass('rpt-vital-key', (null))">{{ sget(item, 'key') }}</text>
+                  <text :class="nativeClass('rpt-vital-val', (null))">{{ sget(item, 'value') }}</text>
                 </view>
               </view>
               <view v-if="sget(activeReportDoctorNotes, 'clinical_summary').length > 0" class="rpt-clinical">
-                <text class="rpt-clinical-label">{{ tt('rptClinicalSummary') }}</text>
-                <text class="rpt-clinical-text">{{ sget(activeReportDoctorNotes, 'clinical_summary') }}</text>
+                <text :class="nativeClass('rpt-clinical-label', (null))">{{ tt('rptClinicalSummary') }}</text>
+                <text :class="nativeClass('rpt-clinical-text', (null))">{{ sget(activeReportDoctorNotes, 'clinical_summary') }}</text>
               </view>
               <view v-if="ags(activeReportDoctorNotes, 'recommendations').length > 0" class="rpt-dn-subsection">
-                <view class="rpt-section-header">
+                <view :class="nativeClass('rpt-section-header', (null))">
                   <text class="rpt-section-icon">💊</text>
-                  <text class="rpt-section-title">{{ tt('rptRecommendations') }}</text>
+                  <text :class="nativeClass('rpt-section-title', (null))">{{ tt('rptRecommendations') }}</text>
                 </view>
                 <view class="rpt-advice-list">
                   <view v-for="(item, i) in ags(activeReportDoctorNotes, 'recommendations')" :key="i" class="rpt-advice-item">
-                    <text class="rpt-advice-num">{{ adviceIdx(i) }}</text>
-                    <text class="rpt-advice-text">{{ item }}</text>
+                    <text :class="nativeClass('rpt-advice-num', (null))">{{ adviceIdx(i) }}</text>
+                    <text :class="nativeClass('rpt-advice-text', (null))">{{ item }}</text>
                   </view>
                 </view>
               </view>
               <view v-if="sget(activeReportDoctorNotes, 'follow_up').length > 0" class="rpt-followup">
-                <text class="rpt-followup-label">{{ tt('rptFollowUp') }}</text>
-                <text class="rpt-followup-text">{{ sget(activeReportDoctorNotes, 'follow_up') }}</text>
+                <text :class="nativeClass('rpt-followup-label', (null))">{{ tt('rptFollowUp') }}</text>
+                <text :class="nativeClass('rpt-followup-text', (null))">{{ sget(activeReportDoctorNotes, 'follow_up') }}</text>
               </view>
             </view>
 
             <view v-if="bget(activeReport, 'hasDiag')" class="rpt-section">
-              <view class="rpt-section-header">
+              <view :class="nativeClass('rpt-section-header', (null))">
                 <text class="rpt-section-icon">🔬</text>
-                <text class="rpt-section-title">{{ tt('rptDiagTitle') }}</text>
+                <text :class="nativeClass('rpt-section-title', (null))">{{ tt('rptDiagTitle') }}</text>
               </view>
               <view class="rpt-diag-list">
                 <view v-for="(item, i) in activeReportDiag" :key="i" class="rpt-diag-item">
                   <view class="rpt-diag-bullet"></view>
-                  <text class="rpt-diag-text">{{ item }}</text>
+                  <text :class="nativeClass('rpt-diag-text', (null))">{{ item }}</text>
                 </view>
               </view>
             </view>
 
             <view v-if="bget(activeReport, 'hasAdvice')" class="rpt-section">
-              <view class="rpt-section-header">
+              <view :class="nativeClass('rpt-section-header', (null))">
                 <text class="rpt-section-icon">💊</text>
-                <text class="rpt-section-title">{{ tt('rptAdviceTitle') }}</text>
+                <text :class="nativeClass('rpt-section-title', (null))">{{ tt('rptAdviceTitle') }}</text>
               </view>
               <view class="rpt-advice-list">
                 <view v-for="(item, i) in activeReportAdvice" :key="i" class="rpt-advice-item">
-                  <text class="rpt-advice-num">{{ i + 1 }}</text>
-                  <text class="rpt-advice-text">{{ item }}</text>
+                  <text :class="nativeClass('rpt-advice-num', (null))">{{ i + 1 }}</text>
+                  <text :class="nativeClass('rpt-advice-text', (null))">{{ item }}</text>
                 </view>
               </view>
             </view>
 
             <view v-if="activeReportEvents.length > 0" class="rpt-section">
-              <view v-if="bget(activeReport, 'hasDiag') || bget(activeReport, 'hasAdvice') || activeReportOtherItems.length > 0" class="rpt-section-header">
+              <view v-if="bget(activeReport, 'hasDiag') || bget(activeReport, 'hasAdvice') || activeReportOtherItems.length > 0" :class="nativeClass('rpt-section-header', (null))">
                 <text class="rpt-section-icon">📊</text>
-                <text class="rpt-section-title">{{ tt('rptMarkersTitle') }}</text>
+                <text :class="nativeClass('rpt-section-title', (null))">{{ tt('rptMarkersTitle') }}</text>
               </view>
               <view class="rpt-events-list">
-                <view v-for="(item, i) in activeReportEvents" :key="i" class="rpt-ev-row">
+                <view v-for="(item, i) in activeReportEvents" :key="i" :class="nativeClass('rpt-ev-row', (null))">
                   <view class="rpt-ev-left">
                     <view class="rpt-ev-dot" :style="'background:' + sget(item, 'statusColor') + ';'"></view>
                     <view class="rpt-ev-info">
-                      <text class="rpt-ev-name">{{ sget(item, 'key_name') }}</text>
-                      <text v-if="sget(item, 'refText').length > 0" class="rpt-ev-ref">{{ tt('rptRefRange') }} {{ sget(item, 'refText') }}</text>
+                      <text :class="nativeClass('rpt-ev-name', (null))">{{ sget(item, 'key_name') }}</text>
+                      <text v-if="sget(item, 'refText').length > 0" :class="nativeClass('rpt-ev-ref', (null))">{{ tt('rptRefRange') }} {{ sget(item, 'refText') }}</text>
                     </view>
                   </view>
                   <view class="rpt-ev-right">
-                    <text class="rpt-ev-val">{{ sget(item, 'value') }}</text>
-                    <text class="rpt-ev-unit">{{ sget(item, 'unit') }}</text>
+                    <text :class="nativeClass('rpt-ev-val', (null))">{{ sget(item, 'value') }}</text>
+                    <text :class="nativeClass('rpt-ev-unit', (null))">{{ sget(item, 'unit') }}</text>
                     <view class="rpt-ev-status" :style="'border-color:' + tcA(sget(item, 'statusColor'), 0.27) + ';'">
                       <text class="rpt-ev-status-text" :style="'color:' + tc(sget(item, 'statusColor'))">{{ sget(item, 'statusLabel') }}</text>
                     </view>
@@ -1117,23 +1117,23 @@
             </view>
 
             <view v-if="activeReportOtherItems.length > 0" class="rpt-section">
-              <view class="rpt-section-header">
+              <view :class="nativeClass('rpt-section-header', (null))">
                 <text class="rpt-section-icon">📄</text>
-                <text class="rpt-section-title">{{ tt('rptOtherItemsTitle') }}</text>
+                <text :class="nativeClass('rpt-section-title', (null))">{{ tt('rptOtherItemsTitle') }}</text>
               </view>
               <view class="rpt-events-list">
-                <view v-for="(item, i) in activeReportOtherItems" :key="i" class="rpt-ev-row">
+                <view v-for="(item, i) in activeReportOtherItems" :key="i" :class="nativeClass('rpt-ev-row', (null))">
                   <view class="rpt-ev-left">
                     <view class="rpt-ev-dot" :style="'background:' + (bget(item, 'flagged') ? sget(item, 'statusColor') : 'rgba(166,196,229,0.25)') + ';'"></view>
                     <view class="rpt-ev-info">
-                      <text class="rpt-ev-name">{{ sget(item, 'key_name') }}</text>
-                      <text v-if="sget(item, 'refText').length > 0" class="rpt-ev-ref">{{ tt('rptRefRange') }} {{ sget(item, 'refText') }}</text>
-                      <text v-if="sget(item, 'suggested').length > 0" class="rpt-ev-ref">{{ sget(item, 'suggested') }}</text>
+                      <text :class="nativeClass('rpt-ev-name', (null))">{{ sget(item, 'key_name') }}</text>
+                      <text v-if="sget(item, 'refText').length > 0" :class="nativeClass('rpt-ev-ref', (null))">{{ tt('rptRefRange') }} {{ sget(item, 'refText') }}</text>
+                      <text v-if="sget(item, 'suggested').length > 0" :class="nativeClass('rpt-ev-ref', (null))">{{ sget(item, 'suggested') }}</text>
                     </view>
                   </view>
                   <view class="rpt-ev-right">
-                    <text class="rpt-ev-val">{{ sget(item, 'value') }}</text>
-                    <text class="rpt-ev-unit">{{ sget(item, 'unit') }}</text>
+                    <text :class="nativeClass('rpt-ev-val', (null))">{{ sget(item, 'value') }}</text>
+                    <text :class="nativeClass('rpt-ev-unit', (null))">{{ sget(item, 'unit') }}</text>
                     <view v-if="bget(item, 'flagged')" class="rpt-ev-status" :style="'border-color:' + tcA(sget(item, 'statusColor'), 0.27) + ';'">
                       <text class="rpt-ev-status-text" :style="'color:' + tc(sget(item, 'statusColor'))">{{ sget(item, 'statusLabel') }}</text>
                     </view>
@@ -1151,11 +1151,11 @@
          _buildGenericChartLayout (all geometry math preserved). Only one modal is ever open,
          so they share the `lineChart` layout object; the BP modal keeps two series. -->
     <view v-if="anyChartModalOpen" class="wchart-overlay" v-on:click="closeAnyChart">
-      <view class="wchart-sheet" v-on:click.stop="noop()">
-        <view class="wchart-handle"></view>
+      <view :class="nativeClass('wchart-sheet', (null))" v-on:click.stop="noop()">
+        <view :class="nativeClass('wchart-handle', (null))"></view>
         <view class="wchart-header">
-          <text class="wchart-title">{{ chartModalTitle }}</text>
-          <view class="wchart-close" v-on:click="closeAnyChart"><text class="wchart-close-x">✕</text></view>
+          <text :class="nativeClass('wchart-title', (null))">{{ chartModalTitle }}</text>
+          <view :class="nativeClass('wchart-close', (null))" v-on:click="closeAnyChart"><text :class="nativeClass('wchart-close-x', (null))">✕</text></view>
         </view>
         <view class="chart-box" :style="'width:' + chartModalW + 'px;height:200px;'"
               v-on:touchstart="onChartTouch(chartModalCanvasId, $event)"
@@ -1192,15 +1192,15 @@
 
     <!-- Blood Pressure Chart Modal (two series: SYS red / DIA blue) -->
     <view v-if="bpChartOpen" class="wchart-overlay" v-on:click="closeBpChart">
-      <view class="wchart-sheet" v-on:click.stop="noop()">
-        <view class="wchart-handle"></view>
+      <view :class="nativeClass('wchart-sheet', (null))" v-on:click.stop="noop()">
+        <view :class="nativeClass('wchart-handle', (null))"></view>
         <view class="wchart-header">
-          <text class="wchart-title">{{ tt('metricBp') }}</text>
-          <view class="wchart-close" v-on:click="closeBpChart"><text class="wchart-close-x">✕</text></view>
+          <text :class="nativeClass('wchart-title', (null))">{{ tt('metricBp') }}</text>
+          <view :class="nativeClass('wchart-close', (null))" v-on:click="closeBpChart"><text :class="nativeClass('wchart-close-x', (null))">✕</text></view>
         </view>
         <view class="bp-chart-legend">
-          <view class="bp-legend-item"><view class="bp-legend-dot bp-legend-sys"></view><text class="bp-legend-label">SYS</text></view>
-          <view class="bp-legend-item"><view class="bp-legend-dot bp-legend-dia"></view><text class="bp-legend-label">DIA</text></view>
+          <view class="bp-legend-item"><view class="bp-legend-dot bp-legend-sys"></view><text :class="nativeClass('bp-legend-label', (null))">SYS</text></view>
+          <view class="bp-legend-item"><view :class="nativeClass('bp-legend-dot bp-legend-dia', (null))"></view><text :class="nativeClass('bp-legend-label', (null))">DIA</text></view>
         </view>
         <view class="chart-box" :style="'width:' + bpChartW + 'px;height:200px;'">
           <!-- #ifdef MP-WEIXIN -->
@@ -1229,10 +1229,10 @@
          caller sets showPrivacyPopup. On Android the waven-ble plugin asks for the Bluetooth
          permissions itself when the adapter opens. -->
     <view v-if="showPrivacyPopup" class="privacy-mask" v-on:click.stop="noop()">
-      <view class="privacy-box">
-        <text class="privacy-title">{{ isZh ? '隐私保护提示' : 'Privacy Notice' }}</text>
-        <text class="privacy-body">{{ isZh ? '为连接您的健康戒指并读取健康数据，需要使用蓝牙权限。请阅读并同意我们的隐私保护指引后继续。' : 'To connect your smart ring and read health data, we need Bluetooth access. Please agree to our privacy policy to continue.' }}</text>
-        <view class="privacy-agree-btn" v-on:click="onPrivacyAgree">
+      <view :class="nativeClass('privacy-box', (null))">
+        <text :class="nativeClass('privacy-title', (null))">{{ isZh ? '隐私保护提示' : 'Privacy Notice' }}</text>
+        <text :class="nativeClass('privacy-body', (null))">{{ isZh ? '为连接您的健康戒指并读取健康数据，需要使用蓝牙权限。请阅读并同意我们的隐私保护指引后继续。' : 'To connect your smart ring and read health data, we need Bluetooth access. Please agree to our privacy policy to continue.' }}</text>
+        <view :class="nativeClass('privacy-agree-btn', (null))" v-on:click="onPrivacyAgree">
           <text class="privacy-agree-txt">{{ isZh ? '同意并继续' : 'Agree & Continue' }}</text>
         </view>
         <view class="privacy-cancel-btn" v-on:click="onPrivacyCancel">
@@ -1244,6 +1244,8 @@
 </template>
 
 <script>
+import { nativeClass as nativeVisualClass } from '../../utils/native-visual.uts'
+
 // Ported from miniapp components/user-health/ (user-health.js 4354 lines + wxml + wxss).
 // Full logic pass — every method, fetch, formula and comment-documented invariant is kept
 // (§34 twin layers, §11 sub-ages, halo-smart-ring.md §9 incremental sleep-block merge,
@@ -3624,6 +3626,9 @@ export default {
   },
 
   methods: {
+    nativeClass(names : string, dynamic : any | null) : string {
+      return nativeVisualClass(names, dynamic, this.theme, this.textScale)
+    },
     // ── template accessors (delegate to the module helpers) ──
     sget(o : UTSJSONObject | null, k : string) : string { return g_sget(o, k) },
     nget(o : UTSJSONObject | null, k : string) : number { return g_nget(o, k) },
@@ -8165,5 +8170,11 @@ export default {
 .ins-score-wrap { position: relative; padding: 0; align-items: center; justify-content: center; }
 .ins-score { text-align: center; line-height: 1.2; }
 .ins-score-of { position: absolute; left: 0; right: 0; bottom: 4px; margin: 0; text-align: center; line-height: 1.1; }
+/* #endif */
+</style>
+
+<style>
+/* #ifdef APP */
+@import "../../unpackage/native-styles/components-user-health-user-health.css";
 /* #endif */
 </style>

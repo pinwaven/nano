@@ -27,7 +27,7 @@ export const BASE : string = API_ORIGIN
 
 // Same marker rule as the miniapp (AGENTS.md "Miniapp VERSION Marker"): bump on every
 // change under src/xapp/. Format MMDD-N.
-export const VERSION : string = '1007-16'
+export const VERSION : string = '1008-7'
 
 // xapp-mini: wx.chooseAddress (使用微信地址) stays off until the appid's chooseAddress privacy
 // interface is approved. While false, the buttons are hidden, nothing opens the picker on its own,
