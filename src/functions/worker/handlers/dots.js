@@ -35,6 +35,7 @@ const { resolveGutAxisDotKeys } = require('../lib/foodSensitivity');
 const { formatQuestionnaireContext } = require('./questionnaires');
 const { fetchFormulationTiers } = require('../lib/gcnClient');
 const { generateLabelCode } = require('../lib/labelCode');
+const { capsuleToday } = require('../lib/capsuleCodes');
 const { buildHealthTags } = require('../lib/healthTags');
 const { resolveEffectivePersona } = require('../lib/persona');
 const {
@@ -105,6 +106,7 @@ async function handleGetNutritionPlan(openid) {
 
         let planData = null;
         let schedules = [];
+        let capsuleTodayData = null;
 
         if (planResult.rows.length > 0) {
             planData = planResult.rows[0];
@@ -116,6 +118,20 @@ async function handleGetNutritionPlan(openid) {
                 [planData.id]
             );
             schedules = scheduleResult.rows;
+            // Per-capsule QR scan (lib/capsuleCodes.js): today's plan day and the slot the server's
+            // clock says is due, so the client never decides AM/PM from its own clock. A plan
+            // whose foils carry no codes (printed before codes existed) can't be scanned.
+            try {
+                const today = capsuleToday(planData, schedules);
+                if (today) {
+                    const { rows: [cc] } = await pool.query(
+                        'SELECT COUNT(*)::int AS n FROM capsule_codes WHERE plan_id = $1', [planData.id]
+                    );
+                    capsuleTodayData = { ...today, scan_enabled: cc.n > 0 };
+                }
+            } catch (err) {
+                console.warn(JSON.stringify({ level: 'WARN', msg: 'capsule_today failed', error: err.message }));
+            }
         }
 
         // 2. Fallback/Legacy notification content.
@@ -146,6 +162,7 @@ async function handleGetNutritionPlan(openid) {
             plan_date: notifyResult.rows[0]?.sent_at || null,
             structured_plan: planData,
             schedules: schedules,
+            capsule_today: capsuleTodayData,
             dots: dotsResult.rows,
             // Every dots package this user has, in every state — a SIBLING of the fields above,
             // never a source for them. `plan`/`structured_plan`/`schedules` still mean "the plan

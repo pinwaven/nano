@@ -99,7 +99,7 @@ const USER_ROUTES = [
     ['POST', '/health-plans/:id/checkin', { owner: 'SELECT user_id FROM health_plans WHERE id::text = $1', from: 'id' }],
     ['GET', '/reminders'], ['POST', '/reminders'], ['PATCH', '/plan-reminders/:id'],
     ['GET', '/events'], ['POST', '/event-signups'], ['DELETE', '/event-signups/:id'],
-    ['POST', '/box-claim'], ['GET', '/nutrition-plan'], ['POST', '/formulation-redeem'],
+    ['POST', '/box-claim'], ['POST', '/capsule-scan'], ['GET', '/nutrition-plan'], ['POST', '/formulation-redeem'],
     ['GET', '/my-cartridges'], ['POST', '/dispense'], ['POST', '/cartridge-insert'],
 
     // ── programs (coach enrolls a client) ──

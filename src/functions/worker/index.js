@@ -103,6 +103,7 @@ const { handleGetChannelBranding, handleGetChannelMiniappQrcode, handleGetChanne
 const { handleGetUsers, handleGetDashboardStats, handleGetUser, handleGetBiomarkers, handleGetNotifications, handlePostUsers, handlePutUser, handlePatchUser, handleSetIdentity, handleDeleteUser, handleGetInvitations, handlePostInvitation, handlePatchInvitation, handleDeleteInvitation, handlePostFormulationPurchaseConfirmed } = require('./handlers/users');
 const { handleGetDotsInventory, handleGetNutritionPlan, handleGetFormulationCheckoutSnapshot, handleGetFormulationLabelByCode, handleGetFormulationReviewSnapshot, handlePostFormulaDots, handlePostDots, handlePutDot, handleDeleteDot } = require('./handlers/dots');
 const { handleGetFormulationOrders, handlePostFormulationSubmit, handlePostFormulationRedeem } = require('./handlers/formulation_orders');
+const { handlePostCapsuleScan, handleGetFormulationCapsuleCodes } = require('./handlers/capsules');
 const { handlePostBoxBatch, handleGetBoxBatches, handleGetBoxBatchBoxes, handleGetBoxPage, handlePostBoxClaim } = require('./handlers/boxes');
 const { handleGetAgFormulationReviewSnapshot, handlePostAgFormulationApproved, handleGetAgFormulationStatus } = require('./handlers/ag_formulation');
 const { handleGetCoachList, handleGetChannelUsers, handleGetChannelCoaches, handleGetCoachUsers, handlePostCoachInstruction, handleGetCoachSentMessages, handlePostReminder, handleGetReminders, handleGetCoachUserChat, handlePostAssignCoach, handlePostCoaches, handlePutCoach, handleDeleteCoach } = require('./handlers/coaches');
@@ -399,7 +400,7 @@ exports.handler = async (req, resp, context) => {
             // Scoped nano<-GCN service credential — distinct from API_BEARER_TOKEN (nano's
             // full superadmin bearer). Authenticated but restricted to the exact paths GCN's
             // nanoClient.js actually calls; anything else 403s even with a valid token.
-            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn', '/partner-types-gcn-sync', '/partner-tier-assignment-gcn-sync', '/formulation-checkout-snapshot', '/formulation-review-snapshot', '/ag-formulation-review-snapshot', '/ag-formulation-approved', '/formulation-purchase-confirmed', '/viva-subscription-plans', '/viva-subscription-checkout-confirmed']);
+            const GCN_ALLOWED_PATHS = new Set(['/exchange-webview-token', '/exchange-admin-webview-token', '/partner-sales', '/partner-invite-code-gcn', '/partner-applications', '/partner-children-gcn', '/partner-descendants-gcn', '/partner-lookup-gcn', '/partner-types-gcn-sync', '/partner-tier-assignment-gcn-sync', '/formulation-checkout-snapshot', '/formulation-capsule-codes', '/formulation-review-snapshot', '/ag-formulation-review-snapshot', '/ag-formulation-approved', '/formulation-purchase-confirmed', '/viva-subscription-plans', '/viva-subscription-checkout-confirmed']);
             if (!GCN_ALLOWED_PATHS.has(path)) {
                 gateFailure = { statusCode: 403, error: 'Forbidden' };
             }
@@ -629,6 +630,12 @@ exports.handler = async (req, resp, context) => {
                 result = await handleGetAgFormulationReviewSnapshot(query.formulationId, query.openid);
             } else if (path === '/formulation-orders') {
                 result = await handleGetFormulationOrders(query.openid);
+            } else if (path === '/formulation-capsule-codes') {
+                // GCN supplier dashboard's foil sheet — reachable only with the GCN service
+                // bearer (GCN_ALLOWED_PATHS) or a superadmin; never in USER_ROUTES.
+                result = adminCtx.role === 'superadmin'
+                    ? await handleGetFormulationCapsuleCodes(query.c)
+                    : { statusCode: 403, success: false, error: 'Forbidden' };
             } else if (path.includes('/nutrition-plan')) {
                 result = await handleGetNutritionPlan(query.openid);
             } else if (path === '/health-twin') {
@@ -1030,6 +1037,8 @@ exports.handler = async (req, resp, context) => {
                 result = await handlePostBoxBatch(parsedBody, adminCtx);
             } else if (path === '/box-claim') {
                 result = await handlePostBoxClaim(parsedBody);
+            } else if (path === '/capsule-scan') {
+                result = await handlePostCapsuleScan(parsedBody, adminCtx.user?.user_id || null);
             } else if (path === '/ag-formulation-approved') {
                 result = await handlePostAgFormulationApproved(parsedBody);
             } else if (path.includes('/viva-subscription-checkout-confirmed')) {
