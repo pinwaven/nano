@@ -21,6 +21,8 @@ Nano AI is a precision health ecosystem powered by Aliyun FC 3.0. It ingests bio
 15. [WeChat Multiterminal Apps (Donut)](architecture/wechat-multiterminal.md)
 16. [WeChat Bluetooth Release Guide](wechat-bluetooth-release-guide.md)
 17. [User Manual (End User / Coach / Admin)](user-manual/README.md)
+18. [xapp-mini as a Donut App](architecture/xapp-mini-donut.md)
+19. [Plan: Native Shell + xapp-web with Own Hot Update](architecture/xapp-hybrid-shell-plan.md)
 
 
 ## Core Technologies

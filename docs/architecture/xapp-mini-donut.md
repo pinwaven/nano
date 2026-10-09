@@ -127,3 +127,6 @@ permission (no synthetic clicks). M3's Chrome can be scripted instead:
   test. To recover: `adb uninstall com.tencent.weauth`, then tap away the stacked system error dialogs.
 - The OnePlus asks for confirmation on every `adb install`. Tap Install by coordinates.
 - Typing into the WebView drops characters when sent fast. Send one character per `input text`.
+
+The non-WeChat alternative (a native shell running xapp-web with our own hot update, for the US
+launch): [xapp-hybrid-shell-plan.md](xapp-hybrid-shell-plan.md).
