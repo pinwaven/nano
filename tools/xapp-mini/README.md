@@ -55,6 +55,10 @@ APPID=wxecbcf00ce480fcf2 tools/xapp-mini/build.sh    # the appid the DevTools pr
   header and login screen show the VERSION marker in DevTools and 体验版, and in release the
   published version number (`miniProgram.version`), as the miniapp does.
 
+- **As a Donut app:** the same output runs as a WeChat multi-terminal APK after a patch to
+  `common/vendor.js` (`wx.miniapp` is undefined under Donut). Recipe, CLI build/upload commands
+  and the hot-update result: [docs/architecture/xapp-mini-donut.md](../../docs/architecture/xapp-mini-donut.md).
+
 ## Open it
 
 **From us1, M3 is the default DevTools host.** Build here, then sync the compiled output:

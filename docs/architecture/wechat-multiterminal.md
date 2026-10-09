@@ -133,6 +133,8 @@ WeChat's Donut Multiterminal framework supports the integration of arbitrary thi
 
 ## 6. Over-the-Air (OTA) / Hot Update Mechanism
 
+> Tested 2026-10-09 with xapp-mini: on the **free plan** a published resource pack never reached an official APK; the console marks 资源包管理 Professional-only. Details: [xapp-mini-donut.md](xapp-mini-donut.md).
+
 Multiterminal applications compiled with the Donut framework support **built-in hot upgrades (OTA updates)** for Mini Program resource packages, eliminating the need to resubmit the binary App to the Apple App Store or Google Play for every business code change.
 
 ### How Updates Work

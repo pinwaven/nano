@@ -150,6 +150,8 @@ together with headless browsers it exhausts the 4 GB of memory.
 `tools/xapp-mini/build.sh` compiles the same tree for `mp-weixin` into `dist/xapp/mini`
 (git-ignored), for WeChat DevTools. It runs the native branches (`#ifndef WEB`). How to open it
 and what differs from the miniapp: [tools/xapp-mini/README.md](../../tools/xapp-mini/README.md).
+It also runs as a Donut (multi-terminal) Android app after a one-line runtime patch; hot update
+there is untested beyond the free plan, which did not deliver it: [xapp-mini-donut.md](xapp-mini-donut.md).
 
 ## Offline gates (run both after every change)
 
